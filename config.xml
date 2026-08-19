@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module>
+    <name>ifirma</name>
+    <displayName><![CDATA[iFirma – Receipts & Invoices]]></displayName>
+    <version><![CDATA[1.0.0]]></version>
+    <description><![CDATA[Two-way iFirma (www.ifirma.pl) integration: issue receipts/invoices from the order page, register payments (status update) and let customers download their document from their account.]]></description>
+    <author><![CDATA[SCM Jakub Berechowskir]]></author>
+    <tab><![CDATA[billing_invoicing]]></tab>
+    <is_configurable>1</is_configurable>
+    <need_instance>0</need_instance>
+    <limited_countries></limited_countries>
+</module>

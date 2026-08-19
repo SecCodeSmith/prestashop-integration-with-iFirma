@@ -1,0 +1,55 @@
+/* iFirma module – front-office styling */
+
+.ifirma-order-detail {
+    margin-top: 1rem;
+}
+
+.ifirma-order-detail .material-icons {
+    vertical-align: middle;
+    font-size: 1.1rem;
+    margin-right: .25rem;
+}
+
+.ifirma-receipts-list {
+    list-style: none;
+    padding: .5rem 0 0;
+    margin: 0;
+}
+
+.ifirma-receipts-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: .35rem 0;
+    border-bottom: 1px solid #eee;
+}
+
+.ifirma-receipts-list li a {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+}
+
+.ifirma-badge {
+    display: inline-block;
+    padding: .15em .55em;
+    font-size: .75em;
+    font-weight: 600;
+    line-height: 1.4;
+    border-radius: .25rem;
+    color: #fff;
+    text-transform: uppercase;
+    background: #6c757d;
+}
+
+.ifirma-badge-paid {
+    background: #28a745;
+}
+
+.ifirma-badge-created {
+    background: #17a2b8;
+}
+
+.ifirma-badge-error {
+    background: #dc3545;
+}

@@ -1,0 +1,135 @@
+SCM Jakub Berechowski iFirma integration Module — SecCodeSmith Commercial License v1.2
+Copyright (c) 2026 SCM Jakub Berechowski (admin@seccodesmith.pl)
+
+===============================================================================
+DEFINITIONS
+===============================================================================
+
+"Licensor" means SCM Jakub Berechowski NIP PL8133936176, a business registered in the Republic
+of Poland.
+
+"Software" means the scm_cookieconsent PrestaShop module and all files
+distributed with it.
+
+"You" / "Your" means the individual or legal entity exercising rights under
+this License.
+
+"Consumer" means a natural person using the Software for purposes not directly
+related to their business or professional activity (within the meaning of
+art. 22(1) of the Polish Civil Code).
+
+"Small or Medium-Sized Business (SMB)" means a legal entity that, at the time
+of installation and during continued use, satisfies ALL of the following:
+  (a) fewer than 50 employees (full-time equivalents), AND
+  (b) annual gross revenue below EUR 2,000,000 (two million euros) or the
+      equivalent in any other currency, AND
+  (c) is not majority-owned or controlled by an entity that does not itself
+      qualify as an SMB under (a) and (b).
+
+"Enterprise" means any entity that does NOT qualify as an SMB.
+
+"Commercial Use" means use in a revenue-generating context, including but not
+limited to: operating an online store, providing services to paying customers,
+or internal use within a for-profit organisation.
+
+===============================================================================
+FREE LICENSE — SMB AND NON-COMMERCIAL USE
+===============================================================================
+
+Permission is hereby granted, free of charge, to any SMB or to any individual
+using the Software for personal, educational, or non-commercial purposes, to:
+
+  * install, copy, and use the Software on any number of stores they own or
+    directly operate;
+  * modify the Software for their own use;
+  * retain modified copies for private use.
+
+The following conditions apply:
+
+  1. This license notice and copyright statement must be retained in all copies
+     or substantial portions of the Software.
+  2. You may modify the Software for internal use without any obligation to
+     publish or disclose your modifications.
+  3. You may NOT redistribute the Software (original or modified) as a
+     standalone product, as part of a theme bundle, or as a competing module —
+     whether for free or for a fee — without a separate written agreement from
+     the Licensor. Exception: Enterprise License holders may redistribute the
+     unmodified free version as-is and provide support services for it.
+  4. Removing or replacing the "Powered by SCM Jakub Berechowski" attribution visible in
+     the admin panel is NOT permitted under the free license.
+  5. Verification of Eligibility: the Licensor may request reasonable
+     documentation to verify Your SMB status. This point does not apply to
+     Consumers. If You are a business and fail to provide such proof within
+     30 days of a documented request, Your rights under this free license are
+     suspended until the proof is provided; if the proof shows You do not
+     qualify as an SMB, the ENTERPRISE LICENSE section applies.
+
+===============================================================================
+ENTERPRISE LICENSE — REQUIRED FOR LARGE ORGANISATIONS
+===============================================================================
+
+If You are an Enterprise (as defined above), You MUST purchase a commercial
+Enterprise License before installing or using the Software.
+
+To obtain an Enterprise License, contact:
+  SCM Jakub Berechowski — admin@seccodesmith.pl
+
+An Enterprise License grants the same usage rights as the free SMB license
+(scoped to the number of stores agreed in writing) and additionally permits
+removal of the "Powered by SecCodeSmith" attribution upon written request.
+
+Using the Software without a valid Enterprise License when one is required
+constitutes copyright infringement.
+
+===============================================================================
+SUPPORT AND UPDATES
+===============================================================================
+
+The free SMB license does NOT include technical support, installation
+assistance, or guaranteed updates. The Licensor may modify or discontinue
+distribution of future free versions of the Software at any time; this does
+not revoke licenses already granted for copies You have lawfully obtained.
+Enterprise License holders are subject to the support and update terms
+outlined in their separate written agreement.
+
+===============================================================================
+TERMINATION
+===============================================================================
+
+This License is effective until terminated. If You fail to comply with any
+provision of this License, the Licensor may terminate it by notifying You and
+allowing 14 days to cure the breach; if the breach is not cured within that
+period — or in the case of use without a required Enterprise License, which
+terminates Your rights immediately — You must stop using the Software and
+destroy all copies in Your possession. Termination does not limit either
+party's statutory rights.
+
+===============================================================================
+DISCLAIMER OF WARRANTIES AND LIMITATION OF LIABILITY
+===============================================================================
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
+SCM JAKUB BERECHOWSKI BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+To the maximum extent permitted by applicable law, the Licensor's liability is
+excluded. This limitation does not apply to damage caused intentionally (wina
+umyślna, art. 473 § 2 of the Polish Civil Code) and does not exclude or limit
+any rights that mandatory law grants to Consumers.
+
+The Software is a technical tool supporting GDPR/RODO compliance. It does not
+constitute legal advice. Consult a qualified lawyer or DPO regarding your
+specific compliance obligations.
+
+===============================================================================
+GOVERNING LAW AND JURISDICTION
+===============================================================================
+
+This License is governed by the laws of the Republic of Poland.
+
+For disputes with businesses, the exclusive jurisdiction lies with the Polish
+court competent for the Licensor's registered office. For disputes with
+Consumers, jurisdiction is determined by generally applicable law.
