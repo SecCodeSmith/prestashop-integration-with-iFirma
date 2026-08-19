@@ -1,7 +1,5 @@
 <?php
 /**
- * iFirma module – table removal.
- *
  * @author    SCM Jakub Berechowskir
  * @license   SecCodeSmith Commercial License v1.2
  */

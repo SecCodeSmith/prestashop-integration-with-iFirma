@@ -1,8 +1,5 @@
 <?php
 /**
- * iFirma module – business logic: build payloads from PrestaShop orders,
- * issue documents, download PDFs and register payments ("status update").
- *
  * @author    SCM Jakub Berechowskir
  * @license   SecCodeSmith Commercial License v1.2
  */
@@ -26,8 +23,6 @@ class IfirmaReceiptService
     }
 
     /**
-     * Convenience factory that wires the client from module configuration.
-     *
      * @param Module $module
      * @return IfirmaReceiptService
      */
@@ -49,11 +44,9 @@ class IfirmaReceiptService
     }
 
     /**
-     * Issue a receipt/invoice in iFirma for the given order and persist it.
-     *
      * @param Order $order
      * @return IfirmaReceipt
-     * @throws Exception on API/validation failure
+     * @throws Exception
      */
     public function createReceipt(Order $order)
     {
@@ -95,9 +88,6 @@ class IfirmaReceiptService
         }
 
         $receipt->ifirma_id = isset($node['Identyfikator']) ? (string) $node['Identyfikator'] : '';
-        // The iFirma create response returns only the identifier (as a string),
-        // not the printable number. Keep it if a variant ever provides it, then
-        // fall back to reading it from the invoice list (return connection).
         if (!empty($node['PelnyNumer'])) {
             $receipt->ifirma_number = (string) $node['PelnyNumer'];
         } elseif (!empty($node['Numer'])) {
@@ -123,11 +113,8 @@ class IfirmaReceiptService
     }
 
     /**
-     * Register a payment against the iFirma document = update its status to paid.
-     * (POST iapi/faktury/wplaty/{typ}/{id}.json  body {"Kwota": amount})
-     *
      * @param IfirmaReceipt $receipt
-     * @param float|null    $amount defaults to the order's paid total
+     * @param float|null    $amount
      * @return IfirmaReceipt
      * @throws Exception
      */
@@ -148,8 +135,6 @@ class IfirmaReceiptService
             $typeToken = 'prz_faktura_kraj';
         }
 
-        // Documented alternative to the "number with / replaced by _" scheme:
-        // the numeric identifier may be used directly in the URL.
         $endpoint = 'faktury/wplaty/' . rawurlencode($typeToken) . '/' . rawurlencode($receipt->ifirma_id) . '.json';
 
         $response = $this->client->post($endpoint, 'faktura', array('Kwota' => $amount));
@@ -160,8 +145,6 @@ class IfirmaReceiptService
             throw new Exception($this->l('Could not reach iFirma: %s', $this->client->getLastError()));
         }
 
-        // The payment endpoint's success shape is not strictly documented, so we
-        // only fail on an explicit non-zero code or an HTTP error status.
         $node = isset($response['response']) ? $response['response'] : $response;
         $hasCode = isset($node['Kod']);
         $isError = ($hasCode && (int) $node['Kod'] !== 0) || $this->client->getLastHttpCode() >= 400;
@@ -183,14 +166,8 @@ class IfirmaReceiptService
     }
 
     /**
-     * Read the printable document number back from iFirma.
-     *
-     * The create response only returns the numeric identifier, so we query the
-     * invoice list (GET iapi/faktury.json) filtered by the issue date and match
-     * on FakturaId. Best-effort: returns '' on any failure.
-     *
      * @param string $ifirmaId
-     * @param string $issueDate Y-m-d used as dataOd/dataDo
+     * @param string $issueDate
      * @return string
      */
     public function fetchDocumentNumber($ifirmaId, $issueDate)
@@ -217,11 +194,9 @@ class IfirmaReceiptService
     }
 
     /**
-     * Fetch the document PDF bytes from iFirma (return connection).
-     *
      * @param IfirmaReceipt $receipt
-     * @param bool          $duplicate original vs duplicate copy
-     * @return string raw PDF bytes
+     * @param bool          $duplicate
+     * @return string
      * @throws Exception
      */
     public function fetchPdf(IfirmaReceipt $receipt, $duplicate = false)
@@ -245,8 +220,6 @@ class IfirmaReceiptService
     }
 
     /**
-     * Map a PrestaShop order to the iFirma "faktura do paragonu" / "faktura krajowa" payload.
-     *
      * @param Order $order
      * @return array
      */
@@ -270,16 +243,15 @@ class IfirmaReceiptService
             $taxRate = $this->deriveTaxRate($grossUnit, $netUnit, isset($row['tax_rate']) ? $row['tax_rate'] : null);
 
             $positions[] = array(
-                'StawkaVat' => round($taxRate / 100, 4),         // iFirma wants a fraction (0.23)
+                'StawkaVat' => round($taxRate / 100, 4),
                 'Ilosc' => (float) $row['product_quantity'],
-                'CenaJednostkowa' => $grossUnit,                 // gross, because LiczOd = BRT
+                'CenaJednostkowa' => $grossUnit,
                 'NazwaPelna' => mb_substr($row['product_name'], 0, 500),
                 'Jednostka' => $unit,
                 'TypStawkiVat' => $taxRate > 0 ? 'PRC' : 'ZW',
             );
         }
 
-        // Shipping as an extra line when charged.
         $shippingIncl = round((float) $order->total_shipping_tax_incl, 2);
         if ($shippingIncl > 0) {
             $shipRate = $this->deriveTaxRate($shippingIncl, (float) $order->total_shipping_tax_excl, isset($order->carrier_tax_rate) ? $order->carrier_tax_rate : null);
@@ -332,8 +304,6 @@ class IfirmaReceiptService
     }
 
     /**
-     * Configured iFirma endpoint slug for the document to issue.
-     *
      * @return string
      */
     public function getDocumentType()
@@ -344,29 +314,22 @@ class IfirmaReceiptService
     }
 
     /**
-     * Generate a cryptographically-random, URL-safe download token.
-     * (Replaces the removed/deprecated Tools::encrypt(); PHP 7.2+ / 8.x / PS 9 safe.)
-     *
-     * @return string 40 hexadecimal characters
+     * @return string
      */
     private function generateToken()
     {
         try {
             return bin2hex(random_bytes(20));
         } catch (Exception $e) {
-            // Extremely unlikely fallback if no CSPRNG is available.
             return substr(hash('sha256', uniqid((string) mt_rand(), true)), 0, 40);
         }
     }
 
     /**
-     * Derive the VAT percentage for a line from its gross/net unit prices,
-     * falling back to a provided rate column when the net price is unusable.
-     *
      * @param float      $gross
      * @param float      $net
      * @param mixed|null $fallbackRate
-     * @return float percentage, e.g. 23.0
+     * @return float
      */
     private function deriveTaxRate($gross, $net, $fallbackRate = null)
     {
@@ -378,9 +341,6 @@ class IfirmaReceiptService
     }
 
     /**
-     * Paid total to report to iFirma. When the order is not yet paid we still
-     * report the grand total for a cash-style receipt unless configured otherwise.
-     *
      * @param Order $order
      * @return float
      */
@@ -394,8 +354,6 @@ class IfirmaReceiptService
     }
 
     /**
-     * Translation helper bound to the module domain, with sprintf support.
-     *
      * @return string
      */
     private function l($key)
@@ -408,7 +366,7 @@ class IfirmaReceiptService
     }
 
     /**
-     * @return string last transport-level error from the API client
+     * @return string
      */
     public function getLastError()
     {

@@ -1,7 +1,5 @@
 <?php
 /**
- * iFirma module – stored document (receipt / invoice) model.
- *
  * @author    SCM Jakub Berechowskir
  * @license   SecCodeSmith Commercial License v1.2
  */
@@ -24,31 +22,31 @@ class IfirmaReceipt extends ObjectModel
     /** @var int */
     public $id_shop;
 
-    /** @var string iFirma endpoint slug used to issue the document (fakturaparagon|fakturakraj) */
+    /** @var string */
     public $document_type;
 
-    /** @var string Numeric identifier returned by iFirma (Identyfikator) */
+    /** @var string */
     public $ifirma_id;
 
-    /** @var string Human readable document number, e.g. "FV 12/2026" */
+    /** @var string */
     public $ifirma_number;
 
-    /** @var string created|paid|error */
+    /** @var string */
     public $status;
 
-    /** @var float amount registered as paid in iFirma */
+    /** @var float */
     public $paid_amount;
 
-    /** @var string random token guarding the front-office PDF download */
+    /** @var string */
     public $security_token;
 
-    /** @var string raw JSON request sent to iFirma */
+    /** @var string */
     public $request_payload;
 
-    /** @var string raw JSON response received from iFirma */
+    /** @var string */
     public $response_payload;
 
-    /** @var string last error message, if any */
+    /** @var string */
     public $last_error;
 
     /** @var string */
@@ -70,9 +68,6 @@ class IfirmaReceipt extends ObjectModel
             'status' => array('type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'size' => 32),
             'paid_amount' => array('type' => self::TYPE_FLOAT, 'validate' => 'isPrice'),
             'security_token' => array('type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'size' => 64),
-            // Free-form audit fields: raw JSON / API messages may contain any
-            // characters (customer address text, iFirma messages), so they are
-            // stored as-is without a content validator that could reject them.
             'request_payload' => array('type' => self::TYPE_HTML),
             'response_payload' => array('type' => self::TYPE_HTML),
             'last_error' => array('type' => self::TYPE_HTML),
@@ -82,8 +77,6 @@ class IfirmaReceipt extends ObjectModel
     );
 
     /**
-     * Return the (single, most recent) document issued for a given order.
-     *
      * @param int $idOrder
      * @return IfirmaReceipt|null
      */
@@ -103,8 +96,6 @@ class IfirmaReceipt extends ObjectModel
     }
 
     /**
-     * Load a document by its front-office download token.
-     *
      * @param string $token
      * @return IfirmaReceipt|null
      */
@@ -128,8 +119,6 @@ class IfirmaReceipt extends ObjectModel
     }
 
     /**
-     * All successfully-issued documents that belong to a customer, newest first.
-     *
      * @param int $idCustomer
      * @return array
      */
@@ -144,8 +133,6 @@ class IfirmaReceipt extends ObjectModel
     }
 
     /**
-     * True when the document was actually issued in iFirma (has an id).
-     *
      * @return bool
      */
     public function isIssued()

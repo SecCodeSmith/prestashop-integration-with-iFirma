@@ -1,11 +1,5 @@
 <?php
 /**
- * iFirma module – front-office PDF download.
- *
- * A logged-in customer can download the PDF of a document that belongs to them.
- * The PDF is streamed live from iFirma so it always reflects the current state;
- * nothing sensitive is stored on the shop's disk.
- *
  * @author    SCM Jakub Berechowskir
  * @license   SecCodeSmith Commercial License v1.2
  */
@@ -20,14 +14,13 @@ require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaReceiptService.php';
 
 class IfirmaReceiptModuleFrontController extends ModuleFrontController
 {
-    /** @var bool no header/footer/theme – we only emit a PDF */
+    /** @var bool */
     public $ajax = true;
 
     public function initContent()
     {
         parent::initContent();
 
-        // Must be an authenticated customer.
         if (!$this->context->customer->isLogged()) {
             $this->redirectToLogin();
         }
@@ -39,7 +32,6 @@ class IfirmaReceiptModuleFrontController extends ModuleFrontController
             $this->notFound();
         }
 
-        // Ownership check: the document must belong to the logged-in customer.
         if ((int) $receipt->id_customer !== (int) $this->context->customer->id) {
             $this->notFound();
         }

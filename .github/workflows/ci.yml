@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: PHP lint & license headers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          coverage: none
+      - name: PHP syntax check
+        run: git ls-files '*.php' | while read -r f; do php -l "$f"; done
+      - name: Verify license headers
+        run: python3 tools/check_license_headers.py
+
+  build:
+    name: Build package (zip + tgz)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - name: Build installable zip and npm tarball
+        run: npm run build
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ifirma-package
+          path: |
+            dist/*.zip
+            *.tgz
+          if-no-files-found: error
+
+  mock:
+    name: Mock tests (test-stack)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run mock tests if the submodule is checked out
+        run: |
+          if [ -f test-stack/ifirma-mock/requirements-dev.txt ]; then
+            cd test-stack/ifirma-mock
+            pip install -r requirements-dev.txt
+            pytest -q
+            cd "$GITHUB_WORKSPACE"
+            python3 test-stack/tools/check_license_headers.py
+          else
+            echo "test-stack submodule not checked out — skipping (it has its own CI)."
+          fi

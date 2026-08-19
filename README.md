@@ -1,4 +1,4 @@
-# iFirma – Receipts & Invoices (PrestaShop module)
+# Prestashop Module for integration with iFirma – Receipts & Invoices (PrestaShop module)
 
 Two‑way integration between **PrestaShop** (1.7.x / 8.x) and the **iFirma**
 accounting service (`www.ifirma.pl`). It covers the three requested features:
@@ -100,3 +100,11 @@ The module is written to be legacy-safe on PS 9 (PHP 8.1+):
 - Version compliance declared up to `9.99.99`.
 - Rendering on the refactored order page uses `displayAdminOrderMainBottom`
   (1.7.7+/8/9); the deprecated `displayAdminOrder` path is used only on ≤ 1.7.6.
+
+## Legal Disclaimer & Trademarks
+
+iFirma is a registered trademark of IFIRMA SA.
+
+This module is an independent third-party open-source integration and is not officially affiliated with, endorsed by, or sponsored by IFIRMA SA.
+
+The name "iFirma" and associated references are used strictly for identification, nominative reference, and descriptive compatibility purposes (interoperability / prawo cytatu) to inform users about the third-party accounting system with which this PrestaShop module integrates.

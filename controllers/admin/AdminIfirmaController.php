@@ -1,11 +1,5 @@
 <?php
 /**
- * iFirma module – back-office AJAX controller.
- *
- * Serves the "Create Receipt", "Update status" and "Download PDF" actions
- * triggered from the order page. Access is protected by the standard
- * PrestaShop admin token bound to the hidden AdminIfirma tab.
- *
  * @author    SCM Jakub Berechowskir
  * @license   SecCodeSmith Commercial License v1.2
  */
@@ -25,15 +19,11 @@ class AdminIfirmaController extends ModuleAdminController
         $this->bootstrap = true;
         parent::__construct();
 
-        // PrestaShop normally injects the owning module; guard against edge cases.
         if (!($this->module instanceof Module)) {
             $this->module = Module::getInstanceByName('ifirma');
         }
     }
 
-    /**
-     * POST action=CreateReceipt&id_order=..  → issues a document in iFirma.
-     */
     public function ajaxProcessCreateReceipt()
     {
         $idOrder = (int) Tools::getValue('id_order');
@@ -60,9 +50,6 @@ class AdminIfirmaController extends ModuleAdminController
         );
     }
 
-    /**
-     * POST action=UpdateStatus&id_order=..  → registers the payment in iFirma.
-     */
     public function ajaxProcessUpdateStatus()
     {
         $idOrder = (int) Tools::getValue('id_order');
@@ -88,9 +75,6 @@ class AdminIfirmaController extends ModuleAdminController
         );
     }
 
-    /**
-     * GET/POST action=DownloadPdf&id_order=..  → streams the PDF to the admin.
-     */
     public function ajaxProcessDownloadPdf()
     {
         $idOrder = (int) Tools::getValue('id_order');
@@ -112,9 +96,6 @@ class AdminIfirmaController extends ModuleAdminController
         $this->streamPdf($pdf, $receipt);
     }
 
-    /**
-     * Stream raw PDF bytes as a download and stop the dispatcher.
-     */
     private function streamPdf($pdf, IfirmaReceipt $receipt)
     {
         $filename = 'ifirma-' . ($receipt->ifirma_number ? preg_replace('/[^0-9A-Za-z._-]/', '_', $receipt->ifirma_number) : $receipt->ifirma_id) . '.pdf';
@@ -131,7 +112,7 @@ class AdminIfirmaController extends ModuleAdminController
     }
 
     /**
-     * @return array subset safe to return to the browser
+     * @return array
      */
     private function receiptToArray(IfirmaReceipt $receipt)
     {

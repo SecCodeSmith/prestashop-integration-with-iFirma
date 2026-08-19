@@ -5,10 +5,9 @@ Copyright (c) 2026 SCM Jakub Berechowski (admin@seccodesmith.pl)
 DEFINITIONS
 ===============================================================================
 
-"Licensor" means SCM Jakub Berechowski NIP PL8133936176, a business registered in the Republic
-of Poland.
+"Licensor" means SCM Jakub Berechowski NIP PL8133936176, a business registered in the Republic of Poland.
 
-"Software" means the scm_cookieconsent PrestaShop module and all files
+"Software" means the scm_ifirma PrestaShop module and all files
 distributed with it.
 
 "You" / "Your" means the individual or legal entity exercising rights under
@@ -20,8 +19,8 @@ art. 22(1) of the Polish Civil Code).
 
 "Small or Medium-Sized Business (SMB)" means a legal entity that, at the time
 of installation and during continued use, satisfies ALL of the following:
-  (a) fewer than 50 employees (full-time equivalents), AND
-  (b) annual gross revenue below EUR 2,000,000 (two million euros) or the
+  (a) fewer than 250 employees (full-time equivalents), AND
+  (b) annual gross revenue below EUR 50,000,000 (fifty million euros) or the
       equivalent in any other currency, AND
   (c) is not majority-owned or controlled by an entity that does not itself
       qualify as an SMB under (a) and (b).
@@ -76,7 +75,7 @@ To obtain an Enterprise License, contact:
 
 An Enterprise License grants the same usage rights as the free SMB license
 (scoped to the number of stores agreed in writing) and additionally permits
-removal of the "Powered by SecCodeSmith" attribution upon written request.
+removal of the "Powered by SCM Jakub Berechowski" attribution upon written request.
 
 Using the Software without a valid Enterprise License when one is required
 constitutes copyright infringement.
@@ -120,9 +119,9 @@ excluded. This limitation does not apply to damage caused intentionally (wina
 umyślna, art. 473 § 2 of the Polish Civil Code) and does not exclude or limit
 any rights that mandatory law grants to Consumers.
 
-The Software is a technical tool supporting GDPR/RODO compliance. It does not
-constitute legal advice. Consult a qualified lawyer or DPO regarding your
-specific compliance obligations.
+The Software is an integration tool with third-party accounting services.
+It does not constitute legal advice. Consult a qualified lawyer or 
+DPO regarding your specific compliance obligations.
 
 ===============================================================================
 GOVERNING LAW AND JURISDICTION
@@ -133,3 +132,17 @@ This License is governed by the laws of the Republic of Poland.
 For disputes with businesses, the exclusive jurisdiction lies with the Polish
 court competent for the Licensor's registered office. For disputes with
 Consumers, jurisdiction is determined by generally applicable law.
+
+===============================================================================
+Legal Disclaimer & Trademarks
+===============================================================================
+
+iFirma is a registered trademark of IFIRMA SA.
+
+This module is an independent third-party open-source integration and is not 
+officially affiliated with, endorsed by, or sponsored by IFIRMA SA.
+
+The name "iFirma" and associated references are used strictly for 
+identification, nominative reference, and descriptive compatibility purposes 
+(interoperability / prawo cytatu) to inform users about the third-party 
+accounting system with which this PrestaShop module integrates.

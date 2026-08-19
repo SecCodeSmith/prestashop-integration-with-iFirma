@@ -1,15 +1,5 @@
 <?php
 /**
- * iFirma – Receipts & Invoices for PrestaShop.
- *
- * Two-way integration with the iFirma accounting service (www.ifirma.pl):
- *   - Feature 3: a "Create Receipt" button on the order page issues a document in iFirma.
- *   - Feature 1: the issued document (PDF) is fetched back and exposed in the
- *                registered customer's account / order detail (the "return connection").
- *   - Feature 2: an "Update status" button registers the payment in iFirma.
- *
- * Compatible with PrestaShop 1.7.x, 8.x and 9.x (PHP 7.2 – 8.x).
- *
  * @author    SCM Jakub Berechowskir
  * @license   SecCodeSmith Commercial License v1.2
  */
@@ -24,10 +14,10 @@ require_once __DIR__ . '/classes/IfirmaReceiptService.php';
 
 class Ifirma extends Module
 {
-    /** @var string status shown to admins for a paid document */
+    /** @var string */
     const STATUS_PAID = 'paid';
 
-    /** @var bool guard so the admin-order panel is not rendered twice */
+    /** @var bool */
     private static $adminOrderRendered = false;
 
     public function __construct()
@@ -37,7 +27,6 @@ class Ifirma extends Module
         $this->version = '1.0.0';
         $this->author = 'SCM Jakub Berechowskir';
         $this->need_instance = 0;
-        // Compatible with PrestaShop 1.7.x, 8.x and 9.x.
         $this->ps_versions_compliancy = array('min' => '1.7.0.0', 'max' => '9.99.99');
         $this->bootstrap = true;
 
@@ -47,10 +36,6 @@ class Ifirma extends Module
         $this->description = $this->l('Issue iFirma receipts/invoices from the order page, register payments and let customers download their document.');
         $this->confirmUninstall = $this->l('Remove all iFirma settings and the local receipt log? Documents already issued in iFirma are NOT affected.');
     }
-
-    /* ------------------------------------------------------------------ */
-    /* Install / uninstall                                                */
-    /* ------------------------------------------------------------------ */
 
     public function install()
     {
@@ -115,16 +100,12 @@ class Ifirma extends Module
         return true;
     }
 
-    /**
-     * Hidden back-office tab so AdminIfirmaController gets a valid security token.
-     */
     private function installTab()
     {
         $tab = new Tab();
         $tab->class_name = 'AdminIfirma';
         $tab->module = $this->name;
         $tab->active = 1;
-        // Hidden from the menu (parent -1); it only serves AJAX from the order page.
         $tab->id_parent = -1;
 
         $tab->name = array();
@@ -146,10 +127,6 @@ class Ifirma extends Module
 
         return true;
     }
-
-    /* ------------------------------------------------------------------ */
-    /* Configuration page                                                 */
-    /* ------------------------------------------------------------------ */
 
     public function getContent()
     {
@@ -325,24 +302,11 @@ class Ifirma extends Module
         return $helper->generateForm(array($fields_form));
     }
 
-    /* ------------------------------------------------------------------ */
-    /* Admin order page (Feature 2 + 3)                                   */
-    /* ------------------------------------------------------------------ */
-
-    /**
-     * PrestaShop 1.7.7+ / 8.x – the panel is rendered here, at the bottom of the
-     * main column of the order detail page (its intended, tidy location).
-     */
     public function hookDisplayAdminOrderMainBottom($params)
     {
         return $this->renderAdminOrderPanel((int) $params['id_order']);
     }
 
-    /**
-     * Legacy order page (1.7.0–1.7.6). On 1.7.7+ this hook is still fired for
-     * backward compatibility but renders in a deprecated zone at the top of the
-     * page, so we skip it there and let displayAdminOrderMainBottom win.
-     */
     public function hookDisplayAdminOrder($params)
     {
         if ($this->isModernOrderPage()) {
@@ -353,7 +317,7 @@ class Ifirma extends Module
     }
 
     /**
-     * @return bool true on the refactored order page (PrestaShop 1.7.7+ / 8.x)
+     * @return bool
      */
     private function isModernOrderPage()
     {
@@ -362,7 +326,6 @@ class Ifirma extends Module
 
     private function renderAdminOrderPanel($idOrder)
     {
-        // Only render once per page even when both admin-order hooks fire.
         if (self::$adminOrderRendered || !$idOrder) {
             return '';
         }
@@ -385,13 +348,6 @@ class Ifirma extends Module
         return $this->display(__FILE__, 'views/templates/hook/admin_order_panel.tpl');
     }
 
-    /* ------------------------------------------------------------------ */
-    /* Customer account & order detail (Feature 1 – return connection)    */
-    /* ------------------------------------------------------------------ */
-
-    /**
-     * Load the front-office stylesheet.
-     */
     public function hookHeader($params)
     {
         if (method_exists($this->context->controller, 'registerStylesheet')) {
@@ -437,7 +393,6 @@ class Ifirma extends Module
             return '';
         }
 
-        // Never expose another customer's document.
         if ((int) $receipt->id_customer !== (int) $this->context->customer->id) {
             return '';
         }
@@ -458,8 +413,6 @@ class Ifirma extends Module
     }
 
     /**
-     * Attach a signed front-office download URL to each receipt row.
-     *
      * @param array $rows
      * @return array
      */
@@ -478,10 +431,6 @@ class Ifirma extends Module
 
         return $out;
     }
-
-    /* ------------------------------------------------------------------ */
-    /* Automatic issuing on status change                                 */
-    /* ------------------------------------------------------------------ */
 
     public function hookActionOrderStatusPostUpdate($params)
     {
@@ -505,17 +454,12 @@ class Ifirma extends Module
             $service = IfirmaReceiptService::build($this);
             $service->createReceipt(new Order($idOrder));
         } catch (Exception $e) {
-            // Never break the order workflow; the failure is logged on the receipt row.
             PrestaShopLogger::addLog('iFirma auto-create failed for order ' . $idOrder . ': ' . $e->getMessage(), 2);
         }
     }
 
-    /* ------------------------------------------------------------------ */
-    /* Helpers                                                            */
-    /* ------------------------------------------------------------------ */
-
     /**
-     * @return bool true when the minimum credentials are set.
+     * @return bool
      */
     public function isConfigured()
     {

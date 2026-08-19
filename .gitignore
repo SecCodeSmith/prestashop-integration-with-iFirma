@@ -1,0 +1,8 @@
+# Node / build tooling
+node_modules/
+dist/
+*.tgz
+
+# Python tooling caches
+.mypy_cache/
+__pycache__/

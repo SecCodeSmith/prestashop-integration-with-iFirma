@@ -1,0 +1,70 @@
+name: Release
+
+# Manual release: bump the build version (synced across package.json, ifirma.php
+# and config.xml), tag it v<version>, push, then publish a GitHub Release with
+# the installable zip and the npm tarball attached.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump level"
+        type: choice
+        default: patch
+        options: [patch, minor, major]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          coverage: none
+
+      - run: npm ci
+
+      - name: Test build before releasing
+        run: |
+          git ls-files '*.php' | while read -r f; do php -l "$f"; done
+          python3 tools/check_license_headers.py
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version, sync files, commit & tag
+        run: |
+          npm version ${{ inputs.bump }} -m "release: v%s"
+
+      - name: Push commit and tag
+        run: git push --follow-tags
+
+      - name: Build release artifacts (zip + tgz)
+        run: npm run build
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="v$(node -p "require('./package.json').version")"
+          gh release create "$VERSION" \
+            --title "$VERSION" \
+            --generate-notes \
+            dist/*.zip *.tgz

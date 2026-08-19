@@ -1,0 +1,33 @@
+{
+  "name": "scm-ifirma",
+  "version": "1.0.0",
+  "private": true,
+  "description": "iFirma – Receipts & Invoices integration module for PrestaShop.",
+  "author": "SCM Jakub Berechowski <admin@seccodesmith.pl>",
+  "license": "SEE LICENSE IN LICENCE",
+  "homepage": "https://seccodesmith.pl",
+  "files": [
+    "ifirma.php",
+    "config.xml",
+    "index.php",
+    "logo.png",
+    "classes/",
+    "controllers/",
+    "sql/",
+    "translations/",
+    "views/",
+    "LICENCE"
+  ],
+  "scripts": {
+    "check:license": "python tools/check_license_headers.py",
+    "build:zip": "node scripts/build-zip.mjs",
+    "build:tgz": "npm pack",
+    "build": "npm run build:zip && npm run build:tgz",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "version": "node scripts/sync-version.mjs && git add ifirma.php config.xml",
+    "postversion": "node -e \"console.log('Bumped to v'+require('./package.json').version+' — push with: git push --follow-tags')\""
+  },
+  "devDependencies": {
+    "archiver": "^7.0.1"
+  }
+}

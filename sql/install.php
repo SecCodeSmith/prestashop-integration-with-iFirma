@@ -1,7 +1,5 @@
 <?php
 /**
- * iFirma module – table installation.
- *
  * @author    SCM Jakub Berechowskir
  * @license   SecCodeSmith Commercial License v1.2
  */
@@ -12,11 +10,6 @@ if (!defined('_PS_VERSION_')) {
 
 $sql = array();
 
-/*
- * One row per iFirma document (receipt / invoice) issued for a PrestaShop order.
- * We keep the raw request/response so the exchange is fully auditable, plus a
- * per-document security token used by the front-office PDF download controller.
- */
 $sql[] = 'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . 'ifirma_receipt` (
     `id_ifirma_receipt` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
     `id_order` INT(11) UNSIGNED NOT NULL,
