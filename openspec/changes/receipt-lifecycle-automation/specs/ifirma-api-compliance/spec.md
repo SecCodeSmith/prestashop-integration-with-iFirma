@@ -23,7 +23,7 @@ Every request SHALL carry `Authentication: IAPIS user=<login>, hmac-sha1=<hex>` 
 - **AND** a clear error about the key format is reported
 
 ### Requirement: Deterministic contractor identifier
-`Kontrahent.Identyfikator` SHALL be `PS-C{id_customer}` and SHALL never exceed 15 characters.
+`Kontrahent.Identyfikator` SHALL be `PS-C{id_customer}`, never longer than 15 characters, and SHALL only be sent when that contractor exists in iFirma (registered by the module first); otherwise the identifier SHALL be null so iFirma creates the contractor from the document.
 
 #### Scenario: Registered customer
 - **WHEN** a document is created for customer 12345
@@ -145,3 +145,37 @@ When the optional `abonent` key is configured, the module configuration page SHA
 #### Scenario: Limit request fails
 - **WHEN** the limit request fails
 - **THEN** the page still renders with a short notice that the limit is unavailable
+
+### Requirement: Contractor registration before issuance
+Before creating a document the module SHALL read the contractor `PS-C{id_customer}` from iFirma; when it is missing the module SHALL create it with the order's billing data, when its shop-owned fields (name, NIP, address, country, e-mail, person flag) differ it SHALL update it while preserving fields the merchant maintains in iFirma, and when the contractor API fails it SHALL fall back to a null identifier.
+
+#### Scenario: First document for a customer
+- **WHEN** iFirma has no contractor `PS-C7` and a document is created for customer 7
+- **THEN** the module creates the contractor, then creates the document with `Kontrahent.Identyfikator` = `PS-C7`
+
+#### Scenario: Billing data changed since the last document
+- **WHEN** contractor `PS-C7` exists with a different street than the order invoice address
+- **THEN** the module updates the contractor with the full record (shop-owned fields replaced, merchant fields such as bank account kept) before creating the document
+
+#### Scenario: Unchanged contractor
+- **WHEN** contractor `PS-C7` exists with the same billing data
+- **THEN** no update call is made
+
+#### Scenario: Contractor API unavailable
+- **WHEN** the contractor lookup or creation fails
+- **THEN** the document is still created with a null identifier and the fallback is recorded with the request payload
+
+#### Scenario: Identifier rejected by iFirma
+- **WHEN** iFirma answers `Kod` 201 "Nie znaleziono kontrahenta o zadanym identyfikatorze"
+- **THEN** the module retries the creation once with a null identifier and records the fallback
+
+#### Scenario: Contractor sync disabled
+- **WHEN** the merchant disables contractor registration
+- **THEN** no contractor call is made and every document is created with a null identifier
+
+### Requirement: Country fields on the buyer
+The buyer block SHALL carry the country name in `Kraj` and the ISO 3166-1 alpha-2 code in `KodKraju`.
+
+#### Scenario: Polish address
+- **WHEN** the invoice address country is Poland
+- **THEN** the buyer block has `Kraj` = the country name in the order language and `KodKraju` = `PL`

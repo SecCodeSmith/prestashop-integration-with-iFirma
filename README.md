@@ -288,6 +288,8 @@ The schema is defined once in `classes/IfirmaSchema.php` and used by
 | `IFIRMA_USER`, `IFIRMA_KEY_FAKTURA`, `IFIRMA_KEY_ABONENT`, `IFIRMA_KEY_RACHUNEK` | empty |
 | `IFIRMA_DOC_TYPE` | `fakturaparagon` |
 | `IFIRMA_PAYMENT_METHOD` | `PRZ` |
+| `IFIRMA_PAYMENT_METHOD_MODE` (new) | `order` |
+| `IFIRMA_PAYMENT_METHOD_MAP` (new) | empty |
 | `IFIRMA_PAYMENT_TYPE_TOKEN` | `prz_faktura_kraj` |
 | `IFIRMA_DEFAULT_UNIT` | `szt.` |
 | `IFIRMA_AUTO_CREATE_STATE` | `0` |
@@ -373,6 +375,14 @@ an order **before** the document is issued. Enabled by `IFIRMA_ALLOW_DATA_REQUES
 
 ## Notes & assumptions
 
+- **Payment method follows the order.** `SposobZaplaty` is chosen per document: first from the
+  order's payment module (the merchant map in `IFIRMA_PAYMENT_METHOD_MAP`, then the built-in
+  defaults; an exact name or a `prefix*` wildcard), then from keywords in the order's payment
+  method label, and finally the fallback code `IFIRMA_PAYMENT_METHOD`. Set the mode to `fixed`
+  to always send the fallback code. The codes are GTK (cash), POB (cash on delivery), PRZ (bank
+  transfer), KAR (card), PZA (direct debit), CZK (cheque), KOM (compensation), BAR (barter),
+  DOT (DotPay), PAL (PayPal), ALG (PayU), P24 (Przelewy24), TPA (tpay.com) and ELE (electronic
+  payment).
 - The **payment registration type token** varies per iFirma document/payment type.
   `prz_faktura_kraj` is a sensible default; verify yours against
   <https://api.ifirma.pl/rejestrowanie-wplat-do-faktur/> if the status update is rejected.

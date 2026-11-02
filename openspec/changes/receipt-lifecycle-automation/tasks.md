@@ -101,10 +101,16 @@ Conventions for every task: keep PHP 7.2-compatible syntax (`array()`, no typed 
 
 ## 13. Payment method follows the order
 
-- [ ] 13.1 Implement `classes/IfirmaPaymentMethodResolver.php` (codes list, built-in module map with wildcards, merchant map parser with validation, label keywords, mode handling, `build()` from configuration) and use it in the payload builder; verify PHPUnit tests cover every precedence rule, wildcard matching, invalid map parsing and fixed mode.
-- [ ] 13.2 Add `IFIRMA_PAYMENT_METHOD_MODE` (default `order`) and `IFIRMA_PAYMENT_METHOD_MAP` to the configuration defaults and the configuration form (mode select, map textarea, fallback select with all 14 codes) with validation; verify PHPUnit tests assert the new fields, that an invalid map line is rejected with its line number and nothing is saved, and that the upgrade seeds the new defaults.
-- [ ] 13.3 Show the payment method sent to iFirma in the admin order panel (from the stored request payload) and document the feature in README (settings table, Notes); verify the panel renders through the Smarty compile check and the README lists both settings.
-- [ ] 13.4 Extend the Docker smoke run to assert the issued document carries the `SposobZaplaty` the resolver predicts for the order; verify the smoke passes on the 8.1 and 9.1 stacks.
+- [x] 13.1 Implement `classes/IfirmaPaymentMethodResolver.php` (codes list, built-in module map with wildcards, merchant map parser with validation, label keywords, mode handling, `build()` from configuration) and use it in the payload builder; verify PHPUnit tests cover every precedence rule, wildcard matching, invalid map parsing and fixed mode.
+- [x] 13.2 Add `IFIRMA_PAYMENT_METHOD_MODE` (default `order`) and `IFIRMA_PAYMENT_METHOD_MAP` to the configuration defaults and the configuration form (mode select, map textarea, fallback select with all 14 codes) with validation; verify PHPUnit tests assert the new fields, that an invalid map line is rejected with its line number and nothing is saved, and that the upgrade seeds the new defaults.
+- [x] 13.3 Show the payment method sent to iFirma in the admin order panel (from the stored request payload) and document the feature in README (settings table, Notes); verify the panel renders through the Smarty compile check and the README lists both settings.
+- [x] 13.4 Extend the Docker smoke run to assert the issued document carries the `SposobZaplaty` the resolver predicts for the order; verify the smoke passes on the 8.1 and 9.1 stacks.
+
+## 14. Contractor registration before issuance
+
+- [ ] 14.1 Implement `classes/IfirmaContractorService.php` (fetch / create / merged update / ensure with fallback, `IFIRMA_CONTRACTOR_SYNC` switch) and call it from the create path; add the "contractor not found" single retry with a null identifier and `KodKraju`/`Kraj` on the buyer block; verify PHPUnit covers first-time, changed, unchanged, API-failure, 201-retry and disabled paths and that existing create sequences count only document POSTs.
+- [ ] 14.2 Add the switch to the configuration form and the contractor action to the admin panel; document it in README; verify the form test and the Smarty compile pass.
+- [ ] 14.3 Extend the mock with the contractor endpoints and the production-faithful rejection of unknown identifiers; verify pytest and both Docker smoke runs pass with contractor registration enabled.
 
 ## Workflow follow-up
 

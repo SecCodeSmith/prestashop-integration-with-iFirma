@@ -160,6 +160,21 @@ class IfirmaApiClient
     /**
      * @param string   $endpoint
      * @param string   $keyName
+     * @param array    $data
+     * @param int|null $timeout
+     * @return array|null
+     */
+    public function put($endpoint, $keyName, array $data, $timeout = null)
+    {
+        $content = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $res = $this->execute('PUT', $endpoint, $keyName, $content, false, $timeout);
+
+        return $this->decodeJson($res);
+    }
+
+    /**
+     * @param string   $endpoint
+     * @param string   $keyName
      * @param int|null $timeout
      * @return array|null
      */

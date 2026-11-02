@@ -53,7 +53,7 @@ Constraints: PrestaShop 1.7.0 - 9.x, PHP 7.2 - 8.x (no typed properties, `array(
 
 **Alternatives.** (a) Trust the local table only - fails the stated requirement. (b) Match on amount+date only - too many false positives for shops with repeated prices; used only as the "suspected" tier. (c) Use `{type}/list.json?limit=N` - response undocumented and no contractor filter. (d) Rely on `Kontrahent.Identyfikator` alone - external sources use their own identifiers.
 
-### D2. Deterministic 15-char contractor identifier
+### D2. Deterministic 15-char contractor identifier (see D12 for registration)
 
 **Choice.** `Kontrahent.Identyfikator = 'PS-C' . id_customer` (e.g. `PS-C12345`, <= 15 chars for any realistic id; guests still have an `id_customer`). Private persons therefore get a stable identifier too, and the list filter `kontrahent=` becomes usable for the guard.
 
@@ -116,6 +116,12 @@ New columns on `ifirma_receipt`: `source VARCHAR(16) DEFAULT 'module'`, `order_r
 **Choice.** `SposobZaplaty` is resolved per order by a small resolver: mode `IFIRMA_PAYMENT_METHOD_MODE` (`order`, default, or `fixed`); in `order` mode the order's payment module technical name (`Order::$module`) is looked up in the merchant map `IFIRMA_PAYMENT_METHOD_MAP` (`module=CODE` lines, trailing `*` wildcard), then in a built-in map (`ps_wirepayment=PRZ`, `ps_checkpayment=CZK`, `ps_cashondelivery=POB`, `paypal*=PAL`, `payu*=ALG`, `przelewy24*`/`p24*=P24`, `tpay*=TPA`, `dotpay*=DOT`, card gateways such as `stripe*`/`adyen*`/`braintree*`/`sumup*=KAR`, other online gateways `=ELE`), then by keywords in the order's payment label (Polish and English), and finally falls back to `IFIRMA_PAYMENT_METHOD`, which keeps its current meaning as the fixed/fallback code and now offers all 14 documented iFirma codes.
 
 **Why.** iFirma documents the payment method per invoice and merchants reconcile by it; one fixed code mislabels cash-on-delivery and card sales. Module names are stable identifiers, labels are the fallback because merchants rename them. Alternatives: (a) map by `payment` label only - breaks on renames and translations; (b) ask the merchant to map every module by hand - the built-in map covers the common Polish gateways so most shops need no map at all.
+
+### D12. Register the contractor before issuing (production finding, 2026-11-02)
+
+**Choice.** iFirma rejects a document whose `Kontrahent.Identyfikator` does not name an existing contractor (`Kod` 201 "Nie znaleziono kontrahenta o zadanym identyfikatorze"); it only auto-creates the contractor when the identifier is null. The module therefore registers the contractor first: `GET kontrahenci/id/PS-C{id}.json`; missing -> `POST kontrahenci.json` with the billing data; present but shop-owned fields differ -> `PUT kontrahenci/PS-C{id}.json` with the stored record merged with the shop-owned fields (the PUT replaces the whole record, so merchant-maintained fields are carried over through a documented-field whitelist); any contractor-API failure, or a 201 "contractor not found" on the create itself, falls back to a null identifier for that document. `IFIRMA_CONTRACTOR_SYNC` (default on) disables the whole step. The buyer block now sends `Kraj` as the country name and `KodKraju` as the ISO code, as documented.
+
+**Why.** One stable contractor per customer keeps the duplicate guard's `kontrahent=` filter effective and keeps iFirma's contractor list clean; the null-identifier fallback guarantees issuance never blocks on the contractor API. Alternative: always send null (simplest) - creates a new contractor per document and weakens the guard; kept as the opt-out.
 
 ## Risks / Trade-offs
 

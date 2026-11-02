@@ -26,8 +26,15 @@ jobs:
   phpunit:
     name: PHPUnit
     runs-on: ubuntu-latest
+    # The module must live in a folder named "ifirma" (as PrestaShop installs it); the
+    # test bootstrap resolves _PS_MODULE_DIR_ from that folder name.
+    defaults:
+      run:
+        working-directory: ifirma
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: ifirma
       - uses: shivammathur/setup-php@v2
         with:
           php-version: "8.2"
