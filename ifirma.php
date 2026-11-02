@@ -13,6 +13,7 @@ require_once __DIR__ . '/classes/IfirmaApiClient.php';
 require_once __DIR__ . '/classes/IfirmaReceipt.php';
 require_once __DIR__ . '/classes/IfirmaPaymentMethodResolver.php';
 require_once __DIR__ . '/classes/IfirmaDataRequest.php';
+require_once __DIR__ . '/classes/IfirmaContractorService.php';
 require_once __DIR__ . '/classes/IfirmaReceiptService.php';
 require_once __DIR__ . '/classes/IfirmaDuplicateGuard.php';
 require_once __DIR__ . '/classes/IfirmaDeliveryService.php';
@@ -247,6 +248,7 @@ class Ifirma extends Module
         Configuration::updateValue('IFIRMA_PAYMENT_METHOD', $paymentCode);
         Configuration::updateValue('IFIRMA_PAYMENT_METHOD_MODE', $paymentMode);
         Configuration::updateValue('IFIRMA_PAYMENT_METHOD_MAP', $paymentMap);
+        Configuration::updateValue('IFIRMA_CONTRACTOR_SYNC', (int) (bool) Tools::getValue('IFIRMA_CONTRACTOR_SYNC'));
         Configuration::updateValue('IFIRMA_PAYMENT_TYPE_TOKEN', trim(Tools::getValue('IFIRMA_PAYMENT_TYPE_TOKEN')));
         Configuration::updateValue('IFIRMA_DEFAULT_UNIT', Tools::getValue('IFIRMA_DEFAULT_UNIT'));
         Configuration::updateValue('IFIRMA_AUTO_CREATE_STATE', (int) Tools::getValue('IFIRMA_AUTO_CREATE_STATE'));
@@ -268,6 +270,16 @@ class Ifirma extends Module
     /**
      * @return array select options: every iFirma payment method code as "CODE - label"
      */
+    /**
+     * @return int contractor sync switch, on unless explicitly disabled
+     */
+    private function contractorSyncValue()
+    {
+        $value = Configuration::get('IFIRMA_CONTRACTOR_SYNC');
+
+        return ($value === false || $value === null) ? 1 : (int) (bool) $value;
+    }
+
     private function paymentMethodOptions()
     {
         $options = array();
@@ -505,6 +517,14 @@ class Ifirma extends Module
                 'cols' => 60,
             ),
             array(
+                'type' => 'switch',
+                'label' => $this->l('Register the customer as an iFirma contractor'),
+                'name' => 'IFIRMA_CONTRACTOR_SYNC',
+                'desc' => $this->l('Before issuing, the module creates or refreshes the contractor PS-C<customer id> in iFirma so documents are linked to one contractor per customer. Disable to let iFirma create a new contractor from each document.'),
+                'is_bool' => true,
+                'values' => $this->yesNo(),
+            ),
+            array(
                 'type' => 'text',
                 'label' => $this->l('Payment registration type'),
                 'name' => 'IFIRMA_PAYMENT_TYPE_TOKEN',
@@ -659,6 +679,7 @@ class Ifirma extends Module
             'IFIRMA_PAYMENT_METHOD' => Configuration::get('IFIRMA_PAYMENT_METHOD'),
             'IFIRMA_PAYMENT_METHOD_MODE' => Configuration::get('IFIRMA_PAYMENT_METHOD_MODE'),
             'IFIRMA_PAYMENT_METHOD_MAP' => Configuration::get('IFIRMA_PAYMENT_METHOD_MAP'),
+            'IFIRMA_CONTRACTOR_SYNC' => $this->contractorSyncValue(),
             'IFIRMA_PAYMENT_TYPE_TOKEN' => Configuration::get('IFIRMA_PAYMENT_TYPE_TOKEN'),
             'IFIRMA_DEFAULT_UNIT' => Configuration::get('IFIRMA_DEFAULT_UNIT'),
             'IFIRMA_AUTO_CREATE_STATE' => (int) Configuration::get('IFIRMA_AUTO_CREATE_STATE'),
@@ -828,10 +849,17 @@ class Ifirma extends Module
         $delivery = IfirmaDeliveryService::build($this);
 
         $paymentMethod = '';
+        $contractorNote = '';
         if ($receipt && $receipt->request_payload) {
             $sent = json_decode((string) $receipt->request_payload, true);
             if (is_array($sent) && isset($sent['SposobZaplaty'])) {
                 $paymentMethod = (string) $sent['SposobZaplaty'];
+            }
+            if (is_array($sent) && isset($sent['_contractor']['action'])) {
+                $contractorNote = $this->contractorActionLabel(
+                    (string) $sent['_contractor']['action'],
+                    isset($sent['_contractor']['message']) ? (string) $sent['_contractor']['message'] : ''
+                );
             }
         }
 
@@ -888,6 +916,7 @@ class Ifirma extends Module
             'ifirma_id_order' => $idOrder,
             'ifirma_receipt' => $receipt,
             'ifirma_payment_method' => $paymentMethod,
+            'ifirma_contractor_note' => $contractorNote,
             'ifirma_has_receipt' => (bool) $receipt,
             'ifirma_is_issued' => $isIssued,
             'ifirma_is_external' => (bool) ($receipt && $receipt->isExternal()),
@@ -915,6 +944,37 @@ class Ifirma extends Module
         ));
 
         return $this->display(__FILE__, 'views/templates/hook/admin_order_panel.tpl');
+    }
+
+    /**
+     * @param string $action
+     * @param string $message
+     * @return string
+     */
+    private function contractorActionLabel($action, $message)
+    {
+        switch ($action) {
+            case 'created':
+                $label = $this->l('created');
+                break;
+            case 'updated':
+                $label = $this->l('updated');
+                break;
+            case 'kept':
+                $label = $this->l('kept');
+                break;
+            case 'fallback':
+                $label = $this->l('fallback');
+                break;
+            default:
+                return '';
+        }
+
+        if ($action === 'fallback' && $message !== '') {
+            $label .= ' (' . $message . ')';
+        }
+
+        return $label;
     }
 
     public function hookHeader($params)

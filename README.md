@@ -290,6 +290,7 @@ The schema is defined once in `classes/IfirmaSchema.php` and used by
 | `IFIRMA_PAYMENT_METHOD` | `PRZ` |
 | `IFIRMA_PAYMENT_METHOD_MODE` (new) | `order` |
 | `IFIRMA_PAYMENT_METHOD_MAP` (new) | empty |
+| `IFIRMA_CONTRACTOR_SYNC` (new) | `1` |
 | `IFIRMA_PAYMENT_TYPE_TOKEN` | `prz_faktura_kraj` |
 | `IFIRMA_DEFAULT_UNIT` | `szt.` |
 | `IFIRMA_AUTO_CREATE_STATE` | `0` |
@@ -383,6 +384,17 @@ an order **before** the document is issued. Enabled by `IFIRMA_ALLOW_DATA_REQUES
   transfer), KAR (card), PZA (direct debit), CZK (cheque), KOM (compensation), BAR (barter),
   DOT (DotPay), PAL (PayPal), ALG (PayU), P24 (Przelewy24), TPA (tpay.com) and ELE (electronic
   payment).
+- **Contractor registration.** iFirma treats a supplied `Kontrahent.Identyfikator` as a reference to
+  an existing contractor (an unknown one is rejected with Kod 201, "Nie znaleziono kontrahenta"); it
+  creates a contractor automatically only when the identifier is `null`. With
+  `IFIRMA_CONTRACTOR_SYNC` on (default), the module first reads the contractor `PS-C<customer id>`
+  (`GET kontrahenci/id/...`), creates it (`POST kontrahenci.json`) when missing, or refreshes the
+  shop-owned fields (name, NIP, address, country, e-mail, private person flag) with a full-record
+  `PUT` when they changed, and then issues the document with that identifier. If the contractor
+  cannot be registered, or the document is still rejected with "Nie znaleziono kontrahenta", the
+  document is created once with a `null` identifier so iFirma creates the contractor itself; the
+  outcome (created / updated / kept / fallback) is shown in the order panel. Switch the option off
+  to always send `null` and let iFirma create a new contractor from each document.
 - The **payment registration type token** varies per iFirma document/payment type.
   `prz_faktura_kraj` is a sensible default; verify yours against
   <https://api.ifirma.pl/rejestrowanie-wplat-do-faktur/> if the status update is rejected.

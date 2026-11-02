@@ -257,4 +257,11 @@ return array(
     'One line per payment module: module=CODE, e.g. ps_checkpayment=PRZ or mygateway*=ELE. Built-in defaults cover ps_wirepayment, ps_checkpayment, ps_cashondelivery, PayPal, PayU, Przelewy24, tpay, DotPay and common card gateways.' => 'Jeden wiersz na moduł płatności: moduł=KOD, np. ps_checkpayment=PRZ lub mojabramka*=ELE. Wbudowane wartości domyślne obejmują ps_wirepayment, ps_checkpayment, ps_cashondelivery, PayPal, PayU, Przelewy24, tpay, DotPay i popularne bramki kartowe.',
     'The payment method mode must be "order" or "fixed".' => 'Tryb metody płatności musi być "order" albo "fixed".',
     'The fallback payment method must be one of the listed codes.' => 'Awaryjna metoda płatności musi być jednym z podanych kodów.',
+    'Register the customer as an iFirma contractor' => 'Zarejestruj klienta jako kontrahenta iFirma',
+    'Before issuing, the module creates or refreshes the contractor PS-C<customer id> in iFirma so documents are linked to one contractor per customer. Disable to let iFirma create a new contractor from each document.' => 'Przed wystawieniem moduł tworzy lub odświeża w iFirma kontrahenta PS-C<id klienta>, dzięki czemu dokumenty są powiązane z jednym kontrahentem na klienta. Wyłącz, aby iFirma tworzyła nowego kontrahenta z każdego dokumentu.',
+    'created' => 'utworzony',
+    'updated' => 'zaktualizowany',
+    'kept' => 'bez zmian',
+    'fallback' => 'tryb awaryjny',
+    'Contractor' => 'Kontrahent',
 );

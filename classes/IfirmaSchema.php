@@ -155,6 +155,7 @@ class IfirmaSchema
             'IFIRMA_PAYMENT_METHOD' => 'PRZ',
             'IFIRMA_PAYMENT_METHOD_MODE' => 'order',
             'IFIRMA_PAYMENT_METHOD_MAP' => '',
+            'IFIRMA_CONTRACTOR_SYNC' => 1,
             'IFIRMA_PAYMENT_TYPE_TOKEN' => 'prz_faktura_kraj',
             'IFIRMA_DEFAULT_UNIT' => 'szt.',
             'IFIRMA_AUTO_CREATE_STATE' => 0,

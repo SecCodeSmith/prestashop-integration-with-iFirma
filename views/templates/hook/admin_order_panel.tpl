@@ -56,6 +56,12 @@
                             <td>{$ifirma_payment_method|escape:'html':'UTF-8'}</td>
                         </tr>
                         {/if}
+                        {if $ifirma_contractor_note}
+                        <tr>
+                            <th>{l s='Contractor' mod='ifirma'}</th>
+                            <td>{$ifirma_contractor_note|escape:'html':'UTF-8'}</td>
+                        </tr>
+                        {/if}
                         <tr>
                             <th>{l s='Issue date' mod='ifirma'}</th>
                             <td>{$ifirma_receipt->issue_date|default:'-'|escape:'html':'UTF-8'}</td>

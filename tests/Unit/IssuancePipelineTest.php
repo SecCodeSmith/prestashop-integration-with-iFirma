@@ -32,6 +32,8 @@ class IssuancePipelineTest extends TestCase
         IfirmaTestState::resetAll();
         PrestaShopLogger::reset();
         Configuration::updateValue('IFIRMA_AUTO_CREATE_STATE', 5);
+        // the contractor round-trip is irrelevant here; ContractorServiceTest and the sync tests below cover it
+        Configuration::updateValue('IFIRMA_CONTRACTOR_SYNC', 0);
         Configuration::updateValue('IFIRMA_USER', 'u@example.com');
         Configuration::updateValue('IFIRMA_KEY_FAKTURA', str_repeat('1', 64));
         Configuration::updateValue('IFIRMA_SEND_CHANNEL', 'shop_mail');

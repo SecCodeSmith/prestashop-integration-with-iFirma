@@ -11,6 +11,7 @@ if (!defined('_PS_VERSION_')) {
 require_once dirname(__FILE__) . '/IfirmaApiClient.php';
 require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaPaymentMethodResolver.php';
+require_once dirname(__FILE__) . '/IfirmaContractorService.php';
 
 class IfirmaReceiptService
 {
@@ -22,6 +23,9 @@ class IfirmaReceiptService
 
     /** @var Module */
     private $module;
+
+    /** @var IfirmaContractorService|null */
+    private $contractors;
 
     public function __construct(IfirmaApiClient $client, Module $module)
     {
@@ -100,7 +104,7 @@ class IfirmaReceiptService
 
     /**
      * @param Order $order
-     * @param array $options override (array|null), skip_dodatkowe_uwagi (bool)
+     * @param array $options override (array|null), skip_dodatkowe_uwagi (bool), skip_contractor_sync (bool)
      * @return IfirmaReceipt
      * @throws Exception
      */
@@ -123,7 +127,15 @@ class IfirmaReceiptService
         $receipt->id_customer = (int) $order->id_customer;
         $receipt->id_shop = (int) $order->id_shop;
         $receipt->document_type = $docType;
-        $receipt->request_payload = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+
+        // Register the contractor first: iFirma rejects an identifier it does not know (Kod 201).
+        $contractorInfo = null;
+        if (empty($options['skip_contractor_sync']) && !empty($payload['Kontrahent']['Identyfikator'])) {
+            $contractorInfo = $this->contractorService()->ensure($payload['Kontrahent']);
+            $payload['Kontrahent']['Identyfikator'] = $contractorInfo['identifier'];
+        }
+
+        $receipt->request_payload = $this->encodeRequest($payload, $contractorInfo);
 
         $response = $this->client->post($docType . '.json', 'faktura', $payload);
 
@@ -135,7 +147,22 @@ class IfirmaReceiptService
                 isset($options['override']) ? $options['override'] : null,
                 $options
             );
-            $receipt->request_payload = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+            if ($contractorInfo !== null) {
+                $payload['Kontrahent']['Identyfikator'] = $contractorInfo['identifier'];
+            }
+            $receipt->request_payload = $this->encodeRequest($payload, $contractorInfo);
+            $response = $this->client->post($docType . '.json', 'faktura', $payload);
+        }
+
+        // Kod 201 "Nie znaleziono kontrahenta": retry exactly once with a null identifier.
+        if ($response !== null && !empty($payload['Kontrahent']['Identyfikator']) && $this->namesMissingContractor($response)) {
+            $payload['Kontrahent']['Identyfikator'] = null;
+            $contractorInfo = array(
+                'identifier' => null,
+                'action' => IfirmaContractorService::ACTION_FALLBACK,
+                'message' => $this->extractInformacja($response),
+            );
+            $receipt->request_payload = $this->encodeRequest($payload, $contractorInfo);
             $response = $this->client->post($docType . '.json', 'faktura', $payload);
         }
 
@@ -186,6 +213,69 @@ class IfirmaReceiptService
         $receipt->save();
 
         return $receipt;
+    }
+
+    /**
+     * @return IfirmaContractorService
+     */
+    private function contractorService()
+    {
+        if ($this->contractors === null) {
+            $this->contractors = new IfirmaContractorService($this->client);
+        }
+
+        return $this->contractors;
+    }
+
+    /**
+     * @param IfirmaContractorService $service
+     */
+    public function setContractorService(IfirmaContractorService $service)
+    {
+        $this->contractors = $service;
+    }
+
+    /**
+     * Stored request_payload: what was sent plus the private _contractor note (never sent to iFirma).
+     *
+     * @param array      $payload
+     * @param array|null $contractorInfo
+     * @return string
+     */
+    private function encodeRequest(array $payload, $contractorInfo)
+    {
+        if ($contractorInfo !== null) {
+            $payload['_contractor'] = array(
+                'action' => $contractorInfo['action'],
+                'message' => (string) $contractorInfo['message'],
+            );
+        }
+
+        return json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * @param array $response
+     * @return string
+     */
+    private function extractInformacja(array $response)
+    {
+        $node = isset($response['response']) && is_array($response['response']) ? $response['response'] : $response;
+
+        return isset($node['Informacja']) ? (string) $node['Informacja'] : '';
+    }
+
+    /**
+     * @param array $response decoded create response
+     * @return bool true for Kod 201 whose Informacja says the contractor was not found
+     */
+    private function namesMissingContractor(array $response)
+    {
+        $node = isset($response['response']) && is_array($response['response']) ? $response['response'] : $response;
+
+        return isset($node['Kod']) && (int) $node['Kod'] === 201
+            && isset($node['Informacja'])
+            && stripos((string) $node['Informacja'], 'Nie znaleziono kontrahenta') !== false;
     }
 
     /**
@@ -422,6 +512,10 @@ class IfirmaReceiptService
 
         $country = new Country($idCountry);
         $countryIso = $country->iso_code ? mb_strtoupper($country->iso_code) : 'PL';
+        $countryName = trim((string) Country::getNameById((int) $order->id_lang, $idCountry));
+        if ($countryName === '') {
+            $countryName = $countryIso;
+        }
 
         $name = $isBusiness ? $company : trim($firstname . ' ' . $lastname);
 
@@ -431,7 +525,8 @@ class IfirmaReceiptService
             'NIP' => $isBusiness ? self::truncate(preg_replace('/[^0-9A-Za-z]/', '', $vatNumber), $limits['NIP']) : '',
             'Ulica' => self::truncate($street, $limits['Ulica']),
             'KodPocztowy' => self::truncate($postcode, $limits['KodPocztowy']),
-            'Kraj' => self::truncate($countryIso, $limits['Kraj']),
+            'Kraj' => self::truncate($countryName, $limits['Kraj']),
+            'KodKraju' => self::truncate($countryIso, 2),
             'Miejscowosc' => self::truncate($city, $limits['Miejscowosc']),
             'Email' => self::truncate($customer->email, $limits['Email']),
             'OsobaFizyczna' => !$isBusiness,

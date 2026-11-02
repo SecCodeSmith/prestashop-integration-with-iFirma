@@ -22,6 +22,7 @@ class CreateReceiptTest extends TestCase
     protected function setUp(): void
     {
         IfirmaTestState::resetAll();
+        Configuration::updateValue('IFIRMA_CONTRACTOR_SYNC', 0);
         $this->t = new ScriptedTransport();
         $client = new IfirmaApiClient('u@example.com', array('faktura' => str_repeat('1', 64)), 'http://ifirma-mock:8001/iapi/', 30, $this->t);
         $this->service = new IfirmaReceiptService($client, new Module());
@@ -118,5 +119,215 @@ class CreateReceiptTest extends TestCase
             $this->assertNotSame('', $e->getMessage());
         }
         $this->assertSame(array(), $this->t->calls);
+    }
+
+    // ---- contractor registration -----------------------------------------------------------
+
+    private function enableSync()
+    {
+        Configuration::updateValue('IFIRMA_CONTRACTOR_SYNC', 1);
+        $country = new Country();
+        $country->id = 14;
+        $country->iso_code = 'pl';
+        $country->name = 'Polska';
+        Country::register($country);
+    }
+
+    private function docOk()
+    {
+        return array('body' => '{"response":{"Kod":0,"Informacja":"ok","Identyfikator":"77","PelnyNumer":"7/2026"}}');
+    }
+
+    private function docCalls()
+    {
+        $out = array();
+        foreach ($this->t->calls as $c) {
+            if ($c['method'] === 'POST' && substr(parse_url($c['url'], PHP_URL_PATH), -19) === 'fakturaparagon.json') {
+                $out[] = $c;
+            }
+        }
+
+        return $out;
+    }
+
+    private function storedPayload()
+    {
+        $rows = IfirmaTestState::objects('ifirma_receipt');
+        $row = reset($rows);
+
+        return json_decode($row['request_payload'], true);
+    }
+
+    private function contractorRow($city = '')
+    {
+        return array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array(array(
+            'Nazwa' => 'Jan K',
+            'Identyfikator' => 'PS-C5',
+            'NIP' => '',
+            'Ulica' => '',
+            'KodPocztowy' => '',
+            'Kraj' => 'Polska',
+            'KodKraju' => 'PL',
+            'Miejscowosc' => $city,
+            'Email' => 'a@example.test',
+            'OsobaFizyczna' => true,
+        ))))));
+    }
+
+    private function notFound()
+    {
+        return array('body' => '{"response":{"Kod":208,"Informacja":"Nie znaleziono kontrahenta"}}');
+    }
+
+    public function testContractorPayloadCarriesCountryNameAndCode()
+    {
+        $this->enableSync();
+        $contractor = $this->service->buildContractor($this->order());
+        $this->assertSame('PL', $contractor['KodKraju']);
+        $this->assertSame('Polska', $contractor['Kraj']);
+        $this->assertSame('PS-C5', $contractor['Identyfikator']);
+    }
+
+    public function testContractorCountryNameFallsBackToIso()
+    {
+        $country = new Country();
+        $country->id = 14;
+        $country->iso_code = 'de';
+        $country->name = '';
+        Country::register($country);
+        $contractor = $this->service->buildContractor($this->order());
+        $this->assertSame('DE', $contractor['KodKraju']);
+        $this->assertSame('DE', $contractor['Kraj']);
+    }
+
+    public function testNewContractorIsCreatedBeforeTheDocument()
+    {
+        $this->enableSync();
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', $this->notFound());
+        $this->t->queue('POST', '#kontrahenci\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"Dodano kontrahenta","Wynik":"1"}}'));
+        $this->t->queue('POST', '#fakturaparagon\.json#', $this->docOk());
+
+        $this->service->createReceipt($this->order());
+
+        $this->assertSame(array('GET', 'POST', 'POST'), array_column($this->t->calls, 'method'));
+        $this->assertStringContainsString('/kontrahenci/id/PS-C5.json', $this->t->calls[0]['url']);
+        $this->assertStringContainsString('/kontrahenci.json', $this->t->calls[1]['url']);
+        $docs = $this->docCalls();
+        $this->assertCount(1, $docs);
+        $sent = json_decode($docs[0]['body'], true);
+        $this->assertSame('PS-C5', $sent['Kontrahent']['Identyfikator']);
+        $this->assertArrayNotHasKey('_contractor', $sent);
+        $this->assertStringNotContainsString('_contractor', $docs[0]['body']);
+        $stored = $this->storedPayload();
+        $this->assertSame('created', $stored['_contractor']['action']);
+    }
+
+    public function testExistingUnchangedContractorIsKept()
+    {
+        $this->enableSync();
+        $row = $this->service->buildContractor($this->order());
+        $this->t->queue('GET', '#kontrahenci/id/#', array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array($row))))));
+        $this->t->queue('POST', '#fakturaparagon\.json#', $this->docOk());
+
+        $this->service->createReceipt($this->order());
+
+        $this->assertSame(array('GET', 'POST'), array_column($this->t->calls, 'method'));
+        $sent = json_decode($this->docCalls()[0]['body'], true);
+        $this->assertSame('PS-C5', $sent['Kontrahent']['Identyfikator']);
+        $this->assertSame('kept', $this->storedPayload()['_contractor']['action']);
+    }
+
+    public function testChangedAddressUpdatesContractorFirst()
+    {
+        $this->enableSync();
+        $this->t->queue('GET', '#kontrahenci/id/#', $this->contractorRow('Stare Miasto'));
+        $this->t->queue('PUT', '#kontrahenci/PS-C5\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"Zaktualizowano kontrahenta","Wynik":"1"}}'));
+        $this->t->queue('POST', '#fakturaparagon\.json#', $this->docOk());
+        Address::$instances[7]->city = 'Nowe Miasto';
+
+        $this->service->createReceipt($this->order());
+
+        $this->assertSame(array('GET', 'PUT', 'POST'), array_column($this->t->calls, 'method'));
+        $put = json_decode($this->t->calls[1]['body'], true);
+        $this->assertSame('Nowe Miasto', $put['Miejscowosc']);
+        $this->assertSame('updated', $this->storedPayload()['_contractor']['action']);
+        $this->assertSame('PS-C5', json_decode($this->docCalls()[0]['body'], true)['Kontrahent']['Identyfikator']);
+    }
+
+    public function testContractorLookupFailureFallsBackToNullIdentifier()
+    {
+        $this->enableSync();
+        $this->t->queue('GET', '#kontrahenci/id/#', array('status' => 0, 'error' => 'timeout'));
+        $this->t->queue('POST', '#fakturaparagon\.json#', $this->docOk());
+
+        $this->service->createReceipt($this->order());
+
+        $sent = json_decode($this->docCalls()[0]['body'], true);
+        $this->assertArrayHasKey('Identyfikator', $sent['Kontrahent']);
+        $this->assertNull($sent['Kontrahent']['Identyfikator']);
+        $stored = $this->storedPayload();
+        $this->assertSame('fallback', $stored['_contractor']['action']);
+        $this->assertStringContainsString('timeout', $stored['_contractor']['message']);
+    }
+
+    public function testMissingContractorKodRetriesOnceWithNullIdentifier()
+    {
+        $this->enableSync();
+        $this->t->queue('GET', '#kontrahenci/id/#', $this->contractorRow('Stare Miasto'));
+        $this->t->queue('PUT', '#kontrahenci/#', array('body' => '{"response":{"Kod":0,"Informacja":"Zaktualizowano kontrahenta"}}'));
+        $this->t->queue('POST', '#fakturaparagon\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"Validation error in document data (Kod 201): Nie znaleziono kontrahenta o zadanym identyfikatorze"}}'));
+        $this->t->queue('POST', '#fakturaparagon\.json#', $this->docOk());
+        Address::$instances[7]->city = 'Nowe Miasto';
+
+        $receipt = $this->service->createReceipt($this->order());
+
+        $docs = $this->docCalls();
+        $this->assertCount(2, $docs);
+        $this->assertSame('PS-C5', json_decode($docs[0]['body'], true)['Kontrahent']['Identyfikator']);
+        $this->assertNull(json_decode($docs[1]['body'], true)['Kontrahent']['Identyfikator']);
+        $this->assertSame('created', $receipt->status);
+        $this->assertSame('fallback', $this->storedPayload()['_contractor']['action']);
+    }
+
+    public function testMissingContractorKodIsNotRetriedWhenIdentifierAlreadyNull()
+    {
+        $this->enableSync();
+        $this->t->queue('GET', '#kontrahenci/id/#', array('status' => 0, 'error' => 'timeout'));
+        $this->t->queue('POST', '#fakturaparagon\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"Nie znaleziono kontrahenta"}}'));
+        try {
+            $this->service->createReceipt($this->order());
+            $this->fail('expected exception');
+        } catch (Exception $e) {
+            $this->assertStringContainsString('Nie znaleziono kontrahenta', $e->getMessage());
+        }
+        $this->assertCount(1, $this->docCalls());
+    }
+
+    public function testSyncDisabledSkipsContractorCalls()
+    {
+        Configuration::updateValue('IFIRMA_CONTRACTOR_SYNC', 0);
+        $this->t->queue('POST', '#fakturaparagon\.json#', $this->docOk());
+
+        $this->service->createReceipt($this->order());
+
+        $this->assertCount(1, $this->t->calls);
+        $this->assertStringNotContainsString('kontrahenci', $this->t->calls[0]['url']);
+        $sent = json_decode($this->t->calls[0]['body'], true);
+        $this->assertNull($sent['Kontrahent']['Identyfikator']);
+        $this->assertSame('disabled', $this->storedPayload()['_contractor']['action']);
+    }
+
+    public function testSkipContractorSyncOptionKeepsIdentifierAndMakesNoContractorCall()
+    {
+        $this->enableSync();
+        $this->t->queue('POST', '#fakturaparagon\.json#', $this->docOk());
+
+        $this->service->createReceipt($this->order(), array('skip_contractor_sync' => true));
+
+        $this->assertCount(1, $this->t->calls);
+        $sent = json_decode($this->t->calls[0]['body'], true);
+        $this->assertSame('PS-C5', $sent['Kontrahent']['Identyfikator']);
+        $this->assertSame('PL', $sent['Kontrahent']['KodKraju']);
+        $this->assertSame('Polska', $sent['Kontrahent']['Kraj']);
     }
 }

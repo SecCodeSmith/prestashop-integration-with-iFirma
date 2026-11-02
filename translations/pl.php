@@ -57,6 +57,8 @@ $_MODULE['<{ifirma}prestashop>ifirma_93059e999d5174f0306b3918affba0c8'] = 'Tryb 
 $_MODULE['<{ifirma}prestashop>ifirma_12589a161f6afe11f6670478da478239'] = 'Według metody płatności zamówienia (zalecane)';
 $_MODULE['<{ifirma}prestashop>ifirma_0c56bbde46c8b7a4df735f4f77c2de55'] = 'Zawsze używaj kodu awaryjnego';
 $_MODULE['<{ifirma}prestashop>ifirma_07606aaba018c0ee43e93095e7e4a0a4'] = 'Jeden wiersz na moduł płatności: moduł=KOD, np. ps_checkpayment=PRZ lub mojabramka*=ELE. Wbudowane wartości domyślne obejmują ps_wirepayment, ps_checkpayment, ps_cashondelivery, PayPal, PayU, Przelewy24, tpay, DotPay i popularne bramki kartowe.';
+$_MODULE['<{ifirma}prestashop>ifirma_2580d031ac511ef4db61dda67afa7bc5'] = 'Zarejestruj klienta jako kontrahenta iFirma';
+$_MODULE['<{ifirma}prestashop>ifirma_a672d3e51fa7ace5a459440f3684af54'] = 'Przed wystawieniem moduł tworzy lub odświeża w iFirma kontrahenta PS-C<id klienta>, dzięki czemu dokumenty są powiązane z jednym kontrahentem na klienta. Wyłącz, aby iFirma tworzyła nowego kontrahenta z każdego dokumentu.';
 $_MODULE['<{ifirma}prestashop>ifirma_01cf9dc8f9a8b7c99a9afe80bca5b22d'] = 'Typ rejestracji płatności';
 $_MODULE['<{ifirma}prestashop>ifirma_5d6e3a4a606d5a7f14bffbbb8460ef1f'] = 'Token URL używany przez endpoint „rejestracja płatności”, np. prz_faktura_kraj. Dostosuj do typu dokumentu/płatności.';
 $_MODULE['<{ifirma}prestashop>ifirma_81471bf605755d0dac8e95c190b3fb9a'] = 'Domyślna jednostka';
@@ -115,6 +117,10 @@ $_MODULE['<{ifirma}prestashop>ifirma_2d13df6f8b5e4c5af9f87e0dc39df69d'] = 'Oczek
 $_MODULE['<{ifirma}prestashop>ifirma_6f8063417ab31f38d864c28302f3de2f'] = 'Zatwierdzona';
 $_MODULE['<{ifirma}prestashop>ifirma_d37b1f6c0512e2118cee17fea015b699'] = 'Odrzucona';
 $_MODULE['<{ifirma}prestashop>ifirma_a149e85a44aeec9140e92733d9ed694e'] = 'Anulowana';
+$_MODULE['<{ifirma}prestashop>ifirma_e2fa538867c3830a859a5b17ab24644b'] = 'utworzony';
+$_MODULE['<{ifirma}prestashop>ifirma_0f81d52e06caaa4860887488d18271c7'] = 'zaktualizowany';
+$_MODULE['<{ifirma}prestashop>ifirma_4d8b6084f3d167b76cac66a22a91be02'] = 'bez zmian';
+$_MODULE['<{ifirma}prestashop>ifirma_4ccb1142ebdd7ca505d88c28df648283'] = 'tryb awaryjny';
 $_MODULE['<{ifirma}prestashop>ifirmaadminactions_8c3ed5d27c935cbcaad0c4280274948f'] = 'Nieprawidłowe zamówienie.';
 $_MODULE['<{ifirma}prestashop>ifirmaadminactions_5c78375efa346bd5d66f8dabb0c9d3af'] = 'Moduł iFirma nie jest jeszcze skonfigurowany.';
 $_MODULE['<{ifirma}prestashop>ifirmaadminactions_d3f73847d23f1fd973ab2261e45f2f44'] = 'Brak dokumentu do powiązania z tym zamówieniem.';
@@ -206,6 +212,7 @@ $_MODULE['<{ifirma}prestashop>admin_order_panel_14c44ffb79e2c416100024bd491b48b9
 $_MODULE['<{ifirma}prestashop>admin_order_panel_b718adec73e04ce3ec720dd11a06a308'] = 'ID';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_208a23b4a66a2500d7f1e5868af58e3b'] = 'Typ dokumentu';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_5ca806100f4b035e160603f0d5f7b77f'] = 'Sposób zapłaty (SposobZaplaty)';
+$_MODULE['<{ifirma}prestashop>admin_order_panel_2affaab51e18609cadc9e00e6aea66e6'] = 'Kontrahent';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_37191f84729fec7597a697177c3b999e'] = 'Data wystawienia';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_f31bbdd1b3e85bccd652680e16935819'] = 'Źródło';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_75dc918682a86e0a94d9db85f0b4a3dd'] = 'Dokument zewnętrzny (wystawiony poza sklepem)';
@@ -225,7 +232,6 @@ $_MODULE['<{ifirma}prestashop>admin_order_panel_4d3c8720be063226a27672cab5223842
 $_MODULE['<{ifirma}prestashop>admin_order_panel_9d8e339d9c0d41be33b4f892f8550963'] = 'W iFirma są już dokumenty podobne do tego zamówienia. Powiąż jeden z nich albo mimo to wystaw nowy dokument.';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_526664ec12dc5105f2c3171ca0909570'] = 'Brutto';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_e0010a0a1a3259ab5c06a19bad532851'] = 'Opłacony';
-$_MODULE['<{ifirma}prestashop>admin_order_panel_2affaab51e18609cadc9e00e6aea66e6'] = 'Kontrahent';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_a1fa27779242b4902f7ae3bdd5c6d508'] = 'Typ';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_93cba07454f06a4a960172bbd6e2a435'] = 'Tak';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_bafd7322c6e97d25b6299b5d6fe8920b'] = 'Nie';

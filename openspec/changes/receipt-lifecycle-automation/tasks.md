@@ -108,9 +108,9 @@ Conventions for every task: keep PHP 7.2-compatible syntax (`array()`, no typed 
 
 ## 14. Contractor registration before issuance
 
-- [ ] 14.1 Implement `classes/IfirmaContractorService.php` (fetch / create / merged update / ensure with fallback, `IFIRMA_CONTRACTOR_SYNC` switch) and call it from the create path; add the "contractor not found" single retry with a null identifier and `KodKraju`/`Kraj` on the buyer block; verify PHPUnit covers first-time, changed, unchanged, API-failure, 201-retry and disabled paths and that existing create sequences count only document POSTs.
-- [ ] 14.2 Add the switch to the configuration form and the contractor action to the admin panel; document it in README; verify the form test and the Smarty compile pass.
-- [ ] 14.3 Extend the mock with the contractor endpoints and the production-faithful rejection of unknown identifiers; verify pytest and both Docker smoke runs pass with contractor registration enabled.
+- [x] 14.1 Implement `classes/IfirmaContractorService.php` (fetch / create / merged update / ensure with fallback, `IFIRMA_CONTRACTOR_SYNC` switch) and call it from the create path; add the "contractor not found" single retry with a null identifier and `KodKraju`/`Kraj` on the buyer block; verify PHPUnit covers first-time, changed, unchanged, API-failure, 201-retry and disabled paths and that existing create sequences count only document POSTs.
+- [x] 14.2 Add the switch to the configuration form and the contractor action to the admin panel; document it in README; verify the form test and the Smarty compile pass.
+- [x] 14.3 Extend the mock with the contractor endpoints and the production-faithful rejection of unknown identifiers; verify pytest and both Docker smoke runs pass with contractor registration enabled.
 
 ## Workflow follow-up
 
