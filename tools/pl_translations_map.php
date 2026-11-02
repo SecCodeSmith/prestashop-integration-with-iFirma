@@ -248,4 +248,13 @@ return array(
     'Approving…' => 'Zatwierdzanie…',
     'Reason for rejection (sent to the customer):' => 'Powód odrzucenia (zostanie wysłany klientowi):',
     'Rejecting…' => 'Odrzucanie…',
+    'Fallback payment method (SposobZaplaty)' => 'Awaryjna metoda płatności (SposobZaplaty)',
+    'Used when the mode is "fixed", or when the order\'s payment method cannot be mapped.' => 'Używana, gdy tryb to "fixed" albo gdy nie da się przypisać metody płatności zamówienia.',
+    'Payment method mode' => 'Tryb metody płatności',
+    'Follow the order\'s payment method (recommended)' => 'Według metody płatności zamówienia (zalecane)',
+    'Always use the fallback code' => 'Zawsze używaj kodu awaryjnego',
+    'Payment method map' => 'Mapa metod płatności',
+    'One line per payment module: module=CODE, e.g. ps_checkpayment=PRZ or mygateway*=ELE. Built-in defaults cover ps_wirepayment, ps_checkpayment, ps_cashondelivery, PayPal, PayU, Przelewy24, tpay, DotPay and common card gateways.' => 'Jeden wiersz na moduł płatności: moduł=KOD, np. ps_checkpayment=PRZ lub mojabramka*=ELE. Wbudowane wartości domyślne obejmują ps_wirepayment, ps_checkpayment, ps_cashondelivery, PayPal, PayU, Przelewy24, tpay, DotPay i popularne bramki kartowe.',
+    'The payment method mode must be "order" or "fixed".' => 'Tryb metody płatności musi być "order" albo "fixed".',
+    'The fallback payment method must be one of the listed codes.' => 'Awaryjna metoda płatności musi być jednym z podanych kodów.',
 );

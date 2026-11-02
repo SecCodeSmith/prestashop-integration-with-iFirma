@@ -571,6 +571,12 @@ function scenarioC($module, $actions, $triggerState)
             $detail !== null && strpos($detail['raw'], $reference) !== false,
             'order reference present in the iFirma document detail'
         );
+        $remotePayment = ($detail !== null && preg_match('/"SposobZaplaty"\s*:\s*"([^"]*)"/', $detail['raw'], $pm)) ? $pm[1] : null;
+        assertSame(
+            IfirmaPaymentMethodResolver::build()->resolve($order),
+            $remotePayment,
+            'payment method follows the order'
+        );
     }
 }
 
