@@ -1,0 +1,357 @@
+<?php
+/**
+ * SCM iFirma integration module for PrestaShop.
+ *
+ * @author    SCM Jakub Berechowski <admin@seccodesmith.pl>
+ * @copyright 2026 SCM Jakub Berechowski
+ * @license   SecCodeSmith Commercial License v1.3
+ * SPDX-License-Identifier: LicenseRef-SecCodeSmith-Commercial-1.2
+ * See the LICENCE file distributed with this module for the full terms.
+ */
+
+use PHPUnit\Framework\TestCase;
+
+/**
+ * IfirmaAdminActions: the logic behind the AdminIfirma ajax endpoints.
+ */
+class AdminActionsTest extends TestCase
+{
+    use IfirmaWiringFixture;
+
+    /** @var IfirmaAdminActions */
+    private $actions;
+
+    protected function setUp(): void
+    {
+        $this->wiringSetUp();
+        $this->actions = new IfirmaAdminActions($this->module);
+    }
+
+    protected function tearDown(): void
+    {
+        IfirmaApiClient::setDefaultTransport(null);
+    }
+
+    private function suspectedReceipt()
+    {
+        return $this->makeReceipt(array(
+            'status' => 'duplicate_suspected',
+            'ifirma_id' => '',
+            'ifirma_number' => '',
+            'duplicate_candidates' => json_encode(array(
+                'candidates' => array(IfirmaDuplicateMatcher::summarize($this->remoteRow())),
+                'resolution' => null,
+            )),
+        ));
+    }
+
+    // ---- create / issue anyway -----------------------------------------------------------
+
+    public function testCreateReceiptSuccess()
+    {
+        $this->queueFullSuccess();
+        $r = $this->actions->createReceipt(15, 3);
+
+        $this->assertTrue($r['success']);
+        $this->assertStringContainsString('Document issued: 7/2026', $r['message']);
+        $this->assertSame('issued', $r['data']['outcome']);
+        $this->assertSame('77', $r['data']['receipt']['ifirma_id']);
+        $this->assertCount(1, $this->posts());
+    }
+
+    public function testCreateReceiptHeldByPendingRequest()
+    {
+        $this->makeRequest('pending');
+        $r = $this->actions->createReceipt(15, 3);
+
+        $this->assertFalse($r['success']);
+        $this->assertStringContainsString('hold', $r['message']);
+        $this->assertSame('held', $r['data']['outcome']);
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testCreateReceiptSuspectedDuplicate()
+    {
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->remoteRow(array('Rodzaj' => 'prz_faktura_kraj')))));
+        $r = $this->actions->createReceipt(15, 3);
+
+        $this->assertFalse($r['success']);
+        $this->assertSame('suspected', $r['data']['outcome']);
+        $this->assertStringContainsString('guard', $r['message']);
+        $this->assertSame(array(), $this->posts());
+        $this->assertSame('duplicate_suspected', (new IfirmaReceipt(1))->status);
+    }
+
+    public function testCreateReceiptInvalidOrderAndUnconfigured()
+    {
+        $this->assertFalse($this->actions->createReceipt(999, 3)['success']);
+        Configuration::updateValue('IFIRMA_KEY_FAKTURA', '');
+        $r = $this->actions->createReceipt(15, 3);
+        $this->assertFalse($r['success']);
+        $this->assertStringContainsString('not configured', $r['message']);
+    }
+
+    public function testIssueAnywaySkipsTheListCallAndRecordsResolution()
+    {
+        $this->suspectedReceipt();
+        $this->queueCreateOk();
+        $this->queueNumber();
+        $this->queuePdf();
+
+        $r = $this->actions->issueAnyway(15, 3);
+
+        $this->assertTrue($r['success']);
+        $this->assertCount(1, $this->posts());
+        // the only list call is the number lookup after creation, not a duplicate-guard query
+        $this->assertSame(1, $this->listCalls());
+        $stored = (new IfirmaReceipt(1))->getDuplicateCandidates();
+        $this->assertSame('issue_anyway', $stored['resolution']['action']);
+        $this->assertSame(3, $stored['resolution']['id_employee']);
+    }
+
+    // ---- link candidate --------------------------------------------------------------------
+
+    public function testLinkCandidateAdoptsTheExternalDocument()
+    {
+        $this->suspectedReceipt();
+        $r = $this->actions->linkCandidate(15, '77', 3);
+
+        $this->assertTrue($r['success']);
+        $this->assertStringContainsString('7/2026', $r['message']);
+        $this->assertSame('external', $r['data']['receipt']['source']);
+        $receipt = new IfirmaReceipt(1);
+        $this->assertSame('77', (string) $receipt->ifirma_id);
+        $this->assertSame('external', $receipt->source);
+        $this->assertSame('skipped', $receipt->delivery_status);
+        $this->assertSame(array(), $this->posts());
+        $this->assertSame(array(), Mail::$sent);
+        $this->assertSame('link', $receipt->getDuplicateCandidates()['resolution']['action']);
+    }
+
+    public function testLinkUnknownCandidateFails()
+    {
+        $this->suspectedReceipt();
+        $r = $this->actions->linkCandidate(15, '12345', 3);
+        $this->assertFalse($r['success']);
+        $this->assertStringContainsString('not found', $r['message']);
+    }
+
+    public function testLinkWithoutReceiptFails()
+    {
+        $this->assertFalse($this->actions->linkCandidate(15, '77', 3)['success']);
+        $this->suspectedReceipt();
+        $this->assertFalse($this->actions->linkCandidate(15, '', 3)['success']);
+    }
+
+    // ---- update status -----------------------------------------------------------------------
+
+    public function testUpdateStatusWorksForAnAdoptedDocument()
+    {
+        $this->suspectedReceipt();
+        $this->actions->linkCandidate(15, '77', 3);
+        $this->t->queue('POST', '#/prz_faktura_kraj/#', array('body' => '{"response":{"Kod":0,"Informacja":"ok"}}'));
+        $this->t->queue('POST', '#\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"ok"}}'));
+
+        $r = $this->actions->updateStatus(15, 123.0);
+
+        $this->assertTrue($r['success'], $r['message']);
+        $this->assertSame('paid', $r['data']['receipt']['status']);
+        $this->assertEquals(123.0, $r['data']['receipt']['paid_amount']);
+        $this->assertCount(1, $this->posts());
+    }
+
+    public function testUpdateStatusWithoutIssuedDocumentFails()
+    {
+        $r = $this->actions->updateStatus(15);
+        $this->assertFalse($r['success']);
+        $this->makeReceipt(array('status' => 'error', 'ifirma_id' => ''));
+        $this->assertFalse($this->actions->updateStatus(15)['success']);
+    }
+
+    // ---- resend ------------------------------------------------------------------------------
+
+    public function testResendUpdatesTheDeliveryState()
+    {
+        $this->makeReceipt();
+        $this->queuePdf();
+
+        $r = $this->actions->resend(15);
+
+        $this->assertTrue($r['success'], $r['message']);
+        $this->assertCount(1, Mail::$sent);
+        $receipt = new IfirmaReceipt(1);
+        $this->assertSame('sent', $receipt->delivery_status);
+        $this->assertSame('shop_mail', $receipt->delivery_channel);
+        $this->assertSame('sent', $r['data']['receipt']['delivery_status']);
+        $this->assertStringContainsString('shop e-mail', $r['data']['delivery']);
+    }
+
+    public function testResendWithChannelNoneReportsFailure()
+    {
+        Configuration::updateValue('IFIRMA_SEND_CHANNEL', 'none');
+        $this->makeReceipt();
+
+        $r = $this->actions->resend(15);
+        $this->assertFalse($r['success']);
+        $this->assertSame(array(), Mail::$sent);
+    }
+
+    public function testResendWithoutDocumentFails()
+    {
+        $this->assertFalse($this->actions->resend(15)['success']);
+    }
+
+    // ---- refresh -----------------------------------------------------------------------------
+
+    public function testRefreshStatusUpdatesRemoteFields()
+    {
+        $this->makeReceipt(array('last_sync_at' => null));
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->remoteRow(array(
+            'Zaplacono' => 50.0, 'CzyWyslano' => true, 'KsefStatus' => 'ACCEPTED', 'KsefNumer' => 'KS-1',
+        )))));
+
+        $r = $this->actions->refreshStatus(15);
+
+        $this->assertTrue($r['success'], $r['message']);
+        $this->assertEquals(50.0, $r['data']['receipt']['remote_paid_amount']);
+        $this->assertTrue($r['data']['receipt']['remote_sent']);
+        $this->assertSame('ACCEPTED', $r['data']['receipt']['ksef_status']);
+        $this->assertNotEmpty($r['data']['receipt']['last_sync_at']);
+        $this->assertSame(1, $this->listCalls());
+    }
+
+    public function testRefreshStatusWhenIFirmaIsUnreachable()
+    {
+        $this->makeReceipt(array('last_sync_at' => null));
+        $r = $this->actions->refreshStatus(15);
+
+        $this->assertFalse($r['success']);
+        $this->assertNotSame('', $r['data']['receipt']['sync_error']);
+    }
+
+    public function testRefreshStatusWithoutDocumentFails()
+    {
+        $this->assertFalse($this->actions->refreshStatus(15)['success']);
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    // ---- data requests -----------------------------------------------------------------------
+
+    public function testApproveRunsTheHeldIssuanceWhenTheTriggerStateWasReached()
+    {
+        $this->makeReceipt(array('status' => 'held', 'ifirma_id' => '', 'ifirma_number' => ''));
+        $req = $this->makeRequest('pending');
+        $o = $this->wiringOrder();
+        $o->current_state = 2;
+        $o->history = array(array('id_order_state' => 1), array('id_order_state' => 5));
+        Order::register($o);
+        $this->queueFullSuccess();
+
+        $r = $this->actions->approveRequest((int) $req->id, 3, null, 'ok');
+
+        $this->assertTrue($r['success'], $r['message']);
+        $this->assertSame('approved', (new IfirmaDataRequest((int) $req->id))->status);
+        $this->assertTrue($r['data']['issuance_ran']);
+        $this->assertTrue($r['data']['issued']);
+        $this->assertCount(1, $this->posts());
+        $this->assertSame('created', (new IfirmaReceipt(1))->status);
+    }
+
+    public function testApproveWithoutTriggerInHistoryDoesNotIssue()
+    {
+        $req = $this->makeRequest('pending');
+        $o = $this->wiringOrder();
+        $o->current_state = 2;
+        $o->history = array(array('id_order_state' => 1));
+        Order::register($o);
+
+        $r = $this->actions->approveRequest((int) $req->id, 3);
+
+        $this->assertTrue($r['success']);
+        $this->assertFalse($r['data']['issuance_ran']);
+        $this->assertSame(array(), $this->t->calls);
+        $this->assertSame('approved', (new IfirmaDataRequest((int) $req->id))->status);
+    }
+
+    public function testApproveWithEditedDataStoresTheEdits()
+    {
+        $req = $this->makeRequest('pending');
+        $r = $this->actions->approveRequest((int) $req->id, 3, array(
+            'company' => 'Edited Ltd', 'vat_number' => '526-025-02-74', 'firstname' => 'Jan', 'lastname' => 'Kowalski',
+            'address1' => 'Edytowana 3', 'postcode' => '00-003', 'city' => 'Lodz', 'id_country' => 14,
+        ), 'fixed');
+
+        $this->assertTrue($r['success'], $r['message']);
+        $stored = new IfirmaDataRequest((int) $req->id);
+        $this->assertSame('Edytowana 3', $stored->getApprovedData()['address1']);
+        $this->assertSame('fixed', $stored->admin_note);
+        $this->assertSame(3, (int) $stored->resolved_by);
+    }
+
+    public function testApproveWithInvalidEditReturnsFieldErrors()
+    {
+        $req = $this->makeRequest('pending');
+        $r = $this->actions->approveRequest((int) $req->id, 3, array('postcode' => '', 'city' => ''));
+
+        $this->assertFalse($r['success']);
+        $this->assertArrayHasKey('postcode', $r['data']['errors']);
+        $this->assertArrayHasKey('city', $r['data']['errors']);
+        $this->assertSame('invalid', $r['data']['code']);
+        $this->assertSame('pending', (new IfirmaDataRequest((int) $req->id))->status);
+    }
+
+    public function testApproveUnknownOrResolvedRequestFails()
+    {
+        $this->assertFalse($this->actions->approveRequest(999, 3)['success']);
+        $req = $this->makeRequest('rejected');
+        $r = $this->actions->approveRequest((int) $req->id, 3);
+        $this->assertFalse($r['success']);
+        $this->assertSame('not_pending', $r['data']['code']);
+    }
+
+    public function testRejectStoresTheReasonAndResumes()
+    {
+        $req = $this->makeRequest('pending');
+        $o = $this->wiringOrder();
+        $o->current_state = 2;
+        $o->history = array(array('id_order_state' => 5));
+        Order::register($o);
+        $this->queueFullSuccess();
+
+        $r = $this->actions->rejectRequest((int) $req->id, 3, 'NIP does not match');
+
+        $this->assertTrue($r['success'], $r['message']);
+        $stored = new IfirmaDataRequest((int) $req->id);
+        $this->assertSame('rejected', $stored->status);
+        $this->assertSame('NIP does not match', $stored->admin_note);
+        $this->assertTrue($r['data']['issuance_ran']);
+        $this->assertCount(1, $this->posts());
+    }
+
+    public function testRejectWithoutReasonFails()
+    {
+        $req = $this->makeRequest('pending');
+        $r = $this->actions->rejectRequest((int) $req->id, 3, '   ');
+
+        $this->assertFalse($r['success']);
+        $this->assertSame('reason_required', $r['data']['code']);
+        $this->assertSame('pending', (new IfirmaDataRequest((int) $req->id))->status);
+    }
+
+    // ---- serialisation -----------------------------------------------------------------------
+
+    public function testReceiptToArrayExposesTheDocumentAndRemoteFields()
+    {
+        $receipt = $this->makeReceipt(array('remote_paid_amount' => 10.5, 'remote_sent' => 1, 'ksef_number' => 'KS-9', 'source' => 'external'));
+        $a = $this->actions->receiptToArray($receipt);
+
+        foreach (array('id', 'ifirma_id', 'ifirma_number', 'status', 'source', 'paid_amount', 'issue_date', 'remote_paid_amount',
+            'remote_sent', 'ksef_status', 'ksef_number', 'linked_document', 'last_sync_at', 'sync_error',
+            'delivery_status', 'delivery_channel', 'delivered_at', 'delivery_error') as $key) {
+            $this->assertArrayHasKey($key, $a, $key);
+        }
+        $this->assertSame('external', $a['source']);
+        $this->assertEquals(10.5, $a['remote_paid_amount']);
+        $this->assertTrue($a['remote_sent']);
+    }
+}

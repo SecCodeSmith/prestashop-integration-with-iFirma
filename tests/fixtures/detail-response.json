@@ -1,0 +1,44 @@
+{
+  "response": {
+    "Kod": 0,
+    "Informacja": "",
+    "Identyfikator": "77",
+    "PelnyNumer": "7/2026",
+    "Zaplacono": 123.0,
+    "ZaplaconoNaDokumencie": 123.0,
+    "LiczOd": "BRT",
+    "DataWystawienia": "2026-10-01",
+    "DataSprzedazy": "2026-10-01",
+    "FormatDatySprzedazy": "DZN",
+    "SposobZaplaty": "PRZ",
+    "RodzajPodpisuOdbiorcy": "BRK",
+    "WidocznyNumerBdo": false,
+    "Numer": 7,
+    "Uwagi": "PS-ORDER-15-ABCDEFGHI",
+    "DodatkoweUwagi": {
+      "Typ": "NUMER_ZAMOWIENIA",
+      "Info": "PS-ORDER-15-ABCDEFGHI"
+    },
+    "Kontrahent": {
+      "Nazwa": "Jan Kowalski",
+      "Identyfikator": "PS-C7",
+      "NIP": "",
+      "Ulica": "Testowa 1",
+      "KodPocztowy": "00-001",
+      "Kraj": "PL",
+      "Miejscowosc": "Warszawa",
+      "Email": "jan@example.com",
+      "OsobaFizyczna": true
+    },
+    "Pozycje": [
+      {
+        "StawkaVat": 0.23,
+        "Ilosc": 1,
+        "CenaJednostkowa": 123.0,
+        "NazwaPelna": "Produkt A",
+        "Jednostka": "szt.",
+        "TypStawkiVat": "PRC"
+      }
+    ]
+  }
+}

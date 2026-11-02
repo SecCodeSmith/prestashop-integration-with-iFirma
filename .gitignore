@@ -6,3 +6,7 @@ dist/
 # Python tooling caches
 .mypy_cache/
 __pycache__/
+
+# PHP tooling
+tests/vendor/
+.phpunit.result.cache

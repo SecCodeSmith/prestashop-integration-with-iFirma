@@ -1,0 +1,7 @@
+Hello {firstname} {lastname},
+
+Your accounting document {document_number} for order {order_reference} is attached to this message as a PDF file.
+
+Issue date: {issue_date}
+
+Thank you for shopping at {shop_name}.

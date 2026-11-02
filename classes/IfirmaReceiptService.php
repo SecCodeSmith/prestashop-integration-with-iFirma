@@ -1,15 +1,22 @@
 <?php
 /**
  * @author    SCM Jakub Berechowskir
- * @license   SecCodeSmith Commercial License v1.2
+ * @license   SecCodeSmith Commercial License v1.3
  */
 
 if (!defined('_PS_VERSION_')) {
     exit;
 }
 
+require_once dirname(__FILE__) . '/IfirmaApiClient.php';
+require_once dirname(__FILE__) . '/IfirmaReceipt.php';
+require_once dirname(__FILE__) . '/IfirmaPaymentMethodResolver.php';
+
 class IfirmaReceiptService
 {
+    const CONTRACTOR_ID_PREFIX = 'PS-C';
+    const ORDER_REFERENCE_PREFIX = 'PS-ORDER-';
+
     /** @var IfirmaApiClient */
     private $client;
 
@@ -44,11 +51,60 @@ class IfirmaReceiptService
     }
 
     /**
+     * Documented iFirma maximum lengths (characters) of the payload fields.
+     *
+     * @return array
+     */
+    public static function fieldLimits()
+    {
+        return array(
+            'Nazwa' => 150,
+            'Email' => 65,
+            'NIP' => 13,
+            'Ulica' => 65,
+            'Miejscowosc' => 65,
+            'KodPocztowy' => 16,
+            'Uwagi' => 1000,
+            'NazwaPelna' => 500,
+            'Identyfikator' => 15,
+            'Kraj' => 70,
+        );
+    }
+
+    /**
+     * Trim and cut a value to at most $max characters (never splits a multibyte character).
+     *
+     * @param mixed $value
+     * @param int   $max
+     * @return string
+     */
+    public static function truncate($value, $max)
+    {
+        $value = trim((string) $value);
+        $max = (int) $max;
+        if (mb_strlen($value, 'UTF-8') > $max) {
+            $value = mb_substr($value, 0, $max, 'UTF-8');
+        }
+
+        return $value;
+    }
+
+    /**
      * @param Order $order
+     * @return string
+     */
+    public static function buildOrderReference(Order $order)
+    {
+        return self::ORDER_REFERENCE_PREFIX . (int) $order->id . '-' . $order->reference;
+    }
+
+    /**
+     * @param Order $order
+     * @param array $options override (array|null), skip_dodatkowe_uwagi (bool)
      * @return IfirmaReceipt
      * @throws Exception
      */
-    public function createReceipt(Order $order)
+    public function createReceipt(Order $order, array $options = array())
     {
         $existing = IfirmaReceipt::getByOrder((int) $order->id);
         if ($existing && $existing->isIssued()) {
@@ -56,7 +112,11 @@ class IfirmaReceiptService
         }
 
         $docType = $this->getDocumentType();
-        $payload = $this->buildInvoicePayload($order);
+        $payload = $this->buildInvoicePayload(
+            $order,
+            isset($options['override']) ? $options['override'] : null,
+            $options
+        );
 
         $receipt = $existing instanceof IfirmaReceipt ? $existing : new IfirmaReceipt();
         $receipt->id_order = (int) $order->id;
@@ -67,8 +127,21 @@ class IfirmaReceiptService
 
         $response = $this->client->post($docType . '.json', 'faktura', $payload);
 
+        // Kod 201 naming DodatkoweUwagi: retry exactly once without that object.
+        if ($response !== null && empty($options['skip_dodatkowe_uwagi']) && $this->namesDodatkoweUwagi($response)) {
+            $options['skip_dodatkowe_uwagi'] = true;
+            $payload = $this->buildInvoicePayload(
+                $order,
+                isset($options['override']) ? $options['override'] : null,
+                $options
+            );
+            $receipt->request_payload = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+            $response = $this->client->post($docType . '.json', 'faktura', $payload);
+        }
+
         if ($response === null) {
-            $receipt->status = 'error';
+            // Unknown outcome when the request reached the transport: the document may exist.
+            $receipt->status = $this->client->lastRequestWasSent() ? IfirmaReceipt::STATUS_UNKNOWN : IfirmaReceipt::STATUS_ERROR;
             $receipt->last_error = $this->client->getLastError();
             $receipt->save();
             throw new Exception($this->l('Could not reach iFirma: %s', $this->client->getLastError()));
@@ -81,7 +154,7 @@ class IfirmaReceiptService
 
         if ($code !== 0) {
             $message = isset($node['Informacja']) ? $node['Informacja'] : $this->l('Unknown iFirma error.');
-            $receipt->status = 'error';
+            $receipt->status = IfirmaReceipt::STATUS_ERROR;
             $receipt->last_error = $message;
             $receipt->save();
             throw new Exception($this->l('iFirma rejected the document: %s', $message));
@@ -99,7 +172,10 @@ class IfirmaReceiptService
                 $receipt->ifirma_number = $number;
             }
         }
-        $receipt->status = 'created';
+        $receipt->status = IfirmaReceipt::STATUS_CREATED;
+        $receipt->order_reference = self::buildOrderReference($order);
+        $receipt->issue_date = $payload['DataWystawienia'];
+        $receipt->source = IfirmaReceipt::SOURCE_MODULE;
         $receipt->paid_amount = (float) $this->getPaidAmount($order);
         $receipt->last_error = '';
 
@@ -110,6 +186,19 @@ class IfirmaReceiptService
         $receipt->save();
 
         return $receipt;
+    }
+
+    /**
+     * @param array $response decoded create response
+     * @return bool true for Kod 201 whose Informacja names DodatkoweUwagi
+     */
+    private function namesDodatkoweUwagi(array $response)
+    {
+        $node = isset($response['response']) && is_array($response['response']) ? $response['response'] : $response;
+
+        return isset($node['Kod']) && (int) $node['Kod'] === 201
+            && isset($node['Informacja'])
+            && stripos((string) $node['Informacja'], 'DodatkoweUwagi') !== false;
     }
 
     /**
@@ -156,7 +245,7 @@ class IfirmaReceiptService
             throw new Exception($this->l('iFirma rejected the payment: %s', $message));
         }
 
-        $receipt->status = 'paid';
+        $receipt->status = IfirmaReceipt::STATUS_PAID;
         $receipt->paid_amount = $amount;
         $receipt->last_error = '';
         $receipt->response_payload = json_encode($response, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
@@ -220,15 +309,14 @@ class IfirmaReceiptService
     }
 
     /**
-     * @param Order $order
+     * @param Order      $order
+     * @param array|null $override Approved buyer data (see buildContractor())
+     * @param array      $options  skip_dodatkowe_uwagi (bool)
      * @return array
      */
-    public function buildInvoicePayload(Order $order)
+    public function buildInvoicePayload(Order $order, $override = null, array $options = array())
     {
-        $invoiceAddress = new Address((int) $order->id_address_invoice);
-        $customer = new Customer((int) $order->id_customer);
-        $country = new Country((int) $invoiceAddress->id_country);
-        $countryIso = $country->iso_code ? mb_strtoupper($country->iso_code) : 'PL';
+        $limits = self::fieldLimits();
 
         $paid = $this->getPaidAmount($order);
         $today = date('Y-m-d');
@@ -246,7 +334,7 @@ class IfirmaReceiptService
                 'StawkaVat' => round($taxRate / 100, 4),
                 'Ilosc' => (float) $row['product_quantity'],
                 'CenaJednostkowa' => $grossUnit,
-                'NazwaPelna' => mb_substr($row['product_name'], 0, 500),
+                'NazwaPelna' => self::truncate($row['product_name'], $limits['NazwaPelna']),
                 'Jednostka' => $unit,
                 'TypStawkiVat' => $taxRate > 0 ? 'PRC' : 'ZW',
             );
@@ -259,31 +347,13 @@ class IfirmaReceiptService
                 'StawkaVat' => round($shipRate / 100, 4),
                 'Ilosc' => 1,
                 'CenaJednostkowa' => $shippingIncl,
-                'NazwaPelna' => $this->l('Shipping'),
+                'NazwaPelna' => self::truncate($this->l('Shipping'), $limits['NazwaPelna']),
                 'Jednostka' => 'usł.',
                 'TypStawkiVat' => $shipRate > 0 ? 'PRC' : 'ZW',
             );
         }
 
-        $vatNumber = trim((string) $invoiceAddress->vat_number . $invoiceAddress->dni);
-        $company = trim((string) $invoiceAddress->company);
-        $isBusiness = ($company !== '' && $vatNumber !== '');
-
-        $contractorName = $isBusiness
-            ? $company
-            : trim($invoiceAddress->firstname . ' ' . $invoiceAddress->lastname);
-
-        $contractor = array(
-            'Nazwa' => $contractorName,
-            'Identyfikator' => mb_substr($customer->email, 0, 40),
-            'NIP' => $isBusiness ? preg_replace('/[^0-9A-Za-z]/', '', $vatNumber) : '',
-            'Ulica' => trim($invoiceAddress->address1 . ' ' . $invoiceAddress->address2),
-            'KodPocztowy' => $invoiceAddress->postcode,
-            'Kraj' => $countryIso,
-            'Miejscowosc' => $invoiceAddress->city,
-            'Email' => $customer->email,
-            'OsobaFizyczna' => !$isBusiness,
-        );
+        $reference = self::buildOrderReference($order);
 
         $payload = array(
             'Zaplacono' => $paid,
@@ -292,15 +362,80 @@ class IfirmaReceiptService
             'DataWystawienia' => $today,
             'DataSprzedazy' => $saleDate,
             'FormatDatySprzedazy' => 'DZN',
-            'SposobZaplaty' => Configuration::get('IFIRMA_PAYMENT_METHOD') ?: 'PRZ',
+            'SposobZaplaty' => IfirmaPaymentMethodResolver::build()->resolve($order),
             'RodzajPodpisuOdbiorcy' => 'BRK',
             'WidocznyNumerBdo' => false,
             'Numer' => null,
-            'Kontrahent' => $contractor,
+            'Uwagi' => self::truncate($reference, $limits['Uwagi']),
+            'Kontrahent' => $this->buildContractor($order, $override),
             'Pozycje' => $positions,
         );
 
+        if (empty($options['skip_dodatkowe_uwagi'])) {
+            $payload['DodatkoweUwagi'] = array(
+                'Typ' => 'NUMER_ZAMOWIENIA',
+                'Info' => $reference,
+            );
+        }
+
         return $payload;
+    }
+
+    /**
+     * Build the Kontrahent node. $override (approved buyer data) replaces the invoice-address data.
+     *
+     * @param Order      $order
+     * @param array|null $override want_invoice_for_company, company, vat_number, firstname,
+     *                             lastname, address1, address2, postcode, city, id_country
+     * @return array
+     */
+    public function buildContractor(Order $order, $override = null)
+    {
+        $limits = self::fieldLimits();
+        $customer = new Customer((int) $order->id_customer);
+
+        if (is_array($override)) {
+            $get = function ($key) use ($override) {
+                return isset($override[$key]) ? (string) $override[$key] : '';
+            };
+            $idCountry = isset($override['id_country']) ? (int) $override['id_country'] : 0;
+            $isBusiness = !empty($override['want_invoice_for_company']);
+            $company = trim($get('company'));
+            $vatNumber = trim($get('vat_number'));
+            $firstname = $get('firstname');
+            $lastname = $get('lastname');
+            $street = trim($get('address1') . ' ' . $get('address2'));
+            $postcode = $get('postcode');
+            $city = $get('city');
+        } else {
+            $invoiceAddress = new Address((int) $order->id_address_invoice);
+            $idCountry = (int) $invoiceAddress->id_country;
+            $vatNumber = trim((string) $invoiceAddress->vat_number . $invoiceAddress->dni);
+            $company = trim((string) $invoiceAddress->company);
+            $isBusiness = ($company !== '' && $vatNumber !== '');
+            $firstname = (string) $invoiceAddress->firstname;
+            $lastname = (string) $invoiceAddress->lastname;
+            $street = trim($invoiceAddress->address1 . ' ' . $invoiceAddress->address2);
+            $postcode = (string) $invoiceAddress->postcode;
+            $city = (string) $invoiceAddress->city;
+        }
+
+        $country = new Country($idCountry);
+        $countryIso = $country->iso_code ? mb_strtoupper($country->iso_code) : 'PL';
+
+        $name = $isBusiness ? $company : trim($firstname . ' ' . $lastname);
+
+        return array(
+            'Nazwa' => self::truncate($name, $limits['Nazwa']),
+            'Identyfikator' => self::truncate(self::CONTRACTOR_ID_PREFIX . (int) $order->id_customer, $limits['Identyfikator']),
+            'NIP' => $isBusiness ? self::truncate(preg_replace('/[^0-9A-Za-z]/', '', $vatNumber), $limits['NIP']) : '',
+            'Ulica' => self::truncate($street, $limits['Ulica']),
+            'KodPocztowy' => self::truncate($postcode, $limits['KodPocztowy']),
+            'Kraj' => self::truncate($countryIso, $limits['Kraj']),
+            'Miejscowosc' => self::truncate($city, $limits['Miejscowosc']),
+            'Email' => self::truncate($customer->email, $limits['Email']),
+            'OsobaFizyczna' => !$isBusiness,
+        );
     }
 
     /**
@@ -317,6 +452,14 @@ class IfirmaReceiptService
      * @return string
      */
     private function generateToken()
+    {
+        return self::generateSecurityToken();
+    }
+
+    /**
+     * @return string random 40-character token for public receipt links
+     */
+    public static function generateSecurityToken()
     {
         try {
             return bin2hex(random_bytes(20));

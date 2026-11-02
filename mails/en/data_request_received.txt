@@ -1,0 +1,13 @@
+A customer asked to change the invoice data of order {order_reference} (#{order_id}).
+Customer: {customer_name} ({customer_email})
+
+Requested data:
+{requested_data}
+
+Differences vs the current invoice address:
+{diff}
+
+Customer note:
+{note}
+
+Review the request in the order: {admin_link}

@@ -1,0 +1,7 @@
+Witaj {firstname} {lastname},
+
+Dokument księgowy {document_number} do zamówienia {order_reference} przesyłamy w załączniku jako plik PDF.
+
+Data wystawienia: {issue_date}
+
+Dziękujemy za zakupy w sklepie {shop_name}.

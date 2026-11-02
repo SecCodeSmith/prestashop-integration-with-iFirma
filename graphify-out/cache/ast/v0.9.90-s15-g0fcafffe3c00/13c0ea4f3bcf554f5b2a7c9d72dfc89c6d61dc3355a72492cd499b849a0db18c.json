@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_tests_smoke_upgrade_phase1_php", "label": "upgrade-phase1.php", "file_type": "code", "source_file": "tests/smoke/upgrade-phase1.php", "source_location": "L1"}], "edges": [], "raw_calls": [], "php_type_table": {"path": "$graphify-root$/tests/smoke/upgrade-phase1.php", "table": {"kernel": "AppKernel", "order": "Order"}}}

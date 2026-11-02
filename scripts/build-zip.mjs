@@ -13,7 +13,7 @@ const { version } = JSON.parse(readFileSync("package.json", "utf8"));
 
 // Runtime files shipped to merchants. Keep in sync with package.json "files".
 const FILES = ["ifirma.php", "config.xml", "index.php", "logo.png", "LICENCE", "README.md"];
-const DIRS = ["classes", "controllers", "sql", "translations", "views"];
+const DIRS = ["classes", "controllers", "mails", "sql", "translations", "upgrade", "views"];
 
 mkdirSync("dist", { recursive: true });
 const outPath = `dist/${MODULE}-${version}.zip`;

@@ -3,7 +3,7 @@
  *
  * @author    SCM Jakub Berechowski <admin@seccodesmith.pl>
  * @copyright 2026 SCM Jakub Berechowski
- * @license   SecCodeSmith Commercial License v1.2
+ * @license   SecCodeSmith Commercial License v1.3
  * SPDX-License-Identifier: LicenseRef-SecCodeSmith-Commercial-1.2
  * See the LICENCE file distributed with this module for the full terms.
  */
@@ -62,4 +62,44 @@
 
 .ifirma-badge-error {
     background: #dc3545;
+}
+
+.ifirma-badge-unpaid,
+.ifirma-badge-missing {
+    background: #fd7e14;
+}
+
+.ifirma-badge-unknown,
+.ifirma-badge-duplicate_suspected {
+    background: #6c757d;
+}
+
+.ifirma-badge-external {
+    background: #6f42c1;
+}
+
+.ifirma-state-held {
+    border-left: 4px solid #ffc107;
+}
+
+.ifirma-state-verifying {
+    border-left: 4px solid #6c757d;
+}
+
+.ifirma-state-missing {
+    border-left: 4px solid #fd7e14;
+}
+
+.ifirma-state-issued {
+    border-left: 4px solid #28a745;
+}
+
+.ifirma-state-not_issued {
+    border-left: 4px solid #17a2b8;
+}
+
+.ifirma-contact-shop,
+.ifirma-pending-count {
+    font-size: .9em;
+    color: #6c757d;
 }

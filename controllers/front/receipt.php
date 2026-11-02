@@ -1,7 +1,7 @@
 <?php
 /**
  * @author    SCM Jakub Berechowskir
- * @license   SecCodeSmith Commercial License v1.2
+ * @license   SecCodeSmith Commercial License v1.3
  */
 
 if (!defined('_PS_VERSION_')) {

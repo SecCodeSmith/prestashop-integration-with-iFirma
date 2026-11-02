@@ -1,0 +1,64 @@
+# PrestaShop stubs for unit tests
+
+Loaded by `tests/bootstrap.php` (no PrestaShop needed). Call `IfirmaTestState::resetAll()` in `setUp()`; it resets every stub below and the private `Ifirma::$adminOrderRendered` guard. Constants: `_PS_VERSION_`=8.1.0, `_DB_PREFIX_`=ps_, `_MYSQL_ENGINE_`, `_PS_MODULE_DIR_` (parent of the repo, so `_PS_MODULE_DIR_.'ifirma/...'` works), `_PS_ROOT_DIR_`, `_PS_MAIL_DIR_`. Bootstrap preloads `IfirmaApiClient`, `IfirmaReceipt`, `IfirmaReceiptService`; use `IfirmaTestModuleLoader::loadModule()` (requires ifirma.php, returns `new Ifirma()` and stores it in `Module::$instances['ifirma']`), `::loadAdminController()`, `::loadFrontController('receipt')`.
+
+Note: controllers use `exit`/`die`/`header()`; those paths cannot be unit-tested in-process.
+
+## Support (tests/Support)
+
+| Class | API |
+|---|---|
+| `IfirmaTestState` | `resetAll()`, `objects($table)` -> id => field-array of in-memory ObjectModel rows |
+| `IfirmaTestModuleLoader` | `loadModule()`, `loadAdminController()`, `loadFrontController($name)` |
+| `IfirmaTestRedirect` (exception) | thrown by `Tools::redirect*`; `->url`, `getUrl()` |
+| `IfirmaTestController` | `Context::$controller`; `registerStylesheet()`/`addCSS()` recorded in `->stylesheets`/`->css`; `->php_self` |
+| `IfirmaTestRegistryTrait` | used by entity stubs: `static $instances` (id => object), `register($obj)` (keyed by `$obj->id`), `reset()`. `new X($id)` copies props from `X::$instances[$id]`; unknown id leaves `->id` null (so `Validate::isLoadedObject` is false) |
+| `ScriptedTransport` | see "Transport contract" |
+
+## Stubs (tests/Stubs)
+
+| Class | Members / behaviour |
+|---|---|
+| `Configuration` | `static $values`; `get($key,..,$default=false)`, `updateValue`, `deleteByName`, `hasKey`, `getMultiple`. Reset seeds `PS_SHOP_EMAIL`=shop@example.test, `PS_SHOP_NAME`=Test Shop |
+| `Db` | `getInstance()` singleton. Scripting: `when($regex,$result)` (all methods), `whenExecuteS/whenGetValue/whenGetRow/whenExecute($regex,$result)`. First matching regex wins; same regex+kind overrides earlier. `$result` may be a Closure `($sql,$matches)`. Coercion for `when`: executeS -> array else []; getValue -> scalar (array: first cell of first row); getRow -> row array else false; execute -> bool. Unmatched: executeS [], getValue false, getRow false, execute true. Recording: `->queries` (all), `->executed` (execute only), `->inserts`, `->updates`, `->deletes`. `insert/update/delete` return true; `Insert_ID()` increments; `escape()`. Globals `pSQL()`, `bqSQL()` |
+| `ObjectModel` | consts `TYPE_*`; `$id`; in-memory `static $registry[table][id]` from `static::$definition` (`table`,`primary`,`fields`). `__construct($id)` loads row; `save()` -> `add()`/`update()` (ids from 1; sets `date_add`/`date_upd` when declared); `delete()`. No validation |
+| `Order` | props id, id_customer, id_address_invoice/delivery, id_shop, id_lang, id_currency, id_carrier, reference, date_add, total_paid_tax_incl/excl, total_shipping_tax_incl/excl, carrier_tax_rate, current_state, module, payment; `$details` (-> `getOrderDetailList()`; rows: product_name, product_quantity, unit_price_tax_incl/excl, tax_rate), `$totalPaidReal` (-> `getTotalPaid()`), `$history` (-> `getHistory(..)`, rows with `id_order_state`); `getCustomer()`, `getCurrentOrderState()`; registry: `Order::register($o)` / `Order::$instances` |
+| `OrderState` | `$id`, `$name`; `static $states` (rows `id_order_state`,`name`) returned by `getOrderStates($idLang)`; registry |
+| `OrderHistory` | `id`, `id_order`, `id_order_state`, `date_add`; `changeIdOrderState()` recorded in `static $changes`; `add()`/`addWithemail()`; registry |
+| `Address` | id, id_customer, firstname, lastname, company, vat_number, dni, address1, address2, postcode, city, id_country, phone, phone_mobile; registry; `save()/add()/update()` append `$this` to `static $saved` (assert it stays empty) |
+| `Customer` | id, email, firstname, lastname, id_lang, is_guest, company, `$logged` (-> `isLogged()`), `isGuest()`; registry |
+| `Country` | id, iso_code, name; registry; `getNameById($lang,$id)`, `getByIso($iso)` |
+| `Currency` | id, iso_code; registry; `getDefaultCurrency()` (registry id 1 or PLN) |
+| `Language` | `static $languages` (default en id 1, pl id 2); `getLanguages()`, `getIsoById()` |
+| `Shop` | `getContextShopID()` = 1; `static $name` |
+| `Employee` | id, firstname, lastname, email |
+| `Module` | props as PrestaShop (`name`, `version`, `context`, `_path`, ...); ctor sets `context=Context::getContext()`, `_path='/modules/ifirma/'`; `l()` echoes; `display()` records `[template, smartyVars]` in `static $displayed`, returns `<rendered:TEMPLATE>`; `registerHook()` -> `static $hooks`; `isRegisteredInHook`; `install/uninstall` true; `displayError()` -> `<error>..</error>`, `displayConfirmation()` -> `<confirmation>..</confirmation>`; `getInstanceByName($n)` -> `Module::$instances[$n]` or false |
+| `Tab` | id, class_name, module, active, id_parent, name; `add()`/`delete()` true, recorded in `static $added`/`$deleted`; `getIdFromClassName()` from `static $ids` (default 0) |
+| `Tools` | `static $values` is the request; `getValue($k,$default=false)`, `isSubmit`, `getIsset`, `getAllValues`; `getToken()`='front-token', `getAdminTokenLite($t)`='admin-token-'.$t; `redirect/redirectLink` throw `IfirmaTestRedirect`; `getShopDomainSsl`='shop.test'; mb-based `strlen/substr/strtoupper`; `displayPrice`, `passwdGen`, `getRemoteAddr`, `jsonEncode/Decode`, `safeOutput`, `nl2br`, `ps_round`, `str2url`, `encrypt`(md5) |
+| `Validate` | `isLoadedObject` (object with non-empty id), `isUnsignedId`, `isGenericName`, `isName`, `isPrice`, `isDate`, `isEmail`, `isCleanHtml`, `isPostCode`, `isCityName`, `isAddress`, `isVatNumber`, `isInt`, `isBool`, `isUrl`, `isMessage` |
+| `Mail` | `Send(...)` full PS signature; each call recorded as assoc array in `static $sent` (keys idLang, template, subject, templateVars, to, toName, from, fromName, fileAttachment, modeSmtp, templatePath, die, idShop, bcc, replyTo, replyToName); returns `static $result` (default true) |
+| `PrestaShopLogger` | `addLog(...)` appended to `static $logs` (keys message, severity, errorCode, objectType, objectId, allowDuplicate, idEmployee) |
+| `Context` | `getContext()` singleton: `language` (id 1, iso en, locale en-US), `customer` (id 0, logged=false), `shop` (id 1, name, email), `employee` (id 1), `cookie` (stdClass), `link` (`Link`), `controller` (`IfirmaTestController`), `smarty` (`Smarty`), `currency` (id 1 PLN). Mutate freely; reset rebuilds |
+| `Smarty` | `assign($k,$v)` / `assign(array)` merge into `->vars`; `fetch()` ''; `clearAssign()` |
+| `Link` | `getModuleLink($m,$c,$params)` -> `https://shop.test/module/M/C?query`; `getAdminLink($c,$withToken)` -> `https://shop.test/admin/index.php?controller=C[&token=admin-token-C]`; `getPageLink($c,...)` |
+| `HelperForm` | public props; `generateForm($fields)` stores `HelperForm::$lastForm` (the definition) and `HelperForm::$lastHelper` (read `->fields_value`), returns `<form/>` |
+| `AdminController` | `static $currentIndex` |
+| `ModuleAdminController` | `module`, `bootstrap`, `context`, `ajax`; ctor: `module=Module::getInstanceByName('ifirma')` |
+| `ModuleFrontController` | `module`, `context`, `ajax`, `errors`, `success`, `template`/`templates` (via `setTemplate`), `initContent()` no-op |
+| `Hook` | `exec()` returns '' |
+
+## Transport contract
+
+The module's HTTP layer (`IfirmaApiClient`, task 4.1; production class `classes/IfirmaHttpTransport.php`) must call an injectable transport with exactly:
+
+```
+request(string $method, string $url, array $headers, string $body, int $timeout)
+  $headers : list of "Name: value" strings (e.g. "Authentication: IAPIS user=..., hmac-sha1=...")
+  $url     : absolute URL incl. query string
+  returns array('status' => int, 'body' => string, 'error' => string)
+           status 0 + non-empty error = transport failure (e.g. cURL error)
+```
+
+(Implement without scalar type hints if PHP 7.0 support is needed; semantics are fixed.)
+
+`ScriptedTransport` (tests/Support): `queue($method,$pathRegex,$response)` - `$method` verb or `*`; regex matched against URL path, then full URL; `$response` = `['status'=>200,'body'=>'','error'=>'']` (missing keys default; FIFO per method+regex) or a callable `($method,$url,$headers,$body,$timeout)` returning that array (permanent rule). Records `->calls[]` (`method,url,headers,body,timeout`); `lastCall()`, `lastAuthHeader()` (value after `Authentication:` or null). Unmatched call -> `status 0`, error `ScriptedTransport: no scripted response for METHOD url`.

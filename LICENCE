@@ -1,14 +1,15 @@
-SCM Jakub Berechowski iFirma integration Module — SecCodeSmith Commercial License v1.2
+SCM Jakub Berechowski iFirma Integration Module — SecCodeSmith Commercial License v1.3
 Copyright (c) 2026 SCM Jakub Berechowski (admin@seccodesmith.pl)
 
 ===============================================================================
 DEFINITIONS
 ===============================================================================
 
-"Licensor" means SCM Jakub Berechowski NIP PL8133936176, a business registered in the Republic of Poland.
+"Licensor" means SCM Jakub Berechowski (NIP PL8133936176), a business
+registered in the Republic of Poland.
 
-"Software" means the scm_ifirma PrestaShop module and all files
-distributed with it.
+"Software" means the scm_ifirma PrestaShop module and all files distributed
+with it.
 
 "You" / "Your" means the individual or legal entity exercising rights under
 this License.
@@ -17,8 +18,9 @@ this License.
 related to their business or professional activity (within the meaning of
 art. 22(1) of the Polish Civil Code).
 
-"Small or Medium-Sized Business (SMB)" means a legal entity that, at the time
-of installation and during continued use, satisfies ALL of the following:
+"Small or Medium-Sized Business (SMB)" means a natural person conducting
+business activity or a legal entity that, at the time of installation and
+during continued use, satisfies ALL of the following:
   (a) fewer than 250 employees (full-time equivalents), AND
   (b) annual gross revenue below EUR 50,000,000 (fifty million euros) or the
       equivalent in any other currency, AND
@@ -29,53 +31,166 @@ of installation and during continued use, satisfies ALL of the following:
 
 "Commercial Use" means use in a revenue-generating context, including but not
 limited to: operating an online store, providing services to paying customers,
-or internal use within a for-profit organisation.
+or internal use within a for-profit organisation. Commercial Use does not
+include the activities listed under "Non-Commercial Use" below.
+
+"Non-Commercial Use" means any use of the Software that is not Commercial Use,
+including but not limited to:
+  (a) personal, private, or hobby use by a natural person;
+  (b) use for education, teaching, academic study, or scientific research;
+  (c) use by non-profit organisations, charities, foundations, associations,
+      public institutions, and open-source projects within their activities
+      that do not generate revenue;
+  (d) evaluation, testing, development, debugging, and demonstration of the
+      Software on non-production installations (such as local, development,
+      or staging environments), regardless of who performs them.
+A use ceases to be Non-Commercial Use the moment the Software is put into
+productive use in a revenue-generating context (for example, a live store
+issuing real invoices or receipts).
+
+"Modified Version" means any copy of the Software in which any file — source
+code, templates, scripts, styles, SQL, translations, or otherwise — has been
+altered by You or on Your behalf, including any derivative work based on the
+Software.
 
 ===============================================================================
 FREE LICENSE — SMB AND NON-COMMERCIAL USE
 ===============================================================================
 
-Permission is hereby granted, free of charge, to any SMB or to any individual
-using the Software for personal, educational, or non-commercial purposes, to:
+Permission is hereby granted, free of charge, to any SMB (for Commercial and
+Non-Commercial Use alike) and to any person or entity engaged in
+Non-Commercial Use (see the NON-COMMERCIAL USE section), to:
 
   * install, copy, and use the Software on any number of stores they own or
     directly operate;
-  * modify the Software for their own use;
-  * retain modified copies for private use.
+  * modify the Software, create Modified Versions, and use them on the same
+    terms as the unmodified Software (see MODIFICATION OF THE SOURCE CODE);
+  * share and redistribute the Software, original or modified, subject to
+    condition 2 below.
 
 The following conditions apply:
 
-  1. This license notice and copyright statement must be retained in all copies
-     or substantial portions of the Software.
-  2. You may modify the Software for internal use without any obligation to
-     publish or disclose your modifications.
-  3. You may NOT redistribute the Software (original or modified) as a
-     standalone product, as part of a theme bundle, or as a competing module —
-     whether for free or for a fee — without a separate written agreement from
-     the Licensor. Exception: Enterprise License holders may redistribute the
-     unmodified free version as-is and provide support services for it.
-  4. Removing or replacing the "Powered by SCM Jakub Berechowski" attribution visible in
-     the admin panel is NOT permitted under the free license.
-  5. Verification of Eligibility: the Licensor may request reasonable
+  1. This license notice and copyright statement must be retained in all
+     copies or substantial portions of the Software.
+  2. You may share and redistribute the Software, in original or modified
+     form, provided that ALL of the following are met:
+       (a) the copy is distributed under this License, in full and
+           unchanged, and every recipient receives a copy of this License;
+       (b) the Licensor is clearly credited as the original author of the
+           Software: the copyright statement above and a reference to the
+           original source (https://seccodesmith.pl) are retained in the
+           License file and stated in the module description or
+           accompanying documentation;
+       (c) no fee is charged for the Software itself; You may charge for
+           Your own services, such as installation, customisation, or
+           support;
+       (d) the Software is not presented as Your own work or as endorsed by
+           the Licensor, and a Modified Version is marked as modified and
+           names its author (see MODIFICATION OF THE SOURCE CODE).
+     Recipients are bound by this License in the same way as You, including
+     the ENTERPRISE LICENSE section.
+  3. Removing or replacing the "Powered by SCM Jakub Berechowski" attribution
+     visible in the admin panel is NOT permitted under the free license.
+  4. Verification of Eligibility: the Licensor may request reasonable
      documentation to verify Your SMB status. This point does not apply to
-     Consumers. If You are a business and fail to provide such proof within
+     Consumers or to Non-Commercial Use. If You are a business making
+     Commercial Use of the Software and fail to provide such proof within
      30 days of a documented request, Your rights under this free license are
      suspended until the proof is provided; if the proof shows You do not
      qualify as an SMB, the ENTERPRISE LICENSE section applies.
+
+===============================================================================
+NON-COMMERCIAL USE — PERMITTED FOR EVERYONE
+===============================================================================
+
+The FREE LICENSE above covers Non-Commercial Use by any person or entity:
+natural persons, non-profit organisations, educational and public
+institutions, SMBs, and Enterprises alike. No Enterprise License is required
+for Non-Commercial Use, and there is no limit on the number of installations.
+
+The following additional rules apply to Non-Commercial Use:
+
+  1. Conditions 1 to 3 of the FREE LICENSE section (retention of this notice,
+     redistribution terms, retention of the attribution) apply in full;
+     condition 4 (verification of SMB eligibility) does not.
+  2. The Licensor may ask You to confirm in writing that Your use is
+     Non-Commercial Use; a simple written statement is sufficient.
+  3. If Your use becomes Commercial Use, this permission ends for that use
+     from that moment and, depending on Your status, the FREE LICENSE (SMB)
+     or the ENTERPRISE LICENSE section applies. No fee is owed for the period
+     of genuine Non-Commercial Use that preceded it.
+
+===============================================================================
+MODIFICATION OF THE SOURCE CODE
+===============================================================================
+
+The Software is distributed in source form. Subject to this License, You are
+expressly permitted to:
+
+  * access, read, and study the source code of the Software;
+  * edit, modify, adapt, fix, refactor, translate, and extend any part of the
+    Software, including its PHP code, templates, JavaScript, CSS, SQL,
+    configuration, and translation files;
+  * create Modified Versions and derivative works based on the Software;
+  * share Modified Versions with others under condition 2 of the FREE
+    LICENSE section;
+  * install and use Modified Versions to the same extent, and on the same
+    terms, as You may install and use the unmodified Software (Non-Commercial
+    Use by anyone; Commercial Use by SMBs under the FREE LICENSE or by
+    Enterprises under a valid Enterprise License);
+  * engage third parties (such as freelancers or agencies) to make such
+    modifications on Your behalf and for Your own use;
+  * submit Your modifications to the Licensor (for example as patches or pull
+    requests) for inclusion in future versions of the Software.
+
+The following conditions apply to modifications and Modified Versions:
+
+  1. You have no obligation to publish, disclose, or share Your modifications
+     with the Licensor or anyone else.
+  2. This license notice and the copyright statement must be retained in all
+     Modified Versions. A Modified Version must be identifiable as modified
+     and must name who made the modifications (for example in the module
+     description, a changelog entry, or a comment in the changed files), so
+     that the original author and the modifier are both clear and the
+     Modified Version is not mistaken for an official release by the
+     Licensor.
+  3. Modifying the Software does not enlarge Your rights under this License.
+     In particular, it does not permit:
+       (a) removing or replacing the "Powered by SCM Jakub Berechowski"
+           attribution (condition 3 of the FREE LICENSE section);
+       (b) redistributing the Software other than under condition 2 of the
+           FREE LICENSE section, which applies to Modified Versions as to
+           the original;
+       (c) Commercial Use by an Enterprise without a valid Enterprise
+           License.
+  4. Modified Versions are created and used at Your own risk. The Licensor
+     provides no support for Modified Versions and bears no liability for
+     them; the DISCLAIMER OF WARRANTIES AND LIMITATION OF LIABILITY section
+     applies to Modified Versions in full.
+  5. If You submit modifications to the Licensor, You grant the Licensor a
+     perpetual, worldwide, royalty-free, irrevocable license to use, modify,
+     sublicense, and distribute those modifications as part of the Software
+     under this or any other license, and You confirm that You have the
+     right to grant such a license.
 
 ===============================================================================
 ENTERPRISE LICENSE — REQUIRED FOR LARGE ORGANISATIONS
 ===============================================================================
 
 If You are an Enterprise (as defined above), You MUST purchase a commercial
-Enterprise License before installing or using the Software.
+Enterprise License before installing or using the Software for Commercial
+Use. Non-Commercial Use by an Enterprise — for example evaluation, testing,
+or development on non-production installations — is permitted free of charge
+under the NON-COMMERCIAL USE section and does not require an Enterprise
+License.
 
 To obtain an Enterprise License, contact:
   SCM Jakub Berechowski — admin@seccodesmith.pl
 
 An Enterprise License grants the same usage rights as the free SMB license
 (scoped to the number of stores agreed in writing) and additionally permits
-removal of the "Powered by SCM Jakub Berechowski" attribution upon written request.
+removal of the "Powered by SCM Jakub Berechowski" attribution upon written
+request.
 
 Using the Software without a valid Enterprise License when one is required
 constitutes copyright infringement.
@@ -84,12 +199,13 @@ constitutes copyright infringement.
 SUPPORT AND UPDATES
 ===============================================================================
 
-The free SMB license does NOT include technical support, installation
-assistance, or guaranteed updates. The Licensor may modify or discontinue
-distribution of future free versions of the Software at any time; this does
-not revoke licenses already granted for copies You have lawfully obtained.
-Enterprise License holders are subject to the support and update terms
-outlined in their separate written agreement.
+The free SMB license and the Non-Commercial Use permission do NOT include
+technical support, installation assistance, or guaranteed updates, and no
+support is provided for Modified Versions. The Licensor may modify or
+discontinue distribution of future free versions of the Software at any time;
+this does not revoke licenses already granted for copies You have lawfully
+obtained. Enterprise License holders are subject to the support and update
+terms outlined in their separate written agreement.
 
 ===============================================================================
 TERMINATION
@@ -119,9 +235,9 @@ excluded. This limitation does not apply to damage caused intentionally (wina
 umyślna, art. 473 § 2 of the Polish Civil Code) and does not exclude or limit
 any rights that mandatory law grants to Consumers.
 
-The Software is an integration tool with third-party accounting services.
-It does not constitute legal advice. Consult a qualified lawyer or 
-DPO regarding your specific compliance obligations.
+The Software is a tool for integrating with third-party accounting services.
+It does not constitute legal, tax, or accounting advice. Consult a qualified
+lawyer, tax adviser, or accountant regarding Your specific obligations.
 
 ===============================================================================
 GOVERNING LAW AND JURISDICTION
@@ -134,15 +250,15 @@ court competent for the Licensor's registered office. For disputes with
 Consumers, jurisdiction is determined by generally applicable law.
 
 ===============================================================================
-Legal Disclaimer & Trademarks
+TRADEMARKS AND LEGAL DISCLAIMER
 ===============================================================================
 
 iFirma is a registered trademark of IFIRMA SA.
 
-This module is an independent third-party open-source integration and is not 
-officially affiliated with, endorsed by, or sponsored by IFIRMA SA.
+This module is an independent, source-available third-party integration and
+is not officially affiliated with, endorsed by, or sponsored by IFIRMA SA.
 
-The name "iFirma" and associated references are used strictly for 
-identification, nominative reference, and descriptive compatibility purposes 
-(interoperability / prawo cytatu) to inform users about the third-party 
+The name "iFirma" and associated references are used strictly for
+identification, nominative reference, and descriptive compatibility purposes
+(interoperability / prawo cytatu) to inform users about the third-party
 accounting system with which this PrestaShop module integrates.

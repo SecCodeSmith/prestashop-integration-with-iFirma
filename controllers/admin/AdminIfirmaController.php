@@ -1,7 +1,7 @@
 <?php
 /**
  * @author    SCM Jakub Berechowskir
- * @license   SecCodeSmith Commercial License v1.2
+ * @license   SecCodeSmith Commercial License v1.3
  */
 
 if (!defined('_PS_VERSION_')) {
@@ -11,6 +11,7 @@ if (!defined('_PS_VERSION_')) {
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaApiClient.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaReceipt.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaReceiptService.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaAdminActions.php';
 
 class AdminIfirmaController extends ModuleAdminController
 {
@@ -24,60 +25,92 @@ class AdminIfirmaController extends ModuleAdminController
         }
     }
 
+    /**
+     * @return IfirmaAdminActions
+     */
+    private function actions()
+    {
+        return new IfirmaAdminActions($this->module);
+    }
+
+    /**
+     * @return int
+     */
+    private function employeeId()
+    {
+        return (isset($this->context->employee) && $this->context->employee) ? (int) $this->context->employee->id : 0;
+    }
+
+    /**
+     * @return int
+     */
+    private function orderId()
+    {
+        return (int) Tools::getValue('id_order');
+    }
+
     public function ajaxProcessCreateReceipt()
     {
-        $idOrder = (int) Tools::getValue('id_order');
-        $order = new Order($idOrder);
+        $this->respond($this->actions()->createReceipt($this->orderId(), $this->employeeId()));
+    }
 
-        if (!Validate::isLoadedObject($order)) {
-            $this->ajaxError($this->module->l('Invalid order.', 'adminifirmacontroller'));
-        }
+    public function ajaxProcessIssueAnyway()
+    {
+        $this->respond($this->actions()->issueAnyway($this->orderId(), $this->employeeId()));
+    }
 
-        if (!$this->module->isConfigured()) {
-            $this->ajaxError($this->module->l('The iFirma module is not configured yet.', 'adminifirmacontroller'));
-        }
-
-        try {
-            $service = IfirmaReceiptService::build($this->module);
-            $receipt = $service->createReceipt($order);
-        } catch (Exception $e) {
-            $this->ajaxError($e->getMessage());
-        }
-
-        $this->ajaxSuccess(
-            $this->module->l('Receipt issued in iFirma.', 'adminifirmacontroller'),
-            $this->receiptToArray($receipt)
-        );
+    public function ajaxProcessLinkCandidate()
+    {
+        $this->respond($this->actions()->linkCandidate(
+            $this->orderId(),
+            trim((string) Tools::getValue('faktura_id')),
+            $this->employeeId()
+        ));
     }
 
     public function ajaxProcessUpdateStatus()
     {
-        $idOrder = (int) Tools::getValue('id_order');
-        $receipt = IfirmaReceipt::getByOrder($idOrder);
-
-        if (!$receipt || !$receipt->isIssued()) {
-            $this->ajaxError($this->module->l('No issued iFirma document for this order.', 'adminifirmacontroller'));
-        }
-
         $amount = Tools::getValue('amount', null);
-        $amount = ($amount === null || $amount === '') ? null : (float) str_replace(',', '.', $amount);
+        $amount = ($amount === null || $amount === '' || $amount === false) ? null : (float) str_replace(',', '.', $amount);
 
-        try {
-            $service = IfirmaReceiptService::build($this->module);
-            $receipt = $service->updateStatusPaid($receipt, $amount);
-        } catch (Exception $e) {
-            $this->ajaxError($e->getMessage());
-        }
+        $this->respond($this->actions()->updateStatus($this->orderId(), $amount));
+    }
 
-        $this->ajaxSuccess(
-            $this->module->l('Payment registered in iFirma.', 'adminifirmacontroller'),
-            $this->receiptToArray($receipt)
-        );
+    public function ajaxProcessResendDocument()
+    {
+        $this->respond($this->actions()->resend($this->orderId()));
+    }
+
+    public function ajaxProcessRefreshStatus()
+    {
+        $this->respond($this->actions()->refreshStatus($this->orderId()));
+    }
+
+    public function ajaxProcessApproveRequest()
+    {
+        $data = Tools::getValue('data', null);
+        $edited = is_array($data) ? $data : null;
+
+        $this->respond($this->actions()->approveRequest(
+            (int) Tools::getValue('id_request'),
+            $this->employeeId(),
+            $edited,
+            (string) Tools::getValue('admin_note')
+        ));
+    }
+
+    public function ajaxProcessRejectRequest()
+    {
+        $this->respond($this->actions()->rejectRequest(
+            (int) Tools::getValue('id_request'),
+            $this->employeeId(),
+            (string) Tools::getValue('reason')
+        ));
     }
 
     public function ajaxProcessDownloadPdf()
     {
-        $idOrder = (int) Tools::getValue('id_order');
+        $idOrder = $this->orderId();
         $receipt = IfirmaReceipt::getByOrder($idOrder);
 
         if (!$receipt || !$receipt->isIssued()) {
@@ -112,28 +145,36 @@ class AdminIfirmaController extends ModuleAdminController
     }
 
     /**
-     * @return array
+     * @param array $result array('success', 'message', 'data')
      */
-    private function receiptToArray(IfirmaReceipt $receipt)
+    private function respond(array $result)
     {
-        return array(
-            'id' => (int) $receipt->id,
-            'ifirma_id' => $receipt->ifirma_id,
-            'ifirma_number' => $receipt->ifirma_number,
-            'status' => $receipt->status,
-            'paid_amount' => (float) $receipt->paid_amount,
-        );
+        if (!empty($result['success'])) {
+            $this->ajaxSuccess($result['message'], isset($result['data']) ? $result['data'] : array());
+        }
+
+        $this->ajaxError($result['message'], isset($result['data']) ? $result['data'] : array());
     }
 
     private function ajaxSuccess($message, array $data = array())
     {
         header('Content-Type: application/json');
-        die(json_encode(array('success' => true, 'message' => $message, 'receipt' => $data)));
+        die(json_encode(array(
+            'success' => true,
+            'message' => $message,
+            'data' => $data,
+            'receipt' => isset($data['receipt']) ? $data['receipt'] : array(),
+        )));
     }
 
-    private function ajaxError($message)
+    private function ajaxError($message, array $data = array())
     {
         header('Content-Type: application/json');
-        die(json_encode(array('success' => false, 'message' => $message)));
+        die(json_encode(array(
+            'success' => false,
+            'message' => $message,
+            'data' => $data,
+            'receipt' => isset($data['receipt']) ? $data['receipt'] : array(),
+        )));
     }
 }

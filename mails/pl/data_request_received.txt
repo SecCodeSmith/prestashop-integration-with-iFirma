@@ -1,0 +1,13 @@
+Klient poprosil o zmiane danych do dokumentu dla zamowienia {order_reference} (#{order_id}).
+Klient: {customer_name} ({customer_email})
+
+Zadane dane:
+{requested_data}
+
+Roznice wzgledem aktualnego adresu rozliczeniowego:
+{diff}
+
+Uwagi klienta:
+{note}
+
+Rozpatrz prosbe w zamowieniu: {admin_link}

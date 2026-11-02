@@ -1,0 +1,396 @@
+<?php
+/**
+ * SCM iFirma integration module for PrestaShop.
+ *
+ * @author    SCM Jakub Berechowski <admin@seccodesmith.pl>
+ * @copyright 2026 SCM Jakub Berechowski
+ * @license   SecCodeSmith Commercial License v1.3
+ * SPDX-License-Identifier: LicenseRef-SecCodeSmith-Commercial-1.2
+ * See the LICENCE file distributed with this module for the full terms.
+ */
+
+use PHPUnit\Framework\TestCase;
+
+class StatusSyncServiceTest extends TestCase
+{
+    /** @var ScriptedTransport */
+    private $t;
+
+    /** @var IfirmaApiClient */
+    private $client;
+
+    /** @var IfirmaStatusSyncService */
+    private $svc;
+
+    /** @var int */
+    private $now;
+
+    protected function setUp(): void
+    {
+        IfirmaTestState::resetAll();
+        $this->now = mktime(12, 0, 0, 11, 1, 2026);
+        $this->t = new ScriptedTransport();
+        $this->client = new IfirmaApiClient('u', array('faktura' => 'abcd'), 'http://ifirma-mock:8001/iapi/', 30, $this->t);
+        $self = $this;
+        $clock = function () use ($self) {
+            return $self->now;
+        };
+        $this->client->setClock($clock);
+        $this->svc = new IfirmaStatusSyncService($this->client, $clock);
+        Configuration::updateValue('IFIRMA_CRON_TOKEN', 'secret-token');
+    }
+
+    private function receipt($ifirmaId, $date = '2026-10-30', array $extra = array())
+    {
+        $r = new IfirmaReceipt();
+        $r->id_order = (int) $ifirmaId;
+        $r->ifirma_id = (string) $ifirmaId;
+        $r->ifirma_number = $ifirmaId . '/2026';
+        $r->status = IfirmaReceipt::STATUS_CREATED;
+        $r->issue_date = $date;
+        $r->delivery_status = 'sent';
+        foreach ($extra as $k => $v) {
+            $r->$k = $v;
+        }
+        $r->save();
+
+        return new IfirmaReceipt((int) $r->id);
+    }
+
+    private function listBody(array $rows)
+    {
+        return array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => $rows))));
+    }
+
+    private function row($id, $brutto = 100.0, $paid = 0.0, array $extra = array())
+    {
+        return array_merge(array(
+            'FakturaId' => $id, 'PelnyNumer' => $id . '/2026', 'Brutto' => $brutto, 'Zaplacono' => $paid,
+            'CzyWyslano' => false, 'CzySzkic' => false, 'KsefStatus' => '', 'KsefNumer' => '',
+            'NumerPowiazanegoPrzychodu' => null,
+        ), $extra);
+    }
+
+    private function listCalls()
+    {
+        $out = array();
+        foreach ($this->t->calls as $c) {
+            if (strpos($c['url'], 'faktury.json') !== false) {
+                parse_str((string) parse_url($c['url'], PHP_URL_QUERY), $q);
+                $out[] = $q;
+            }
+        }
+
+        return $out;
+    }
+
+    public function testRowFoundStoresRemoteFieldsWithoutDetailCall()
+    {
+        $r = $this->receipt(11);
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row(11, 100, 40, array(
+            'CzyWyslano' => true, 'CzySzkic' => true, 'KsefStatus' => 'ACCEPTED', 'KsefNumer' => 'KS-1',
+        )))));
+        $summary = $this->svc->syncReceipt($r);
+        $r = new IfirmaReceipt((int) $r->id);
+
+        $this->assertEquals(40.0, $r->remote_paid_amount);
+        $this->assertTrue((bool) $r->remote_sent);
+        $this->assertTrue((bool) $r->remote_draft);
+        $this->assertSame('ACCEPTED', $r->ksef_status);
+        $this->assertSame('KS-1', $r->ksef_number);
+        $this->assertSame(date('Y-m-d H:i:s', $this->now), $r->last_sync_at);
+        $this->assertSame('', $r->sync_error);
+        $this->assertSame(1, $summary['checked']);
+        foreach ($this->t->calls as $c) {
+            $this->assertStringNotContainsString('/fakturakraj/', $c['url']);
+            $this->assertStringContainsString('faktury.json', $c['url']);
+        }
+    }
+
+    public function testLinkedCorrectionStored()
+    {
+        $r = $this->receipt(12);
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row(12, 100, 0, array(
+            'NumerPowiazanegoPrzychodu' => 'KOR 1/2026',
+        )))));
+        $this->svc->syncReceipt($r);
+        $this->assertSame('KOR 1/2026', (new IfirmaReceipt((int) $r->id))->linked_document);
+    }
+
+    public function testFullyPaidBecomesPaid()
+    {
+        $r = $this->receipt(13);
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row(13, 123.45, 123.45))));
+        $summary = $this->svc->syncReceipt($r);
+        $this->assertSame(IfirmaReceipt::STATUS_PAID, (new IfirmaReceipt((int) $r->id))->status);
+        $this->assertSame(1, $summary['paid']);
+    }
+
+    public function testWithinToleranceBecomesPaid()
+    {
+        $r = $this->receipt(14);
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row(14, 100, 99.99))));
+        $this->svc->syncReceipt($r);
+        $this->assertSame(IfirmaReceipt::STATUS_PAID, (new IfirmaReceipt((int) $r->id))->status);
+    }
+
+    public function testPartiallyPaidKeepsStatusAndShowsAmount()
+    {
+        $r = $this->receipt(15);
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row(15, 100, 50))));
+        $this->svc->syncReceipt($r);
+        $r = new IfirmaReceipt((int) $r->id);
+        $this->assertSame(IfirmaReceipt::STATUS_CREATED, $r->status);
+        $this->assertEquals(50.0, $r->remote_paid_amount);
+    }
+
+    public function testPaidIsNeverDowngraded()
+    {
+        $r = $this->receipt(16, '2026-10-30', array('status' => IfirmaReceipt::STATUS_PAID));
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row(16, 100, 0))));
+        $this->svc->syncReceipt($r);
+        $this->assertSame(IfirmaReceipt::STATUS_PAID, (new IfirmaReceipt((int) $r->id))->status);
+    }
+
+    public function testDeletedDocumentFlaggedMissingAndNumberKept()
+    {
+        $r = $this->receipt(17);
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row(999))));
+        $summary = $this->svc->syncReceipt($r);
+        $r = new IfirmaReceipt((int) $r->id);
+        $this->assertEquals(1, (int) $r->remote_missing);
+        $this->assertSame('17/2026', $r->ifirma_number);
+        $this->assertSame('17', $r->ifirma_id);
+        $this->assertSame(1, $summary['missing']);
+    }
+
+    public function testReappearingDocumentClearsMissingFlag()
+    {
+        $r = $this->receipt(18, '2026-10-30', array('remote_missing' => 1));
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row(18))));
+        $this->svc->syncReceipt($r);
+        $this->assertEquals(0, (int) (new IfirmaReceipt((int) $r->id))->remote_missing);
+        $this->assertSame('reappeared', $this->svc->applyRow(
+            $this->receipt(19, '2026-10-30', array('remote_missing' => 1)),
+            $this->row(19)
+        ));
+    }
+
+    public function testSyncReceiptMakesExactlyOneListCallForIssueDate()
+    {
+        $r = $this->receipt(20, '2026-10-28');
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row(20))));
+        $this->svc->syncReceipt($r);
+        $calls = $this->listCalls();
+        $this->assertCount(1, $calls);
+        $this->assertSame('2026-10-28', $calls[0]['dataOd']);
+        $this->assertSame('2026-10-28', $calls[0]['dataDo']);
+        $this->assertSame('100', $calls[0]['iloscNaStronie']);
+    }
+
+    public function testLookupDateFallsBackToDateAdd()
+    {
+        $r = $this->receipt(21, '', array('date_add' => '2026-09-15 08:00:00'));
+        $r->issue_date = null;
+        $this->assertSame('2026-09-15', $this->svc->lookupDate($r));
+    }
+
+    public function testPagingContinuesUntilShortPage()
+    {
+        $page1 = array();
+        for ($i = 1; $i <= 100; $i++) {
+            $page1[] = $this->row(1000 + $i);
+        }
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody($page1));
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row(2000))));
+        $res = $this->svc->fetchRowsForDate('2026-10-30');
+        $this->assertCount(101, $res['rows']);
+        $this->assertSame(2, $res['calls']);
+        $calls = $this->listCalls();
+        $this->assertSame('1', $calls[0]['strona']);
+        $this->assertSame('2', $calls[1]['strona']);
+    }
+
+    public function testOpportunisticStaleSyncsOnceWithShortTimeout()
+    {
+        $r = $this->receipt(30, '2026-10-30', array('last_sync_at' => date('Y-m-d H:i:s', $this->now - 20 * 60)));
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row(30, 100, 100))));
+        $this->assertTrue($this->svc->opportunisticSync($r));
+        $this->assertCount(1, $this->listCalls());
+        $this->assertSame(5, $this->t->calls[0]['timeout']);
+        $this->assertSame(IfirmaReceipt::STATUS_PAID, (new IfirmaReceipt((int) $r->id))->status);
+    }
+
+    public function testOpportunisticRecentMakesNoCall()
+    {
+        $r = $this->receipt(31, '2026-10-30', array('last_sync_at' => date('Y-m-d H:i:s', $this->now - 5 * 60)));
+        $this->assertFalse($this->svc->opportunisticSync($r));
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testOpportunisticTransportErrorIsSwallowedAndStateKept()
+    {
+        $r = $this->receipt(32, '2026-10-30', array(
+            'status' => IfirmaReceipt::STATUS_PAID, 'remote_sent' => 1, 'remote_paid_amount' => 100,
+            'last_sync_at' => date('Y-m-d H:i:s', $this->now - 3600),
+        ));
+        $this->t->queue('GET', '#faktury\.json#', array('status' => 0, 'error' => 'timeout'));
+        $this->assertTrue($this->svc->opportunisticSync($r));
+        $r = new IfirmaReceipt((int) $r->id);
+        $this->assertNotSame('', (string) $r->sync_error);
+        $this->assertSame(IfirmaReceipt::STATUS_PAID, $r->status);
+        $this->assertEquals(100.0, $r->remote_paid_amount);
+        $this->assertEquals(1, (int) $r->remote_sent);
+        $this->assertSame('sent', $r->delivery_status);
+    }
+
+    public function testShouldSyncRespectsConfiguredInterval()
+    {
+        Configuration::updateValue('IFIRMA_SYNC_INTERVAL_MIN', '60');
+        $r = $this->receipt(33, '2026-10-30', array('last_sync_at' => date('Y-m-d H:i:s', $this->now - 20 * 60)));
+        $this->assertFalse($this->svc->shouldSyncOpportunistically($r));
+        $r2 = $this->receipt(34);
+        $this->assertTrue($this->svc->shouldSyncOpportunistically($r2));
+    }
+
+    public function testCronGroupsReceiptsByDate()
+    {
+        $rows = array();
+        $dbRows = array();
+        $dates = array('2026-10-28', '2026-10-29', '2026-10-30');
+        for ($i = 1; $i <= 30; $i++) {
+            $r = $this->receipt(100 + $i, $dates[$i % 3]);
+            $dbRows[] = array('id_ifirma_receipt' => $r->id);
+            $rows[] = $this->row(100 + $i);
+        }
+        Db::getInstance()->whenExecuteS('/FROM `ps_ifirma_receipt`/', $dbRows);
+        Db::getInstance()->whenGetValue('/COUNT\(DISTINCT id_order\)/', 4);
+        $this->t->queue('GET', '#faktury\.json#', function () use ($rows) {
+            return array('status' => 200, 'body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => $rows))));
+        });
+
+        $s = $this->svc->runCron();
+        $this->assertCount(3, $this->listCalls());
+        $this->assertSame(3, $s['calls']);
+        $this->assertSame(30, $s['receipts_checked']);
+        $this->assertSame(3, $s['dates_total']);
+        $this->assertSame(3, $s['dates_processed']);
+        $this->assertSame(4, $s['held_orders']);
+        foreach (array('receipts_checked', 'updated', 'marked_paid', 'marked_missing', 'errors', 'rate_limited',
+            'calls', 'dates_total', 'dates_processed', 'held_orders', 'started_at', 'finished_at') as $key) {
+            $this->assertArrayHasKey($key, $s);
+        }
+    }
+
+    public function testCronBudgetStopsAndLeavesRemainingDateUntouched()
+    {
+        $ids = array();
+        $dbRows = array();
+        foreach (array('2026-10-28', '2026-10-29', '2026-10-30') as $i => $d) {
+            $r = $this->receipt(200 + $i, $d);
+            $ids[] = $r->id;
+            $dbRows[] = array('id_ifirma_receipt' => $r->id);
+        }
+        Db::getInstance()->whenExecuteS('/FROM `ps_ifirma_receipt`/', $dbRows);
+        $this->t->queue('GET', '#faktury\.json#', function () {
+            return array('status' => 200, 'body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array()))));
+        });
+
+        $s = $this->svc->runCron(2);
+        $this->assertCount(2, $this->listCalls());
+        $this->assertSame(2, $s['dates_processed']);
+        $this->assertSame(3, $s['dates_total']);
+        $this->assertEmpty((new IfirmaReceipt((int) $ids[2]))->last_sync_at);
+        $this->assertNotEmpty((new IfirmaReceipt((int) $ids[0]))->last_sync_at);
+    }
+
+    public function testCronMaxCallsFromConfiguration()
+    {
+        Configuration::updateValue('IFIRMA_CRON_MAX_CALLS', '1');
+        $dbRows = array();
+        foreach (array('2026-10-28', '2026-10-29') as $i => $d) {
+            $dbRows[] = array('id_ifirma_receipt' => $this->receipt(300 + $i, $d)->id);
+        }
+        Db::getInstance()->whenExecuteS('/FROM `ps_ifirma_receipt`/', $dbRows);
+        $this->t->queue('GET', '#faktury\.json#', function () {
+            return array('status' => 200, 'body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array()))));
+        });
+        $s = $this->svc->runCron();
+        $this->assertSame(1, $s['calls']);
+    }
+
+    public function testListErrorRecordsSyncErrorWithoutTouchingStatusOrDelivery()
+    {
+        $r = $this->receipt(40, '2026-10-30', array('remote_sent' => 1, 'remote_paid_amount' => 10));
+        $this->t->queue('GET', '#faktury\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"Bad key"}}'));
+        $summary = $this->svc->syncReceipt($r);
+        $r = new IfirmaReceipt((int) $r->id);
+        $this->assertNotSame('', (string) $r->sync_error);
+        $this->assertSame(date('Y-m-d H:i:s', $this->now), $r->last_sync_at);
+        $this->assertSame(IfirmaReceipt::STATUS_CREATED, $r->status);
+        $this->assertSame('sent', $r->delivery_status);
+        $this->assertEquals(1, (int) $r->remote_sent);
+        $this->assertEquals(10.0, $r->remote_paid_amount);
+        $this->assertEquals(0, (int) $r->remote_missing);
+        $this->assertSame(1, $summary['errors']);
+    }
+
+    public function testRateLimitedWritesNoErrorAndIsCounted()
+    {
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi', $this->now) . ':80');
+        $r = $this->receipt(41);
+        Db::getInstance()->whenExecuteS('/FROM `ps_ifirma_receipt`/', array(array('id_ifirma_receipt' => $r->id)));
+        $s = $this->svc->runCron();
+        $this->assertSame(array(), $this->t->calls);
+        $this->assertSame(1, $s['rate_limited']);
+        $this->assertSame(0, $s['errors']);
+        $r = new IfirmaReceipt((int) $r->id);
+        $this->assertEmpty($r->sync_error);
+        $this->assertEmpty($r->last_sync_at);
+    }
+
+    public function testRateLimitStopsCronImmediately()
+    {
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi', $this->now) . ':80');
+        $dbRows = array();
+        foreach (array('2026-10-28', '2026-10-29') as $i => $d) {
+            $dbRows[] = array('id_ifirma_receipt' => $this->receipt(400 + $i, $d)->id);
+        }
+        Db::getInstance()->whenExecuteS('/FROM `ps_ifirma_receipt`/', $dbRows);
+        $s = $this->svc->runCron();
+        $this->assertSame(1, $s['dates_processed']);
+        $this->assertSame(1, $s['rate_limited']);
+    }
+
+    public function testCronTokenValidation()
+    {
+        $this->assertTrue($this->svc->isValidCronToken('secret-token'));
+        $this->assertFalse($this->svc->isValidCronToken('wrong'));
+        $this->assertFalse($this->svc->isValidCronToken(false));
+        $this->assertFalse($this->svc->isValidCronToken(null));
+        $this->assertFalse($this->svc->isValidCronToken(''));
+        Configuration::updateValue('IFIRMA_CRON_TOKEN', '');
+        $this->assertFalse($this->svc->isValidCronToken(''));
+    }
+
+    public function testSelectForCronSqlConditions()
+    {
+        $this->svc->selectForCron(50);
+        $sql = '';
+        foreach (Db::getInstance()->queries as $q) {
+            $sql = is_array($q) ? (string) reset($q) : (string) $q;
+        }
+        $this->assertStringContainsString("status != 'paid'", $sql);
+        $this->assertStringContainsString('remote_sent = 0', $sql);
+        $this->assertStringContainsString('last_sync_at IS NULL', $sql);
+        $this->assertStringContainsString('last_sync_at <', $sql);
+        $this->assertStringContainsString("ifirma_id != ''", $sql);
+        $this->assertStringContainsString("status != 'error'", $sql);
+        $this->assertStringContainsString('LIMIT 50', $sql);
+    }
+
+    public function testFrontControllerClassLoads()
+    {
+        $this->assertInstanceOf('ModuleFrontController', IfirmaTestModuleLoader::loadFrontController('cron'));
+    }
+}

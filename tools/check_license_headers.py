@@ -3,7 +3,7 @@
 License-header checker/adder for the SCM iFirma PrestaShop module.
 
 Every distributed source file must carry the module's license notice
-(SecCodeSmith Commercial License v1.2). This script verifies that (the default
+(SecCodeSmith Commercial License v1.3). This script verifies that (the default
 --check mode) and can insert the notice where it is missing (--add).
 
     python tools/check_license_headers.py            # report files missing the header
@@ -42,7 +42,7 @@ NOTICE = [
     "",
     "@author    SCM Jakub Berechowski <admin@seccodesmith.pl>",
     "@copyright 2026 SCM Jakub Berechowski",
-    "@license   SecCodeSmith Commercial License v1.2",
+    "@license   SecCodeSmith Commercial License v1.3",
     "SPDX-License-Identifier: LicenseRef-SecCodeSmith-Commercial-1.2",
     "See the LICENCE file distributed with this module for the full terms.",
 ]
