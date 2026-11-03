@@ -18,15 +18,20 @@ use PHPUnit\Framework\TestCase;
 class ModuleHooksTest extends TestCase
 {
     use IfirmaWiringFixture;
+    use IfirmaContractorMapDb;
 
     protected function setUp(): void
     {
         $this->wiringSetUp();
+        $this->scriptContractorMapDb();
+        unset($_FILES['IFIRMA_CONTRACTOR_CSV']);
     }
 
     protected function tearDown(): void
     {
         IfirmaApiClient::setDefaultTransport(null);
+        Ifirma::$uploadValidator = null;
+        unset($_FILES['IFIRMA_CONTRACTOR_CSV']);
     }
 
     private function vars()
@@ -286,6 +291,7 @@ class ModuleHooksTest extends TestCase
         $this->assertSame('not_issued', $v['ifirma_state']);
         $this->assertFalse($v['ifirma_has_receipt']);
         $this->assertTrue($v['ifirma_can_create']);
+        $this->assertTrue($v['ifirma_configured']);
         $this->assertFalse($v['ifirma_can_issue_anyway']);
     }
 
@@ -528,5 +534,165 @@ class ModuleHooksTest extends TestCase
 
         $this->assertArrayNotHasKey('IFIRMA_API_LIMIT', $this->formInputNames());
         $this->assertSame(array(), $this->t->calls);
+    }
+
+    // ---- linking existing contractors ----------------------------------------------------------
+
+    private function uploadFixture($content)
+    {
+        $tmp = tempnam(sys_get_temp_dir(), 'ifirma-csv');
+        file_put_contents($tmp, $content);
+        $_FILES['IFIRMA_CONTRACTOR_CSV'] = array(
+            'name' => 'kontrahenci.csv',
+            'tmp_name' => $tmp,
+            'error' => 0,
+            'size' => strlen($content),
+        );
+        Ifirma::$uploadValidator = function () {
+            return true;
+        };
+
+        return $tmp;
+    }
+
+    public function testConfigPageShowsTheContractorsFieldsetWithTheCountTable()
+    {
+        IfirmaContractorMap::link(1, 'A-1', 'nip');
+        IfirmaContractorMap::link(2, 'B-1', 'nip');
+        IfirmaContractorMap::link(3, 'C-1', 'import-email');
+
+        $out = $this->module->getContent();
+
+        $this->assertStringContainsString('<form/>', $out);
+        $this->assertStringContainsString('<rendered:views/templates/admin/contractors.tpl>', $out);
+        $this->assertSame('views/templates/admin/contractors.tpl', $this->lastDisplayed()[0]);
+        $v = $this->vars();
+        $this->assertSame(array('import-email' => 1, 'nip' => 2), $v['ifirma_cm_counts']);
+        $this->assertNull($v['ifirma_cm_report']);
+        $this->assertSame(array(), $v['ifirma_cm_errors']);
+        $this->assertStringContainsString('configure=ifirma', $v['ifirma_cm_action']);
+        $this->assertStringContainsString('token=admin-token-AdminModules', $v['ifirma_cm_action']);
+    }
+
+    public function testContractorsTemplatePostsTheDocumentedFields()
+    {
+        $tpl = file_get_contents(dirname(__DIR__, 2) . '/views/templates/admin/contractors.tpl');
+
+        $this->assertStringContainsString('enctype="multipart/form-data"', $tpl);
+        $this->assertStringContainsString('name="IFIRMA_CONTRACTOR_CSV"', $tpl);
+        $this->assertStringContainsString('name="submitIfirmaImportContractors"', $tpl);
+        $this->assertStringContainsString('name="submitIfirmaResetContractorMap"', $tpl);
+        $this->assertStringContainsString('name="confirm" value="1"', $tpl);
+        $this->assertStringContainsString('name="token"', $tpl);
+    }
+
+    public function testPostedUploadLinksCustomersAndShowsTheReport()
+    {
+        $db = Db::getInstance();
+        $db->whenExecuteS('/FROM `ps_customer`/', array(
+            array('id_customer' => 5, 'email' => 'jan@example.test', 'firstname' => 'Jan', 'lastname' => 'Kowalski'),
+        ));
+        $db->whenExecuteS('/FROM `ps_address`/', array(
+            array('id_customer' => 9, 'vat_number' => 'PL5252248481', 'dni' => '', 'postcode' => '00-950', 'company' => 'ACME', 'firstname' => 'A', 'lastname' => 'B'),
+        ));
+        $tmp = $this->uploadFixture(file_get_contents(dirname(__DIR__) . '/fixtures/contractors-export.csv'));
+        Tools::$values = array('submitIfirmaImportContractors' => '1');
+
+        $this->module->getContent();
+        @unlink($tmp);
+
+        $v = $this->vars();
+        $report = $v['ifirma_cm_report'];
+        $this->assertSame(array(), $v['ifirma_cm_errors']);
+        $this->assertSame(4, $report['rows']);
+        $this->assertSame(2, $report['linked']);
+        $this->assertSame(array('import-email' => 1, 'import-nip' => 1), $report['by']);
+        $this->assertSame(2, $report['unmatched']);
+        $this->assertSame('ZOLC-03, NIEZNANY-04', $report['unmatched_text']);
+        $rows = IfirmaTestState::objects('ifirma_contractor_map');
+        $this->assertCount(2, $rows);
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testUploadWithoutIdentifierColumnShowsTheMissingColumn()
+    {
+        $tmp = $this->uploadFixture("Nazwa;NIP\nJan;5252248481\n");
+        Tools::$values = array('submitIfirmaImportContractors' => '1');
+
+        $this->module->getContent();
+        @unlink($tmp);
+
+        $v = $this->vars();
+        $this->assertNull($v['ifirma_cm_report']);
+        $this->assertCount(1, $v['ifirma_cm_errors']);
+        $this->assertStringContainsString('Identyfikator', $v['ifirma_cm_errors'][0]);
+        $this->assertSame(array(), IfirmaTestState::objects('ifirma_contractor_map'));
+    }
+
+    public function testUploadRejectsMissingOversizedAndForeignFiles()
+    {
+        Tools::$values = array('submitIfirmaImportContractors' => '1');
+
+        unset($_FILES['IFIRMA_CONTRACTOR_CSV']);
+        $this->module->getContent();
+        $this->assertCount(1, $this->vars()['ifirma_cm_errors']);
+
+        $tmp = $this->uploadFixture('Identyfikator;Nazwa');
+        $_FILES['IFIRMA_CONTRACTOR_CSV']['size'] = 5242881;
+        $this->module->getContent();
+        $this->assertStringContainsString('5 MB', $this->vars()['ifirma_cm_errors'][0]);
+
+        $_FILES['IFIRMA_CONTRACTOR_CSV']['size'] = 10;
+        Ifirma::$uploadValidator = function () {
+            return false;
+        };
+        $this->module->getContent();
+        $this->assertCount(1, $this->vars()['ifirma_cm_errors']);
+        $this->assertNull($this->vars()['ifirma_cm_report']);
+        @unlink($tmp);
+    }
+
+    public function testForgetAllLinksNeedsTheConfirmationField()
+    {
+        IfirmaContractorMap::link(1, 'A-1', 'nip');
+        Tools::$values = array('submitIfirmaResetContractorMap' => '1');
+        $out = $this->module->getContent();
+        $this->assertStringContainsString('<error>', $out);
+        $this->assertNotContains('TRUNCATE TABLE `ps_ifirma_contractor_map`', Db::getInstance()->executed);
+
+        Tools::$values = array('submitIfirmaResetContractorMap' => '1', 'confirm' => '1');
+        $out = $this->module->getContent();
+        $this->assertStringContainsString('<confirmation>', $out);
+        $this->assertContains('TRUNCATE TABLE `ps_ifirma_contractor_map`', Db::getInstance()->executed);
+    }
+
+    public function testAdminPanelAssignsTheLinkedContractor()
+    {
+        IfirmaContractorMap::link(5, 'KOWALSKI-01', 'import-nip', 'Jan Kowalski');
+
+        $this->module->hookDisplayAdminOrderMainBottom(array('id_order' => 15));
+        $v = $this->vars();
+
+        $this->assertSame(array(
+            'identifier' => 'KOWALSKI-01',
+            'matched_by' => 'import-nip',
+            'matched_by_label' => 'import, NIP',
+            'name' => 'Jan Kowalski',
+        ), $v['ifirma_contractor_map']);
+    }
+
+    public function testAdminPanelHasNoLinkedContractorForAnUnmappedCustomer()
+    {
+        $this->module->hookDisplayAdminOrderMainBottom(array('id_order' => 15));
+
+        $this->assertNull($this->vars()['ifirma_contractor_map']);
+    }
+
+    public function testAdminPanelTemplateShowsTheLinkedContractorRow()
+    {
+        $tpl = file_get_contents(dirname(__DIR__, 2) . '/views/templates/hook/admin_order_panel.tpl');
+
+        $this->assertSame(3, substr_count($tpl, "{l s='Linked contractor' mod='ifirma'}"));
+        $this->assertStringContainsString('{if $ifirma_contractor_map}', $tpl);
     }
 }

@@ -16,6 +16,9 @@ require_once dirname(__FILE__) . '/IfirmaContractorService.php';
 class IfirmaReceiptService
 {
     const CONTRACTOR_ID_PREFIX = 'PS-C';
+
+    /** Longest contractor identifier the document endpoints accept in IdentyfikatorKontrahenta. */
+    const DOCUMENT_IDENTIFIER_MAX = 15;
     const ORDER_REFERENCE_PREFIX = 'PS-ORDER-';
 
     /** @var IfirmaApiClient */
@@ -131,13 +134,17 @@ class IfirmaReceiptService
         // Register the contractor first: iFirma rejects an identifier it does not know (Kod 201).
         $contractorInfo = null;
         if (empty($options['skip_contractor_sync']) && !empty($payload['Kontrahent']['Identyfikator'])) {
-            $contractorInfo = $this->contractorService()->ensure($payload['Kontrahent']);
-            $payload['Kontrahent']['Identyfikator'] = $contractorInfo['identifier'];
+            $contractorInfo = $this->contractorService()->ensure(
+                $payload['Kontrahent'],
+                (int) $order->id_customer,
+                $this->contractorHints($order, $payload['Kontrahent'], isset($options['override']) ? $options['override'] : null)
+            );
         }
+        $payload = $this->referenceContractor($payload, $contractorInfo);
 
         $receipt->request_payload = $this->encodeRequest($payload, $contractorInfo);
 
-        $response = $this->client->post($docType . '.json', 'faktura', $payload);
+        $response = $this->client->post($docType . '.json', 'faktura', $this->sendable($payload));
 
         // Kod 201 naming DodatkoweUwagi: retry exactly once without that object.
         if ($response !== null && empty($options['skip_dodatkowe_uwagi']) && $this->namesDodatkoweUwagi($response)) {
@@ -147,23 +154,23 @@ class IfirmaReceiptService
                 isset($options['override']) ? $options['override'] : null,
                 $options
             );
-            if ($contractorInfo !== null) {
-                $payload['Kontrahent']['Identyfikator'] = $contractorInfo['identifier'];
-            }
+            $payload = $this->referenceContractor($payload, $contractorInfo);
             $receipt->request_payload = $this->encodeRequest($payload, $contractorInfo);
-            $response = $this->client->post($docType . '.json', 'faktura', $payload);
+            $response = $this->client->post($docType . '.json', 'faktura', $this->sendable($payload));
         }
 
-        // Kod 201 "Nie znaleziono kontrahenta": retry exactly once with a null identifier.
-        if ($response !== null && !empty($payload['Kontrahent']['Identyfikator']) && $this->namesMissingContractor($response)) {
-            $payload['Kontrahent']['Identyfikator'] = null;
+        // Kod 201 about the contractor reference: retry exactly once without IdentyfikatorKontrahenta,
+        // so iFirma matches by NIP or creates the contractor from the Kontrahent block.
+        if ($response !== null && !empty($payload['IdentyfikatorKontrahenta']) && $this->namesMissingContractor($response)) {
             $contractorInfo = array(
                 'identifier' => null,
                 'action' => IfirmaContractorService::ACTION_FALLBACK,
                 'message' => $this->extractInformacja($response),
+                'matched_by' => '',
             );
+            $payload = $this->referenceContractor($payload, $contractorInfo);
             $receipt->request_payload = $this->encodeRequest($payload, $contractorInfo);
-            $response = $this->client->post($docType . '.json', 'faktura', $payload);
+            $response = $this->client->post($docType . '.json', 'faktura', $this->sendable($payload));
         }
 
         if ($response === null) {
@@ -210,9 +217,86 @@ class IfirmaReceiptService
             $receipt->security_token = $this->generateToken();
         }
 
+        $this->learnDocumentContractor($receipt, $payload, $contractorInfo);
+
         $receipt->save();
 
         return $receipt;
+    }
+
+    /**
+     * iFirma looks an existing contractor up through the top-level IdentyfikatorKontrahenta, then
+     * NIPKontrahenta, and otherwise creates one from the Kontrahent block. The nested
+     * Kontrahent.Identyfikator is never sent: the live API answers Kod 201 "Nie znaleziono
+     * kontrahenta" for a value it does not know instead of creating the contractor under it.
+     *
+     * @param array      $payload
+     * @param array|null $contractorInfo ensure() result; null when the contractor step was skipped
+     * @return array
+     */
+    private function referenceContractor(array $payload, $contractorInfo)
+    {
+        $identifier = ($contractorInfo !== null && isset($contractorInfo['identifier']))
+            ? trim((string) $contractorInfo['identifier'])
+            : '';
+        $payload['IdentyfikatorKontrahenta'] = $identifier !== '' ? $identifier : null;
+        if (isset($payload['Kontrahent']) && is_array($payload['Kontrahent'])) {
+            $payload['Kontrahent']['Identyfikator'] = null;
+        }
+
+        return $payload;
+    }
+
+    /**
+     * iFirma decides which contractor a document gets: the referenced one, a NIP match, or a new
+     * one. When the module could not reference a contractor it knows (no identifier, or one longer
+     * than the document API accepts), read the issued document back and remember the contractor
+     * iFirma attached, so the next order of this customer reuses it instead of adding a duplicate.
+     * One extra GET, only in those cases; never blocks issuance.
+     *
+     * @param IfirmaReceipt $receipt        issued receipt (ifirma_id set, not yet saved)
+     * @param array         $payload
+     * @param array|null    $contractorInfo
+     */
+    private function learnDocumentContractor(IfirmaReceipt $receipt, array $payload, $contractorInfo)
+    {
+        if ($contractorInfo === null || (string) $receipt->ifirma_id === '' || (int) $receipt->id_customer <= 0) {
+            return;
+        }
+        if (isset($contractorInfo['action']) && $contractorInfo['action'] === IfirmaContractorService::ACTION_DISABLED) {
+            return;
+        }
+        $referenced = isset($contractorInfo['identifier']) ? trim((string) $contractorInfo['identifier']) : '';
+        if ($referenced !== '' && mb_strlen($referenced) <= self::DOCUMENT_IDENTIFIER_MAX) {
+            return;
+        }
+
+        $detail = $this->client->getDetail($receipt->document_type, (string) $receipt->ifirma_id);
+        if ($detail === null || !isset($detail['data']) || !is_array($detail['data'])) {
+            return;
+        }
+        $node = (isset($detail['data']['response']) && is_array($detail['data']['response']))
+            ? $detail['data']['response']
+            : $detail['data'];
+        $used = isset($node['Kontrahent']['Identyfikator']) ? trim((string) $node['Kontrahent']['Identyfikator']) : '';
+        if ($used === '') {
+            return;
+        }
+
+        $contractorInfo['document_identifier'] = $used;
+        $receipt->request_payload = $this->encodeRequest($payload, $contractorInfo);
+        if ($used !== $referenced) {
+            try {
+                IfirmaContractorMap::link(
+                    (int) $receipt->id_customer,
+                    $used,
+                    IfirmaContractorMap::BY_DOCUMENT,
+                    isset($node['Kontrahent']['Nazwa']) ? (string) $node['Kontrahent']['Nazwa'] : ''
+                );
+            } catch (Exception $e) {
+                // the mapping is bookkeeping; the document is already issued
+            }
+        }
     }
 
     /**
@@ -236,6 +320,29 @@ class IfirmaReceiptService
     }
 
     /**
+     * iFirma creates the contractor from the document when no identifier is given; an identifier
+     * it does not know is rejected (Kod 201). A null/empty identifier is therefore dropped from the
+     * buyer block instead of being sent as JSON null.
+     *
+     * @param array $payload
+     * @return array
+     */
+    private function sendable(array $payload)
+    {
+        foreach (array('IdentyfikatorKontrahenta', 'NIPKontrahenta') as $key) {
+            if (array_key_exists($key, $payload) && ($payload[$key] === null || $payload[$key] === '')) {
+                unset($payload[$key]);
+            }
+        }
+        if (isset($payload['Kontrahent']) && is_array($payload['Kontrahent'])
+            && array_key_exists('Identyfikator', $payload['Kontrahent'])
+            && ($payload['Kontrahent']['Identyfikator'] === null || $payload['Kontrahent']['Identyfikator'] === '')) {
+            unset($payload['Kontrahent']['Identyfikator']);
+        }
+
+        return $payload;
+    }
+    /**
      * Stored request_payload: what was sent plus the private _contractor note (never sent to iFirma).
      *
      * @param array      $payload
@@ -244,11 +351,17 @@ class IfirmaReceiptService
      */
     private function encodeRequest(array $payload, $contractorInfo)
     {
+        $payload = $this->sendable($payload);
         if ($contractorInfo !== null) {
             $payload['_contractor'] = array(
                 'action' => $contractorInfo['action'],
                 'message' => (string) $contractorInfo['message'],
+                'matched_by' => isset($contractorInfo['matched_by']) ? (string) $contractorInfo['matched_by'] : '',
+                'identifier' => isset($contractorInfo['identifier']) ? (string) $contractorInfo['identifier'] : '',
             );
+            if (isset($contractorInfo['document_identifier']) && (string) $contractorInfo['document_identifier'] !== '') {
+                $payload['_contractor']['document_identifier'] = (string) $contractorInfo['document_identifier'];
+            }
         }
 
         return json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
@@ -273,9 +386,13 @@ class IfirmaReceiptService
     {
         $node = isset($response['response']) && is_array($response['response']) ? $response['response'] : $response;
 
-        return isset($node['Kod']) && (int) $node['Kod'] === 201
-            && isset($node['Informacja'])
-            && stripos((string) $node['Informacja'], 'Nie znaleziono kontrahenta') !== false;
+        if (!isset($node['Kod']) || (int) $node['Kod'] !== 201 || !isset($node['Informacja'])) {
+            return false;
+        }
+        $info = (string) $node['Informacja'];
+
+        return stripos($info, 'Nie znaleziono kontrahenta') !== false
+            || stripos($info, 'IdentyfikatorKontrahenta') !== false;
     }
 
     /**
@@ -457,9 +574,17 @@ class IfirmaReceiptService
             'WidocznyNumerBdo' => false,
             'Numer' => null,
             'Uwagi' => self::truncate($reference, $limits['Uwagi']),
+            'IdentyfikatorKontrahenta' => null,
+            'NIPKontrahenta' => null,
             'Kontrahent' => $this->buildContractor($order, $override),
             'Pozycje' => $positions,
         );
+
+        // Documented second lookup step: an existing contractor with this (Polish) NIP is reused.
+        $nip = preg_replace('/\D/', '', (string) $payload['Kontrahent']['NIP']);
+        if (strlen($nip) === 10 && strlen($nip) === strlen((string) $payload['Kontrahent']['NIP'])) {
+            $payload['NIPKontrahenta'] = $nip;
+        }
 
         if (empty($options['skip_dodatkowe_uwagi'])) {
             $payload['DodatkoweUwagi'] = array(
@@ -469,6 +594,32 @@ class IfirmaReceiptService
         }
 
         return $payload;
+    }
+
+    /**
+     * Matching hints for IfirmaContractorService::ensure().
+     *
+     * @param Order      $order
+     * @param array      $contractor buildContractor() result
+     * @param array|null $override   approved buyer data
+     * @return array nip (digits), email, postcode, name
+     */
+    public function contractorHints(Order $order, array $contractor, $override = null)
+    {
+        if (is_array($override)) {
+            $vat = isset($override['vat_number']) ? (string) $override['vat_number'] : '';
+        } else {
+            $address = new Address((int) $order->id_address_invoice);
+            $vat = trim((string) $address->vat_number . $address->dni);
+        }
+        $customer = new Customer((int) $order->id_customer);
+
+        return array(
+            'nip' => preg_replace('/\D/', '', $vat),
+            'email' => (string) $customer->email,
+            'postcode' => isset($contractor['KodPocztowy']) ? (string) $contractor['KodPocztowy'] : '',
+            'name' => isset($contractor['Nazwa']) ? (string) $contractor['Nazwa'] : '',
+        );
     }
 
     /**

@@ -62,6 +62,13 @@
                             <td>{$ifirma_contractor_note|escape:'html':'UTF-8'}</td>
                         </tr>
                         {/if}
+                        {if $ifirma_contractor_map}
+                        <tr>
+                            <th>{l s='Linked contractor' mod='ifirma'}</th>
+                            <td>{$ifirma_contractor_map.identifier|escape:'html':'UTF-8'}{if $ifirma_contractor_map.name} ({$ifirma_contractor_map.name|escape:'html':'UTF-8'}){/if}
+                                <span class="text-muted">- {l s='matched by' mod='ifirma'}: {$ifirma_contractor_map.matched_by_label|escape:'html':'UTF-8'}</span></td>
+                        </tr>
+                        {/if}
                         <tr>
                             <th>{l s='Issue date' mod='ifirma'}</th>
                             <td>{$ifirma_receipt->issue_date|default:'-'|escape:'html':'UTF-8'}</td>
@@ -120,6 +127,19 @@
                         {l s='This document was not found in iFirma any more. Check iFirma before issuing anything again.' mod='ifirma'}
                     </div>
                 {/if}
+                {if $ifirma_receipt && ($ifirma_request_payload || $ifirma_response_payload)}
+                    <details class="ifirma-diagnostics" style="margin-top:10px;">
+                        <summary>{l s='Diagnostics: last iFirma request and response' mod='ifirma'} <span class="text-muted">(v{$ifirma_module_version|escape:'html':'UTF-8'})</span></summary>
+                        <p class="text-muted">{l s='Copy this when reporting a problem. API keys are never included.' mod='ifirma'}</p>
+                        {if $ifirma_contractor_note}<p><strong>{l s='Contractor step' mod='ifirma'}:</strong> {$ifirma_contractor_note|escape:'html':'UTF-8'}</p>{/if}
+                        {if $ifirma_contractor_map}<p><strong>{l s='Linked contractor' mod='ifirma'}:</strong> {$ifirma_contractor_map.identifier|escape:'html':'UTF-8'} ({$ifirma_contractor_map.matched_by_label|escape:'html':'UTF-8'})</p>{/if}
+                        {if $ifirma_receipt->last_error}<p><strong>{l s='Last error' mod='ifirma'}:</strong> {$ifirma_receipt->last_error|escape:'html':'UTF-8'}</p>{/if}
+                        <strong>{l s='Request sent' mod='ifirma'}</strong>
+                        <pre style="max-height:240px;overflow:auto;font-size:11px;">{$ifirma_request_payload|escape:'html':'UTF-8'}</pre>
+                        <strong>{l s='Response received' mod='ifirma'}</strong>
+                        <pre style="max-height:240px;overflow:auto;font-size:11px;">{$ifirma_response_payload|escape:'html':'UTF-8'}</pre>
+                    </details>
+                {/if}
             {else}
                 {* ---- alerts for a document that is not issued ---- *}
                 {if $ifirma_state == 'error' || $ifirma_state == 'unknown'}
@@ -133,6 +153,19 @@
                             {l s='iFirma did not confirm the result. A document may exist already - check iFirma before issuing it again.' mod='ifirma'}
                         </div>
                     {/if}
+                {/if}
+                {if $ifirma_receipt && ($ifirma_request_payload || $ifirma_response_payload)}
+                    <details class="ifirma-diagnostics" style="margin-top:10px;">
+                        <summary>{l s='Diagnostics: last iFirma request and response' mod='ifirma'} <span class="text-muted">(v{$ifirma_module_version|escape:'html':'UTF-8'})</span></summary>
+                        <p class="text-muted">{l s='Copy this when reporting a problem. API keys are never included.' mod='ifirma'}</p>
+                        {if $ifirma_contractor_note}<p><strong>{l s='Contractor step' mod='ifirma'}:</strong> {$ifirma_contractor_note|escape:'html':'UTF-8'}</p>{/if}
+                        {if $ifirma_contractor_map}<p><strong>{l s='Linked contractor' mod='ifirma'}:</strong> {$ifirma_contractor_map.identifier|escape:'html':'UTF-8'} ({$ifirma_contractor_map.matched_by_label|escape:'html':'UTF-8'})</p>{/if}
+                        {if $ifirma_receipt->last_error}<p><strong>{l s='Last error' mod='ifirma'}:</strong> {$ifirma_receipt->last_error|escape:'html':'UTF-8'}</p>{/if}
+                        <strong>{l s='Request sent' mod='ifirma'}</strong>
+                        <pre style="max-height:240px;overflow:auto;font-size:11px;">{$ifirma_request_payload|escape:'html':'UTF-8'}</pre>
+                        <strong>{l s='Response received' mod='ifirma'}</strong>
+                        <pre style="max-height:240px;overflow:auto;font-size:11px;">{$ifirma_response_payload|escape:'html':'UTF-8'}</pre>
+                    </details>
                 {/if}
 
                 {if $ifirma_state == 'held'}
@@ -237,6 +270,14 @@
                             id="ifirma-refresh"
                             data-id-order="{$ifirma_id_order|intval}">
                         <i class="icon-cloud-download"></i> {l s='Refresh from iFirma' mod='ifirma'}
+                    </button>
+                {/if}
+
+                {if $ifirma_configured}
+                    <button type="button" class="btn btn-default"
+                            id="ifirma-register-contractor"
+                            data-id-order="{$ifirma_id_order|intval}">
+                        <i class="icon-user"></i> {l s='Register contractor in iFirma' mod='ifirma'}
                     </button>
                 {/if}
             </div>
@@ -432,6 +473,12 @@
         e.preventDefault();
         var $btn = $(this);
         run($btn, 'RefreshStatus', { id_order: $btn.data('id-order') }, "{l s='Refreshing…' mod='ifirma' js=1}", true);
+    });
+
+    $(document).on('click', '#ifirma-register-contractor', function (e) {
+        e.preventDefault();
+        var $btn = $(this);
+        run($btn, 'RegisterContractor', { id_order: $btn.data('id-order') }, "{l s='Registering…' mod='ifirma' js=1}", false);
     });
 
     $(document).on('click', '#ifirma-approve-request', function (e) {

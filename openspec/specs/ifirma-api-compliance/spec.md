@@ -178,3 +178,45 @@ The buyer block SHALL carry the country name in `Kraj` and the ISO 3166-1 alpha-
 #### Scenario: Polish address
 - **WHEN** the invoice address country is Poland
 - **THEN** the buyer block has `Kraj` = the country name in the order language and `KodKraju` = `PL`
+
+### Requirement: Existing contractor matching
+Before creating a new contractor the module SHALL try to link the customer to a contractor that already exists in iFirma, in this order: a stored customer-to-contractor mapping, the module identifier `PS-C{id_customer}`, an exact NIP match from the contractor search, then an exact normalised name match confirmed by the same e-mail or the same postcode; a successful link SHALL be stored and reused for later orders, and an ambiguous or absent match SHALL create the module contractor.
+
+#### Scenario: Stored mapping wins
+- **WHEN** customer 7 is mapped to contractor `KOWALSKI-01` and a document is created for an order of customer 7
+- **THEN** the document is created with `Kontrahent.Identyfikator` = `KOWALSKI-01` and no search is made
+
+#### Scenario: Business customer matched by NIP
+- **WHEN** no mapping exists, `PS-C7` is unknown, and the contractor search for the order NIP returns one contractor with exactly that NIP
+- **THEN** that contractor is used and stored as the mapping for customer 7 with match type `nip`
+
+#### Scenario: Private person matched by name and e-mail
+- **WHEN** the search by name returns a contractor whose normalised name equals the buyer name and whose e-mail equals the customer e-mail
+- **THEN** that contractor is used and stored with match type `name`
+
+#### Scenario: Ambiguous name match
+- **WHEN** the search by name returns two contractors with the same name and neither e-mail nor postcode confirms one of them
+- **THEN** no link is made and the module contractor `PS-C7` is created
+
+#### Scenario: Mapped contractor disappeared
+- **WHEN** the mapped contractor no longer exists in iFirma
+- **THEN** the mapping is discarded and resolution continues with the remaining steps
+
+### Requirement: Contractor import from a CSV export
+The configuration page SHALL accept an iFirma contractor export (CSV, `;` or `,` separated, UTF-8 or Windows-1250) and link its rows to shop customers offline by NIP, then e-mail, then normalised name plus postcode, storing one mapping per customer, reporting counts per match type and the number of unmatched rows, and never contacting the iFirma API during the import.
+
+#### Scenario: Import links customers
+- **WHEN** the merchant uploads an export with 3 rows whose NIPs match 2 customer addresses and whose e-mail matches 1 further customer
+- **THEN** 3 mappings are stored with match types `nip`, `nip`, `email` and the page reports 3 linked, 0 unmatched
+
+#### Scenario: Re-import is idempotent
+- **WHEN** the same file is uploaded again
+- **THEN** the mappings are unchanged and the counts are reported again without duplicates
+
+#### Scenario: Unusable file
+- **WHEN** the file has no `Identyfikator` column
+- **THEN** the import is refused with a message naming the missing column and nothing is stored
+
+#### Scenario: Mapping visible per order
+- **WHEN** an admin opens an order whose customer is mapped
+- **THEN** the panel shows the linked contractor identifier and how it was matched

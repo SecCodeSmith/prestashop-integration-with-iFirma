@@ -18,9 +18,10 @@ class SchemaTest extends TestCase
         IfirmaTestState::resetAll();
         require_once dirname(__DIR__, 2) . '/classes/IfirmaSchema.php';
         require_once dirname(__DIR__, 2) . '/classes/IfirmaDataRequest.php';
+        require_once dirname(__DIR__, 2) . '/classes/IfirmaContractorMap.php';
     }
 
-    public function testInstallCreatesTwoTables()
+    public function testInstallCreatesThreeTables()
     {
         $result = include dirname(__DIR__, 2) . '/sql/install.php';
         $this->assertTrue($result);
@@ -28,8 +29,8 @@ class SchemaTest extends TestCase
         $creates = array_values(array_filter(Db::getInstance()->executed, function ($q) {
             return strpos($q, 'CREATE TABLE') === 0;
         }));
-        $this->assertCount(2, $creates);
-        $this->assertCount(2, Db::getInstance()->executed);
+        $this->assertCount(3, $creates);
+        $this->assertCount(3, Db::getInstance()->executed);
 
         foreach (array_keys(IfirmaSchema::receiptColumns()) as $col) {
             $this->assertStringContainsString('`' . $col . '`', $creates[0]);
@@ -37,6 +38,11 @@ class SchemaTest extends TestCase
         foreach (array_keys(IfirmaSchema::dataRequestColumns()) as $col) {
             $this->assertStringContainsString('`' . $col . '`', $creates[1]);
         }
+        foreach (array_keys(IfirmaSchema::contractorMapColumns()) as $col) {
+            $this->assertStringContainsString('`' . $col . '`', $creates[2]);
+        }
+        $this->assertStringContainsString('UNIQUE KEY', $creates[2]);
+        $this->assertStringContainsString('ps_ifirma_contractor_map', $creates[2]);
         $this->assertStringContainsString('ps_ifirma_receipt', $creates[0]);
         $this->assertStringContainsString('ps_ifirma_data_request', $creates[1]);
     }
@@ -51,17 +57,60 @@ class SchemaTest extends TestCase
             $this->sorted(array_keys(IfirmaSchema::dataRequestColumns())),
             $this->sorted(array_merge(array_keys(IfirmaDataRequest::$definition['fields']), array(IfirmaDataRequest::$definition['primary'])))
         );
+        $this->assertSame(
+            $this->sorted(array_keys(IfirmaSchema::contractorMapColumns())),
+            $this->sorted(array_merge(array_keys(IfirmaContractorMap::$definition['fields']), array(IfirmaContractorMap::$definition['primary'])))
+        );
         $this->assertCount(18, IfirmaSchema::newReceiptColumnsFor110());
     }
 
-    public function testUninstallDropsTwoTables()
+    public function testUninstallDropsThreeTables()
     {
         $this->assertTrue(include dirname(__DIR__, 2) . '/sql/uninstall.php');
 
         $drops = array_filter(Db::getInstance()->executed, function ($q) {
             return strpos($q, 'DROP TABLE') === 0;
         });
-        $this->assertCount(2, $drops);
+        $this->assertCount(3, $drops);
+    }
+
+    private function modifyStatements()
+    {
+        return array_values(array_filter(Db::getInstance()->executed, function ($q) {
+            return strpos($q, 'ALTER TABLE') === 0 && strpos($q, 'MODIFY') !== false;
+        }));
+    }
+
+    public function testWidenAltersAContractorMapIdentifierNarrowerThan64()
+    {
+        Db::getInstance()->whenGetValue('/CHARACTER_MAXIMUM_LENGTH/', 15);
+
+        $this->assertTrue(IfirmaSchema::widenContractorMapIdentifier());
+
+        $this->assertSame(
+            array('ALTER TABLE `ps_ifirma_contractor_map` MODIFY `ifirma_identifier` VARCHAR(64) NOT NULL'),
+            $this->modifyStatements()
+        );
+    }
+
+    public function testWidenLeavesAlreadyWideContractorMapIdentifierAlone()
+    {
+        Db::getInstance()->whenGetValue('/CHARACTER_MAXIMUM_LENGTH/', 64);
+
+        $this->assertTrue(IfirmaSchema::widenContractorMapIdentifier());
+
+        $this->assertSame(array(), $this->modifyStatements());
+    }
+
+    public function testWidenSkipsAnUnreadableLength()
+    {
+        Db::getInstance()->whenGetValue('/CHARACTER_MAXIMUM_LENGTH/', false);
+        $this->assertTrue(IfirmaSchema::widenContractorMapIdentifier());
+
+        Db::getInstance()->whenGetValue('/CHARACTER_MAXIMUM_LENGTH/', 0);
+        $this->assertTrue(IfirmaSchema::widenContractorMapIdentifier());
+
+        $this->assertSame(array(), $this->modifyStatements());
     }
 
     private function sorted(array $a)

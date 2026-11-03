@@ -52,6 +52,10 @@ class UpgradeTest extends TestCase
             return strpos($q, 'CREATE TABLE IF NOT EXISTS `ps_ifirma_data_request`') === 0;
         });
         $this->assertCount(1, $creates);
+        $maps = array_filter(Db::getInstance()->executed, function ($q) {
+            return strpos($q, 'CREATE TABLE IF NOT EXISTS `ps_ifirma_contractor_map`') === 0;
+        });
+        $this->assertCount(1, $maps);
 
         $this->assertTrue(upgrade_module_1_1_0(new Module()));
         $this->assertCount(18, $this->alters());

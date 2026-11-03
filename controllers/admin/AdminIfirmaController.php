@@ -86,6 +86,17 @@ class AdminIfirmaController extends ModuleAdminController
         $this->respond($this->actions()->refreshStatus($this->orderId()));
     }
 
+    public function ajaxProcessRegisterContractor()
+    {
+        $result = $this->actions()->registerContractor($this->orderId());
+
+        $this->respond(array(
+            'success' => $result['success'],
+            'message' => $result['message'],
+            'data' => array('contractor' => $result['data']),
+        ));
+    }
+
     public function ajaxProcessApproveRequest()
     {
         $data = Tools::getValue('data', null);

@@ -96,6 +96,22 @@ class IfirmaSchema
     }
 
     /**
+     * @return array column name => DDL fragment, in table order
+     */
+    public static function contractorMapColumns()
+    {
+        return array(
+            'id_ifirma_contractor_map' => 'INT(11) UNSIGNED NOT NULL AUTO_INCREMENT',
+            'id_customer' => 'INT(11) UNSIGNED NOT NULL',
+            'ifirma_identifier' => 'VARCHAR(64) NOT NULL',
+            'matched_by' => "VARCHAR(16) NOT NULL DEFAULT ''",
+            'ifirma_name' => "VARCHAR(150) NOT NULL DEFAULT ''",
+            'date_add' => 'DATETIME NOT NULL',
+            'date_upd' => 'DATETIME NOT NULL',
+        );
+    }
+
+    /**
      * @param array $columns
      * @return string
      */
@@ -135,6 +151,78 @@ class IfirmaSchema
             . "    KEY `idx_customer` (`id_customer`),\n"
             . "    KEY `idx_status` (`status`)\n"
             . ') ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8;';
+    }
+
+    /**
+     * @return string
+     */
+    public static function contractorMapCreateSql()
+    {
+        return 'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . 'ifirma_contractor_map` (' . "
+"
+            . self::columnLines(self::contractorMapColumns()) . ",
+"
+            . "    PRIMARY KEY (`id_ifirma_contractor_map`),
+"
+            . "    UNIQUE KEY `uniq_customer` (`id_customer`),
+"
+            . "    KEY `idx_identifier` (`ifirma_identifier`)
+"
+            . ') ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8;';
+    }
+
+    /** @var bool the contractor map table was already ensured in this request */
+    private static $contractorMapEnsured = false;
+
+    /**
+     * Creates the contractor map table when missing (shops upgraded to 1.1.0 before it existed).
+     * Executes at most once per request.
+     *
+     * @return bool
+     */
+    public static function ensureContractorMapTable()
+    {
+        if (self::$contractorMapEnsured) {
+            return true;
+        }
+        $ok = (bool) Db::getInstance()->execute(self::contractorMapCreateSql());
+        if ($ok) {
+            self::widenContractorMapIdentifier();
+        }
+        self::$contractorMapEnsured = $ok;
+
+        return $ok;
+    }
+
+    /**
+     * iFirma identifiers seen in real accounts exceed the documented 15 characters (e.g. names
+     * turned into identifiers). Tables created before the column was widened are altered in place.
+     * Skipped when the current length cannot be read.
+     *
+     * @return bool
+     */
+    public static function widenContractorMapIdentifier()
+    {
+        $table = _DB_PREFIX_ . 'ifirma_contractor_map';
+        $length = Db::getInstance()->getValue(
+            "SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()"
+            . " AND TABLE_NAME = '" . pSQL($table) . "' AND COLUMN_NAME = 'ifirma_identifier'"
+        );
+        if (!is_numeric($length) || (int) $length <= 0 || (int) $length >= 64) {
+            return true;
+        }
+
+        return (bool) Db::getInstance()->execute(
+            'ALTER TABLE `' . $table . '` MODIFY `ifirma_identifier` VARCHAR(64) NOT NULL'
+        );
+    }
+
+    /**
+     * Forget that the table was ensured (tests).
+     */
+    public static function resetEnsureCache()
+    {
+        self::$contractorMapEnsured = false;
     }
 
     /**

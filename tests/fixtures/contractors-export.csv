@@ -1,0 +1,5 @@
+﻿Identyfikator;Nazwa;NIP;E-mail;Kod pocztowy
+KOWALSKI-01;Jan Kowalski;;jan@example.test;00-001
+ACME-02;ACME Sp. z o.o.;525-224-84-81;biuro@acme.test;00-950
+ZOLC-03;Zażółć Genslą;;;30-001
+NIEZNANY-04;Nieznany Klient;;nikt@example.test;99-999

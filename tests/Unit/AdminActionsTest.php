@@ -354,4 +354,88 @@ class AdminActionsTest extends TestCase
         $this->assertEquals(10.5, $a['remote_paid_amount']);
         $this->assertTrue($a['remote_sent']);
     }
+
+    // ---- contractor registration -----------------------------------------------------------
+
+    public function testRegisterContractorCreatesMissingRecord()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('body' => '{"response":{"Kod":208,"Informacja":"Nie znaleziono kontrahenta"}}'));
+        $this->t->queue('GET', '#kontrahenci/Jan%20K\.json#', array('body' => '{"response":{"Kod":208,"Informacja":"Nie znaleziono kontrahenta"}}'));
+        $this->t->queue('POST', '#kontrahenci\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"Dodano kontrahenta","Wynik":"124451232"}}'));
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"","Wynik":[{"Identyfikator":"PS-C5","Nazwa":"Jan K"}]}}'));
+
+        $r = $this->actions->registerContractor(15);
+
+        $this->assertTrue($r['success'], $r['message']);
+        $this->assertSame('PS-C5', $r['data']['identifier']);
+        $this->assertSame('created', $r['data']['action']);
+        $this->assertSame('Contractor PS-C5 created in iFirma.', $r['message']);
+        $this->assertSame(array('GET', 'GET', 'POST', 'GET'), array_column($this->t->calls, 'method'));
+        $this->assertSame('/iapi/kontrahenci/id/PS-C5.json', parse_url($this->t->calls[0]['url'], PHP_URL_PATH));
+        $this->assertSame('/iapi/kontrahenci/Jan%20K.json', parse_url($this->t->calls[1]['url'], PHP_URL_PATH));
+        $this->assertSame('/iapi/kontrahenci.json', parse_url($this->t->calls[2]['url'], PHP_URL_PATH));
+        $this->assertSame('/iapi/kontrahenci/id/PS-C5.json', parse_url($this->t->calls[3]['url'], PHP_URL_PATH));
+    }
+
+    public function testRegisterContractorKeepsAnUpToDateRecord()
+    {
+        $contractor = IfirmaReceiptService::build($this->module)->buildContractor(Order::$instances[15]);
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('body' => json_encode(array(
+            'response' => array('Kod' => 0, 'Informacja' => '', 'Wynik' => array($contractor)),
+        ))));
+
+        $r = $this->actions->registerContractor(15);
+
+        $this->assertTrue($r['success'], $r['message']);
+        $this->assertSame('kept', $r['data']['action']);
+        $this->assertSame('Contractor PS-C5 already exists in iFirma and is up to date.', $r['message']);
+        $this->assertCount(1, $this->t->calls);
+    }
+
+    public function testRegisterContractorFallsBackWhenIFirmaIsUnreachable()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('status' => 0, 'error' => 'timeout'));
+
+        $r = $this->actions->registerContractor(15);
+
+        $this->assertFalse($r['success']);
+        $this->assertSame('fallback', $r['data']['action']);
+        $this->assertStringContainsString('could not be registered', $r['message']);
+        $this->assertCount(1, $this->t->calls);
+    }
+
+    public function testRegisterContractorInvalidOrderAndDisabledSync()
+    {
+        $invalid = $this->actions->registerContractor(999);
+        $this->assertFalse($invalid['success']);
+        $this->assertSame('Invalid order.', $invalid['message']);
+
+        Configuration::updateValue('IFIRMA_CONTRACTOR_SYNC', 0);
+        $r = $this->actions->registerContractor(15);
+        $this->assertFalse($r['success']);
+        $this->assertSame('Contractor registration is disabled in the module settings.', $r['message']);
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testRegisterContractorReportsTheLinkToAnExistingContractor()
+    {
+        Address::$instances[7]->company = 'ACME Sp. z o.o.';
+        Address::$instances[7]->vat_number = '525-224-84-81';
+        $row = array_merge(
+            IfirmaReceiptService::build($this->module)->buildContractor(Order::$instances[15]),
+            array('Identyfikator' => 'ACME-02')
+        );
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('body' => '{"response":{"Kod":208,"Informacja":"Nie znaleziono kontrahenta"}}'));
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array($row))))));
+
+        $r = $this->actions->registerContractor(15);
+
+        $this->assertTrue($r['success'], $r['message']);
+        $this->assertSame('ACME-02', $r['data']['identifier']);
+        $this->assertSame('nip', $r['data']['matched_by']);
+        $this->assertStringContainsString('Linked to existing contractor ACME-02 (matched by NIP)', $r['message']);
+        $this->assertSame(array(), $this->posts());
+        $rows = IfirmaTestState::objects('ifirma_contractor_map');
+        $this->assertSame('ACME-02', reset($rows)['ifirma_identifier']);
+    }
 }

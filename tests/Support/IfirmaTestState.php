@@ -34,6 +34,9 @@ class IfirmaTestState
         HelperForm::reset();
         Context::reset();
         IfirmaApiClient::setDefaultTransport(null);
+        if (class_exists('IfirmaSchema', false)) {
+            IfirmaSchema::resetEnsureCache();
+        }
 
         // Ifirma keeps a private static render guard; clear it if the module is loaded.
         if (class_exists('Ifirma', false)) {

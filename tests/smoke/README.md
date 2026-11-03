@@ -118,3 +118,9 @@ and list every failed assertion. `[SKIP]` lines do not affect the exit code.
 
 PrestaShop 9 / PHP 8.4+ also flagged implicitly nullable parameters (`Type $x = null`); the module now declares
 them as `?Type $x = null` (PHP 7.1+ syntax, still inside the 7.2 floor).
+
+## Contractor linking check
+
+`contractor-link-check.php` seeds an "old" contractor in the mock, imports a CSV naming the demo customer,
+verifies the mapping and issues a document that must carry the mapped identifier (and update the contractor
+through PUT). Run it as `docker compose exec -T -u www-data prestashop php modules/ifirma/tests/smoke/contractor-link-check.php`.

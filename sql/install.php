@@ -13,6 +13,7 @@ require_once __DIR__ . '/../classes/IfirmaSchema.php';
 $sql = array(
     IfirmaSchema::receiptCreateSql(),
     IfirmaSchema::dataRequestCreateSql(),
+    IfirmaSchema::contractorMapCreateSql(),
 );
 
 foreach ($sql as $query) {

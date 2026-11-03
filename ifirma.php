@@ -13,7 +13,9 @@ require_once __DIR__ . '/classes/IfirmaApiClient.php';
 require_once __DIR__ . '/classes/IfirmaReceipt.php';
 require_once __DIR__ . '/classes/IfirmaPaymentMethodResolver.php';
 require_once __DIR__ . '/classes/IfirmaDataRequest.php';
+require_once __DIR__ . '/classes/IfirmaContractorMap.php';
 require_once __DIR__ . '/classes/IfirmaContractorService.php';
+require_once __DIR__ . '/classes/IfirmaContractorImport.php';
 require_once __DIR__ . '/classes/IfirmaReceiptService.php';
 require_once __DIR__ . '/classes/IfirmaDuplicateGuard.php';
 require_once __DIR__ . '/classes/IfirmaDeliveryService.php';
@@ -133,13 +135,173 @@ class Ifirma extends Module
     {
         $output = '';
 
+        $report = null;
+        $errors = array();
         if (Tools::isSubmit('submitIfirmaRegenerateCron')) {
             $output .= $this->regenerateCronToken();
         } elseif (Tools::isSubmit('submitIfirma')) {
             $output .= $this->postProcessConfiguration();
+        } elseif (Tools::isSubmit('submitIfirmaImportContractors')) {
+            list($report, $errors) = $this->processContractorImport();
+        } elseif (Tools::isSubmit('submitIfirmaResetContractorMap')) {
+            $output .= $this->resetContractorMap();
         }
 
-        return $output . $this->renderConfigForm();
+        return $output . $this->renderConfigForm() . $this->renderContractorsPanel($report, $errors);
+    }
+
+    /**
+     * Test seam: callable(string $tmpName): bool replacing is_uploaded_file() for the CSV upload.
+     *
+     * @var callable|null
+     */
+    public static $uploadValidator = null;
+
+    /** Maximum size of the contractor CSV upload (bytes). */
+    const CONTRACTOR_CSV_MAX_BYTES = 5242880;
+
+    /**
+     * Handles the contractor CSV upload.
+     *
+     * @return array [report|null, list of error strings]
+     */
+    private function processContractorImport()
+    {
+        $file = isset($_FILES['IFIRMA_CONTRACTOR_CSV']) && is_array($_FILES['IFIRMA_CONTRACTOR_CSV'])
+            ? $_FILES['IFIRMA_CONTRACTOR_CSV']
+            : null;
+        if ($file === null || empty($file['tmp_name']) || (isset($file['error']) && (int) $file['error'] !== 0)) {
+            return array(null, array($this->l('No file was uploaded or the upload failed.')));
+        }
+        $tmp = (string) $file['tmp_name'];
+        if (isset($file['size']) && (int) $file['size'] > self::CONTRACTOR_CSV_MAX_BYTES) {
+            return array(null, array($this->l('The file is larger than 5 MB.')));
+        }
+        if (is_callable(self::$uploadValidator)) {
+            $valid = (bool) call_user_func(self::$uploadValidator, $tmp);
+        } else {
+            $valid = !function_exists('is_uploaded_file') || is_uploaded_file($tmp);
+        }
+        $content = $valid && is_readable($tmp) ? file_get_contents($tmp) : false;
+        if ($content === false) {
+            return array(null, array($this->l('The uploaded file could not be read.')));
+        }
+        if (strlen($content) > self::CONTRACTOR_CSV_MAX_BYTES) {
+            return array(null, array($this->l('The file is larger than 5 MB.')));
+        }
+
+        $import = new IfirmaContractorImport();
+        $report = $import->import($content);
+
+        $errors = array();
+        foreach ($report['errors'] as $error) {
+            if (preg_match('/^missing column: (.+)$/', $error, $m)) {
+                $errors[] = sprintf($this->l('Missing column: %s. Nothing was imported.'), $m[1]);
+            } elseif ($error === 'empty file' || $error === 'no contractor rows found') {
+                $errors[] = $this->l('The file contains no contractor rows. Nothing was imported.');
+            } else {
+                $errors[] = $error;
+            }
+        }
+        if (empty($report['rows'])) {
+            return array(null, $errors);
+        }
+        $report['unmatched_text'] = implode(', ', $report['unmatched_rows']);
+
+        return array($report, $errors);
+    }
+
+    /**
+     * @return string HTML notice
+     */
+    private function resetContractorMap()
+    {
+        if ((int) Tools::getValue('confirm') !== 1) {
+            return $this->displayError($this->l('The links were not removed: confirmation is missing.'));
+        }
+        IfirmaContractorMap::truncateAll();
+
+        return $this->displayConfirmation($this->l('All customer to contractor links were removed.'));
+    }
+
+    /**
+     * @param array|null $report
+     * @param array      $errors
+     * @return string HTML
+     */
+    private function renderContractorsPanel($report, array $errors)
+    {
+        try {
+            $counts = IfirmaContractorMap::countByMatchType();
+        } catch (Exception $e) {
+            $counts = array();
+        }
+        $token = Tools::getAdminTokenLite('AdminModules');
+        $this->context->smarty->assign(array(
+            'ifirma_cm_counts' => $counts,
+            'ifirma_cm_report' => $report,
+            'ifirma_cm_errors' => $errors,
+            'ifirma_cm_token' => $token,
+            'ifirma_cm_action' => AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . $token,
+        ));
+
+        return $this->display(__FILE__, 'views/templates/admin/contractors.tpl');
+    }
+
+    /**
+     * @param int $idCustomer
+     * @return array|null identifier, matched_by, matched_by_label, name
+     */
+    private function contractorMapFor($idCustomer)
+    {
+        if ($idCustomer <= 0) {
+            return null;
+        }
+        try {
+            $map = IfirmaContractorMap::getByCustomer($idCustomer);
+        } catch (Exception $e) {
+            return null;
+        }
+        if (!$map) {
+            return null;
+        }
+
+        return array(
+            'identifier' => (string) $map->ifirma_identifier,
+            'matched_by' => (string) $map->matched_by,
+            'matched_by_label' => $this->matchedByLabel((string) $map->matched_by),
+            'name' => (string) $map->ifirma_name,
+        );
+    }
+
+    /**
+     * @param string $matchedBy
+     * @return string
+     */
+    private function matchedByLabel($matchedBy)
+    {
+        switch ($matchedBy) {
+            case 'module':
+                return $this->l('module contractor');
+            case 'nip':
+                return $this->l('NIP');
+            case 'name':
+                return $this->l('name');
+            case 'email':
+                return $this->l('e-mail');
+            case 'import-nip':
+                return $this->l('import, NIP');
+            case 'import-email':
+                return $this->l('import, e-mail');
+            case 'import-name':
+                return $this->l('import, name and postcode');
+            case 'document':
+                return $this->l('attached by iFirma to an issued document');
+            case 'manual':
+                return $this->l('manual link');
+            default:
+                return $matchedBy;
+        }
     }
 
     /**
@@ -912,11 +1074,20 @@ class Ifirma extends Module
             $history[] = $entry;
         }
 
+        $contractorMap = null;
+        if ($order && Validate::isLoadedObject($order)) {
+            $contractorMap = $this->contractorMapFor((int) $order->id_customer);
+        }
+
         $this->context->smarty->assign(array(
+            'ifirma_contractor_map' => $contractorMap,
             'ifirma_id_order' => $idOrder,
             'ifirma_receipt' => $receipt,
             'ifirma_payment_method' => $paymentMethod,
             'ifirma_contractor_note' => $contractorNote,
+            'ifirma_request_payload' => $receipt ? (string) $receipt->request_payload : '',
+            'ifirma_response_payload' => $receipt ? (string) $receipt->response_payload : '',
+            'ifirma_module_version' => (string) $this->version,
             'ifirma_has_receipt' => (bool) $receipt,
             'ifirma_is_issued' => $isIssued,
             'ifirma_is_external' => (bool) ($receipt && $receipt->isExternal()),

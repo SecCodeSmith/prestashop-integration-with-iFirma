@@ -119,6 +119,8 @@ registered customer sees the document in **My account** and on the **Order detai
 and downloads the PDF through the secured front controller `controllers/front/receipt.php`
 (per-document token plus ownership check).
 
+The panel's **Register contractor in iFirma** button creates or refreshes the order customer's iFirma contractor (`PS-C<id>`) without issuing a document, which is useful before the first document is issued.
+
 A failure never breaks the PrestaShop status change: exceptions are logged
 (Advanced Parameters > Logs) and stored as the record's last error.
 
@@ -270,6 +272,12 @@ by the synchronisation job; `duplicate_candidates` (JSON list of possible
 existing documents found before issuing); and `id_data_request`, the link to
 the buyer-data request that produced the document.
 
+`ps_ifirma_contractor_map` (new in 1.1.0) - one row per customer linking it to an iFirma
+contractor: `id_customer` (unique), `ifirma_identifier`, `matched_by` (`module`, `nip`,
+`name`, `email`, `import-nip`, `import-email`, `import-name`, `manual`), `ifirma_name`.
+Created on install, on upgrade and, when missing, on first use. See "Linking existing
+contractors".
+
 `ps_ifirma_data_request` (new in 1.1.0) - customer requests to change the buyer
 data (company, NIP, address) used on a document. One row per request: order,
 customer and shop; `status` (`pending` / `approved` / `rejected` /
@@ -324,6 +332,41 @@ behaviour of not sending anything), the **data-request switch**
 (`IFIRMA_ALLOW_DATA_REQUEST`, default on) and the **cron token / schedule**
 (`IFIRMA_CRON_TOKEN` is generated automatically; point your scheduler at the
 synchronisation URL at the interval set in `IFIRMA_SYNC_INTERVAL_MIN`).
+
+## Linking existing contractors
+
+Without any setup the module registers one iFirma contractor per customer (identifier `PS-C<id_customer>`). If you already keep contractors in iFirma you do not want a second record for every returning customer, so the module can link a customer to a contractor that exists. A link is stored in the table `ifirma_contractor_map` (one contractor per customer) and reused for every later order.
+
+### Bulk linking from an iFirma export
+
+1. In iFirma open *Kontrahenci* and export the list to CSV.
+2. In the module configuration page open the *iFirma contractors* panel, choose the file (up to 5 MB) and press *Import contractors*.
+
+The file may be separated with `;`, `,` or a tab and encoded as UTF-8 (with or without BOM) or Windows-1250; the separator and encoding are detected. Columns are found by their header, ignoring case and Polish letters:
+
+| Meaning | Accepted headers |
+|---|---|
+| Identifier (required) | `Identyfikator`, `ID`, `Identifier` |
+| Name | `Nazwa`, `Nazwa kontrahenta`, `Name` |
+| NIP | `NIP`, `VAT` |
+| E-mail | `E-mail`, `Email`, `Adres e-mail` |
+| Postcode | `Kod pocztowy`, `KodPocztowy`, `Kod`, `Postal code` |
+
+A file without the identifier column is refused with the message `Missing column: Identyfikator` and nothing is stored. The import never calls the iFirma API; it matches the rows against the shop database in this order:
+
+1. **NIP** equal (digits only) to the VAT number or `dni` of a customer address (`import-nip`);
+2. **e-mail** equal to the customer e-mail, ignoring case (`import-email`);
+3. **name plus postcode**: the contractor name equals the address company or the customer's first and last name (case, spaces, punctuation and Polish letters ignored) and the postcode digits are equal (`import-name`). A name alone is never enough, and a name shared by several customers with the same postcode is skipped.
+
+Each customer gets one link. A customer that already has a link keeps it unless the new row matches by a stronger rule (NIP is stronger than e-mail, e-mail stronger than name; a link created by the module as `PS-C<id>` is replaced by any import match; a manual link is never replaced). Re-importing the same file changes nothing. The report shows the number of rows read, linked customers per match type, unmatched rows (with the first 20 identifiers) and links kept.
+
+### Matching while issuing a document
+
+For customers that are not in the import, the module looks for an existing contractor when it issues a document, in this order: the stored link (verified in iFirma; dropped when the contractor no longer exists), the module contractor `PS-C<id>`, a contractor with exactly the order NIP (`GET kontrahenci/<NIP>.json`; with several results the one with the same name, then the same postcode), and a contractor whose name equals the buyer name and whose e-mail or postcode confirms it. Name matching without a confirming e-mail or postcode is deliberately refused: a document on the wrong contractor is worse than one extra contractor. When nothing matches, `PS-C<id>` is created as before. iFirma returns at most 20 search results and offers no contractor list, which is why the export import exists. A failing search (network error, rejected signature) counts as "no match" and never blocks issuing. A linked contractor is updated with the shop's buyer data only when those fields differ (the same merge as for `PS-C<id>`), and the order panel shows the linked contractor and how it was matched.
+
+### Forgetting links
+
+*Forget all links* in the same panel (it asks for confirmation) empties `ifirma_contractor_map`. Documents already issued are not touched; the next document of each customer is matched again.
 
 ## Customer data-change requests
 
@@ -402,8 +445,10 @@ an order **before** the document is issued. Enabled by `IFIRMA_ALLOW_DATA_REQUES
   each order line’s tax rate (`0%` lines are marked `ZW`). Shipping is added as a line.
 - Business customers (company + VAT/NIP on the invoice address) are sent as
   `OsobaFizyczna = false` with their NIP; everyone else as a private person.
-- The contractor identifier is `PS-C{id_customer}` (at most 15 characters, matching iFirma's
-  contractor identifier limit), so the same customer maps to the same iFirma contractor.
+- The contractor identifier the module creates is `PS-C{id_customer}` (at most 15 characters,
+  iFirma's documented limit for new contractors). Existing contractors may carry longer
+  identifiers; the module stores up to 64 characters, so the same customer always maps to the
+  same iFirma contractor.
 - The order reference (`PS-ORDER-{id_order}-{reference}`) is stamped in `Uwagi` and in
   `DodatkoweUwagi` (`NUMER_ZAMOWIENIA`) of every document the module issues.
 - Text fields are truncated to iFirma's documented maxima before sending (e.g. buyer name 150,
@@ -453,6 +498,25 @@ dependencies installed in a module root shadow PrestaShop's own classes (observe
 breaking PrestaShop 9's module parser, and test stubs replacing `Module`). Composer therefore installs into
 `tests/vendor/` (`config.vendor-dir`), a path PrestaShop never loads. Do not move it back, and never deploy a
 `vendor/` directory; the release zip and the npm tarball exclude `tests/`.
+
+## Troubleshooting
+
+**After updating the module, clear the PrestaShop cache** (Advanced Parameters > Performance > Clear cache).
+With *Template compilation* set to "Never recompile template files" (the common production setting),
+PrestaShop keeps serving the old admin panel and customer templates until the cache is cleared, even though
+the PHP code is already new. The module version shown in the panel diagnostics tells you which code runs.
+
+**`Nie znaleziono kontrahenta o zadanym identyfikatorze` (Kod 201).** iFirma only accepts a
+`Kontrahent.Identyfikator` that already exists in the account and creates a contractor itself only when the
+identifier is absent. Version 1.1.0 registers the contractor `PS-C<customer id>` before issuing (see
+"Notes & assumptions") and falls back to a document without identifier when that fails. If you still see
+this message: (1) confirm the module version is 1.1.0 and the cache was cleared; (2) open the order's iFirma
+panel, expand **Diagnostics: last iFirma request and response**, and check the *Contractor step* line and the
+request body; (3) as a workaround, disable *Register the customer as an iFirma contractor* in the module
+settings so every document is created without an identifier.
+
+**Reporting a problem.** Copy the diagnostics block (request, response, contractor step, last error) and the
+relevant lines from Advanced Parameters > Logs (messages start with "iFirma"). Neither contains API keys.
 
 ## Legal Disclaimer & Trademarks
 

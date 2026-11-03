@@ -42,6 +42,10 @@ function upgrade_module_1_1_0($module)
     if (!$db->execute(IfirmaSchema::dataRequestCreateSql())) {
         return false;
     }
+    if (!$db->execute(IfirmaSchema::contractorMapCreateSql())) {
+        return false;
+    }
+    IfirmaSchema::widenContractorMapIdentifier();
 
     foreach (IfirmaSchema::configurationDefaults() as $key => $value) {
         if (Configuration::get($key) !== false) {

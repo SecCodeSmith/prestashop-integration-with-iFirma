@@ -16,6 +16,7 @@ if (!defined('_PS_VERSION_')) {
 require_once dirname(__FILE__) . '/IfirmaApiClient.php';
 require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaDataRequest.php';
+require_once dirname(__FILE__) . '/IfirmaContractorService.php';
 require_once dirname(__FILE__) . '/IfirmaReceiptService.php';
 require_once dirname(__FILE__) . '/IfirmaIssuancePipeline.php';
 require_once dirname(__FILE__) . '/IfirmaDuplicateGuard.php';
@@ -261,6 +262,116 @@ class IfirmaAdminActions
             }
 
             return $this->result(true, $this->module->l('Status refreshed from iFirma.', 'ifirmaadminactions'), $data);
+        } catch (Exception $e) {
+            return $this->failure($e);
+        } catch (Throwable $e) {
+            return $this->failure($e);
+        }
+    }
+
+    /**
+     * @param string $matchedBy
+     * @return string
+     */
+    private function matchedByLabel($matchedBy)
+    {
+        switch ($matchedBy) {
+            case 'nip':
+            case 'import-nip':
+                return $this->module->l('NIP', 'ifirmaadminactions');
+            case 'email':
+            case 'import-email':
+                return $this->module->l('e-mail', 'ifirmaadminactions');
+            case 'name':
+            case 'import-name':
+                return $this->module->l('name', 'ifirmaadminactions');
+            case 'document':
+                return $this->module->l('issued document', 'ifirmaadminactions');
+            default:
+                return $this->module->l('manual link', 'ifirmaadminactions');
+        }
+    }
+
+    /**
+     * Registers the order customer as an iFirma contractor without issuing a document.
+     *
+     * @param int $idOrder
+     * @return array
+     */
+    public function registerContractor($idOrder)
+    {
+        try {
+            $order = $this->loadOrder($idOrder);
+            if (!$order) {
+                return $this->result(false, $this->module->l('Invalid order.', 'ifirmaadminactions'));
+            }
+            if (!IfirmaContractorService::build($this->module)->isEnabled()) {
+                return $this->result(
+                    false,
+                    $this->module->l('Contractor registration is disabled in the module settings.', 'ifirmaadminactions')
+                );
+            }
+
+            $contractor = IfirmaReceiptService::build($this->module)->buildContractor(
+                $order,
+                IfirmaDataRequestService::build($this->module)->getOverrideForOrder($idOrder)
+            );
+            $receiptService = IfirmaReceiptService::build($this->module);
+            $override = IfirmaDataRequestService::build($this->module)->getOverrideForOrder($idOrder);
+            $result = IfirmaContractorService::build($this->module)->ensure(
+                $contractor,
+                (int) $order->id_customer,
+                $receiptService->contractorHints($order, $contractor, $override)
+            );
+            $identifier = $result['identifier'] !== null ? (string) $result['identifier'] : (string) $contractor['Identyfikator'];
+            $matchedBy = isset($result['matched_by']) ? (string) $result['matched_by'] : '';
+            $data = array(
+                'identifier' => $identifier,
+                'action' => $result['action'],
+                'message' => $result['message'],
+                'matched_by' => $matchedBy,
+            );
+            $linked = in_array($matchedBy, array('nip', 'name', 'email', 'manual', 'document', 'import-nip', 'import-email', 'import-name'), true)
+                && $identifier !== (string) $contractor['Identyfikator'];
+            if ($linked) {
+                $matchedLabel = $this->matchedByLabel($matchedBy);
+                $linkNote = sprintf(
+                    $this->module->l('linked to existing contractor %s (matched by %s)', 'ifirmaadminactions'),
+                    $identifier,
+                    $matchedLabel
+                );
+            }
+
+            switch ($result['action']) {
+                case IfirmaContractorService::ACTION_CREATED:
+                    $message = sprintf($this->module->l('Contractor %s created in iFirma.', 'ifirmaadminactions'), $identifier);
+                    break;
+                case IfirmaContractorService::ACTION_UPDATED:
+                    $message = sprintf($this->module->l('Contractor %s updated in iFirma.', 'ifirmaadminactions'), $identifier);
+                    break;
+                case IfirmaContractorService::ACTION_KEPT:
+                    $message = sprintf(
+                        $this->module->l('Contractor %s already exists in iFirma and is up to date.', 'ifirmaadminactions'),
+                        $identifier
+                    );
+                    break;
+                default:
+                    return $this->result(
+                        false,
+                        sprintf(
+                            $this->module->l('Contractor %s could not be registered: %s', 'ifirmaadminactions'),
+                            $identifier,
+                            $result['message']
+                        ),
+                        $data
+                    );
+            }
+
+            if ($linked) {
+                $message = ucfirst($linkNote) . '. ' . $message;
+            }
+
+            return $this->result(true, $message, $data);
         } catch (Exception $e) {
             return $this->failure($e);
         } catch (Throwable $e) {

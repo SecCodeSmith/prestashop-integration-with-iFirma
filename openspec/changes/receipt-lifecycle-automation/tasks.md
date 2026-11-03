@@ -112,6 +112,13 @@ Conventions for every task: keep PHP 7.2-compatible syntax (`array()`, no typed 
 - [x] 14.2 Add the switch to the configuration form and the contractor action to the admin panel; document it in README; verify the form test and the Smarty compile pass.
 - [x] 14.3 Extend the mock with the contractor endpoints and the production-faithful rejection of unknown identifiers; verify pytest and both Docker smoke runs pass with contractor registration enabled.
 
+## 15. Existing contractor linking
+
+- [x] 15.1 Add the `ifirma_contractor_map` table (schema, install, upgrade, lazy ensure) and model with finders by customer and by identifier; verify PHPUnit covers the schema and the lazy creation path.
+- [x] 15.2 Extend `IfirmaContractorService::ensure()` with the resolution order mapping -> PS-C -> NIP search -> name search confirmed by e-mail/postcode -> create, storing matches; verify PHPUnit covers every scenario of "Existing contractor matching" with scripted search responses and the mock search endpoint behaves accordingly.
+- [x] 15.3 Implement the CSV import on the configuration page (upload, delimiter/encoding detection, header mapping, offline matching, idempotent storage, counts report) and show the mapping in the order panel; verify PHPUnit covers the parser, the matcher and the report, the Smarty compile passes, and a manual import on the Docker shop links the demo customer.
+- [x] 15.4 Document contractor linking and the import in README (how to export from iFirma, expected columns, limits); verify the section exists.
+
 ## Workflow follow-up
 
 - Archive the change with `/openspec-archive-change` after the merchant has reviewed the default delivery channel and the duplicate-guard behaviour on a staging shop.

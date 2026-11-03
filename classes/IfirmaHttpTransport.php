@@ -39,9 +39,16 @@ class IfirmaHttpTransport
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         curl_setopt($ch, CURLOPT_USERAGENT, 'PrestaShop-iFirma/1.1');
 
-        if (strtoupper($method) === 'POST') {
+        $method = strtoupper((string) $method);
+        if ($method === 'POST') {
             curl_setopt($ch, CURLOPT_POST, true);
             curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+        } elseif ($method !== 'GET') {
+            // PUT (contractor update) and any other verb: cURL defaults to GET otherwise.
+            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
+            if ((string) $body !== '') {
+                curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+            }
         }
 
         $response = curl_exec($ch);
