@@ -1,31 +1,31 @@
 # Graph Report - ifirma  (2026-11-04)
 
 ## Corpus Check
-- 202 files · ~205,066 words
+- 203 files · ~206,617 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 20 file(s) not represented in the graph (top: (none) 9, .tpl 6, .xml 1)
 
 ## Summary
-- 3486 nodes · 7891 edges · 218 communities (149 shown, 69 thin omitted)
-- Extraction: 86% EXTRACTED · 14% INFERRED · 0% AMBIGUOUS · INFERRED: 1072 edges (avg confidence: 0.9)
+- 3516 nodes · 7924 edges · 231 communities (149 shown, 82 thin omitted)
+- Extraction: 86% EXTRACTED · 14% INFERRED · 0% AMBIGUOUS · INFERRED: 1073 edges (avg confidence: 0.9)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `f6ecd77e`
+- Built from commit: `a36866a9`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - main.py
 - CustomerContractorServiceTest
-- tools/check_license_headers.py
+- test-stack/tools/check_license_headers.py
 - package.json
 - PrestaShop iFirma integration module
 - AdminIfirmaController
 - Ifirma
 - openspec-archive-change skill
 - test_mock_contractors.py
-- IfirmaReceipt
+- StatusSyncServiceTest
 - iFirma Module Logo
 - Project CLAUDE.md (graphify rules)
 - ifirma-mock
@@ -49,7 +49,7 @@
 - DuplicateGuardTest
 - Order
 - Requirement: Candidate detail verification
-- IfirmaDeliveryService
+- IfirmaReceipt
 - CreateReceiptTest
 - Requirements
 - Requirements
@@ -59,28 +59,30 @@
 - 1. Test harness (unit tests runnable without PrestaShop)
 - IfirmaDataRequestService
 - composer.json
-- DeliveryServiceTest
+- .updateValue
 - Requirements
 - KsefServiceTest
 - Requirements
+- PHPUnit\Framework\TestCase
 - PayloadBuilderTest
 - ApiClientErrorsTest
 - Requirements
 - ADDED Requirements
-- .link
+- Decisions
 - Requirements
 - IfirmaPaymentMethodResolver
 - .getInstance
-- Address
+- IfirmaTestRegistryTrait
 - .shop
 - Requirement: Created contractor read-back
 - Requirement: Delivery copy settings
 - test_mock_enums.py
 - .isIssued
-- AdminActionsTest
+- ADDED Requirements
 - .objects
 - OrderHistory
 - AdminControllerCustomerTest
+- Requirements
 - ADDED Requirements
 - ApiClientTest
 - Requirement: Created contractor read-back
@@ -97,11 +99,11 @@
 - Requirement: Candidate detail verification
 - IfirmaContractorService
 - IfirmaIssuancePipeline
-- ADDED Requirements
+- .approve
 - Requirement: Candidate selection
 - Requirement: Eligibility
 - IfirmaCustomerContractorService
-- Decisions
+- IfirmaGuardResult
 - .resetAll
 - Requirement: Request content and validation
 - Requirements
@@ -119,7 +121,7 @@
 - Requirement: Audit trail
 - Requirement: Pending request holds issuance
 - OpenSpec config (spec-driven schema)
-- OrderState
+- test_ifirma_mock.py
 - Requirement: Contractor import from a CSV export
 - Requirement: Error-code mapping
 - Requirement: Contractor registration before issuance
@@ -128,7 +130,6 @@
 - Requirement: Payload length limits
 - Requirement: Approved data overrides the document payload
 - Requirement: Existing contractor matching
-- Decisions
 - Requirement: Deterministic contractor identifier
 - Requirement: Documented enumerations only
 - Requirement: Optional limit visibility
@@ -147,9 +148,10 @@
 - Requirement: Submission creates a pending request
 - Requirement: Documented enumerations only
 - IfirmaAdminActions
-- Employee
+- .getContext
 - IssuancePipelineTest.php
 - Requirement: iFirma-mail channel
+- .postProcessConfiguration
 - .strlen
 - Spec Delta
 - Requirement: Contractor attached by iFirma is learned
@@ -182,25 +184,32 @@
 - IfirmaCustomerView
 - Document
 - Proposal
-- .substr
+- hmac
 - Decisions
 - build_pdf
 - HarnessSmokeTest
 - .get
 - Decisions
 - verify-package.mjs
-- What Changes
-- TranslationCoverageTest
-- ObjectModel
 - Tasks
+- .substr
+- ObjectModel
+- Configuration
 - Module smoke run
 - Requirement: Releases are atomic
-- Tasks
+- .testTimeouts
 - scripts
 - Proposal
+- Proposal
+- 2. Receipt note storage and order panel (D2)
+- ModuleAdminController
+- Design
+- Tasks
+- config.py
+- IfirmaDataRequestService.php
 - Requirement: Test builds are uniquely identified
-- Requirement: Version sources stay consistent
-- DuplicateGuardTest.php
+- HelperForm
+- _clean_state
 
 ## God Nodes (most connected - your core abstractions)
 1. `Stubs (tests/Stubs)` - 97 edges
@@ -235,19 +244,15 @@
 - **Receipt creation and delivery flow** — readme_admin_ifirma_controller, classes_ifirmareceiptservice, classes_ifirmaapiclient, readme_receipt_front_controller [INFERRED 0.85]
 - **Delta-to-main spec sync pipeline** — _claude_skills_openspec_sync_specs_skill_delta_specs, _claude_skills_openspec_sync_specs_skill_main_specs, _claude_skills_openspec_sync_specs_skill, _claude_skills_openspec_archive_change_skill_post_sync_verification, _claude_skills_openspec_archive_change_skill_archive_move [INFERRED 0.85]
 
-## Communities (218 total, 69 thin omitted)
+## Communities (231 total, 82 thin omitted)
 
 ### Community 0 - "main.py"
 Cohesion: 0.13
 Nodes (10): _contractor_errors(), create_document(), _document_validation_error(), _has_invalid_enum(), health(), _ksef_date_ok(), _register_call(), reset_counters() (+2 more)
 
-### Community 1 - "CustomerContractorServiceTest"
-Cohesion: 0.08
-Nodes (6): 2. Local link state and counts (D2, D4), 3. Registration check, search and ranking (D3, D6), 4. Remote document count (D5), 7. Documentation, Tasks, CustomerContractorServiceTest
-
-### Community 2 - "tools/check_license_headers.py"
+### Community 2 - "test-stack/tools/check_license_headers.py"
 Cohesion: 0.13
-Nodes (21): add_header(), has_marker(), insert_index(), main(), rel(), read_file(), render_header(), repo_root() (+13 more)
+Nodes (22): add_header(), forbidden_hits(), has_marker(), insert_index(), main(), rel(), read_file(), render_header() (+14 more)
 
 ### Community 3 - "package.json"
 Cohesion: 0.17
@@ -258,36 +263,32 @@ Cohesion: 0.06
 Nodes (31): Module CI workflow, Build package (zip + tgz) job, tools/check_license_headers.py, Mock tests (test-stack) job, PHP lint & license headers job, Release workflow, Publish GitHub Release with zip and tgz, Version bump synced across package.json, ifirma.php, config.xml (+23 more)
 
 ### Community 5 - "AdminIfirmaController"
-Cohesion: 0.05
-Nodes (24): AdminIfirmaController, IfirmaDatarequestModuleFrontController, IfirmaReceiptModuleFrontController, 10. Status sync (spec: receipt-status-sync), 11. Customer visibility (spec: customer-receipt-visibility), 12. Integration verification and release readiness, 13. Payment method follows the order, 14. Contractor registration before issuance (+16 more)
-
-### Community 6 - "Ifirma"
-Cohesion: 0.07
-Nodes (5): Ifirma, 4. Match labels (Tier 1), 8. Payment map serialiser (Tier 1), 7. Module class extractions, HelperForm
+Cohesion: 0.06
+Nodes (21): AdminIfirmaController, IfirmaDatarequestModuleFrontController, IfirmaReceiptModuleFrontController, 10. Status sync (spec: receipt-status-sync), 11. Customer visibility (spec: customer-receipt-visibility), 12. Integration verification and release readiness, 13. Payment method follows the order, 14. Contractor registration before issuance (+13 more)
 
 ### Community 7 - "openspec-archive-change skill"
 Cohesion: 0.18
 Nodes (17): openspec-apply-change skill, openspec CLI, Store selection (--store flag), Task checkbox tracking (tasks.md), openspec-archive-change skill, Archive move to dated archive directory, openspec-explore skill, openspec-propose skill (+9 more)
 
 ### Community 8 - "test_mock_contractors.py"
-Cohesion: 0.12
-Nodes (46): by_id(), _clean_state(), contractor(), create_contractor(), document(), get_json(), listing(), receipt() (+38 more)
+Cohesion: 0.13
+Nodes (44): by_id(), _clean_state(), contractor(), create_contractor(), document(), get_json(), listing(), receipt() (+36 more)
 
 ### Community 10 - "iFirma Module Logo"
 Cohesion: 0.50
 Nodes (4): Glowing Green Hammer Icon, iFirma Module Logo, Matrix-style Binary Code Rain Background, PrestaShop Module Icon Usage
 
 ### Community 27 - "IfirmaApiClient"
-Cohesion: 0.11
-Nodes (6): IfirmaApiClient, IfirmaHttpTransport, Context, D8. API client hardening: error mapping, request accounting, rate guard, 4. API client hardening (spec: ifirma-api-compliance), buildClient()
+Cohesion: 0.13
+Nodes (4): IfirmaApiClient, D8. API client hardening: error mapping, request accounting, rate guard, 4. API client hardening (spec: ifirma-api-compliance), buildClient()
 
 ### Community 28 - "Support (tests/Support)"
-Cohesion: 0.19
-Nodes (4): PrestaShop stubs for unit tests, Support (tests/Support), IfirmaTestController, IfirmaTestRedirect
+Cohesion: 0.14
+Nodes (5): PrestaShop stubs for unit tests, Support (tests/Support), IfirmaTestController, IfirmaTestRedirect, IfirmaTestModuleLoader
 
 ### Community 29 - "run.php"
-Cohesion: 0.17
-Nodes (38): assertSame(), assertTrue(), candidateIds(), {closure#1}(), {closure#10}(), {closure#2}(), {closure#3}(), {closure#4}() (+30 more)
+Cohesion: 0.13
+Nodes (40): assertSame(), assertTrue(), candidateIds(), {closure#1}(), {closure#10}(), {closure#2}(), {closure#3}(), {closure#4}() (+32 more)
 
 ### Community 32 - "ADDED Requirements"
 Cohesion: 0.04
@@ -305,21 +306,13 @@ Nodes (40): ADDED Requirements, Purpose, Requirement: Account block, Requirement
 Cohesion: 0.06
 Nodes (32): ADDED Requirements, Purpose, Requirement: Cron endpoint authentication, Requirement: Cron selection and budget, Requirement: Missing-document detection, Requirement: On-demand admin refresh, Requirement: Opportunistic customer sync, Requirement: Paid transition (+24 more)
 
-### Community 36 - "CustomerViewTest"
-Cohesion: 0.06
-Nodes (28): D11. Payment method follows the order, D12. Register the contractor before issuing (production finding, 2026-11-02), D13. Link customers to existing contractors (merchant finding, 2026-11-02), D14. Reference contractors through IdentyfikatorKontrahenta (live-API finding, 2026-11-02), D15. Unknown contractor in the list filter is not an error (live-API finding, 2026-11-02), D16. Only documented enumeration values (live-API finding, 2026-11-02), D17. fakturakraj only, PRC-only positions (merchant decision and live-API table review, 2026-11-02), D1. Duplicate detection = list window + identity + confirmation by stamped reference (+20 more)
-
 ### Community 37 - "Stubs (tests/Stubs)"
-Cohesion: 0.07
-Nodes (6): Hook, Stubs (tests/Stubs), Shop, Smarty, Tools, Validate
-
-### Community 38 - "DataRequestServiceTest"
-Cohesion: 0.09
-Nodes (11): 10. IfirmaDataRequest approve/reject (Tier 2), {closure#1}(), {closure#10}(), {closure#11}(), {closure#12}(), {closure#2}(), {closure#3}(), {closure#4}() (+3 more)
+Cohesion: 0.08
+Nodes (5): Hook, Stubs (tests/Stubs), Shop, Tools, Validate
 
 ### Community 39 - "test_mock_extensions.py"
-Cohesion: 0.05
-Nodes (69): AuthResult, _signed_url(), verify(), _env_bool(), Settings, create_receipt(), sign(), test_create_rejects_bad_hmac() (+61 more)
+Cohesion: 0.08
+Nodes (55): _clean_state(), get_json(), ids(), listing(), post_json(), seed(), sign(), test_delete_hides_and_unknown_delete_404() (+47 more)
 
 ### Community 40 - "ADDED Requirements"
 Cohesion: 0.07
@@ -335,23 +328,23 @@ Nodes (23): ADDED Requirements, Purpose, Requirement: Manual submission, Require
 
 ### Community 43 - "ContractorServiceTest"
 Cohesion: 0.05
-Nodes (41): Context, D1. Default mode is `b2b`, D2. The `ksef` step is non-blocking, D3. B2B detection uses the stored request payload, then the invoice address, D4. `WYSLANA` marker is kept until iFirma reports a status, D5. Lazy schema columns, D6. Mock behaviour and what is unverified, D7. Admin state and customer visibility are derived, not stored (+33 more)
+Nodes (43): Context, D1. Default mode is `b2b`, D2. The `ksef` step is non-blocking, D3. B2B detection uses the stored request payload, then the invoice address, D4. `WYSLANA` marker is kept until iFirma reports a status, D5. Lazy schema columns, D6. Mock behaviour and what is unverified, D7. Admin state and customer visibility are derived, not stored (+35 more)
 
 ### Community 44 - "DuplicateGuardTest"
 Cohesion: 0.13
 Nodes (8): Capabilities, Impact, Modified Capabilities, New Capabilities, Proposal, What Changes, Why, DuplicateGuardTest
 
 ### Community 45 - "Order"
-Cohesion: 0.18
+Cohesion: 0.19
 Nodes (4): IfirmaDuplicateGuard, D2. What identifies the buyer, 3. Guard integration (D5), Order
 
 ### Community 46 - "Requirement: Candidate detail verification"
 Cohesion: 0.06
 Nodes (30): ADDED Requirements, MODIFIED Requirements, Requirement: Candidate detail verification, Requirement: Candidate selection, Requirement: Suspected duplicate blocks issuance, Requirement: Unverifiable candidate stays suspected, Scenario: Admin sees candidates, Scenario: All conditions met (+22 more)
 
-### Community 47 - "IfirmaDeliveryService"
-Cohesion: 0.07
-Nodes (21): IfirmaDeliveryService, D1. Read-back sequence inside the create step, D3. Bounded in-request PDF retry in the delivery service, D4. Blind copy through the existing `Mail::Send` call, D5. Configuration fields and validation, D6. Test doubles and the mock, Decisions, Design (+13 more)
+### Community 47 - "IfirmaReceipt"
+Cohesion: 0.12
+Nodes (7): IfirmaDeliveryService, IfirmaReceipt, D1. Read-back sequence inside the create step, D3. Bounded in-request PDF retry in the delivery service, D4. Blind copy through the existing `Mail::Send` call, Decisions, 3. PDF download retry in shop-mail delivery (D3)
 
 ### Community 49 - "Requirements"
 Cohesion: 0.04
@@ -362,7 +355,7 @@ Cohesion: 0.05
 Nodes (40): customer-receipt-visibility Specification, Purpose, Requirement: Account block, Requirement: Admin-only data stays admin-only, Requirement: Customer-language rendering, Requirement: Download access control, Requirement: Held state, Requirement: Issued state (+32 more)
 
 ### Community 51 - "IfirmaDataRequest"
-Cohesion: 0.17
+Cohesion: 0.16
 Nodes (3): IfirmaDataRequest, 2. Data model, configuration and upgrade, IfirmaDataRequestTest
 
 ### Community 53 - "Requirements"
@@ -370,12 +363,8 @@ Cohesion: 0.08
 Nodes (23): ksef-submission Specification, Purpose, Requirement: Manual submission, Requirement: Schema columns, Requirement: Status synchronisation, Requirement: Status visibility, Requirement: Submission mode, Requirements (+15 more)
 
 ### Community 54 - "1. Test harness (unit tests runnable without PrestaShop)"
-Cohesion: 0.07
-Nodes (13): D10. Verification strategy without a live iFirma account, 1. Test harness (unit tests runnable without PrestaShop), 8. Delivery (spec: receipt-delivery), 1. Test stubs for the customer page, 2. API-client factory (Tier 1), Goals / Non-Goals, Notes from the first real run (PrestaShop 8.1.7, 2026-11-01), Configuration (+5 more)
-
-### Community 55 - "IfirmaDataRequestService"
-Cohesion: 0.14
-Nodes (5): IfirmaDataRequestException, IfirmaDataRequestService, 11. Data-request notifier (Tier 2), {closure#6}(), {closure#7}()
+Cohesion: 0.09
+Nodes (12): D10. Verification strategy without a live iFirma account, D3. Issue-and-send pipeline is one orchestrator with per-step state on the receipt row, 1. Test harness (unit tests runnable without PrestaShop), 8. Delivery (spec: receipt-delivery), 1. Test stubs for the customer page, Goals / Non-Goals, Notes from the first real run (PrestaShop 8.1.7, 2026-11-01), Context (+4 more)
 
 ### Community 56 - "composer.json"
 Cohesion: 0.12
@@ -397,21 +386,21 @@ Nodes (32): Purpose, receipt-status-sync Specification, Requirement: Cron endpoi
 Cohesion: 0.04
 Nodes (46): ADDED Requirements, Purpose, Requirement: Access control on panel actions, Requirement: Contractor link state, Requirement: Contractor search for an older contractor, Requirement: Document count from iFirma on request, Requirement: E-mail and phone ranking, Requirement: Live registration check (+38 more)
 
-### Community 66 - ".link"
-Cohesion: 0.14
-Nodes (4): IfirmaContractorMap, IfirmaContractorMapDb, ContractorMapTest, ContractorReferenceTest
+### Community 66 - "Decisions"
+Cohesion: 0.09
+Nodes (21): Context, D11. Payment method follows the order, D12. Register the contractor before issuing (production finding, 2026-11-02), D13. Link customers to existing contractors (merchant finding, 2026-11-02), D14. Reference contractors through IdentyfikatorKontrahenta (live-API finding, 2026-11-02), D15. Unknown contractor in the list filter is not an error (live-API finding, 2026-11-02), D16. Only documented enumeration values (live-API finding, 2026-11-02), D17. fakturakraj only, PRC-only positions (merchant decision and live-API table review, 2026-11-02) (+13 more)
 
 ### Community 67 - "Requirements"
 Cohesion: 0.08
 Nodes (25): Purpose, receipt-delivery Specification, Requirement: Adopted external documents are not auto-delivered, Requirement: Configuration warning about customer e-mails, Requirement: Delivery disabled, Requirement: Delivery failure does not undo issuance, Requirement: Delivery follows issuance, Requirement: Fallback for unsupported types (+17 more)
 
 ### Community 69 - ".getInstance"
-Cohesion: 0.09
-Nodes (8): IfirmaSchema, 7. Schema helper (Tier 1), discoverFixtures(), bqSQL(), pSQL(), SchemaTest, UpgradeTest, upgrade_module_1_1_0()
+Cohesion: 0.06
+Nodes (12): IfirmaContractorMap, IfirmaSchema, 7. Schema helper (Tier 1), discoverFixtures(), bqSQL(), pSQL(), IfirmaContractorMapDb, ContractorMapTest (+4 more)
 
-### Community 70 - "Address"
-Cohesion: 0.08
-Nodes (6): createOrder(), Address, Country, Currency, Customer, IfirmaTestRegistryTrait
+### Community 70 - "IfirmaTestRegistryTrait"
+Cohesion: 0.13
+Nodes (3): Currency, OrderState, IfirmaTestRegistryTrait
 
 ### Community 71 - ".shop"
 Cohesion: 0.11
@@ -426,16 +415,24 @@ Cohesion: 0.12
 Nodes (15): ADDED Requirements, Requirement: Delivery copy settings, Requirement: PDF download retry in shop-mail delivery, Scenario: Authentication error is not retried, Scenario: Customer download keeps a single attempt, Scenario: Defaults after install, Scenario: Employee list offered, Scenario: Employee mode without an employee refused (+7 more)
 
 ### Community 74 - "test_mock_enums.py"
-Cohesion: 0.16
-Nodes (31): all_documents(), assert_rejected(), assert_validation_rejected(), _clean_state(), document(), post_document(), sign(), test_absent_and_null_enum_fields_are_not_checked() (+23 more)
+Cohesion: 0.19
+Nodes (30): all_documents(), assert_rejected(), assert_validation_rejected(), document(), post_document(), sign(), test_absent_and_null_enum_fields_are_not_checked(), test_documented_signing_roles_are_accepted() (+22 more)
+
+### Community 76 - "ADDED Requirements"
+Cohesion: 0.08
+Nodes (23): ADDED Requirements, Purpose, Requirement: Installable package layout, Requirement: Mock API tests run in CI, Requirement: Release commits get a CI run, Requirement: Test builds are uniquely identified, Requirement: Test builds do not alter the module version, Requirement: Test builds only from a passing tree (+15 more)
 
 ### Community 77 - ".objects"
-Cohesion: 0.13
+Cohesion: 0.24
 Nodes (9): {closure#1}(), {closure#2}(), {closure#3}(), {closure#4}(), {closure#1}(), {closure#2}(), {closure#3}(), {closure#4}() (+1 more)
 
 ### Community 79 - "AdminControllerCustomerTest"
 Cohesion: 0.07
 Nodes (5): Access, IfirmaWiringFixture, AdminControllerCustomerTest, IfirmaTestCapturingAdminController, IfirmaTestJsonResponse
+
+### Community 80 - "Requirements"
+Cohesion: 0.10
+Nodes (19): module-packaging Specification, Purpose, Requirement: Installable package layout, Requirement: Mock API tests run in CI, Requirement: Release commits get a CI run, Requirement: Test builds do not alter the module version, Requirement: Test builds only from a passing tree, Requirement: Version sources stay consistent (+11 more)
 
 ### Community 81 - "ADDED Requirements"
 Cohesion: 0.15
@@ -454,12 +451,8 @@ Cohesion: 0.25
 Nodes (7): Capabilities, Impact, Modified Capabilities, New Capabilities, Proposal, What Changes, Why
 
 ### Community 86 - "ConfigurationKeysTest"
-Cohesion: 0.17
-Nodes (9): Capabilities, Impact, Modified Capabilities, New Capabilities, Proposal, What Changes, Why, 7. Review fixes (+1 more)
-
-### Community 88 - "Module"
-Cohesion: 0.08
-Nodes (3): D1. Hook `displayAdminCustomers`, rendered from `ifirma.php`, Module, upgrade_module_1_2_0()
+Cohesion: 0.06
+Nodes (32): Context, D1. Build metadata comes from environment variables read by `build-zip.mjs`, D2. The build number is `github.run_number`, D3. CI gating with `needs:`, D4. Release order: verify, bump locally, build, then push, then publish, D5. A version-consistency test instead of a fixed version, D6. test-stack becomes a real submodule, D7. Keep the graph, drop only the cache that is cheap to rebuild (+24 more)
 
 ### Community 89 - "Requirement: Contractor registration before issuance"
 Cohesion: 0.29
@@ -483,11 +476,11 @@ Nodes (9): Requirement: Candidate detail verification, Scenario: Extra positions
 
 ### Community 103 - "IfirmaContractorService"
 Cohesion: 0.11
-Nodes (9): IfirmaContractorService, D2. Structured notes translated at render time, 1. Contractor read-back after a confirmed create (D1, D2), 2. Receipt note storage and order panel (D2), Context, Design, Goals / Non-Goals, Migration Plan (+1 more)
+Nodes (9): IfirmaContractorService, Context, D2. Structured notes translated at render time, 1. Contractor read-back after a confirmed create (D1, D2), Context, Design, Goals / Non-Goals, Migration Plan (+1 more)
 
-### Community 105 - "ADDED Requirements"
-Cohesion: 0.12
-Nodes (16): ADDED Requirements, Purpose, Requirement: Installable package layout, Requirement: Mock API tests run in CI, Requirement: Release commits get a CI run, Requirement: Test builds do not alter the module version, Requirement: Test builds only from a passing tree, Scenario: Fresh CI checkout (+8 more)
+### Community 105 - ".approve"
+Cohesion: 0.15
+Nodes (12): 10. IfirmaDataRequest approve/reject (Tier 2), {closure#1}(), {closure#10}(), {closure#11}(), {closure#12}(), {closure#2}(), {closure#3}(), {closure#4}() (+4 more)
 
 ### Community 106 - "Requirement: Candidate selection"
 Cohesion: 0.22
@@ -501,13 +494,13 @@ Nodes (6): Requirement: Eligibility, Scenario: Document already exists, Scenario
 Cohesion: 0.10
 Nodes (3): {closure#1}(), IfirmaCustomerContractorService, 1. Small seams
 
-### Community 111 - "Decisions"
-Cohesion: 0.12
-Nodes (11): IfirmaGuardResult, Context, D1. Buyer match on list rows, before the detail step, D3. Sale date source and comparison, D6. Candidate summary and admin panel, D7. Test stack and fixtures, Decisions, Design (+3 more)
+### Community 111 - "IfirmaGuardResult"
+Cohesion: 0.18
+Nodes (6): IfirmaGuardResult, Context, Design, Goals / Non-Goals, Migration Plan, Risks / Trade-offs
 
 ### Community 112 - ".resetAll"
-Cohesion: 0.14
-Nodes (3): Transport contract, ScriptedTransport, ScriptedTransportTest
+Cohesion: 0.08
+Nodes (5): Country, Customer, Transport contract, ScriptedTransport, ScriptedTransportTest
 
 ### Community 113 - "Requirement: Request content and validation"
 Cohesion: 0.33
@@ -565,6 +558,10 @@ Nodes (3): Requirement: Audit trail, Scenario: Cancelled request, Scenario: Reso
 Cohesion: 0.67
 Nodes (3): Requirement: Pending request holds issuance, Scenario: Manual create during hold, Scenario: Trigger status reached during hold
 
+### Community 129 - "test_ifirma_mock.py"
+Cohesion: 0.24
+Nodes (9): create_receipt(), sign(), test_create_rejects_bad_hmac(), test_create_returns_string_identifier_without_number(), test_download_pdf_duplicate_variant(), test_download_pdf_returns_pdf_bytes(), test_list_exposes_number_under_wynik(), test_register_payment_updates_status() (+1 more)
+
 ### Community 130 - "Requirement: Contractor import from a CSV export"
 Cohesion: 0.40
 Nodes (5): Requirement: Contractor import from a CSV export, Scenario: Import links customers, Scenario: Mapping visible per order, Scenario: Re-import is idempotent, Scenario: Unusable file
@@ -596,10 +593,6 @@ Nodes (5): Requirement: Approved data overrides the document payload, Scenario: 
 ### Community 137 - "Requirement: Existing contractor matching"
 Cohesion: 0.33
 Nodes (6): Requirement: Existing contractor matching, Scenario: Ambiguous name match, Scenario: Business customer matched by NIP, Scenario: Mapped contractor disappeared, Scenario: Private person matched by name and e-mail, Scenario: Stored mapping wins
-
-### Community 138 - "Decisions"
-Cohesion: 0.12
-Nodes (15): Context, D1. Build metadata comes from environment variables read by `build-zip.mjs`, D2. The build number is `github.run_number`, D3. CI gating with `needs:`, D4. Release order: verify, bump locally, build, then push, then publish, D5. A version-consistency test instead of a fixed version, D6. test-stack becomes a real submodule, D7. Keep the graph, drop only the cache that is cheap to rebuild (+7 more)
 
 ### Community 139 - "Requirement: Deterministic contractor identifier"
 Cohesion: 0.50
@@ -677,6 +670,10 @@ Nodes (5): IfirmaAdminActions, 5. Link, unlink and register actions (D2, D7, D8)
 Cohesion: 0.50
 Nodes (4): Requirement: iFirma-mail channel, Scenario: iFirma send returns an error, Scenario: iFirma send succeeds, Scenario: Long message text
 
+### Community 163 - ".postProcessConfiguration"
+Cohesion: 0.22
+Nodes (5): D5. Configuration fields and validation, D6. Test doubles and the mock, 4. Copy of the delivery e-mail (D4, D5, D6), 8. Payment map serialiser (Tier 1), 7. Module class extractions
+
 ### Community 166 - "Requirement: Contractor attached by iFirma is learned"
 Cohesion: 0.67
 Nodes (3): Requirement: Contractor attached by iFirma is learned, Scenario: Contractor attached by iFirma is learned, Scenario: Long identifiers
@@ -722,8 +719,8 @@ Cohesion: 0.67
 Nodes (3): Requirement: Pending request holds issuance, Scenario: Manual create during hold, Scenario: Trigger status reached during hold
 
 ### Community 179 - ".buildInvoicePayload"
-Cohesion: 0.29
-Nodes (3): D4. Product line comparison, 1. Shared order helpers (D2, D3, D4), D3. Split ReceiptService along existing static seams
+Cohesion: 0.19
+Nodes (8): D1. Buyer match on list rows, before the detail step, D3. Sale date source and comparison, D4. Product line comparison, D6. Candidate summary and admin panel, D7. Test stack and fixtures, Decisions, 1. Shared order helpers (D2, D3, D4), D3. Split ReceiptService along existing static seams
 
 ### Community 180 - "Requirement: Remote lookup before issuance"
 Cohesion: 0.33
@@ -781,13 +778,13 @@ Nodes (7): _find_for_ksef(), _row(), add_payment(), compute_gross(), create(), D
 Cohesion: 0.25
 Nodes (7): Capabilities, Impact, Modified Capabilities, New Capabilities, Proposal, What Changes, Why
 
-### Community 197 - "Decisions"
-Cohesion: 0.33
-Nodes (6): D2. New `IfirmaCustomerContractorService`, D3. Registration check loaded by AJAX, D4. Local counts in SQL, D5. Remote count: yearly windows, union by `FakturaId`, budget of 20, D9. Version 1.2.0, Decisions
+### Community 196 - "hmac"
+Cohesion: 0.19
+Nodes (5): AuthResult, _signed_url(), verify(), sign(), test_search_with_encoded_phrase_signed_over_raw_path()
 
-### Community 199 - "HarnessSmokeTest"
-Cohesion: 0.16
-Nodes (3): IfirmaTestModuleLoader, {closure#1}(), HarnessSmokeTest
+### Community 197 - "Decisions"
+Cohesion: 0.29
+Nodes (7): D1. Hook `displayAdminCustomers`, rendered from `ifirma.php`, D2. New `IfirmaCustomerContractorService`, D3. Registration check loaded by AJAX, D4. Local counts in SQL, D5. Remote count: yearly windows, union by `FakturaId`, budget of 20, D9. Version 1.2.0, Decisions
 
 ### Community 202 - "Decisions"
 Cohesion: 0.18
@@ -797,25 +794,21 @@ Nodes (10): Context, D1. Same test-first protocol as `refactor-clean-code-tda` D
 Cohesion: 0.20
 Nodes (9): args, CHANNELS, DEV_PATHS, flag, NESTED_DEV_DIRS, readZip(), REQUIRED, verify() (+1 more)
 
-### Community 204 - "What Changes"
-Cohesion: 0.20
-Nodes (8): Capabilities, Impact, Modified Capabilities, New Capabilities, Proposal, What Changes, Why, 8. Admin actions split
+### Community 204 - "Tasks"
+Cohesion: 0.10
+Nodes (17): Capabilities, Impact, Modified Capabilities, New Capabilities, Proposal, What Changes, Why, 10. Integration check (+9 more)
 
-### Community 207 - "Tasks"
-Cohesion: 0.20
-Nodes (9): 10. Integration check, 2. Contractor resolution steps, 3. Pure cores for counting and import, 4. Duplicate guard, 5. Receipt creation, 6. Issuance pipeline, 9. Runtime schema checks (gated), Tasks (+1 more)
+### Community 205 - ".substr"
+Cohesion: 0.22
+Nodes (3): TranslationCoverageTest, ifirma_list_files(), ifirma_scan()
 
 ### Community 208 - "Module smoke run"
 Cohesion: 0.20
 Nodes (9): Contractor linking check, Environment overrides, Known limitations, Module smoke run, Prerequisites, Reading the output, Run, Upgrade test 1.0.x -> 1.1.0 (+1 more)
 
 ### Community 210 - "Requirement: Releases are atomic"
-Cohesion: 0.22
-Nodes (7): Requirement: Releases are atomic, Scenario: Build failure during release, Scenario: Publish failure, Scenario: Push refused, Scenario: Successful release, patch(), { version }
-
-### Community 211 - "Tasks"
-Cohesion: 0.22
-Nodes (8): 1. Housekeeping, 2. test-stack submodule, 3. Version consistency test, 4. Test build packaging, 5. Atomic release workflow, 6. Integration check, Tasks, Workflow follow-up
+Cohesion: 0.14
+Nodes (12): Requirement: Releases are atomic, Scenario: Build failure during release, Scenario: Publish failure, Scenario: Push refused, Scenario: Successful release, Requirement: Releases are atomic, Scenario: Build failure during release, Scenario: Publish failure (+4 more)
 
 ### Community 212 - "scripts"
 Cohesion: 0.22
@@ -825,33 +818,49 @@ Nodes (9): scripts, build, build:tgz, build:zip, check:license, clean, postversi
 Cohesion: 0.25
 Nodes (7): Capabilities, Impact, Modified Capabilities, New Capabilities, Proposal, What Changes, Why
 
-### Community 215 - "Requirement: Test builds are uniquely identified"
+### Community 215 - "Proposal"
+Cohesion: 0.25
+Nodes (7): Capabilities, Impact, Modified Capabilities, New Capabilities, Proposal, What Changes, Why
+
+### Community 217 - "2. Receipt note storage and order panel (D2)"
+Cohesion: 0.29
+Nodes (5): 2. Receipt note storage and order panel (D2), 5. Test stack mock and smoke checks (D6; separate repository), 6. Documentation, 7. Integration checks, Tasks
+
+### Community 218 - "ModuleAdminController"
+Cohesion: 0.33
+Nodes (3): D8. Controller actions and access control, AdminController, ModuleAdminController
+
+### Community 220 - "Design"
+Cohesion: 0.33
+Nodes (5): Design, Goals / Non-Goals, Migration Plan, Open Questions, Risks / Trade-offs
+
+### Community 221 - "Tasks"
+Cohesion: 0.33
+Nodes (5): 2. Local link state and counts (D2, D4), 3. Registration check, search and ranking (D3, D6), 4. Remote document count (D5), 7. Documentation, Tasks
+
+### Community 225 - "Requirement: Test builds are uniquely identified"
 Cohesion: 0.50
 Nodes (4): Requirement: Test builds are uniquely identified, Scenario: Locally built package, Scenario: Pull request build, Scenario: Two consecutive CI runs on the same version
 
-### Community 216 - "Requirement: Version sources stay consistent"
-Cohesion: 0.67
-Nodes (3): Requirement: Version sources stay consistent, Scenario: One source left behind, Scenario: Version bumped consistently
-
 ## Knowledge Gaps
 - **18 isolated node(s):** `ifirma-mock`, `Glowing Green Hammer Icon`, `Matrix-style Binary Code Rain Background`, `PrestaShop Module Icon Usage`, `graphify knowledge graph workflow` (+13 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1187 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **69 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1205 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **82 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Stubs (tests/Stubs)` connect `Stubs (tests/Stubs)` to `OrderState`, `AdminIfirmaController`, `Ifirma`, `Support (tests/Support)`, `Employee`, `DataRequestServiceTest`, `Order`, `IfirmaDeliveryService`, `.buildInvoicePayload`, `Db`, `1. Test harness (unit tests runnable without PrestaShop)`, `IfirmaDataRequestService`, `Tab`, `.substr`, `.getInstance`, `Address`, `.shop`, `ObjectModel`, `AdminControllerCustomerTest`, `OrderHistory`, `.updateValue`, `ContractorImportTest`, `Module`?**
-  _High betweenness centrality (0.067) - this node is a cross-community bridge._
+- **Why does `Stubs (tests/Stubs)` connect `Stubs (tests/Stubs)` to `AdminIfirmaController`, `Ifirma`, `Support (tests/Support)`, `run.php`, `.getContext`, `.postProcessConfiguration`, `DataRequestServiceTest`, `Order`, `IfirmaReceipt`, `.buildInvoicePayload`, `Db`, `1. Test harness (unit tests runnable without PrestaShop)`, `IfirmaDataRequestService`, `.updateValue`, `Tab`, `.getInstance`, `IfirmaTestRegistryTrait`, `.shop`, `.substr`, `ObjectModel`, `AdminControllerCustomerTest`, `Configuration`, `OrderHistory`, `ContractorImportTest`, `Module`, `ModuleAdminController`, `HelperForm`, `.resetAll`, `IfirmaReceiptService`?**
+  _High betweenness centrality (0.066) - this node is a cross-community bridge._
 - **Are the 96 inferred relationships involving `Stubs (tests/Stubs)` (e.g. with `.fields()` and `Access`) actually correct?**
   _`Stubs (tests/Stubs)` has 96 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `ifirma-mock`, `Glowing Green Hammer Icon`, `Matrix-style Binary Code Rain Background` to the rest of the system?**
   _18 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `main.py` be split into smaller, more focused modules?**
   _Cohesion score 0.12648221343873517 - nodes in this community are weakly interconnected._
-- **Why does `Address` connect `Address` to `CustomerContractorServiceTest`, `AdminIfirmaController`, `Ifirma`, `run.php`, `IssuancePipelineTest`, `CustomerViewTest`, `Stubs (tests/Stubs)`, `DataRequestServiceTest`, `DuplicateGuardTest`, `Order`, `.buildInvoicePayload`, `1. Test harness (unit tests runnable without PrestaShop)`, `IfirmaDataRequestService`, `KsefServiceTest`, `PayloadBuilderTest`, `.isIssued`, `AdminControllerCustomerTest`, `IfirmaCustomerContractorService`, `.resetAll`, `IfirmaReceiptService`?**
-  _High betweenness centrality (0.048) - this node is a cross-community bridge._
+- **Why does `Order` connect `Order` to `CustomerContractorServiceTest`, `AdminIfirmaController`, `Ifirma`, `IfirmaAdminActions`, `run.php`, `IssuancePipelineTest`, `CustomerViewTest`, `Stubs (tests/Stubs)`, `DataRequestServiceTest`, `DuplicateGuardTest`, `IfirmaReceipt`, `CreateReceiptTest`, `.buildInvoicePayload`, `1. Test harness (unit tests runnable without PrestaShop)`, `IfirmaDataRequestService`, `.updateValue`, `KsefServiceTest`, `Tab`, `PayloadBuilderTest`, `IfirmaPaymentMethodResolver`, `.getInstance`, `IfirmaTestRegistryTrait`, `.isIssued`, `OrderHistory`, `Module smoke run`, `IfirmaIssuancePipeline`, `IfirmaCustomerContractorService`, `.resetAll`, `IfirmaReceiptService`?**
+  _High betweenness centrality (0.045) - this node is a cross-community bridge._
 - **Are the 45 inferred relationships involving `IfirmaReceipt` (e.g. with `.ensureRow()` and `.hookDisplayOrderDetail()`) actually correct?**
   _`IfirmaReceipt` has 45 INFERRED edges - model-reasoned connections that need verification._
 - **Should `CustomerContractorServiceTest` be split into smaller, more focused modules?**
-  _Cohesion score 0.08143839238498149 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.09545454545454546 - nodes in this community are weakly interconnected._

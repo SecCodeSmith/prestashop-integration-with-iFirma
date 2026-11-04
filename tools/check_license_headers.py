@@ -29,7 +29,7 @@ import sys
 from pathlib import Path
 
 # --------------------------------------------------------------------------- #
-# Per-repo policy — differs from the mock's copy (test-stack/tools/).
+# Per-repo policy — the only part that differs from the mock's copy.
 # --------------------------------------------------------------------------- #
 
 # A file counts as compliant if any of these strings appears near its top. The
@@ -61,8 +61,7 @@ FORBIDDEN = (
 )
 
 # --------------------------------------------------------------------------- #
-# Engine — the same as the mock's copy, except for the FORBIDDEN handling
-# (forbidden_hits and the tainted list), which only this repo has.
+# Engine — identical in both repos.
 # --------------------------------------------------------------------------- #
 
 # (opening line, line prefix, closing line); None means "no delimiter".
@@ -124,7 +123,10 @@ def has_marker(text: str) -> bool:
     return any(marker in head for marker in MARKERS)
 
 
-def forbidden_hits(text: str) -> list[str]:
+def forbidden_hits(path: Path, text: str) -> list[str]:
+    # This script lists the forbidden strings, so it never counts as tainted.
+    if path.resolve() == Path(__file__).resolve():
+        return []
     return [s for s in FORBIDDEN if s in text]
 
 
@@ -209,7 +211,7 @@ def main() -> int:
             continue
         scanned += 1
         text, _ = read_file(path)
-        hits = forbidden_hits(text)
+        hits = forbidden_hits(path, text)
         if hits:
             tainted.append((path, hits))
         if has_marker(text):

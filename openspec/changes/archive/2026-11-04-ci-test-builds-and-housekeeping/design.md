@@ -75,7 +75,7 @@ The rule: if rebuilding a path needs an LLM call, it stays tracked.
 - The package allow-list (spec "Installable package layout") already keeps all of `graphify-out/` out of the zip and the tgz.
 
 ### D8. The header typo becomes a checker failure
-`check_license_headers.py` gains a `FORBIDDEN` tuple (`"Berechowskir"`). Any tracked policed file that contains a forbidden string fails the check, so the typo cannot come back through copy-paste. The rule lives only in this repository's copy of the checker. The mock's copy in `test-stack` has no FORBIDDEN handling, and the engine comment in this copy says so.
+`check_license_headers.py` gains a `FORBIDDEN` tuple (`"Berechowskir"`). Any tracked policed file that contains a forbidden string fails the check, so the typo cannot come back through copy-paste. Both copies of the checker share one engine: the mock's copy in `test-stack` (since `00edaf5`) has an empty FORBIDDEN tuple. The forbidden scan skips the checker's own file, because in `test-stack` the checker is itself a policed `.py` file that lists the strings.
 
 ## Risks / Trade-offs
 

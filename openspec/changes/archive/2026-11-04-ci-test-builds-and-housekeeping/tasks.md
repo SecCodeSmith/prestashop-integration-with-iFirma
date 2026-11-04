@@ -123,12 +123,19 @@ An adversarial review ran 4 reviewers, and a skeptic checked each finding. It co
 
   Verify with `openspec validate --strict` and the licence check.
 - [x] 7.7 Run the mock's `pytest` without a second `-q`, so the CI log shows the pass count. Verify with actionlint.
-- [ ] 7.8 Confirm on the CI run of the review-fix commit:
+- [x] 7.8 Confirm on the CI run of the review-fix commit:
   - all four jobs pass;
   - the mock log shows the pass count;
   - every job checked out the pushed commit;
   - `verify:package -- --channel test` passed;
   - the artifact `ifirma-1.3.0+build.<n>` has `BUILD.commit` equal to the pushed commit.
+
+  Evidence from CI run #11 (41919298507) on `a36866a`, a push:
+  - All four jobs passed.
+  - Each job log shows `git checkout --progress --force a36866a9c34b…` and `HEAD is now at a36866a`.
+  - The mock log shows `130 passed, 1 warning`.
+  - The build log shows `verify-package.mjs --channel test` and `ok dist/ifirma-1.3.0+build.11.zip`.
+  - Artifact `ifirma-1.3.0+build.11` (expires 2027-02-02) holds `dist/ifirma-1.3.0+build.11.zip` and `scm-ifirma-1.3.0.tgz`. Its 86-entry zip has `BUILD` {1.3.0, build 11, commit `a36866a`, channel `test`}.
 
 ## Workflow follow-up
 
@@ -138,4 +145,8 @@ An adversarial review ran 4 reviewers, and a skeptic checked each finding. It co
   - The GitHub Release has `ifirma-1.3.0.zip` and `scm-ifirma-1.3.0.tgz`. The zip passes `verify-package`, and its `BUILD` is {1.3.0, channel `release`, build null, commit `f6ecd77`}.
   - The bot push does not trigger CI (GITHUB_TOKEN), so CI #9 was dispatched by hand on `f6ecd77`. It was green, with artifact `ifirma-1.3.0+build.9`.
 - Archive the change once the release has been verified.
-- Open (needs a commit in `test-stack` and a submodule bump): port the FORBIDDEN handling into the mock's copy of the checker, with an empty FORBIDDEN tuple, so that both engines are identical again. Until then, the mock copy's own comment claims they are identical.
+- Done on 2026-11-04, at the user's request: test-stack `00edaf5` ports the FORBIDDEN handling into the mock's copy of the checker, with an empty FORBIDDEN tuple.
+  - Both engines are identical again (190 lines, diffed), so the "identical engine" comments hold once more.
+  - Both copies' forbidden scans skip the checker's own file. In `test-stack` the checker is a policed `.py` file, so it would otherwise flag itself as soon as a string was listed.
+  - Checks: the module check passes on 130 files and the mock check on 13. A scratch copy of the mock checker listing `XYZZY` flags only the planted file. The module checker still flags a planted `.php` typo.
+  - The submodule pin moves to `00edaf5` in the archive commit.

@@ -162,15 +162,15 @@
     "semantic_hash": ""
   },
   "test-stack/tools/check_license_headers.py": {
-    "mtime": 1787142719.7431579,
-    "seen": 1793556933.9258955,
-    "ast_hash": "90f7f58bbcec11c352e4fdc364fb1b9e",
-    "semantic_hash": "90f7f58bbcec11c352e4fdc364fb1b9e"
+    "mtime": 1793829483.83081,
+    "seen": 1793829667.9152737,
+    "ast_hash": "b463c16ffb2a7a6cebcd4d1dd5eb53f6",
+    "semantic_hash": ""
   },
   "tools/check_license_headers.py": {
-    "mtime": 1793827487.819232,
-    "seen": 1793827967.7341216,
-    "ast_hash": "3eae117f9f2612429166cac3f34d4260",
+    "mtime": 1793829483.7448637,
+    "seen": 1793829667.9153416,
+    "ast_hash": "b1c5d52e1c979fdb8d2cd3727f44c984",
     "semantic_hash": ""
   },
   "translations/index.php": {
@@ -246,9 +246,9 @@
     "semantic_hash": ""
   },
   ".github/workflows/release.yml": {
-    "mtime": 1793827459.8287728,
-    "seen": 1793827967.73416,
-    "ast_hash": "0a748c1794cdfccfc4106095915bacba",
+    "mtime": 1793828083.0810304,
+    "seen": 1793829667.915361,
+    "ast_hash": "0a88f62b185555c942637beff283391c",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
@@ -258,9 +258,9 @@
     "semantic_hash": "67d88e9d0760c3ba54c75dfd9551c1c5"
   },
   "README.md": {
-    "mtime": 1793827526.6389103,
-    "seen": 1793827967.7341633,
-    "ast_hash": "85527f20fc2995a0124b13557001a0c4",
+    "mtime": 1793828082.0718913,
+    "seen": 1793829667.9153628,
+    "ast_hash": "9589f15b4144e8bacd16e78ba963f893",
     "semantic_hash": ""
   },
   "openspec/config.yaml": {
@@ -1325,36 +1325,6 @@
     "ast_hash": "33274c76695439f6e1be50c42d1bcd7c",
     "semantic_hash": ""
   },
-  "openspec/changes/ci-test-builds-and-housekeeping/.openspec.yaml": {
-    "mtime": 1793819378.1989706,
-    "seen": 1793827967.7342262,
-    "ast_hash": "69c36d23f2f6a5ad6d931f82c72ac905",
-    "semantic_hash": ""
-  },
-  "openspec/changes/ci-test-builds-and-housekeeping/design.md": {
-    "mtime": 1793827810.034969,
-    "seen": 1793827967.7342277,
-    "ast_hash": "abbb8511e58eb782114d7d4d284f615d",
-    "semantic_hash": ""
-  },
-  "openspec/changes/ci-test-builds-and-housekeeping/proposal.md": {
-    "mtime": 1793827778.5596483,
-    "seen": 1793827967.734229,
-    "ast_hash": "d48e0d9c2838713703976fea87a9dd55",
-    "semantic_hash": ""
-  },
-  "openspec/changes/ci-test-builds-and-housekeeping/specs/module-packaging/spec.md": {
-    "mtime": 1793827825.7538753,
-    "seen": 1793827967.7342303,
-    "ast_hash": "bcf4cc2267016da722738e3c51d2fb96",
-    "semantic_hash": ""
-  },
-  "openspec/changes/ci-test-builds-and-housekeeping/tasks.md": {
-    "mtime": 1793827917.8283718,
-    "seen": 1793827967.7342312,
-    "ast_hash": "4c86d941390b52763b60f6628d5deac5",
-    "semantic_hash": ""
-  },
   "openspec/changes/refactor-clean-code-tda/.openspec.yaml": {
     "mtime": 1793819531.2691805,
     "seen": 1793827967.7342398,
@@ -1401,6 +1371,42 @@
     "mtime": 1793819681.856694,
     "seen": 1793827967.7342474,
     "ast_hash": "70b702e5622a4d136c99074cd96950de",
+    "semantic_hash": ""
+  },
+  "openspec/changes/archive/2026-11-04-ci-test-builds-and-housekeeping/.openspec.yaml": {
+    "mtime": 1793819378.1989706,
+    "seen": 1793829667.915383,
+    "ast_hash": "69c36d23f2f6a5ad6d931f82c72ac905",
+    "semantic_hash": ""
+  },
+  "openspec/changes/archive/2026-11-04-ci-test-builds-and-housekeeping/design.md": {
+    "mtime": 1793829546.6923716,
+    "seen": 1793829667.9153838,
+    "ast_hash": "5263b8eef906a2135af1aa27ba13e604",
+    "semantic_hash": ""
+  },
+  "openspec/changes/archive/2026-11-04-ci-test-builds-and-housekeeping/proposal.md": {
+    "mtime": 1793827778.5596483,
+    "seen": 1793829667.9153845,
+    "ast_hash": "d48e0d9c2838713703976fea87a9dd55",
+    "semantic_hash": ""
+  },
+  "openspec/changes/archive/2026-11-04-ci-test-builds-and-housekeeping/specs/module-packaging/spec.md": {
+    "mtime": 1793827825.7538753,
+    "seen": 1793829667.9153855,
+    "ast_hash": "bcf4cc2267016da722738e3c51d2fb96",
+    "semantic_hash": ""
+  },
+  "openspec/changes/archive/2026-11-04-ci-test-builds-and-housekeeping/tasks.md": {
+    "mtime": 1793829547.5653374,
+    "seen": 1793829667.9153864,
+    "ast_hash": "a15ca700ec4a7827f78626f2b2087c1d",
+    "semantic_hash": ""
+  },
+  "openspec/specs/module-packaging/spec.md": {
+    "mtime": 1793829629.4881363,
+    "seen": 1793829667.9154243,
+    "ast_hash": "99384d545a2d113a6cddc061ca6c204f",
     "semantic_hash": ""
   }
 }
