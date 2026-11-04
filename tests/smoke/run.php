@@ -812,6 +812,63 @@ function scenarioF($module)
     }
 }
 
+function scenarioG($module, $triggerState)
+{
+    $order = freshScenario('G. PDF not ready, delivery retries');
+    if (!$order) {
+        return;
+    }
+    $r = mockRequest('POST', '/__mock/pdf-not-ready', array('calls' => 2));
+    assertSame(200, $r['code'], 'mock armed to answer 404 for the next 2 PDF downloads');
+
+    try {
+        smokeOut('INFO', 'waiting for the module PDF retries (about 10 s)');
+        changeState($order, $triggerState);
+        $receipt = receiptOf($order);
+        assertTrue($receipt && $receipt->isIssued(), 'receipt issued although the PDF was not ready at first');
+        assertSame('sent', $receipt ? $receipt->delivery_status : null, 'delivery recorded as sent after the retries');
+        $state = mockRequest('GET', '/__mock/pdf-not-ready');
+        assertSame(0, isset($state['data']['remaining']) ? (int) $state['data']['remaining'] : -1, 'both not-ready answers were consumed by retries');
+    } finally {
+        mockRequest('POST', '/__mock/pdf-not-ready', array('calls' => 0));
+    }
+}
+
+function scenarioH($module)
+{
+    $order = freshScenario('H. Contractor renamed by iFirma');
+    if (!$order) {
+        return;
+    }
+    $idCustomer = (int) $order->id_customer;
+    IfirmaContractorMap::unlinkCustomer($idCustomer);
+    $r = mockRequest('POST', '/__mock/contractor-mode', array('create' => 'rename'));
+    assertSame(200, $r['code'], 'mock contractor-mode set to rename');
+
+    try {
+        $result = IfirmaIssuancePipeline::build($module)->run($order, array('trigger' => 'manual', 'skip_delivery' => true));
+        $receipt = receiptOf($order);
+        if (!assertTrue($result->ok && $receipt && $receipt->isIssued(), 'document issued for a customer iFirma renames', $result->message)) {
+            return;
+        }
+        $payload = json_decode((string) $receipt->request_payload, true);
+        $sentId = is_array($payload) && isset($payload['IdentyfikatorKontrahenta']) ? (string) $payload['IdentyfikatorKontrahenta'] : '';
+        assertTrue(strpos($sentId, 'IFI') === 0, 'document references the identifier iFirma assigned (not PS-C)', 'IdentyfikatorKontrahenta=' . $sentId);
+        $contractor = is_array($payload) && isset($payload['_contractor']) && is_array($payload['_contractor']) ? $payload['_contractor'] : array();
+        assertSame('created', isset($contractor['action']) ? $contractor['action'] : null, '_contractor.action is created');
+        assertSame($sentId, isset($contractor['assigned_identifier']) ? (string) $contractor['assigned_identifier'] : null, '_contractor.assigned_identifier equals the identifier on the document');
+
+        $map = IfirmaContractorMap::getByCustomer($idCustomer);
+        assertSame($sentId, $map ? (string) $map->ifirma_identifier : null, 'contractor map holds the assigned identifier');
+        assertSame('module', $map ? (string) $map->matched_by : null, 'contractor map matched_by is module');
+
+        $html = (string) $module->hookDisplayAdminOrderMainBottom(array('id_order' => (int) $order->id));
+        assertTrue($sentId !== '' && strpos($html, $sentId) !== false, 'admin order panel shows the assigned identifier');
+    } finally {
+        mockRequest('POST', '/__mock/contractor-mode', array('create' => 'normal'));
+    }
+}
+
 $scenarios = array(
     'A' => function () use ($module, $actions) {
         scenarioA($module, $actions);
@@ -833,6 +890,12 @@ $scenarios = array(
     },
     'F' => function () use ($module) {
         scenarioF($module);
+    },
+    'G' => function () use ($module, $triggerState) {
+        scenarioG($module, $triggerState);
+    },
+    'H' => function () use ($module) {
+        scenarioH($module);
     },
 );
 

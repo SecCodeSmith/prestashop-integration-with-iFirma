@@ -11,13 +11,42 @@
 
 class Employee
 {
+    use IfirmaTestRegistryTrait;
+
     public $id;
     public $firstname;
     public $lastname;
     public $email;
+    public $active = 1;
 
     public function __construct($id = null)
     {
-        $this->id = $id;
+        $this->loadFromRegistry($id);
+    }
+
+    /**
+     * Like core: rows hold id_employee, firstname and lastname only, ordered by lastname.
+     *
+     * @param bool $activeOnly
+     * @return array[]
+     */
+    public static function getEmployees($activeOnly = true)
+    {
+        $rows = array();
+        foreach (static::$instances as $e) {
+            if ($activeOnly && (int) $e->active !== 1) {
+                continue;
+            }
+            $rows[] = array(
+                'id_employee' => $e->id,
+                'firstname' => $e->firstname,
+                'lastname' => $e->lastname,
+            );
+        }
+        usort($rows, function ($a, $b) {
+            return strcmp((string) $a['lastname'], (string) $b['lastname']);
+        });
+
+        return $rows;
     }
 }

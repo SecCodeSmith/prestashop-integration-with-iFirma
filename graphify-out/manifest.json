@@ -18,9 +18,9 @@
     "semantic_hash": ""
   },
   "classes/IfirmaReceiptService.php": {
-    "mtime": 1793724469.3234162,
-    "seen": 1793725254.0298805,
-    "ast_hash": "d115e929e30f97b731beba7c11f7b1e6",
+    "mtime": 1793810621.7789867,
+    "seen": 1793811073.213349,
+    "ast_hash": "00f47b8643080b65d2ddf9bbb1ff54a1",
     "semantic_hash": ""
   },
   "classes/index.php": {
@@ -60,9 +60,9 @@
     "semantic_hash": ""
   },
   "ifirma.php": {
-    "mtime": 1793647474.5495126,
-    "seen": 1793647720.1075516,
-    "ast_hash": "f74fffadd8c51a70b0408c8f509d1acf",
+    "mtime": 1793811062.6515305,
+    "seen": 1793811073.2133608,
+    "ast_hash": "19ed426cea9f0d3e606df7a6188d8687",
     "semantic_hash": ""
   },
   "index.php": {
@@ -126,9 +126,9 @@
     "semantic_hash": ""
   },
   "test-stack/ifirma-mock/app/main.py": {
-    "mtime": 1793724412.1186838,
-    "seen": 1793725254.0299125,
-    "ast_hash": "3ac226a4ad276fad9253ff75407dda4f",
+    "mtime": 1793810126.2392118,
+    "seen": 1793811073.213373,
+    "ast_hash": "6405007a60876e0777c7676a42e55a1f",
     "semantic_hash": ""
   },
   "test-stack/ifirma-mock/app/pdf.py": {
@@ -138,9 +138,9 @@
     "semantic_hash": "b8829cc655d9390fab218ced830b4a81"
   },
   "test-stack/ifirma-mock/app/store.py": {
-    "mtime": 1793642797.1913693,
-    "seen": 1793643006.8020358,
-    "ast_hash": "5d753735d18766f9c04b3d728ecb6b79",
+    "mtime": 1793810122.9721367,
+    "seen": 1793811073.2133744,
+    "ast_hash": "665c7ccdb03e2d43bd5225861bba2e62",
     "semantic_hash": ""
   },
   "test-stack/ifirma-mock/pyproject.toml": {
@@ -258,9 +258,9 @@
     "semantic_hash": "67d88e9d0760c3ba54c75dfd9551c1c5"
   },
   "README.md": {
-    "mtime": 1793724353.6625786,
-    "seen": 1793725254.030009,
-    "ast_hash": "ab12a3d0f3044f9ac80be5335327bfe1",
+    "mtime": 1793810092.843938,
+    "seen": 1793811073.2134633,
+    "ast_hash": "aeaa578f57d5eec4e74d2b069776ac80",
     "semantic_hash": ""
   },
   "openspec/changes/receipt-lifecycle-automation/.openspec.yaml": {
@@ -282,9 +282,9 @@
     "semantic_hash": "58cfc6237dd6c7e609cdcde1fc893218"
   },
   "test-stack/README.md": {
-    "mtime": 1793724412.1200044,
-    "seen": 1793725254.0300503,
-    "ast_hash": "6678ae63fcabeba1ca56c11e999d48be",
+    "mtime": 1793810194.306381,
+    "seen": 1793811073.2135096,
+    "ast_hash": "a286cb65f3e9b2cbd6505500dbff71b8",
     "semantic_hash": ""
   },
   "test-stack/docker-compose.yml": {
@@ -312,9 +312,9 @@
     "semantic_hash": "125914d7e083d27a48b78b7fdd6782d8"
   },
   "classes/IfirmaAdminActions.php": {
-    "mtime": 1793647435.5194066,
-    "seen": 1793647720.107521,
-    "ast_hash": "835e6367bdf34c8566400ad9ca14ad9d",
+    "mtime": 1793810746.6610832,
+    "seen": 1793811073.2133293,
+    "ast_hash": "f37afb22839eeabb0d92ba901b0b3e58",
     "semantic_hash": ""
   },
   "classes/IfirmaCustomerView.php": {
@@ -336,9 +336,9 @@
     "semantic_hash": ""
   },
   "classes/IfirmaDeliveryService.php": {
-    "mtime": 1793566178.4729018,
-    "seen": 1793566367.3832607,
-    "ast_hash": "6abae79232e802da684a2f43bcdec470",
+    "mtime": 1793810355.7516782,
+    "seen": 1793811073.2133398,
+    "ast_hash": "2518e6b32a3bc1e357924728ea209991",
     "semantic_hash": ""
   },
   "classes/IfirmaDuplicateGuard.php": {
@@ -378,9 +378,9 @@
     "semantic_hash": ""
   },
   "classes/IfirmaSchema.php": {
-    "mtime": 1793647309.8793929,
-    "seen": 1793647720.107542,
-    "ast_hash": "305b59f92b60e4ed8dfc4994cbbf5c8a",
+    "mtime": 1793810514.4562552,
+    "seen": 1793811073.2133498,
+    "ast_hash": "ecd4e8c674da6742d32de4bb4ddafa4f",
     "semantic_hash": ""
   },
   "classes/IfirmaStatusSyncService.php": {
@@ -426,9 +426,9 @@
     "semantic_hash": ""
   },
   "test-stack/ifirma-mock/tests/test_mock_extensions.py": {
-    "mtime": 1793724412.122469,
-    "seen": 1793725254.0299206,
-    "ast_hash": "c6fae706d2e3060603de505399060998",
+    "mtime": 1793810146.7917202,
+    "seen": 1793811073.21338,
+    "ast_hash": "b1a3796f0c74640cd4db84c47348804e",
     "semantic_hash": ""
   },
   "tests/Stubs/Address.php": {
@@ -480,9 +480,9 @@
     "semantic_hash": ""
   },
   "tests/Stubs/Employee.php": {
-    "mtime": 1793558552.7735484,
-    "seen": 1793561917.3163238,
-    "ast_hash": "cb0221e6b58425f55fff02dd8e39eec8",
+    "mtime": 1793810355.7516782,
+    "seen": 1793811073.2133887,
+    "ast_hash": "b2d0f53358f364369846efc124ddc535",
     "semantic_hash": ""
   },
   "tests/Stubs/HelperForm.php": {
@@ -618,9 +618,9 @@
     "semantic_hash": ""
   },
   "tests/Support/IfirmaTestState.php": {
-    "mtime": 1793638694.5230608,
-    "seen": 1793639822.8681962,
-    "ast_hash": "20f7e248b46e1adcd2b2d6371db11803",
+    "mtime": 1793810383.3033032,
+    "seen": 1793811073.213415,
+    "ast_hash": "666e87faf590766d461d212855d6b79c",
     "semantic_hash": ""
   },
   "tests/Support/IfirmaWiringFixture.php": {
@@ -690,9 +690,9 @@
     "semantic_hash": ""
   },
   "tests/Unit/DeliveryServiceTest.php": {
-    "mtime": 1793559804.8209264,
-    "seen": 1793561917.316348,
-    "ast_hash": "6fe772fbe53898e669bf99f4c9fd4d25",
+    "mtime": 1793810476.0405087,
+    "seen": 1793811073.2134283,
+    "ast_hash": "e947bb957933c548a1182fd1ab326ddb",
     "semantic_hash": ""
   },
   "tests/Unit/DuplicateGuardTest.php": {
@@ -720,15 +720,15 @@
     "semantic_hash": ""
   },
   "tests/Unit/IssuancePipelineTest.php": {
-    "mtime": 1793724928.2796986,
-    "seen": 1793725254.0299747,
-    "ast_hash": "55782e420902df537c4ae87c2f5a05f8",
+    "mtime": 1793810404.6417212,
+    "seen": 1793811073.2134318,
+    "ast_hash": "cf2f9ac0e373f16cbc7d4373b1e3f378",
     "semantic_hash": ""
   },
   "tests/Unit/ModuleHooksTest.php": {
-    "mtime": 1793647677.4955225,
-    "seen": 1793647720.1076183,
-    "ast_hash": "7ac2654e299a8f170c5dbfa0e6105b70",
+    "mtime": 1793810804.6476235,
+    "seen": 1793811073.2134335,
+    "ast_hash": "db8ccfe28670ff15566d040ff494a6c0",
     "semantic_hash": ""
   },
   "tests/Unit/PayloadBuilderTest.php": {
@@ -738,9 +738,9 @@
     "semantic_hash": ""
   },
   "tests/Unit/SchemaTest.php": {
-    "mtime": 1793647650.2729197,
-    "seen": 1793647720.107625,
-    "ast_hash": "48236c2df2428785209847853cffc09f",
+    "mtime": 1793810541.538154,
+    "seen": 1793811073.2134356,
+    "ast_hash": "b55c8306fb13959516526c71d2052f42",
     "semantic_hash": ""
   },
   "tests/Unit/ScriptedTransportTest.php": {
@@ -780,9 +780,9 @@
     "semantic_hash": ""
   },
   "tests/smoke/run.php": {
-    "mtime": 1793725182.300232,
-    "seen": 1793725254.0299866,
-    "ast_hash": "44f11c2405bd61a0a952c266c83e7740",
+    "mtime": 1793810410.683451,
+    "seen": 1793811073.213443,
+    "ast_hash": "f202cef64a08e18c9d34635b0b30da4c",
     "semantic_hash": ""
   },
   "tools/generate_pl_translations.php": {
@@ -792,15 +792,15 @@
     "semantic_hash": ""
   },
   "tools/pl_translations_map.php": {
-    "mtime": 1793647504.1615694,
-    "seen": 1793647720.1076365,
-    "ast_hash": "269ee7fe386ac5d29975e33c27e56746",
+    "mtime": 1793810935.5338514,
+    "seen": 1793811073.2134469,
+    "ast_hash": "11115095411efa53930634b0b0d11138",
     "semantic_hash": ""
   },
   "translations/pl.php": {
-    "mtime": 1793724373.4080844,
-    "seen": 1793725254.0299928,
-    "ast_hash": "c3f2c2436ffe32d4016ae135f84aeb8f",
+    "mtime": 1793811065.9302073,
+    "seen": 1793811073.2134485,
+    "ast_hash": "7cfee9199ffc7a21d39ac1568804a730",
     "semantic_hash": ""
   },
   "upgrade/index.php": {
@@ -978,9 +978,9 @@
     "semantic_hash": ""
   },
   "tests/Stubs/README.md": {
-    "mtime": 1793558543.9369433,
-    "seen": 1793561917.3163974,
-    "ast_hash": "25ba478d2cfe97af87e025c437b17390",
+    "mtime": 1793810355.7526817,
+    "seen": 1793811073.2135127,
+    "ast_hash": "7946726fc78c30807f6799c350ca4ff6",
     "semantic_hash": ""
   },
   "tests/fixtures/README.md": {
@@ -990,9 +990,9 @@
     "semantic_hash": ""
   },
   "tests/smoke/README.md": {
-    "mtime": 1793725183.168217,
-    "seen": 1793725254.030056,
-    "ast_hash": "c5a0634a482e14fc2cde0495cc3df230",
+    "mtime": 1793810410.684443,
+    "seen": 1793811073.2135146,
+    "ast_hash": "ad895234dbd545e9fd8aa21773199ab2",
     "semantic_hash": ""
   },
   "tests/smoke/upgrade-phase1.php": {
@@ -1050,9 +1050,9 @@
     "semantic_hash": ""
   },
   "openspec/specs/receipt-duplicate-guard/spec.md": {
-    "mtime": 1793644086.1473458,
-    "seen": 1793644231.159584,
-    "ast_hash": "b6c2334c6f5551db877390da8ef98a97",
+    "mtime": 1793725558.611613,
+    "seen": 1793725601.3525515,
+    "ast_hash": "ada86e05bcd3da03016c2baf31bb6381",
     "semantic_hash": ""
   },
   "openspec/specs/receipt-status-sync/spec.md": {
@@ -1062,21 +1062,21 @@
     "semantic_hash": ""
   },
   "classes/IfirmaContractorService.php": {
-    "mtime": 1793641445.6744044,
-    "seen": 1793641460.106381,
-    "ast_hash": "4985c0522c173d2739f1f6e181c99a50",
+    "mtime": 1793810387.689223,
+    "seen": 1793811073.2133362,
+    "ast_hash": "d8946c78c5e51c4d00d724e1a6b847d8",
     "semantic_hash": ""
   },
   "test-stack/ifirma-mock/tests/test_mock_contractors.py": {
-    "mtime": 1793646524.8089802,
-    "seen": 1793646728.783336,
-    "ast_hash": "385958b0994580540a674f0f384c1368",
+    "mtime": 1793810145.9352112,
+    "seen": 1793811073.2133782,
+    "ast_hash": "48b5b9898f9e0730dd2466efedc6866b",
     "semantic_hash": ""
   },
   "tests/Unit/ContractorServiceTest.php": {
-    "mtime": 1793641359.097469,
-    "seen": 1793641460.106484,
-    "ast_hash": "f15e6dfbdd013d9d02c1d97942938081",
+    "mtime": 1793810465.149658,
+    "seen": 1793811073.213425,
+    "ast_hash": "570d39e6d98189a27105ea50f16504f4",
     "semantic_hash": ""
   },
   "classes/IfirmaContractorImport.php": {
@@ -1122,9 +1122,9 @@
     "semantic_hash": ""
   },
   "tests/Unit/ContractorReferenceTest.php": {
-    "mtime": 1793646477.5775757,
-    "seen": 1793646728.7833765,
-    "ast_hash": "d82a412224868294a5b62d046b0ec47f",
+    "mtime": 1793810706.542508,
+    "seen": 1793811073.2134242,
+    "ast_hash": "bdcc20b887bddf6d9e7eca0755f42a29",
     "semantic_hash": ""
   },
   "test-stack/ifirma-mock/tests/test_mock_enums.py": {
@@ -1187,34 +1187,100 @@
     "ast_hash": "1ed40157cc035e22f94ae58ef13fa1c4",
     "semantic_hash": ""
   },
-  "openspec/changes/fix-duplicate-guard-matching/.openspec.yaml": {
+  "openspec/changes/archive/2026-11-03-fix-duplicate-guard-matching/.openspec.yaml": {
     "mtime": 1793723699.990727,
-    "seen": 1793725254.0300236,
+    "seen": 1793725601.352508,
     "ast_hash": "ad717a364eebb20cb0c22bc25fe058ae",
     "semantic_hash": ""
   },
-  "openspec/changes/fix-duplicate-guard-matching/design.md": {
+  "openspec/changes/archive/2026-11-03-fix-duplicate-guard-matching/design.md": {
     "mtime": 1793723954.1843746,
-    "seen": 1793725254.0300245,
+    "seen": 1793725601.3525112,
     "ast_hash": "3a1171b3df6a478bf915f334b6d36104",
     "semantic_hash": ""
   },
-  "openspec/changes/fix-duplicate-guard-matching/proposal.md": {
+  "openspec/changes/archive/2026-11-03-fix-duplicate-guard-matching/proposal.md": {
     "mtime": 1793723813.3822255,
-    "seen": 1793725254.0300252,
+    "seen": 1793725601.3525128,
     "ast_hash": "24f8a53cbaf564f7ea267346b14e020b",
     "semantic_hash": ""
   },
-  "openspec/changes/fix-duplicate-guard-matching/specs/receipt-duplicate-guard/spec.md": {
+  "openspec/changes/archive/2026-11-03-fix-duplicate-guard-matching/specs/receipt-duplicate-guard/spec.md": {
     "mtime": 1793724063.710134,
-    "seen": 1793725254.0300257,
+    "seen": 1793725601.3525143,
     "ast_hash": "81997a5246ab8bbef714f30c9bdd4a4d",
     "semantic_hash": ""
   },
-  "openspec/changes/fix-duplicate-guard-matching/tasks.md": {
-    "mtime": 1793724961.5660753,
-    "seen": 1793725254.0300264,
-    "ast_hash": "bfb75454994a0c341148365715ec2ab8",
+  "openspec/changes/archive/2026-11-03-fix-duplicate-guard-matching/tasks.md": {
+    "mtime": 1793725304.3888493,
+    "seen": 1793725601.3525157,
+    "ast_hash": "988edad50e73ebad7a456905d1dadb47",
+    "semantic_hash": ""
+  },
+  "openspec/changes/customer-ifirma-panel/.openspec.yaml": {
+    "mtime": 1793810828.220807,
+    "seen": 1793811073.2134814,
+    "ast_hash": "69c36d23f2f6a5ad6d931f82c72ac905",
+    "semantic_hash": ""
+  },
+  "openspec/changes/customer-ifirma-panel/design.md": {
+    "mtime": 1793810987.319539,
+    "seen": 1793811073.2134824,
+    "ast_hash": "54a07df3a542740fd0014d0a47fc2649",
+    "semantic_hash": ""
+  },
+  "openspec/changes/customer-ifirma-panel/proposal.md": {
+    "mtime": 1793811047.952301,
+    "seen": 1793811073.213483,
+    "ast_hash": "88bd6e752629b9663405acb73c077b28",
+    "semantic_hash": ""
+  },
+  "openspec/changes/customer-ifirma-panel/specs/customer-contractor-panel/spec.md": {
+    "mtime": 1793810918.5298548,
+    "seen": 1793811073.2134838,
+    "ast_hash": "3be0f475f7fd29438b5f7f3dffd22cb9",
+    "semantic_hash": ""
+  },
+  "openspec/changes/customer-ifirma-panel/tasks.md": {
+    "mtime": 1793811040.942233,
+    "seen": 1793811073.2134843,
+    "ast_hash": "09c1b5870ffcfdd68556cd72636260cf",
+    "semantic_hash": ""
+  },
+  "openspec/changes/harden-auto-issuance-delivery/.openspec.yaml": {
+    "mtime": 1793809199.261905,
+    "seen": 1793811073.213485,
+    "ast_hash": "69c36d23f2f6a5ad6d931f82c72ac905",
+    "semantic_hash": ""
+  },
+  "openspec/changes/harden-auto-issuance-delivery/design.md": {
+    "mtime": 1793809574.9132247,
+    "seen": 1793811073.2134855,
+    "ast_hash": "c1be5ccd0683ced2af70392d0f09dfa1",
+    "semantic_hash": ""
+  },
+  "openspec/changes/harden-auto-issuance-delivery/proposal.md": {
+    "mtime": 1793809427.6860318,
+    "seen": 1793811073.2134862,
+    "ast_hash": "805a731b1402b56b4a8b152dfe68edf9",
+    "semantic_hash": ""
+  },
+  "openspec/changes/harden-auto-issuance-delivery/specs/ifirma-api-compliance/spec.md": {
+    "mtime": 1793809712.287418,
+    "seen": 1793811073.213487,
+    "ast_hash": "74a07c86128930534dc2384612626a94",
+    "semantic_hash": ""
+  },
+  "openspec/changes/harden-auto-issuance-delivery/specs/receipt-delivery/spec.md": {
+    "mtime": 1793809713.3054595,
+    "seen": 1793811073.2134874,
+    "ast_hash": "15921b6185d68521620754c8ee0df5fb",
+    "semantic_hash": ""
+  },
+  "openspec/changes/harden-auto-issuance-delivery/tasks.md": {
+    "mtime": 1793811064.0483272,
+    "seen": 1793811073.213488,
+    "ast_hash": "2cd93ad98cf64f4025e03a64d0ddd686",
     "semantic_hash": ""
   }
 }

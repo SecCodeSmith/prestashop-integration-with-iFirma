@@ -43,6 +43,17 @@ class IfirmaDeliveryService
     const TEXT_MAX = 1000;
     const EXTERNAL_REASON = 'external document - not auto-delivered';
 
+    /** Total PDF download attempts in a shop-mail delivery, and the waits (seconds) between them. */
+    const PDF_ATTEMPTS = 3;
+    const PDF_RETRY_WAITS = array(3, 7);
+
+    /** iFirma answer codes that a retry cannot fix (authentication, configuration). */
+    const PDF_PERMANENT_KODS = array(400, 401, 402, 403, 499, 500);
+
+    const COPY_NONE = 'none';
+    const COPY_SHOP = 'shop';
+    const COPY_EMPLOYEE = 'employee';
+
     /** Document types accepted by the iFirma send endpoint (fakturaparagon is not one). */
     const IFIRMA_SEND_SUPPORTED_TYPES = array(
         'fakturakraj', 'fakturawysylka', 'fakturaproformakraj', 'fakturaeksporttowarow',
@@ -61,14 +72,19 @@ class IfirmaDeliveryService
     /** @var callable|null returns a unix timestamp */
     private $clock;
 
+    /** @var callable|null receives the seconds to wait */
+    private $sleeper;
+
     /**
      * @param IfirmaApiClient      $client
      * @param IfirmaReceiptService $service
      * @param Module               $module
      * @param callable|null        $clock
+     * @param callable|null        $sleeper receives seconds; defaults to sleep()
      */
-    public function __construct(IfirmaApiClient $client, IfirmaReceiptService $service, Module $module, $clock = null)
+    public function __construct(IfirmaApiClient $client, IfirmaReceiptService $service, Module $module, $clock = null, $sleeper = null)
     {
+        $this->sleeper = $sleeper;
         $this->client = $client;
         $this->service = $service;
         $this->module = $module;
@@ -104,6 +120,26 @@ class IfirmaDeliveryService
         $value = (string) Configuration::get('IFIRMA_SEND_CHANNEL');
 
         return $this->isChannel($value) ? $value : self::CHANNEL_SHOP_MAIL;
+    }
+
+    /**
+     * @return string[]
+     */
+    public static function copyModes()
+    {
+        return array(self::COPY_NONE, self::COPY_SHOP, self::COPY_EMPLOYEE);
+    }
+
+    /**
+     * Configured copy mode; missing or unknown values mean none.
+     *
+     * @return string
+     */
+    public function getCopyMode()
+    {
+        $value = (string) Configuration::get('IFIRMA_SEND_COPY_MODE');
+
+        return in_array($value, self::copyModes(), true) ? $value : self::COPY_NONE;
     }
 
     /**
@@ -238,7 +274,7 @@ class IfirmaDeliveryService
     public function sendViaShopMail(IfirmaReceipt $receipt, Order $order)
     {
         try {
-            $pdf = $this->service->fetchPdf($receipt);
+            $pdf = $this->fetchPdfWithRetry($receipt);
         } catch (Exception $e) {
             return array('ok' => false, 'message' => $e->getMessage());
         }
@@ -247,6 +283,8 @@ class IfirmaDeliveryService
         if (!is_object($customer) || (string) $customer->email === '') {
             return array('ok' => false, 'message' => $this->module->l('The customer has no e-mail address.', 'ifirmadeliveryservice'));
         }
+
+        $copy = $this->copyRecipient($order, $customer);
 
         $idLang = $this->resolveLanguage($order);
         $number = (string) $receipt->ifirma_number;
@@ -284,7 +322,10 @@ class IfirmaDeliveryService
                 null,
                 $attachment,
                 null,
-                _PS_MODULE_DIR_ . 'ifirma/mails/'
+                _PS_MODULE_DIR_ . 'ifirma/mails/',
+                false,
+                null,
+                $copy
             );
         } catch (Exception $e) {
             return array('ok' => false, 'message' => $e->getMessage());
@@ -373,6 +414,104 @@ class IfirmaDeliveryService
         }
 
         return 1;
+    }
+
+    /**
+     * Downloads the PDF, retrying transient failures (document not ready yet).
+     *
+     * @param IfirmaReceipt $receipt
+     * @return string
+     * @throws Exception
+     */
+    private function fetchPdfWithRetry(IfirmaReceipt $receipt)
+    {
+        $attempt = 0;
+        while (true) {
+            ++$attempt;
+            try {
+                return $this->service->fetchPdf($receipt);
+            } catch (Exception $e) {
+                $retryable = $this->client->lastRequestWasSent()
+                    && !in_array((int) $this->client->getLastKod(), self::PDF_PERMANENT_KODS, true);
+                if (!$retryable && $attempt === 1) {
+                    throw $e;
+                }
+                if (!$retryable || $attempt >= self::PDF_ATTEMPTS) {
+                    throw new Exception(sprintf(
+                        $this->module->l('Could not download the PDF after %1$d attempts: %2$s', 'ifirmadeliveryservice'),
+                        $attempt,
+                        $e->getMessage()
+                    ));
+                }
+                $waits = self::PDF_RETRY_WAITS;
+                $this->wait(isset($waits[$attempt - 1]) ? $waits[$attempt - 1] : end($waits));
+            }
+        }
+    }
+
+    /**
+     * @param int $seconds
+     */
+    private function wait($seconds)
+    {
+        if ($this->sleeper !== null) {
+            call_user_func($this->sleeper, $seconds);
+
+            return;
+        }
+        sleep((int) $seconds);
+    }
+
+    /**
+     * Blind-copy address for the shop-mail delivery, or null (skips are logged).
+     *
+     * @param Order $order
+     * @param mixed $customer
+     * @return string|null
+     */
+    private function copyRecipient(Order $order, $customer)
+    {
+        $mode = $this->getCopyMode();
+        if ($mode === self::COPY_NONE) {
+            return null;
+        }
+
+        if ($mode === self::COPY_SHOP) {
+            $address = (string) Configuration::get('PS_SHOP_EMAIL');
+        } else {
+            $employee = new Employee((int) Configuration::get('IFIRMA_SEND_COPY_EMPLOYEE'));
+            if (!Validate::isLoadedObject($employee)) {
+                return $this->skipCopy($order, 'employee not found');
+            }
+            if ((int) $employee->active !== 1) {
+                return $this->skipCopy($order, 'employee inactive');
+            }
+            if (!Validate::isEmail($employee->email)) {
+                return $this->skipCopy($order, 'invalid e-mail');
+            }
+            $address = (string) $employee->email;
+        }
+
+        if (!Validate::isEmail($address)) {
+            return $this->skipCopy($order, 'invalid e-mail');
+        }
+        if (mb_strtolower($address) === mb_strtolower((string) $customer->email)) {
+            return $this->skipCopy($order, 'same as customer');
+        }
+
+        return $address;
+    }
+
+    /**
+     * @param Order  $order
+     * @param string $reason
+     * @return null
+     */
+    private function skipCopy(Order $order, $reason)
+    {
+        PrestaShopLogger::addLog(sprintf('iFirma: delivery copy skipped for order #%d (%s)', (int) $order->id, $reason), 2);
+
+        return null;
     }
 
     /**

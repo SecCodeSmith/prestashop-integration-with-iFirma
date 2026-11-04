@@ -199,6 +199,47 @@ class ContractorReferenceTest extends TestCase
         $this->assertArrayNotHasKey('IdentyfikatorKontrahenta', json_decode($docs[1]['body'], true));
         $this->assertSame('created', $receipt->status);
         $this->assertSame('fallback', $this->storedPayload()['_contractor']['action']);
+        $note = $this->storedPayload()['_contractor']['note'];
+        $this->assertSame('reference_rejected', $note['code']);
+        $this->assertSame('PS-C5', $note['params']['identifier']);
+        $this->assertSame('IdentyfikatorKontrahenta: wartość nieprawidłowa', $note['params']['error']);
+    }
+
+    public function testContractorFoundUnderAnAssignedIdentifierIsReferencedAndRecorded()
+    {
+        $this->enableSync();
+        Address::$instances[7]->vat_number = 'PL 525-224-84-81';
+        $waits = array();
+        $client = new IfirmaApiClient('u@example.com', array('faktura' => str_repeat('1', 64)), 'http://ifirma-mock:8001/iapi/', 30, $this->t);
+        $this->service->setContractorService(new IfirmaContractorService($client, function ($seconds) use (&$waits) {
+            $waits[] = $seconds;
+        }));
+        $notFound = array('body' => '{"response":{"Kod":208,"Informacja":"Nie znaleziono kontrahenta"}}');
+        $assigned = array_merge($this->service->buildContractor($this->order()), array('Identyfikator' => 'IFI1909556979', 'NIP' => '5252248481'));
+
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', $notFound);
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $notFound);
+        $this->t->queue('GET', '#kontrahenci/Jan%20K\.json#', $notFound);
+        $this->t->queue('POST', '#kontrahenci\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"Dodano kontrahenta","Wynik":"PS-C5"}}'));
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', $notFound);
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', $notFound);
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array($assigned))))));
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
+
+        $receipt = $this->service->createReceipt($this->order());
+
+        $this->assertSame('created', $receipt->status);
+        $this->assertSame(array(2), $waits);
+        $this->assertSame('IFI1909556979', $this->sentDocument()['IdentyfikatorKontrahenta']);
+        $stored = $this->storedPayload()['_contractor'];
+        $this->assertSame('created', $stored['action']);
+        $this->assertSame('IFI1909556979', $stored['identifier']);
+        $this->assertSame('IFI1909556979', $stored['assigned_identifier']);
+        $this->assertSame('assigned', $stored['note']['code']);
+        $this->assertSame('IFI1909556979', $stored['note']['params']['identifier']);
+        $map = IfirmaContractorMap::getByCustomer(5);
+        $this->assertSame('IFI1909556979', $map->ifirma_identifier);
+        $this->assertSame('module', $map->matched_by);
     }
 
     public function testSecondContractorReferenceKodIsReportedAsError()

@@ -336,6 +336,19 @@ class Ifirma extends Module
             $channel = 'shop_mail';
         }
 
+        $copyMode = (string) Tools::getValue('IFIRMA_SEND_COPY_MODE');
+        $copyMode = in_array($copyMode, IfirmaDeliveryService::copyModes(), true) ? $copyMode : 'none';
+        $copyEmployee = (int) Tools::getValue('IFIRMA_SEND_COPY_EMPLOYEE');
+        if ($copyMode === 'employee') {
+            $activeIds = array();
+            foreach (Employee::getEmployees(true) as $row) {
+                $activeIds[] = (int) $row['id_employee'];
+            }
+            if ($copyEmployee <= 0 || !in_array($copyEmployee, $activeIds, true)) {
+                $errors[] = $this->l('Choose an active employee for the delivery copy.');
+            }
+        }
+
         $ksefMode = IfirmaKsefService::normalizeMode(Tools::getValue('IFIRMA_KSEF_MODE'));
 
         $windowDays = $this->parseInt(Tools::getValue('IFIRMA_DUPLICATE_WINDOW_DAYS'), 1, 365);
@@ -421,6 +434,8 @@ class Ifirma extends Module
         Configuration::updateValue('IFIRMA_MARK_PAID_ON_CREATE', (int) Tools::getValue('IFIRMA_MARK_PAID_ON_CREATE'));
         Configuration::updateValue('IFIRMA_SEND_CHANNEL', $channel);
         Configuration::updateValue('IFIRMA_SEND_TEXT', $text);
+        Configuration::updateValue('IFIRMA_SEND_COPY_MODE', $copyMode);
+        Configuration::updateValue('IFIRMA_SEND_COPY_EMPLOYEE', $copyEmployee);
         Configuration::updateValue('IFIRMA_KSEF_MODE', $ksefMode);
         Configuration::updateValue('IFIRMA_DUPLICATE_CHECK', (int) (bool) Tools::getValue('IFIRMA_DUPLICATE_CHECK'));
         Configuration::updateValue('IFIRMA_DUPLICATE_WINDOW_DAYS', $windowDays);
@@ -600,6 +615,14 @@ class Ifirma extends Module
             $orderStates[] = array('id' => (int) $state['id_order_state'], 'name' => $state['name']);
         }
 
+        $copyEmployees = array(array('id_employee' => 0, 'name' => $this->l('choose an employee')));
+        foreach (Employee::getEmployees(true) as $employee) {
+            $copyEmployees[] = array(
+                'id_employee' => (int) $employee['id_employee'],
+                'name' => trim($employee['firstname'] . ' ' . $employee['lastname']),
+            );
+        }
+
         $inputs = array();
 
         $limitBox = $this->renderLimitBox();
@@ -763,6 +786,32 @@ class Ifirma extends Module
             ),
             array(
                 'type' => 'select',
+                'label' => $this->l('Copy of the delivery e-mail'),
+                'name' => 'IFIRMA_SEND_COPY_MODE',
+                'desc' => $this->l('A blind copy (BCC) of every document e-mail sent through shop mail, including Send again. E-mails sent by iFirma itself are never copied.'),
+                'options' => array(
+                    'query' => array(
+                        array('id' => 'none', 'name' => $this->l('No copy')),
+                        array('id' => 'shop', 'name' => $this->l('Shop contact e-mail (PS_SHOP_EMAIL)')),
+                        array('id' => 'employee', 'name' => $this->l('A back-office employee')),
+                    ),
+                    'id' => 'id',
+                    'name' => 'name',
+                ),
+            ),
+            array(
+                'type' => 'select',
+                'label' => $this->l('Employee for the copy'),
+                'name' => 'IFIRMA_SEND_COPY_EMPLOYEE',
+                'desc' => $this->l('Used only with mode "A back-office employee". The employee must be active and have a valid e-mail.'),
+                'options' => array(
+                    'query' => $copyEmployees,
+                    'id' => 'id_employee',
+                    'name' => 'name',
+                ),
+            ),
+            array(
+                'type' => 'select',
                 'label' => $this->l('KSeF submission (B2B e-invoicing)'),
                 'name' => 'IFIRMA_KSEF_MODE',
                 'desc' => $this->l('A submission to KSeF cannot be withdrawn. B2B invoices are legally required in KSeF; iFirma may also submit automatically depending on the account settings.'),
@@ -885,6 +934,8 @@ class Ifirma extends Module
             'IFIRMA_MARK_PAID_ON_CREATE' => (int) Configuration::get('IFIRMA_MARK_PAID_ON_CREATE'),
             'IFIRMA_SEND_CHANNEL' => Configuration::get('IFIRMA_SEND_CHANNEL') ?: 'shop_mail',
             'IFIRMA_SEND_TEXT' => Configuration::get('IFIRMA_SEND_TEXT'),
+            'IFIRMA_SEND_COPY_MODE' => Configuration::get('IFIRMA_SEND_COPY_MODE') ?: 'none',
+            'IFIRMA_SEND_COPY_EMPLOYEE' => (int) Configuration::get('IFIRMA_SEND_COPY_EMPLOYEE'),
             'IFIRMA_KSEF_MODE' => IfirmaKsefService::normalizeMode(Configuration::get('IFIRMA_KSEF_MODE')),
             'IFIRMA_DUPLICATE_CHECK' => (int) Configuration::get('IFIRMA_DUPLICATE_CHECK'),
             'IFIRMA_DUPLICATE_WINDOW_DAYS' => (int) Configuration::get('IFIRMA_DUPLICATE_WINDOW_DAYS'),
@@ -1059,7 +1110,8 @@ class Ifirma extends Module
             if (is_array($sent) && isset($sent['_contractor']['action'])) {
                 $contractorNote = $this->contractorActionLabel(
                     (string) $sent['_contractor']['action'],
-                    isset($sent['_contractor']['message']) ? (string) $sent['_contractor']['message'] : ''
+                    isset($sent['_contractor']['message']) ? (string) $sent['_contractor']['message'] : '',
+                    isset($sent['_contractor']['note']) && is_array($sent['_contractor']['note']) ? $sent['_contractor']['note'] : null
                 );
                 // the contractor iFirma attached when the module could not reference one (D14)
                 $attached = isset($sent['_contractor']['document_identifier']) ? trim((string) $sent['_contractor']['document_identifier']) : '';
@@ -1168,11 +1220,12 @@ class Ifirma extends Module
     }
 
     /**
-     * @param string $action
-     * @param string $message
+     * @param string     $action
+     * @param string     $message raw (English) sentence stored with older records
+     * @param array|null $note    structured note (code, params) rendered in the back-office language
      * @return string
      */
-    private function contractorActionLabel($action, $message)
+    private function contractorActionLabel($action, $message, $note = null)
     {
         switch ($action) {
             case 'created':
@@ -1191,7 +1244,51 @@ class Ifirma extends Module
                 return '';
         }
 
-        if ($action === 'fallback' && $message !== '') {
+        $params = is_array($note) && isset($note['params']) && is_array($note['params']) ? $note['params'] : array();
+        $code = is_array($note) && isset($note['code']) ? (string) $note['code'] : '';
+        $identifier = isset($params['identifier']) ? (string) $params['identifier'] : '';
+        $error = isset($params['error']) ? (string) $params['error'] : '';
+
+        if ($action === 'created' && $code === 'assigned') {
+            return sprintf($this->l('created (iFirma assigned identifier %s)'), $identifier);
+        }
+        if ($action !== 'fallback') {
+            return $label;
+        }
+
+        switch ($code) {
+            case 'lookup_failed':
+                return sprintf($this->l('fallback (lookup of %1$s failed: %2$s)'), $identifier, $error);
+            case 'update_failed':
+                return sprintf($this->l('fallback (update of %1$s failed: %2$s)'), $identifier, $error);
+            case 'create_rejected':
+                return sprintf($this->l('fallback (contractor create rejected: %s)'), $error);
+            case 'reference_rejected':
+                return sprintf($this->l('fallback (reference %1$s rejected: %2$s)'), $identifier, $error);
+            case 'readback_failed':
+                $tried = array();
+                $entries = isset($params['tried']) && is_array($params['tried']) ? $params['tried'] : array();
+                foreach ($entries as $entry) {
+                    if (!is_array($entry)) {
+                        continue;
+                    }
+                    $line = (isset($entry['identifier']) ? (string) $entry['identifier'] : '')
+                        . ': ' . (isset($entry['answer']) ? (string) $entry['answer'] : '');
+                    $tried[$line] = $line;
+                }
+                $search = isset($params['search']) ? (string) $params['search'] : 'none';
+                if ($search === 'ambiguous') {
+                    $searchLabel = $this->l('ambiguous');
+                } elseif ($search === 'error') {
+                    $searchLabel = sprintf($this->l('failed: %s'), isset($params['search_error']) ? (string) $params['search_error'] : '');
+                } else {
+                    $searchLabel = $this->l('found nothing');
+                }
+
+                return sprintf($this->l('fallback (contractor created but not found: %1$s; search: %2$s)'), implode('; ', $tried), $searchLabel);
+        }
+
+        if ($message !== '') {
             $label .= ' (' . $message . ')';
         }
 

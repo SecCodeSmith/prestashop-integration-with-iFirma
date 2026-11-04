@@ -31,7 +31,7 @@ Note: controllers use `exit`/`die`/`header()`; those paths cannot be unit-tested
 | `Currency` | id, iso_code; registry; `getDefaultCurrency()` (registry id 1 or PLN) |
 | `Language` | `static $languages` (default en id 1, pl id 2); `getLanguages()`, `getIsoById()` |
 | `Shop` | `getContextShopID()` = 1; `static $name` |
-| `Employee` | id, firstname, lastname, email |
+| `Employee` | id, firstname, lastname, email, `$active` (default 1); registry; static `getEmployees($activeOnly = true)` returns rows with `id_employee`, `firstname`, `lastname` only (like core), ordered by lastname |
 | `Module` | props as PrestaShop (`name`, `version`, `context`, `_path`, ...); ctor sets `context=Context::getContext()`, `_path='/modules/ifirma/'`; `l()` echoes; `display()` records `[template, smartyVars]` in `static $displayed`, returns `<rendered:TEMPLATE>`; `registerHook()` -> `static $hooks`; `isRegisteredInHook`; `install/uninstall` true; `displayError()` -> `<error>..</error>`, `displayConfirmation()` -> `<confirmation>..</confirmation>`; `getInstanceByName($n)` -> `Module::$instances[$n]` or false |
 | `Tab` | id, class_name, module, active, id_parent, name; `add()`/`delete()` true, recorded in `static $added`/`$deleted`; `getIdFromClassName()` from `static $ids` (default 0) |
 | `Tools` | `static $values` is the request; `getValue($k,$default=false)`, `isSubmit`, `getIsset`, `getAllValues`; `getToken()`='front-token', `getAdminTokenLite($t)`='admin-token-'.$t; `redirect/redirectLink` throw `IfirmaTestRedirect`; `getShopDomainSsl`='shop.test'; mb-based `strlen/substr/strtoupper`; `displayPrice`, `passwdGen`, `getRemoteAddr`, `jsonEncode/Decode`, `safeOutput`, `nl2br`, `ps_round`, `str2url`, `encrypt`(md5) |

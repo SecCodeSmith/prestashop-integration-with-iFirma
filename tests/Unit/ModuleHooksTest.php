@@ -366,6 +366,8 @@ class ModuleHooksTest extends TestCase
             'IFIRMA_MARK_PAID_ON_CREATE' => '1',
             'IFIRMA_SEND_CHANNEL' => 'none',
             'IFIRMA_SEND_TEXT' => 'Thank you',
+            'IFIRMA_SEND_COPY_MODE' => 'shop',
+            'IFIRMA_SEND_COPY_EMPLOYEE' => '0',
             'IFIRMA_DUPLICATE_CHECK' => '0',
             'IFIRMA_DUPLICATE_WINDOW_DAYS' => '30',
             'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE' => '0,05',
@@ -384,7 +386,8 @@ class ModuleHooksTest extends TestCase
         $inputs = $this->formInputNames();
 
         foreach (array(
-            'IFIRMA_SEND_CHANNEL', 'IFIRMA_SEND_TEXT', 'IFIRMA_DUPLICATE_CHECK', 'IFIRMA_DUPLICATE_WINDOW_DAYS',
+            'IFIRMA_SEND_CHANNEL', 'IFIRMA_SEND_TEXT', 'IFIRMA_SEND_COPY_MODE', 'IFIRMA_SEND_COPY_EMPLOYEE',
+            'IFIRMA_DUPLICATE_CHECK', 'IFIRMA_DUPLICATE_WINDOW_DAYS',
             'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE', 'IFIRMA_ALLOW_DATA_REQUEST', 'IFIRMA_NOTIFY_EMAIL',
             'IFIRMA_SYNC_INTERVAL_MIN', 'IFIRMA_CRON_MAX_CALLS', 'IFIRMA_RATE_MAX_PER_MIN', 'IFIRMA_CRON_INFO',
         ) as $name) {
@@ -469,6 +472,8 @@ class ModuleHooksTest extends TestCase
         $this->assertStringContainsString('<confirmation>', $out);
         $this->assertSame('none', Configuration::get('IFIRMA_SEND_CHANNEL'));
         $this->assertSame('Thank you', Configuration::get('IFIRMA_SEND_TEXT'));
+        $this->assertSame('shop', Configuration::get('IFIRMA_SEND_COPY_MODE'));
+        $this->assertSame(0, Configuration::get('IFIRMA_SEND_COPY_EMPLOYEE'));
         $this->assertSame(0, Configuration::get('IFIRMA_DUPLICATE_CHECK'));
         $this->assertSame(30, Configuration::get('IFIRMA_DUPLICATE_WINDOW_DAYS'));
         $this->assertSame('0.05', Configuration::get('IFIRMA_DUPLICATE_AMOUNT_TOLERANCE'));
@@ -565,6 +570,82 @@ class ModuleHooksTest extends TestCase
         Tools::$values = $this->validPost(array('IFIRMA_SEND_CHANNEL' => 'carrier_pigeon'));
         $this->module->getContent();
         $this->assertSame('shop_mail', Configuration::get('IFIRMA_SEND_CHANNEL'));
+    }
+
+    private function registerCopyEmployee($id, $first, $last, $active = 1)
+    {
+        $e = new Employee();
+        $e->id = $id;
+        $e->firstname = $first;
+        $e->lastname = $last;
+        $e->email = strtolower($first) . '@example.test';
+        $e->active = $active;
+        Employee::register($e);
+    }
+
+    public function testCopyEmployeeSelectListsActiveEmployees()
+    {
+        $this->registerCopyEmployee(3, 'Anna', 'Nowak');
+        $this->registerCopyEmployee(4, 'Ewa', 'Adamska');
+        $this->registerCopyEmployee(5, 'Olek', 'Zielinski', 0);
+        $this->module->getContent();
+        $inputs = $this->formInputNames();
+
+        $modes = array();
+        foreach ($inputs['IFIRMA_SEND_COPY_MODE']['options']['query'] as $o) {
+            $modes[] = $o['id'];
+        }
+        $this->assertSame(array('none', 'shop', 'employee'), $modes);
+
+        $this->assertSame('id_employee', $inputs['IFIRMA_SEND_COPY_EMPLOYEE']['options']['id']);
+        $this->assertSame(
+            array(
+                array('id_employee' => 0, 'name' => 'choose an employee'),
+                array('id_employee' => 4, 'name' => 'Ewa Adamska'),
+                array('id_employee' => 3, 'name' => 'Anna Nowak'),
+            ),
+            $inputs['IFIRMA_SEND_COPY_EMPLOYEE']['options']['query']
+        );
+        $values = HelperForm::$lastHelper->fields_value;
+        $this->assertSame('none', $values['IFIRMA_SEND_COPY_MODE']);
+        $this->assertSame(0, $values['IFIRMA_SEND_COPY_EMPLOYEE']);
+    }
+
+    public function testEmployeeCopyModeWithoutActiveEmployeeIsRefusedAndNothingSaved()
+    {
+        $this->registerCopyEmployee(5, 'Olek', 'Zielinski', 0);
+        foreach (array('0', '99', '5', '') as $bad) {
+            Configuration::updateValue('IFIRMA_SEND_COPY_MODE', 'none');
+            Tools::$values = $this->validPost(array(
+                'IFIRMA_SEND_COPY_MODE' => 'employee',
+                'IFIRMA_SEND_COPY_EMPLOYEE' => $bad,
+            ));
+            $out = $this->module->getContent();
+
+            $this->assertStringContainsString('<error>', $out, 'employee ' . $bad);
+            $this->assertStringContainsString('Choose an active employee for the delivery copy.', $out);
+            $this->assertSame('none', Configuration::get('IFIRMA_SEND_COPY_MODE'));
+            $this->assertSame('shop_mail', Configuration::get('IFIRMA_SEND_CHANNEL'));
+        }
+    }
+
+    public function testUnknownCopyModeIsStoredAsNone()
+    {
+        Tools::$values = $this->validPost(array('IFIRMA_SEND_COPY_MODE' => 'everyone'));
+        $this->assertStringContainsString('<confirmation>', $this->module->getContent());
+        $this->assertSame('none', Configuration::get('IFIRMA_SEND_COPY_MODE'));
+    }
+
+    public function testValidEmployeeCopySavePersistsBothKeys()
+    {
+        $this->registerCopyEmployee(3, 'Anna', 'Nowak');
+        Tools::$values = $this->validPost(array(
+            'IFIRMA_SEND_COPY_MODE' => 'employee',
+            'IFIRMA_SEND_COPY_EMPLOYEE' => '3',
+        ));
+        $this->assertStringContainsString('<confirmation>', $this->module->getContent());
+        $this->assertSame('employee', Configuration::get('IFIRMA_SEND_COPY_MODE'));
+        $this->assertSame(3, Configuration::get('IFIRMA_SEND_COPY_EMPLOYEE'));
     }
 
     public function testConfigFormHasPaymentMethodFields()
@@ -790,5 +871,86 @@ class ModuleHooksTest extends TestCase
 
         $this->assertSame(3, substr_count($tpl, "{l s='Linked contractor' mod='ifirma'}"));
         $this->assertStringContainsString('{if $ifirma_contractor_map}', $tpl);
+    }
+
+    private function contractorNoteFor(array $contractor)
+    {
+        $this->makeReceipt(array('request_payload' => json_encode(array('SposobZaplaty' => 'PRZ', '_contractor' => $contractor))));
+        $this->module->hookDisplayAdminOrderMainBottom(array('id_order' => 15));
+
+        return $this->vars()['ifirma_contractor_note'];
+    }
+
+    public function testAdminPanelShowsTheReadbackFailureNoteOnceAndTheEmptySearch()
+    {
+        $miss = array('identifier' => 'PS-C1909', 'answer' => 'Kod 208: Nie znaleziono kontrahenta');
+        $note = $this->contractorNoteFor(array(
+            'action' => 'fallback',
+            'message' => 'iFirma created the contractor but it cannot be read back (PS-C1909: Kod 208: Nie znaleziono kontrahenta); search: none.',
+            'note' => array('code' => 'readback_failed', 'params' => array('tried' => array($miss, $miss), 'search' => 'none', 'search_error' => '')),
+        ));
+
+        $this->assertStringContainsString('fallback (contractor created but not found: PS-C1909: Kod 208: Nie znaleziono kontrahenta; search: found nothing)', $note);
+        $this->assertSame(1, substr_count($note, 'PS-C1909: Kod 208: Nie znaleziono kontrahenta'));
+        $this->assertStringNotContainsString('iFirma created the contractor', $note);
+    }
+
+    public function testAdminPanelShowsTheAmbiguousAndFailedSearchWords()
+    {
+        $tried = array(array('identifier' => 'PS-C1', 'answer' => 'empty result'), array('identifier' => '99', 'answer' => 'boom'));
+        $ambiguous = $this->contractorNoteFor(array(
+            'action' => 'fallback', 'message' => 'x',
+            'note' => array('code' => 'readback_failed', 'params' => array('tried' => $tried, 'search' => 'ambiguous', 'search_error' => '')),
+        ));
+        $this->assertSame('fallback (contractor created but not found: PS-C1: empty result; 99: boom; search: ambiguous)', $ambiguous);
+
+        $this->setUp();
+        $failed = $this->contractorNoteFor(array(
+            'action' => 'fallback', 'message' => 'x',
+            'note' => array('code' => 'readback_failed', 'params' => array('tried' => $tried, 'search' => 'error', 'search_error' => 'search timeout')),
+        ));
+        $this->assertStringEndsWith('search: failed: search timeout)', $failed);
+    }
+
+    public function testAdminPanelShowsTheAssignedIdentifierOfACreatedContractor()
+    {
+        $note = $this->contractorNoteFor(array(
+            'action' => 'created', 'message' => '', 'identifier' => 'IFI1909556979', 'matched_by' => 'module', 'assigned_identifier' => 'IFI1909556979',
+            'note' => array('code' => 'assigned', 'params' => array('identifier' => 'IFI1909556979')),
+        ));
+
+        $this->assertSame('created (iFirma assigned identifier IFI1909556979)', $note);
+    }
+
+    public function testAdminPanelShowsTheOtherFallbackNotes()
+    {
+        $cases = array(
+            array('lookup_failed', array('identifier' => 'PS-C5', 'error' => 'timeout'), 'fallback (lookup of PS-C5 failed: timeout)'),
+            array('update_failed', array('identifier' => 'PS-C5', 'error' => 'bad'), 'fallback (update of PS-C5 failed: bad)'),
+            array('create_rejected', array('error' => 'Zly kod'), 'fallback (contractor create rejected: Zly kod)'),
+            array('reference_rejected', array('identifier' => 'PS-C5', 'error' => 'nieprawidlowa'), 'fallback (reference PS-C5 rejected: nieprawidlowa)'),
+        );
+        foreach ($cases as $case) {
+            IfirmaTestState::resetAll();
+            $this->setUp();
+            $this->assertSame($case[2], $this->contractorNoteFor(array(
+                'action' => 'fallback', 'message' => 'raw', 'note' => array('code' => $case[0], 'params' => $case[1]),
+            )));
+        }
+    }
+
+    public function testAdminPanelKeepsTheRawMessageForALegacyFallbackRecord()
+    {
+        $this->assertSame('fallback (old sentence)', $this->contractorNoteFor(array('action' => 'fallback', 'message' => 'old sentence')));
+    }
+
+    public function testAdminPanelAppendsTheAttachedContractorAfterTheFallbackNote()
+    {
+        $note = $this->contractorNoteFor(array(
+            'action' => 'fallback', 'message' => 'raw', 'identifier' => '', 'document_identifier' => 'AUTO-77',
+            'note' => array('code' => 'create_rejected', 'params' => array('error' => 'Zly kod')),
+        ));
+
+        $this->assertSame('fallback (contractor create rejected: Zly kod) iFirma attached contractor AUTO-77', $note);
     }
 }

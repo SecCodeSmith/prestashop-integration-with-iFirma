@@ -288,6 +288,8 @@ class IfirmaSchema
             'IFIRMA_MARK_PAID_ON_CREATE' => 1,
             'IFIRMA_SEND_CHANNEL' => 'shop_mail',
             'IFIRMA_SEND_TEXT' => '',
+            'IFIRMA_SEND_COPY_MODE' => 'none',
+            'IFIRMA_SEND_COPY_EMPLOYEE' => 0,
             'IFIRMA_KSEF_MODE' => 'b2b',
             'IFIRMA_DUPLICATE_CHECK' => 1,
             'IFIRMA_DUPLICATE_WINDOW_DAYS' => 60,

@@ -16,6 +16,9 @@ Each scenario resets the mock (`POST /__mock/reset`) and creates a fresh order.
 | C | Data request | company request submitted; moving the order to "Payment accepted" is held (no document); `approveRequest` issues immediately; payload has the override company, NIP and order reference; delivery `sent`; reference visible in the iFirma detail |
 | D | Status sync and cron | `updateStatus` + `refreshStatus` give `paid` and `remote_paid_amount`; cron token check; deleting the document in the mock and `runCron()` set `remote_missing`; the real cron URL answers 403 (wrong token) and 200 + JSON (right token) |
 | E | Customer visibility | the owner's order page contains the document number; another customer gets an empty string |
+| F | KSeF submission | a B2B order (NIP on the invoice address, KSeF mode b2b) gets a `ksef` pipeline step; skipped when the mock lacks the KSeF endpoint |
+| G | PDF not ready | the mock answers Kod 404 for the first 2 PDF downloads; the module retries (waits of 3 s and 7 s, so the scenario takes about 10 s); receipt issued, `delivery_status` `sent`, mock counter back to 0 |
+| H | Contractor renamed by iFirma | mock in `rename` contractor mode, customer without a contractor link; the document carries the `IFI...` identifier iFirma assigned, `_contractor.action` is `created` with the same `assigned_identifier`, the contractor map holds it with `matched_by` `module`, and the admin order panel shows it |
 
 ## Prerequisites
 

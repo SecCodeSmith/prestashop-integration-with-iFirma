@@ -21,12 +21,19 @@ class ContractorServiceTest extends TestCase
     /** @var IfirmaContractorService */
     private $svc;
 
+    /** @var array seconds requested from the injected sleeper (no real wait ever happens) */
+    private $waits = array();
+
     protected function setUp(): void
     {
         IfirmaTestState::resetAll();
         $this->t = new ScriptedTransport();
         $client = new IfirmaApiClient('u@example.com', array('faktura' => str_repeat('1', 64)), 'http://ifirma-mock:8001/iapi/', 30, $this->t);
-        $this->svc = new IfirmaContractorService($client);
+        $this->waits = array();
+        $waits = &$this->waits;
+        $this->svc = new IfirmaContractorService($client, function ($seconds) use (&$waits) {
+            $waits[] = $seconds;
+        });
         $this->scriptContractorMapDb();
     }
 
@@ -217,6 +224,9 @@ class ContractorServiceTest extends TestCase
         $this->assertNull($r['identifier']);
         $this->assertSame('fallback', $r['action']);
         $this->assertStringContainsString('bad', $r['message']);
+        $this->assertSame('update_failed', $r['note']['code']);
+        $this->assertSame('PS-C7', $r['note']['params']['identifier']);
+        $this->assertStringContainsString('bad', $r['note']['params']['error']);
     }
 
     public function testEnsureCreated()
@@ -240,6 +250,9 @@ class ContractorServiceTest extends TestCase
         $this->assertSame('fallback', $r['action']);
         $this->assertStringContainsString('timeout', $r['message']);
         $this->assertCount(1, $this->t->calls);
+        $this->assertSame('lookup_failed', $r['note']['code']);
+        $this->assertSame('PS-C7', $r['note']['params']['identifier']);
+        $this->assertStringContainsString('timeout', $r['note']['params']['error']);
     }
 
     public function testEnsureFallbackOnPostFailure()
@@ -250,6 +263,10 @@ class ContractorServiceTest extends TestCase
         $this->assertNull($r['identifier']);
         $this->assertSame('fallback', $r['action']);
         $this->assertStringContainsString('Zly kod pocztowy', $r['message']);
+        $this->assertSame('create_rejected', $r['note']['code']);
+        $this->assertStringContainsString('Zly kod pocztowy', $r['note']['params']['error']);
+        $this->assertSame(array('GET', 'POST'), array_column($this->t->calls, 'method'));
+        $this->assertSame(array(), $this->waits);
     }
 
     // ---- existing contractor matching (design D13) -------------------------------------------
@@ -359,6 +376,9 @@ class ContractorServiceTest extends TestCase
         $this->assertSame('fallback', $r['action']);
         $this->assertSame('KOWALSKI-01', $this->mapped()['ifirma_identifier']);
         $this->assertCount(1, $this->t->calls);
+        $this->assertSame('lookup_failed', $r['note']['code']);
+        $this->assertSame('KOWALSKI-01', $r['note']['params']['identifier']);
+        $this->assertStringContainsString('timeout', $r['note']['params']['error']);
     }
 
     public function testModuleContractorFoundIsLinkedAsModule()
@@ -636,8 +656,10 @@ class ContractorServiceTest extends TestCase
         $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
         $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
 
-        $this->assertSame('PS-C7', $this->svc->createAndGetIdentifier($this->owned()));
+        $this->assertSame('PS-C7', $this->svc->createAndGetIdentifier($this->owned(), $this->hints()));
         $this->assertSame(array('POST', 'GET'), array_column($this->t->calls, 'method'));
+        $this->assertSame(array(), $this->waits);
+        $this->assertNull($this->svc->getAssignedIdentifier());
     }
 
     public function testCreatedContractorIsLinkedUnderTheWynikIdentifierWhenTheSentOneIsUnknown()
@@ -656,25 +678,293 @@ class ContractorServiceTest extends TestCase
         $this->assertSame('124451232', $this->mapped()['ifirma_identifier']);
         $this->assertSame('module', $this->mapped()['matched_by']);
         $this->assertSame(array('GET', 'GET', 'POST', 'GET', 'GET'), array_column($this->t->calls, 'method'));
+        $this->assertSame(array(), $this->waits);
+        $this->assertSame('124451232', $this->svc->getAssignedIdentifier());
+        $this->assertSame('124451232', $r['assigned_identifier']);
+        $this->assertSame('assigned', $r['note']['code']);
     }
 
     public function testCreatedContractorWhoseIdentifierCannotBeReadBackFallsBackWithBothIdentifiers()
     {
-        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->queueUntilCreate();
+        $this->queueReadbackMisses(4);
         $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->notFoundBody());
-        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
-        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
-        $this->t->queue('GET', '#kontrahenci/id/124451232\.json#', $this->notFoundBody());
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
         $this->assertNull($r['identifier']);
         $this->assertSame('fallback', $r['action']);
-        // The read-back note names both identifiers. ensure()'s message prefers the client's last
-        // error (the Kod 208 of the read-back GET), so the note is asserted on getLastSearchError().
-        $this->assertStringContainsString('PS-C7', $this->svc->getLastSearchError());
-        $this->assertStringContainsString('124451232', $this->svc->getLastSearchError());
+        // message keeps the English sentence naming both identifiers (older panels, diagnostics)
+        $this->assertStringContainsString('PS-C7', $r['message']);
+        $this->assertStringContainsString('124451232', $r['message']);
+        $this->assertSame($r['message'], $this->svc->getLastSearchError());
         $this->assertNull($this->mapped());
+    }
+
+    // ---- created contractor read-back (harden-auto-issuance-delivery D1/D2) -------------------
+
+    private function emptyListBody()
+    {
+        return array('body' => json_encode(array('response' => array('Kod' => 0, 'Informacja' => '', 'Wynik' => array()))));
+    }
+
+    /** ensure() for the private person up to and including the successful create (GET id, name search, POST). */
+    private function queueUntilCreate()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+    }
+
+    /** $count Kod 208 read-backs, alternating PS-C7 / 124451232 (two per pass). */
+    private function queueReadbackMisses($count)
+    {
+        for ($i = 0; $i < $count; $i++) {
+            $this->t->queue('GET', $i % 2 === 0 ? '#kontrahenci/id/PS-C7\.json#' : '#kontrahenci/id/124451232\.json#', $this->notFoundBody());
+        }
+    }
+
+    public function testReadbackConfirmedAtOnceMakesNoWaitAndNoSearch()
+    {
+        $this->queueUntilCreate();
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame('PS-C7', $r['identifier']);
+        $this->assertSame('created', $r['action']);
+        $this->assertNull($r['note']);
+        $this->assertNull($r['assigned_identifier']);
+        $this->assertSame(array('GET', 'GET', 'POST', 'GET'), array_column($this->t->calls, 'method'));
+        $this->assertSame(array(), $this->waits);
+        $this->assertSame(array('/iapi/kontrahenci/Jan%20Kowalski.json'), $this->searchPaths());
+        $this->assertSame('PS-C7', $this->mapped()['ifirma_identifier']);
+        $this->assertSame('module', $this->mapped()['matched_by']);
+    }
+
+    public function testSingleObjectReadbackAnswerCountsAsFound()
+    {
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', array('body' => json_encode(array('response' => array(
+            'Kod' => 0, 'Informacja' => '', 'Wynik' => array('Identyfikator' => 'PS-C7', 'Nazwa' => 'Jan Kowalski'),
+        )))));
+
+        $this->assertSame('PS-C7', $this->svc->createAndGetIdentifier($this->owned(), $this->hints()));
+        $this->assertSame(array('POST', 'GET'), array_column($this->t->calls, 'method'));
+
+        $this->t->queue('GET', '#kontrahenci/id/PS-C8\.json#', array('body' => json_encode(array('response' => array(
+            'Kod' => 0, 'Informacja' => '', 'Wynik' => array('Identyfikator' => 'PS-C8'),
+        )))));
+        $row = $this->svc->fetch('PS-C8');
+        $this->assertSame('PS-C8', $row['Identyfikator']);
+    }
+
+    public function testWynikObjectAndTopLevelIdentifierAreCandidates()
+    {
+        $this->t->queue('POST', '#kontrahenci\.json#', array('body' => json_encode(array('response' => array(
+            'Kod' => 0, 'Informacja' => '', 'Identyfikator' => 'TOP-1', 'Wynik' => array('Identyfikator' => 'OBJ-1'),
+        )))));
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/id/OBJ-1\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/id/TOP-1\.json#', $this->verifiedGet('TOP-1'));
+
+        $this->assertSame('TOP-1', $this->svc->createAndGetIdentifier($this->owned()));
+        $this->assertSame(
+            array('/iapi/kontrahenci/id/PS-C7.json', '/iapi/kontrahenci/id/OBJ-1.json', '/iapi/kontrahenci/id/TOP-1.json'),
+            $this->paths('GET')
+        );
+        $this->assertSame('TOP-1', $this->svc->getAssignedIdentifier());
+    }
+
+    public function testContractorVisibleAfterTheWaitIsReferencedWithoutSearch()
+    {
+        $this->queueUntilCreate();
+        $this->queueReadbackMisses(2);
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame('PS-C7', $r['identifier']);
+        $this->assertSame('created', $r['action']);
+        $this->assertNull($r['note']);
+        $this->assertSame(array(IfirmaContractorService::READBACK_WAIT_SECONDS), $this->waits);
+        $this->assertSame(array(2), $this->waits);
+        $this->assertSame(array('GET', 'GET', 'POST', 'GET', 'GET', 'GET'), array_column($this->t->calls, 'method'));
+        $this->assertSame(array('/iapi/kontrahenci/Jan%20Kowalski.json'), $this->searchPaths());
+        $this->assertSame('PS-C7', $this->mapped()['ifirma_identifier']);
+    }
+
+    public function testBusinessContractorFoundByNipUnderTheIdentifierIFirmaAssigned()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/ACME#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->queueReadbackMisses(4);
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->rows(array(
+            array_merge($this->remote('IFI1909556979'), array('Nazwa' => 'ACME Sp. z o.o.', 'NIP' => '525-224-84-81', 'OsobaFizyczna' => false)),
+        )));
+
+        $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
+
+        $this->assertSame('IFI1909556979', $r['identifier']);
+        $this->assertSame('created', $r['action']);
+        $this->assertSame('module', $r['matched_by']);
+        $this->assertSame('IFI1909556979', $r['assigned_identifier']);
+        $this->assertSame('IFI1909556979', $this->svc->getAssignedIdentifier());
+        $this->assertSame(array('code' => 'assigned', 'params' => array('identifier' => 'IFI1909556979')), $r['note']);
+        $this->assertSame('IFI1909556979', $this->mapped()['ifirma_identifier']);
+        $this->assertSame('module', $this->mapped()['matched_by']);
+        $this->assertSame(array(2), $this->waits);
+        $this->assertSame('found', $this->svc->getLastReadback()['search']);
+    }
+
+    public function testPrivatePersonFoundByNameAndEmailUnderAnAssignedIdentifier()
+    {
+        $this->queueUntilCreate();
+        $this->queueReadbackMisses(4);
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->rows(array(
+            $this->remote('IFI77', array('Email' => 'jan@example.test')),
+        )));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame('IFI77', $r['identifier']);
+        $this->assertSame('created', $r['action']);
+        $this->assertSame('assigned', $r['note']['code']);
+        $this->assertSame('IFI77', $this->mapped()['ifirma_identifier']);
+        $this->assertSame('module', $this->mapped()['matched_by']);
+    }
+
+    public function testAmbiguousNipSearchAfterTheCreateFallsBackWithoutMapping()
+    {
+        $twoRows = $this->rows(array(
+            array_merge($this->remote('X-1'), array('Nazwa' => 'Inna Spolka A', 'NIP' => '5252248481', 'KodPocztowy' => '30-001')),
+            array_merge($this->remote('X-2'), array('Nazwa' => 'Inna Spolka B', 'NIP' => '5252248481', 'KodPocztowy' => '40-001')),
+        ));
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $twoRows);
+        $this->t->queue('GET', '#kontrahenci/ACME#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->queueReadbackMisses(4);
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $twoRows);
+        $this->t->queue('GET', '#kontrahenci/ACME#', $this->notFoundBody());
+
+        $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
+
+        $this->assertNull($r['identifier']);
+        $this->assertSame('fallback', $r['action']);
+        $this->assertSame('readback_failed', $r['note']['code']);
+        $this->assertSame('ambiguous', $r['note']['params']['search']);
+        $this->assertNull($this->mapped());
+    }
+
+    public function testNothingFoundRecordsEveryAnswerAndTheEmptySearch()
+    {
+        $this->queueUntilCreate();
+        $this->queueReadbackMisses(4);
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->notFoundBody());
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertNull($r['identifier']);
+        $this->assertSame('fallback', $r['action']);
+        $this->assertNull($this->mapped());
+        $this->assertSame(array(2), $this->waits);
+        $this->assertSame('readback_failed', $r['note']['code']);
+        // shape: one entry per fetch, two passes over the two candidates (sent, reported) = 4 entries
+        $miss = 'Kod 208: Nie znaleziono kontrahenta';
+        $this->assertSame(array(
+            array('identifier' => 'PS-C7', 'answer' => $miss),
+            array('identifier' => '124451232', 'answer' => $miss),
+            array('identifier' => 'PS-C7', 'answer' => $miss),
+            array('identifier' => '124451232', 'answer' => $miss),
+        ), $r['note']['params']['tried']);
+        $this->assertSame('none', $r['note']['params']['search']);
+        $this->assertSame('', $r['note']['params']['search_error']);
+        $this->assertSame($r['note']['params']['tried'], $this->svc->getLastReadback()['tried']);
+        $this->assertStringContainsString('Kod 208: Nie znaleziono kontrahenta', $r['message']);
+        $this->assertSame(array('GET', 'GET', 'POST', 'GET', 'GET', 'GET', 'GET', 'GET'), array_column($this->t->calls, 'method'));
+    }
+
+    public function testEmptyResultAnswersAreRecordedAsSuch()
+    {
+        $this->queueUntilCreate();
+        for ($i = 0; $i < 2; $i++) {
+            $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->emptyListBody());
+            $this->t->queue('GET', '#kontrahenci/id/124451232\.json#', $this->emptyListBody());
+        }
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->notFoundBody());
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame('fallback', $r['action']);
+        foreach ($r['note']['params']['tried'] as $entry) {
+            $this->assertSame('empty result', $entry['answer']);
+        }
+        $this->assertCount(4, $r['note']['params']['tried']);
+    }
+
+    public function testReadbackTransportFailureContinuesToTheWaitAndTheSearch()
+    {
+        $this->queueUntilCreate();
+        for ($i = 0; $i < 2; $i++) {
+            $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', array('status' => 0, 'error' => 'connection reset by peer'));
+            $this->t->queue('GET', '#kontrahenci/id/124451232\.json#', array('status' => 0, 'error' => 'connection reset by peer'));
+        }
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->notFoundBody());
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame('fallback', $r['action']);
+        $this->assertSame(array(2), $this->waits);
+        $this->assertSame('readback_failed', $r['note']['code']);
+        foreach ($r['note']['params']['tried'] as $entry) {
+            $this->assertStringContainsString('connection reset by peer', $entry['answer']);
+        }
+        $this->assertSame('none', $r['note']['params']['search']);
+        // GET id, name search, POST, 4 read-backs, post-create name search
+        $this->assertCount(8, $this->t->calls);
+    }
+
+    public function testReadbackFollowedByAFailingSearchRecordsTheSearchError()
+    {
+        $this->queueUntilCreate();
+        $this->queueReadbackMisses(4);
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', array('status' => 0, 'error' => 'search timeout'));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame('fallback', $r['action']);
+        $this->assertSame('error', $r['note']['params']['search']);
+        $this->assertStringContainsString('search timeout', $r['note']['params']['search_error']);
+    }
+
+    public function testCreateWithoutHintsSkipsTheSearch()
+    {
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->queueReadbackMisses(4);
+
+        $this->assertFalse($this->svc->createAndGetIdentifier($this->owned()));
+        $this->assertSame(array(), $this->searchPaths());
+        $this->assertSame('none', $this->svc->getLastReadback()['search']);
+        $this->assertSame(array(2), $this->waits);
+    }
+
+    public function testRejectedCreateMakesNoReadbackWaitOrSearch()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"Zly kod pocztowy"}}'));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame('fallback', $r['action']);
+        $this->assertSame('create_rejected', $r['note']['code']);
+        $this->assertStringContainsString('Zly kod pocztowy', $r['note']['params']['error']);
+        $this->assertSame(array('GET', 'GET', 'POST'), array_column($this->t->calls, 'method'));
+        $this->assertSame(array(), $this->waits);
+        $this->assertSame(array(), $this->svc->getLastReadback()['tried']);
     }
 
     public function testMapTableFailuresNeverBlockEnsure()

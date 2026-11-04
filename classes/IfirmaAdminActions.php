@@ -366,6 +366,8 @@ class IfirmaAdminActions
                 'action' => $result['action'],
                 'message' => $result['message'],
                 'matched_by' => $matchedBy,
+                'note' => isset($result['note']) ? $result['note'] : null,
+                'assigned_identifier' => isset($result['assigned_identifier']) ? $result['assigned_identifier'] : null,
             );
             $linked = in_array($matchedBy, array('nip', 'name', 'email', 'manual', 'document', 'import-nip', 'import-email', 'import-name'), true)
                 && $identifier !== (string) $contractor['Identyfikator'];

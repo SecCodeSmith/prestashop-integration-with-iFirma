@@ -22,6 +22,7 @@ class IfirmaTestState
         OrderHistory::reset();
         Address::reset();
         Customer::reset();
+        Employee::reset();
         Country::reset();
         Currency::reset();
         Language::reset();

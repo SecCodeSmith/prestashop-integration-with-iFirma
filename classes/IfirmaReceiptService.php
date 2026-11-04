@@ -229,11 +229,16 @@ class IfirmaReceiptService
         // so iFirma matches by NIP or creates the contractor from the Kontrahent block.
         if ($response !== null && !empty($payload['IdentyfikatorKontrahenta'])
             && $this->contractorReferenceRejected($response, (string) $payload['IdentyfikatorKontrahenta'])) {
+            $rejected = $this->extractInformacja($response);
             $contractorInfo = array(
                 'identifier' => null,
                 'action' => IfirmaContractorService::ACTION_FALLBACK,
-                'message' => $this->extractInformacja($response),
+                'message' => $rejected,
                 'matched_by' => '',
+                'note' => array(
+                    'code' => 'reference_rejected',
+                    'params' => array('identifier' => (string) $payload['IdentyfikatorKontrahenta'], 'error' => $rejected),
+                ),
             );
             $payload = $this->referenceContractor($payload, $contractorInfo);
             $receipt->request_payload = $this->encodeRequest($payload, $contractorInfo);
@@ -426,6 +431,12 @@ class IfirmaReceiptService
                 'matched_by' => isset($contractorInfo['matched_by']) ? (string) $contractorInfo['matched_by'] : '',
                 'identifier' => isset($contractorInfo['identifier']) ? (string) $contractorInfo['identifier'] : '',
             );
+            if (isset($contractorInfo['note']) && is_array($contractorInfo['note'])) {
+                $payload['_contractor']['note'] = $contractorInfo['note'];
+            }
+            if (isset($contractorInfo['assigned_identifier']) && (string) $contractorInfo['assigned_identifier'] !== '') {
+                $payload['_contractor']['assigned_identifier'] = (string) $contractorInfo['assigned_identifier'];
+            }
             if (isset($contractorInfo['document_identifier']) && (string) $contractorInfo['document_identifier'] !== '') {
                 $payload['_contractor']['document_identifier'] = (string) $contractorInfo['document_identifier'];
             }

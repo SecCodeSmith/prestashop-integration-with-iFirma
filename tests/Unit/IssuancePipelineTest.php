@@ -27,10 +27,14 @@ class IssuancePipelineTest extends TestCase
     /** @var IfirmaIssuancePipeline */
     private $pipeline;
 
+    /** @var int[] seconds requested from the injected sleeper */
+    private $waits = array();
+
     protected function setUp(): void
     {
         IfirmaTestState::resetAll();
         PrestaShopLogger::reset();
+        $this->waits = array();
         Configuration::updateValue('IFIRMA_AUTO_CREATE_STATE', 5);
         // the contractor round-trip is irrelevant here; ContractorServiceTest and the sync tests below cover it
         Configuration::updateValue('IFIRMA_CONTRACTOR_SYNC', 0);
@@ -79,11 +83,14 @@ class IssuancePipelineTest extends TestCase
     private function buildPipeline(IfirmaApiClient $client, IfirmaDataRequestService $requests, Module $module)
     {
         $service = new IfirmaReceiptService($client, $module);
+        $waits = &$this->waits;
 
         return new IfirmaIssuancePipeline(
             $service,
             new IfirmaDuplicateGuard($client),
-            new IfirmaDeliveryService($client, $service, $module),
+            new IfirmaDeliveryService($client, $service, $module, null, function ($seconds) use (&$waits) {
+                $waits[] = $seconds;
+            }),
             $requests,
             $module,
             null,
@@ -386,9 +393,19 @@ class IssuancePipelineTest extends TestCase
         $this->queueGuardNone();
         $this->queueCreateOk();
         $this->queueNumber();
-        $this->t->queue('GET', '#\.pdf#', array('status' => 0, 'error' => 'timeout'));
+        for ($i = 0; $i < 3; $i++) {
+            $this->t->queue('GET', '#\.pdf#', array('status' => 0, 'error' => 'timeout'));
+        }
 
         $r = $this->pipeline->run($this->order());
+        $this->assertSame(array(3, 7), $this->waits);
+        $pdfCalls = 0;
+        foreach ($this->t->calls as $call) {
+            if (strpos($call['url'], '.pdf') !== false) {
+                $pdfCalls++;
+            }
+        }
+        $this->assertSame(3, $pdfCalls);
         $this->assertTrue($r->ok);
         $this->assertSame('issued', $r->outcome);
         $this->assertSame('deliver', $r->stoppedAt);
@@ -396,6 +413,23 @@ class IssuancePipelineTest extends TestCase
         $this->assertSame('failed', $r->delivery['status']);
         $this->assertSame('failed', $this->dbRow()['delivery_status']);
         $this->assertStringContainsString('Delivery step failed', $this->pipeline->describe($r));
+    }
+
+    public function testPdfNotReadyOnFirstAttemptStillDelivers()
+    {
+        $this->queueGuardNone();
+        $this->queueCreateOk();
+        $this->queueNumber();
+        $this->t->queue('GET', '#\.pdf#', array('body' => json_encode(array('response' => array('Kod' => 404, 'Informacja' => 'Nie znaleziono dokumentu')))));
+        $this->t->queue('GET', '#\.pdf#', array('body' => self::PDF));
+
+        $r = $this->pipeline->run($this->order());
+        $this->assertTrue($r->ok);
+        $this->assertSame('issued', $r->outcome);
+        $this->assertSame('deliver:ok', $this->stepNames($r)[5]);
+        $this->assertSame(array(3), $this->waits);
+        $this->assertCount(1, Mail::$sent);
+        $this->assertSame('sent', $this->dbRow()['delivery_status']);
     }
 
     public function testSkipDelivery()

@@ -155,6 +155,13 @@ class SchemaTest extends TestCase
         $this->assertSame('BPO', IfirmaSchema::configurationDefaults()['IFIRMA_SIGNATURE_TYPE']);
     }
 
+    public function testDeliveryCopyDefaults()
+    {
+        $defaults = IfirmaSchema::configurationDefaults();
+        $this->assertSame('none', $defaults['IFIRMA_SEND_COPY_MODE']);
+        $this->assertSame(0, $defaults['IFIRMA_SEND_COPY_EMPLOYEE']);
+    }
+
     private function sorted(array $a)
     {
         sort($a);

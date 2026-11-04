@@ -27,6 +27,9 @@ class IfirmaContractorService
     const ACTION_FALLBACK = 'fallback';
     const ACTION_DISABLED = 'disabled';
 
+    /** Seconds to wait once before the second read-back pass after a confirmed create. */
+    const READBACK_WAIT_SECONDS = 2;
+
     /** Fields the shop is authoritative for (overwritten on update). */
     const FIELDS_OWNED = array('Nazwa', 'NIP', 'Ulica', 'KodPocztowy', 'Miejscowosc', 'Kraj', 'KodKraju', 'Email', 'OsobaFizyczna');
 
@@ -44,14 +47,34 @@ class IfirmaContractorService
     private $client;
 
     /** @var array */
-    private $lastAction = array('identifier' => null, 'action' => self::ACTION_DISABLED, 'message' => '', 'matched_by' => '', 'linked_identifier' => null);
+    private $lastAction = array('identifier' => null, 'action' => self::ACTION_DISABLED, 'message' => '', 'matched_by' => '', 'linked_identifier' => null, 'note' => null, 'assigned_identifier' => null);
 
     /** @var string */
     private $lastSearchError = '';
 
-    public function __construct(IfirmaApiClient $client)
+    /** @var callable|null */
+    private $sleeper;
+
+    /** @var string|null identifier iFirma assigned in the last create, when it differs from the sent one */
+    private $assignedIdentifier = null;
+
+    /** @var array|null structured result of the last create read-back (null when no create was confirmed) */
+    private $lastReadback = null;
+
+    /** @var string answer text of the last fetch() ("Kod N: Informacja", "empty result", transport error) */
+    private $lastFetchAnswer = '';
+
+    /** @var int number of exact-NIP rows the last findByNip() saw */
+    private $lastNipRows = 0;
+
+    /**
+     * @param IfirmaApiClient $client
+     * @param callable|null   $sleeper receives the seconds to wait (default sleep(); tests inject a recorder)
+     */
+    public function __construct(IfirmaApiClient $client, $sleeper = null)
     {
         $this->client = $client;
+        $this->sleeper = $sleeper;
     }
 
     /**
@@ -91,22 +114,52 @@ class IfirmaContractorService
      */
     public function fetch($identifier)
     {
+        $this->lastFetchAnswer = '';
         $response = $this->client->get('kontrahenci/id/' . rawurlencode((string) $identifier) . '.json', 'faktura');
         if ($response === null) {
+            $this->lastFetchAnswer = (string) $this->client->getLastError();
+
             return false;
         }
 
         $node = isset($response['response']) && is_array($response['response']) ? $response['response'] : $response;
         if (!isset($node['Kod']) || (int) $node['Kod'] !== 0) {
+            $kod = isset($node['Kod']) ? (int) $node['Kod'] : 0;
+            $info = isset($node['Informacja']) ? trim((string) $node['Informacja']) : '';
+            $this->lastFetchAnswer = $kod !== 0 ? 'Kod ' . $kod . ($info !== '' ? ': ' . $info : '') : 'empty result';
+
             return null;
         }
         if (!isset($node['Wynik']) || !is_array($node['Wynik']) || !$node['Wynik']) {
+            $this->lastFetchAnswer = 'empty result';
+
             return null;
+        }
+        if (isset($node['Wynik']['Identyfikator'])) {
+            return $node['Wynik'];
         }
 
         $first = reset($node['Wynik']);
+        if (!is_array($first)) {
+            $this->lastFetchAnswer = 'empty result';
 
-        return is_array($first) ? $first : null;
+            return null;
+        }
+
+        return $first;
+    }
+
+    /**
+     * @param int|float $seconds
+     */
+    private function wait($seconds)
+    {
+        if (is_callable($this->sleeper)) {
+            call_user_func($this->sleeper, $seconds);
+
+            return;
+        }
+        sleep((int) $seconds);
     }
 
     /**
@@ -119,33 +172,145 @@ class IfirmaContractorService
     }
 
     /**
-     * Creates the contractor and returns the identifier iFirma reports for it: the one sent when
-     * iFirma confirms it exists, otherwise the `Wynik` value when that one exists, otherwise false
-     * (the caller then falls back to a document without identifier).
+     * Creates the contractor and returns the identifier under which iFirma stored it: found by the
+     * sent identifier or by the one reported in the answer (immediately and once more after a
+     * short wait), otherwise through the contractor search with the pre-create matching rules.
+     * False when the create was rejected or the contractor cannot be found (the caller then falls
+     * back to a document without identifier); getLastReadback() tells the two apart.
      *
      * @param array $contractor
+     * @param array $hints completed hints (nip, email, postcode, name) for the search; empty skips it
      * @return string|false
      */
-    public function createAndGetIdentifier(array $contractor)
+    public function createAndGetIdentifier(array $contractor, array $hints = array())
     {
+        $this->assignedIdentifier = null;
+        $this->lastReadback = null;
+
         $response = $this->client->post('kontrahenci.json', 'faktura', $this->whitelist($contractor));
         if (!$this->isOk($response)) {
             return false;
         }
         $sent = isset($contractor['Identyfikator']) ? trim((string) $contractor['Identyfikator']) : '';
         $node = isset($response['response']) && is_array($response['response']) ? $response['response'] : $response;
-        $reported = isset($node['Wynik']) && is_scalar($node['Wynik']) ? trim((string) $node['Wynik']) : '';
 
-        foreach (array_unique(array_filter(array($sent, $reported))) as $candidate) {
-            if (is_array($this->fetch($candidate))) {
-                return $candidate;
+        $candidates = array($sent);
+        if (isset($node['Wynik'])) {
+            if (is_scalar($node['Wynik'])) {
+                $candidates[] = trim((string) $node['Wynik']);
+            } elseif (is_array($node['Wynik']) && isset($node['Wynik']['Identyfikator']) && is_scalar($node['Wynik']['Identyfikator'])) {
+                $candidates[] = trim((string) $node['Wynik']['Identyfikator']);
             }
         }
-        if ($sent !== '' || $reported !== '') {
-            $this->lastSearchError = 'iFirma created the contractor but neither identifier (' . $sent . ' / ' . $reported . ') can be read back.';
+        if (isset($node['Identyfikator']) && is_scalar($node['Identyfikator'])) {
+            $candidates[] = trim((string) $node['Identyfikator']);
+        }
+        $candidates = array_values(array_unique(array_filter($candidates, 'strlen')));
+
+        $readback = array('tried' => array(), 'search' => 'none', 'search_error' => '');
+        $found = null;
+        for ($pass = 1; $pass <= 2 && $found === null; $pass++) {
+            if ($pass === 2) {
+                $this->wait(self::READBACK_WAIT_SECONDS);
+            }
+            foreach ($candidates as $candidate) {
+                $row = $this->fetch($candidate);
+                if (is_array($row)) {
+                    $readback['tried'][] = array('identifier' => $candidate, 'answer' => 'found');
+                    $found = $candidate;
+                    break;
+                }
+                $readback['tried'][] = array('identifier' => $candidate, 'answer' => $this->lastFetchAnswer);
+            }
         }
 
+        if ($found === null && $hints) {
+            $found = $this->searchCreated($hints, $readback);
+        }
+        $this->lastReadback = $readback;
+        if ($found !== null) {
+            $this->assignedIdentifier = $found !== $sent ? $found : null;
+
+            return $found;
+        }
+
+        $tried = array();
+        foreach ($readback['tried'] as $entry) {
+            $tried[$entry['identifier'] . ': ' . $entry['answer']] = true;
+        }
+        $this->lastSearchError = 'iFirma created the contractor but it cannot be read back (' . implode('; ', array_keys($tried))
+            . '); search: ' . $readback['search'] . ($readback['search_error'] !== '' ? ' (' . $readback['search_error'] . ')' : '') . '.';
+
         return false;
+    }
+
+    /**
+     * Post-create search: NIP, then name (same rules as before the create).
+     *
+     * @param array $hints
+     * @param array $readback updated in place (search, search_error)
+     * @return string|null identifier of the single confirmed contractor
+     */
+    private function searchCreated(array $hints, array &$readback)
+    {
+        $error = '';
+        $ambiguous = false;
+
+        $this->lastSearchError = '';
+        $this->lastNipRows = 0;
+        $row = $this->findByNip($hints);
+        if ($this->lastSearchError !== '') {
+            $error = $this->lastSearchError;
+        } elseif ($row === null && $this->lastNipRows > 1) {
+            $ambiguous = true;
+        }
+        if ($row === null || !$this->hasIdentifier($row)) {
+            $this->lastSearchError = '';
+            $row = $this->findByName($hints);
+            if ($error === '' && $this->lastSearchError !== '') {
+                $error = $this->lastSearchError;
+            }
+        }
+        $this->lastSearchError = '';
+
+        if ($row !== null && $this->hasIdentifier($row)) {
+            $readback['search'] = 'found';
+
+            return trim((string) $row['Identyfikator']);
+        }
+        if ($error !== '') {
+            $readback['search'] = 'error';
+            $readback['search_error'] = $error;
+        } elseif ($ambiguous) {
+            $readback['search'] = 'ambiguous';
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array $row
+     * @return bool
+     */
+    private function hasIdentifier(array $row)
+    {
+        return isset($row['Identyfikator']) && trim((string) $row['Identyfikator']) !== '';
+    }
+
+    /**
+     * @return array tried (identifier, answer), search (none|ambiguous|error|found), search_error of the last create
+     */
+    public function getLastReadback()
+    {
+        return $this->lastReadback !== null ? $this->lastReadback : array('tried' => array(), 'search' => 'none', 'search_error' => '');
+    }
+
+    /**
+     * @return string|null the identifier iFirma stored the last created contractor under, when it differs from the sent one
+     */
+    public function getAssignedIdentifier()
+    {
+        return $this->assignedIdentifier;
     }
 
     /**
@@ -212,6 +377,8 @@ class IfirmaContractorService
         $identifier = isset($contractor['Identyfikator']) ? trim((string) $contractor['Identyfikator']) : '';
         $idCustomer = (int) $idCustomer;
         $this->lastSearchError = '';
+        $this->assignedIdentifier = null;
+        $this->lastReadback = null;
 
         if (!$this->isEnabled() || $identifier === '') {
             return $this->remember(null, self::ACTION_DISABLED, '');
@@ -229,7 +396,7 @@ class IfirmaContractorService
                     return $this->useExisting($mapped, $existing, $contractor, (string) $mapping->matched_by, 0);
                 }
                 if ($existing === false) {
-                    return $this->remember(null, self::ACTION_FALLBACK, $this->client->getLastError());
+                    return $this->remember(null, self::ACTION_FALLBACK, $this->client->getLastError(), '', $this->note('lookup_failed', array('identifier' => $mapped, 'error' => (string) $this->client->getLastError())));
                 }
                 $this->safeUnlink($idCustomer);
             }
@@ -238,7 +405,7 @@ class IfirmaContractorService
         // b. the module identifier
         $existing = $this->fetch($identifier);
         if ($existing === false) {
-            return $this->remember(null, self::ACTION_FALLBACK, $this->client->getLastError());
+            return $this->remember(null, self::ACTION_FALLBACK, $this->client->getLastError(), '', $this->note('lookup_failed', array('identifier' => $identifier, 'error' => (string) $this->client->getLastError())));
         }
         if (is_array($existing)) {
             return $this->useExisting($identifier, $existing, $contractor, IfirmaContractorMap::BY_MODULE, $idCustomer);
@@ -258,16 +425,27 @@ class IfirmaContractorService
         }
 
         // e. create the module contractor
-        $assigned = $this->createAndGetIdentifier($contractor);
+        $assigned = $this->createAndGetIdentifier($contractor, $hints);
         if ($assigned !== false) {
             $this->safeLink($idCustomer, $assigned, IfirmaContractorMap::BY_MODULE, isset($contractor['Nazwa']) ? (string) $contractor['Nazwa'] : '');
+            $note = $this->assignedIdentifier !== null ? $this->note('assigned', array('identifier' => $assigned)) : null;
 
-            return $this->remember($assigned, self::ACTION_CREATED, '', $idCustomer > 0 ? IfirmaContractorMap::BY_MODULE : '');
+            return $this->remember($assigned, self::ACTION_CREATED, '', $idCustomer > 0 ? IfirmaContractorMap::BY_MODULE : '', $note);
         }
 
-        $reason = $this->lastSearchError !== '' ? $this->lastSearchError : $this->client->getLastError();
+        if ($this->lastReadback === null) {
+            $error = (string) $this->client->getLastError();
 
-        return $this->remember(null, self::ACTION_FALLBACK, $reason);
+            return $this->remember(null, self::ACTION_FALLBACK, $error, '', $this->note('create_rejected', array('error' => $error)));
+        }
+        $readback = $this->lastReadback;
+        $note = $this->note('readback_failed', array(
+            'tried' => $readback['tried'],
+            'search' => $readback['search'],
+            'search_error' => $readback['search_error'],
+        ));
+
+        return $this->remember(null, self::ACTION_FALLBACK, $this->lastSearchError, '', $note);
     }
 
     /**
@@ -284,7 +462,9 @@ class IfirmaContractorService
     {
         if ($this->needsUpdate($existing, $contractor)) {
             if (!$this->update($identifier, $existing, $contractor)) {
-                return $this->remember(null, self::ACTION_FALLBACK, $this->client->getLastError());
+                $error = (string) $this->client->getLastError();
+
+                return $this->remember(null, self::ACTION_FALLBACK, $error, '', $this->note('update_failed', array('identifier' => (string) $identifier, 'error' => $error)));
             }
             $action = self::ACTION_UPDATED;
         } else {
@@ -335,6 +515,7 @@ class IfirmaContractorService
                 $rows[] = $row;
             }
         }
+        $this->lastNipRows = count($rows);
         if (count($rows) === 1) {
             return $rows[0];
         }
@@ -566,7 +747,7 @@ class IfirmaContractorService
     /**
      * @return array
      */
-    private function remember($identifier, $action, $message, $matchedBy = '')
+    private function remember($identifier, $action, $message, $matchedBy = '', $note = null)
     {
         $this->lastAction = array(
             'identifier' => $identifier,
@@ -574,8 +755,20 @@ class IfirmaContractorService
             'message' => (string) $message,
             'matched_by' => $identifier === null ? '' : (string) $matchedBy,
             'linked_identifier' => ($identifier !== null && $matchedBy !== '') ? $identifier : null,
+            'note' => $note,
+            'assigned_identifier' => ($identifier !== null && $this->assignedIdentifier !== null) ? $this->assignedIdentifier : null,
         );
 
         return $this->lastAction;
+    }
+
+    /**
+     * @param string $code
+     * @param array  $params
+     * @return array structured note rendered in the back-office language by the module
+     */
+    private function note($code, array $params)
+    {
+        return array('code' => $code, 'params' => $params);
     }
 }
