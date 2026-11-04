@@ -353,6 +353,9 @@ function freshScenario($title)
 {
     section($title);
     mockReset();
+    // The whole run sends more than the module's 80 requests per minute guard allows; each scenario
+    // starts with a fresh window so the guard does not fail scenarios that are not testing it.
+    Configuration::updateValue('IFIRMA_RATE_WINDOW', '');
     $order = createOrder();
     if (!assertTrue($order instanceof Order && Validate::isLoadedObject($order), 'order created')) {
         return null;
@@ -869,6 +872,91 @@ function scenarioH($module)
     }
 }
 
+function scenarioI($module, $actions)
+{
+    $order = freshScenario('I. Customer panel: search, link, issue, count, unlink');
+    if (!$order) {
+        return;
+    }
+    $idCustomer = (int) $order->id_customer;
+    $customer = new Customer($idCustomer);
+    $address = new Address((int) $order->id_address_invoice);
+    $phone = trim((string) $address->phone) !== '' ? (string) $address->phone : (string) $address->phone_mobile;
+    if ($phone === '') {
+        $phone = '+48 600 700 800';
+    }
+    $fullName = trim($customer->firstname . ' ' . $customer->lastname);
+    $identifier = 'KOWALSKI-01';
+
+    IfirmaContractorMap::unlinkCustomer($idCustomer);
+    try {
+        $seed = mockRequest('POST', '/__mock/contractors', array(
+            'Identyfikator' => $identifier,
+            'Nazwa' => $fullName,
+            'Telefon' => $phone,
+            'KodPocztowy' => '00-001',
+            'Miejscowosc' => 'Warszawa',
+            'Ulica' => 'Testowa 1',
+            'Kraj' => 'Polska',
+        ));
+        assertSame(200, $seed['code'], 'mock contractor ' . $identifier . ' seeded');
+
+        $search = $actions->customerSearch(array(
+            'firstname' => $customer->firstname,
+            'lastname' => $customer->lastname,
+            'company' => (string) $customer->company,
+            'nip' => '',
+            'email' => '',
+            'phone' => $phone,
+        ));
+        assertTrue(!empty($search['success']), 'customerSearch succeeded', isset($search['message']) ? $search['message'] : '');
+        $hit = null;
+        $rows = isset($search['data']['search']['rows']) ? $search['data']['search']['rows'] : array();
+        foreach ($rows as $row) {
+            if (isset($row['identifier']) && $row['identifier'] === $identifier) {
+                $hit = $row;
+            }
+        }
+        assertTrue($hit !== null, 'customerSearch lists ' . $identifier, json_encode(array_column($rows, 'identifier')));
+        assertSame(true, $hit && isset($hit['flags']['phone']) ? $hit['flags']['phone'] : null, 'listed contractor carries the phone flag');
+        assertSame(true, $hit && isset($hit['flags']['name']) ? $hit['flags']['name'] : null, 'listed contractor carries the name flag');
+
+        $link = $actions->customerLink($idCustomer, $identifier);
+        assertTrue(!empty($link['success']), 'customerLink succeeded', isset($link['message']) ? $link['message'] : '');
+        $map = IfirmaContractorMap::getByCustomer($idCustomer);
+        assertSame($identifier, $map ? (string) $map->ifirma_identifier : null, 'map row holds ' . $identifier);
+        assertSame('manual', $map ? (string) $map->matched_by : null, 'map row matched_by is manual');
+
+        $result = IfirmaIssuancePipeline::build($module)->run($order, array('trigger' => 'manual', 'skip_delivery' => true));
+        $receipt = receiptOf($order);
+        if (assertTrue($result->ok && $receipt && $receipt->isIssued(), 'document issued for the linked customer', $result->message)) {
+            $payload = json_decode((string) $receipt->request_payload, true);
+            $sent = '';
+            if (is_array($payload)) {
+                if (isset($payload['IdentyfikatorKontrahenta'])) {
+                    $sent = (string) $payload['IdentyfikatorKontrahenta'];
+                } elseif (isset($payload['Kontrahent']['Identyfikator'])) {
+                    $sent = (string) $payload['Kontrahent']['Identyfikator'];
+                }
+            }
+            assertSame($identifier, $sent, 'sent payload references ' . $identifier);
+        }
+
+        $count = $actions->customerCountRemote($idCustomer);
+        assertTrue(!empty($count['success']), 'customerCountRemote succeeded', isset($count['message']) ? $count['message'] : '');
+        $c = isset($count['data']['count']) ? $count['data']['count'] : array();
+        assertTrue(isset($c['total']) && (int) $c['total'] >= 1, 'remote count total >= 1', json_encode($c));
+        assertSame(true, isset($c['complete']) ? (bool) $c['complete'] : null, 'remote count is complete');
+
+        $unlink = $actions->customerUnlink($idCustomer);
+        assertTrue(!empty($unlink['success']), 'customerUnlink succeeded', isset($unlink['message']) ? $unlink['message'] : '');
+        assertTrue(IfirmaContractorMap::getByCustomer($idCustomer) === null || !IfirmaContractorMap::getByCustomer($idCustomer), 'no map row after unlink');
+    } finally {
+        IfirmaContractorMap::unlinkCustomer($idCustomer);
+        mockReset();
+    }
+}
+
 $scenarios = array(
     'A' => function () use ($module, $actions) {
         scenarioA($module, $actions);
@@ -896,6 +984,9 @@ $scenarios = array(
     },
     'H' => function () use ($module) {
         scenarioH($module);
+    },
+    'I' => function () use ($module, $actions) {
+        scenarioI($module, $actions);
     },
 );
 

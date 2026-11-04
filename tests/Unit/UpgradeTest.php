@@ -17,6 +17,7 @@ class UpgradeTest extends TestCase
     {
         IfirmaTestState::resetAll();
         require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.1.0.php';
+        require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.2.0.php';
     }
 
     private function scriptColumnProbe()
@@ -76,5 +77,30 @@ class UpgradeTest extends TestCase
         $token = Configuration::get('IFIRMA_CRON_TOKEN');
         upgrade_module_1_1_0(new Module());
         $this->assertSame($token, Configuration::get('IFIRMA_CRON_TOKEN'));
+    }
+
+    public function testPanelShownAfterUpgrade()
+    {
+        $module = new Module();
+        $this->assertFalse($module->isRegisteredInHook('displayAdminCustomers'));
+
+        $this->assertTrue(upgrade_module_1_2_0($module));
+        $this->assertTrue(upgrade_module_1_2_0($module));
+
+        $this->assertTrue($module->isRegisteredInHook('displayAdminCustomers'));
+        $this->assertSame(array('displayAdminCustomers'), Module::$hooks);
+    }
+
+    public function testLegacyOrderHookRemovedOnUpgrade()
+    {
+        $module = new Module();
+        $module->registerHook('displayAdminOrder');
+        $module->registerHook('displayAdminOrderMainBottom');
+
+        $this->assertTrue(upgrade_module_1_2_0($module));
+        $this->assertTrue(upgrade_module_1_2_0($module));
+
+        $this->assertFalse($module->isRegisteredInHook('displayAdminOrder'));
+        $this->assertSame(array('displayAdminOrderMainBottom', 'displayAdminCustomers'), Module::$hooks);
     }
 }

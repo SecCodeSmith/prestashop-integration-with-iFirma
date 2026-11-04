@@ -103,3 +103,44 @@
     font-size: .9em;
     color: #6c757d;
 }
+
+/* iFirma module – back-office customer page panel */
+
+.ifirma-cp-table th {
+    font-weight: 600;
+}
+
+.ifirma-cp-ok {
+    color: #28a745;
+    font-weight: 600;
+}
+
+.ifirma-cp-warn {
+    color: #b8860b;
+    font-weight: 600;
+}
+
+.ifirma-cp-err {
+    color: #dc3545;
+    font-weight: 600;
+}
+
+.ifirma-cp-remote {
+    color: #6c757d;
+}
+
+.ifirma-cp-tools {
+    margin-top: 1rem;
+    padding-top: .5rem;
+    border-top: 1px solid #eee;
+}
+
+.ifirma-cp-tools.ifirma-cp-attention {
+    border-top: 0;
+    padding-left: .75rem;
+    border-left: 4px solid #ffc107;
+}
+
+.ifirma-cp-flag {
+    margin-right: .15rem;
+}

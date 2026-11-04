@@ -29,6 +29,7 @@ class IfirmaTestState
         Shop::reset();
         Module::reset();
         Tab::reset();
+        Access::reset();
         Tools::reset();
         Mail::reset();
         PrestaShopLogger::reset();

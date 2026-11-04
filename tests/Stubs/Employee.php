@@ -18,6 +18,8 @@ class Employee
     public $lastname;
     public $email;
     public $active = 1;
+    /** @var int profile id (1 = SuperAdmin in core); read by the customer panel permission check */
+    public $id_profile = 1;
 
     public function __construct($id = null)
     {

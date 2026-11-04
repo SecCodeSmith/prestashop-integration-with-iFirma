@@ -422,4 +422,32 @@ class ContractorReferenceTest extends TestCase
         $this->assertFalse(IfirmaContractorMap::getByCustomer(5) ? true : false);
         $this->assertArrayNotHasKey('document_identifier', $this->storedPayload()['_contractor']);
     }
+
+    // ---- manual link (customer-ifirma-panel) -----------------------------------------------
+
+    /** Scenario: Link a found contractor - the next document references the chosen contractor. */
+    public function testDocumentAfterAManualLinkReferencesTheChosenContractor()
+    {
+        $this->enableSync();
+        $client = new IfirmaApiClient('u@example.com', array('faktura' => str_repeat('1', 64)), 'http://ifirma-mock:8001/iapi/', 30, $this->t);
+        $customerService = new IfirmaCustomerContractorService($client, new IfirmaContractorService($client));
+
+        // the employee links customer 5 to an older contractor; the link re-reads it once
+        $this->t->queue('GET', '#kontrahenci/id/KOWALSKI-01\.json#', $this->foundContractor('KOWALSKI-01'));
+        $linked = $customerService->link(5, 'KOWALSKI-01');
+        $this->assertTrue($linked['success']);
+        $this->assertSame('manual', IfirmaContractorMap::getByCustomer(5)->matched_by);
+
+        // issuing the next document uses the stored link instead of PS-C5
+        $this->t->queue('GET', '#kontrahenci/id/KOWALSKI-01\.json#', $this->foundContractor('KOWALSKI-01'));
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
+
+        $this->service->createReceipt($this->order());
+
+        $this->assertSame('KOWALSKI-01', $this->sentDocument()['IdentyfikatorKontrahenta']);
+        $this->assertNotContains('PS-C5', array_map(function ($url) {
+            return rawurldecode(basename((string) parse_url($url, PHP_URL_PATH), '.json'));
+        }, $this->urls()));
+        $this->assertSame('KOWALSKI-01', IfirmaContractorMap::getByCustomer(5)->ifirma_identifier);
+    }
 }

@@ -379,6 +379,56 @@ behaviour of not sending anything), the **data-request switch**
 (`IFIRMA_CRON_TOKEN` is generated automatically; point your scheduler at the
 synchronisation URL at the interval set in `IFIRMA_SYNC_INTERVAL_MIN`).
 
+## Upgrading to 1.2.0
+
+Upload the 1.2.0 module over the existing one and run the upgrade from the Module Manager.
+There is no schema or configuration change. `upgrade/upgrade-1.2.0.php` registers the
+`displayAdminCustomers` hook, which shows the iFirma panel on the back-office customer page.
+
+## Customer page
+
+The module adds an **iFirma** panel to the back-office customer view (hook `displayAdminCustomers`,
+on both the legacy and the Symfony pages). Existing installs get it through the 1.2.0 upgrade
+(see "Upgrading to 1.2.0").
+
+The panel shows:
+
+- **Contractor link** - the linked iFirma identifier, name and match type, or `PS-C<id_customer>`
+  marked "not linked".
+- **Registration check** - each time the customer page is opened, after the page has loaded, the
+  module makes one contractor lookup in iFirma (`GET kontrahenci/id/{id}.json`), subject to the
+  module's local rate guard. The result is "registered", "not found in iFirma" or "could not check".
+- **Local document count** - taken from the module's own log, with no API call: issued, paid, held
+  and needs attention. Issued is split into receipts, domestic invoices and other documents.
+
+Buttons:
+
+- **Count in iFirma** - lists the customer's documents with `faktury.json`, filtered by the shown
+  contractor identifier (`kontrahent`) and, when an invoice address has a 10-digit NIP, by
+  `nipKontrahenta`. The list is read in yearly windows (each at most 365 days, newest first) from the
+  customer's registration date, going back at most 10 years, up to today. Each document is counted
+  once (by FakturaId); paid means `Zaplacono` >= `Brutto`. At most 20 list calls are made per click.
+  When that limit is reached the panel says "At least N document(s)" and shows the period actually
+  covered.
+- **Find or register a contractor** - the form is prefilled from the customer and their latest
+  invoice address (first name, last name, company, NIP, e-mail, phone). iFirma's contractor search
+  matches only identifier, name or NIP, so the module sends at most 4 phrases: the NIP, the company,
+  the full name, and the last name alone when fewer than 3 phrases exist. E-mail and phone are not
+  searchable in iFirma; they are compared with the returned contractors to mark and rank matches
+  (NIP first, then the number of matching fields). A search with only e-mail or phone is refused
+  with an explanation.
+- **Link** - the employee picks a contractor. The module re-reads it from iFirma and stores the link
+  with match type `manual` (table `ifirma_contractor_map`). Warning: the next document for that
+  customer updates the chosen contractor's name, NIP, address and e-mail in iFirma with the shop data,
+  as for every linked contractor.
+- **Unlink** - removes the stored link only; nothing changes in iFirma.
+- **Register in iFirma** - the same registration as the order panel's "Register contractor in iFirma",
+  using the customer's latest order. It is unavailable without an order or when contractor sync is
+  disabled.
+
+Link, Unlink and Register require the employee's edit permission on Customers. Check, search and
+count need only back-office access with the module token.
+
 ## Linking existing contractors
 
 Without any setup the module registers one iFirma contractor per customer (identifier `PS-C<id_customer>`). If you already keep contractors in iFirma you do not want a second record for every returning customer, so the module can link a customer to a contractor that exists. A link is stored in the table `ifirma_contractor_map` (one contractor per customer) and reused for every later order.
@@ -411,9 +461,13 @@ Each customer gets one link. A customer that already has a link keeps it unless 
 For customers that are not in the import, the module looks for an existing contractor when it issues a document, in this order: the stored link (verified in iFirma; dropped when the contractor no longer exists), the module contractor `PS-C<id>`, a contractor with exactly the order NIP (`GET kontrahenci/<NIP>.json`; with several results the one with the same name, then the same postcode), and a contractor whose name equals the buyer name and whose e-mail or postcode confirms it. Name matching without a confirming e-mail or postcode is deliberately refused: a document on the wrong contractor is worse than one extra contractor. When nothing matches, `PS-C<id>` is created as before. After iFirma confirms the create (`Kod` 0), the module reads back the contractor it just created before referencing it: first by the sent identifier `PS-C<id>` and by the identifier iFirma reports in `Wynik`. When neither is found it waits 2 s and reads both back once more. When still nothing is found, it searches with the same rules as before a create (exact NIP; otherwise the buyer name confirmed by e-mail or postcode) and links the customer to the identifier iFirma actually stored (for example `IFI1909556979`) with match type `module`. Only when all of that fails is the document issued without a contractor reference (fallback); the contractor iFirma attaches is then learned from the issued document as before. The order panel's "created" label adds "(iFirma assigned identifier <id>)" when iFirma's identifier differs from the sent one. iFirma returns at most 20 search results and offers no contractor list, which is why the export import exists. A failing search (network error, rejected signature) counts as "no match" and never blocks issuing. A linked contractor is updated with the shop's buyer data only when those fields differ (the same merge as for `PS-C<id>`), and the order panel shows the linked contractor and how it was matched.
 Because `IdentyfikatorKontrahenta` accepts at most 15 characters, a link whose identifier is longer is still sent as-is and, when iFirma attaches a different contractor to the issued document, that contractor is stored as the link with match type `document` (label "attached by iFirma to an issued document").
 
+### Linking by hand from the customer page
+
+A single customer can be linked to a contractor from the iFirma panel on the back-office customer page (see "Customer page"). The employee picks the contractor from the search results, and the module re-reads it from iFirma and stores the link with match type `manual`. A manual link is never replaced by a bulk import. Warning: the next document for that customer updates the chosen contractor's name, NIP, address and e-mail in iFirma with the shop data, as for every linked contractor.
+
 ### Forgetting links
 
-*Forget all links* in the same panel (it asks for confirmation) empties `ifirma_contractor_map`. Documents already issued are not touched; the next document of each customer is matched again.
+*Forget all links* in the same panel (it asks for confirmation) empties `ifirma_contractor_map`. Documents already issued are not touched; the next document of each customer is matched again. A single customer can also be unlinked from the customer page (**Unlink**); that removes only the stored link and changes nothing in iFirma.
 
 ## Customer data-change requests
 

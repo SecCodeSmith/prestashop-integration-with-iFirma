@@ -43,6 +43,39 @@ class Order
         $this->loadFromRegistry($id);
     }
 
+    /**
+     * Like core: the customer's orders as rows (id_order, id_customer, reference, date_add,
+     * id_address_invoice, id_address_delivery, current_state), newest first (date_add, then id).
+     *
+     * @param int $idCustomer
+     * @return array[]
+     */
+    public static function getCustomerOrders($idCustomer)
+    {
+        $rows = [];
+        foreach (static::$instances as $o) {
+            if ((int) $o->id_customer !== (int) $idCustomer) {
+                continue;
+            }
+            $rows[] = [
+                'id_order' => $o->id,
+                'id_customer' => $o->id_customer,
+                'reference' => $o->reference,
+                'date_add' => $o->date_add,
+                'id_address_invoice' => $o->id_address_invoice,
+                'id_address_delivery' => $o->id_address_delivery,
+                'current_state' => $o->current_state,
+            ];
+        }
+        usort($rows, function ($a, $b) {
+            $c = strcmp((string) $b['date_add'], (string) $a['date_add']);
+
+            return $c !== 0 ? $c : (int) $b['id_order'] - (int) $a['id_order'];
+        });
+
+        return $rows;
+    }
+
     public function getOrderDetailList()
     {
         return $this->details;

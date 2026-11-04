@@ -1,12 +1,12 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8" ?>
 <module>
     <name>ifirma</name>
-    <displayName><![CDATA[iFirma – Receipts & Invoices]]></displayName>
-    <version><![CDATA[1.1.0]]></version>
-    <description><![CDATA[Two-way iFirma (www.ifirma.pl) integration: issue receipts/invoices from the order page, register payments (status update) and let customers download their document from their account.]]></description>
+    <displayName><![CDATA[iFirma &ndash; Receipts &amp; Invoices]]></displayName>
+    <version><![CDATA[1.2.0]]></version>
+    <description><![CDATA[Issue iFirma receipts/invoices from the order page, register payments and let customers download their document.]]></description>
     <author><![CDATA[SCM Jakub Berechowskir]]></author>
     <tab><![CDATA[billing_invoicing]]></tab>
+	<confirmUninstall><![CDATA[Remove all iFirma settings and the local receipt log? Documents already issued in iFirma are NOT affected.]]></confirmUninstall>
     <is_configurable>1</is_configurable>
     <need_instance>0</need_instance>
-    <limited_countries></limited_countries>
 </module>

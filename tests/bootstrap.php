@@ -58,6 +58,7 @@ foreach (glob(__DIR__ . '/Stubs/*.php') as $file) {
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaApiClient.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaReceipt.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaContractorService.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaCustomerContractorService.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaReceiptService.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaCustomerView.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaStatusSyncService.php';

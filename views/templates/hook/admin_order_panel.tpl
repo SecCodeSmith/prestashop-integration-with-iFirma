@@ -19,9 +19,6 @@
 {if $ifirma_state == 'error' || $ifirma_state == 'missing'}{assign var='ifirma_badge' value='danger'}{/if}
 {if $ifirma_state == 'unknown' || $ifirma_state == 'suspected' || $ifirma_state == 'held'}{assign var='ifirma_badge' value='warning'}{/if}
 
-{* The 1.7.7+ order page is Bootstrap 4: a `card` gets the same border and header as the other
-   blocks on the page, while `panel` (Bootstrap 3, legacy order page) renders unstyled there. *}
-{if $ifirma_layout == 'card'}
 <div class="card mt-2" id="ifirma-panel">
     <div class="card-header">
         <h3 class="card-header-title">
@@ -32,13 +29,6 @@
         </h3>
     </div>
     <div class="card-body">
-{else}
-<div class="panel" id="ifirma-panel">
-    <div class="panel-heading">
-        <i class="icon-file-text-o"></i> {l s='iFirma' mod='ifirma'}
-        {if $ifirma_configured}
-            <span id="ifirma-status" class="label label-{$ifirma_badge|escape:'html':'UTF-8'}" data-state="{$ifirma_state|escape:'html':'UTF-8'}">{$ifirma_state_label|escape:'html':'UTF-8'}</span>
-        {/if}
     </div>
 {/if}
 
@@ -398,7 +388,7 @@
             </div>
         {/if}
     {/if}
-    {if $ifirma_layout == 'card'}</div>{/if}
+    </div>
 </div>
 
 <script type="text/javascript">

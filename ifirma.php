@@ -24,6 +24,7 @@ require_once __DIR__ . '/classes/IfirmaStatusSyncService.php';
 require_once __DIR__ . '/classes/IfirmaDataRequestService.php';
 require_once __DIR__ . '/classes/IfirmaIssuancePipeline.php';
 require_once __DIR__ . '/classes/IfirmaCustomerView.php';
+require_once __DIR__ . '/classes/IfirmaCustomerContractorService.php';
 require_once __DIR__ . '/classes/IfirmaAdminActions.php';
 
 class Ifirma extends Module
@@ -38,10 +39,10 @@ class Ifirma extends Module
     {
         $this->name = 'ifirma';
         $this->tab = 'billing_invoicing';
-        $this->version = '1.1.0';
+        $this->version = '1.2.0';
         $this->author = 'SCM Jakub Berechowskir';
         $this->need_instance = 0;
-        $this->ps_versions_compliancy = array('min' => '1.7.0.0', 'max' => '9.99.99');
+        $this->ps_versions_compliancy = array('min' => '8.0.0', 'max' => '9.99.99');
         $this->bootstrap = true;
 
         parent::__construct();
@@ -56,8 +57,8 @@ class Ifirma extends Module
         return parent::install()
             && $this->installSql()
             && $this->installTab()
-            && $this->registerHook('displayAdminOrder')
             && $this->registerHook('displayAdminOrderMainBottom')
+            && $this->registerHook('displayAdminCustomers')
             && $this->registerHook('displayCustomerAccount')
             && $this->registerHook('displayOrderDetail')
             && $this->registerHook('actionOrderStatusPostUpdate')
@@ -955,21 +956,65 @@ class Ifirma extends Module
         return $this->renderAdminOrderPanel((int) $params['id_order']);
     }
 
-    public function hookDisplayAdminOrder($params)
+    /**
+     * Back-office customer page (Symfony customer view). Renders local data
+     * only: the link state, the local counts and the pre-filled search form. Every iFirma call
+     * is triggered afterwards by the panel's script through the AdminIfirma controller.
+     *
+     * @param array $params id_customer, or customer (Customer object)
+     * @return string
+     */
+    public function hookDisplayAdminCustomers($params)
     {
-        if ($this->isModernOrderPage()) {
+        $idCustomer = 0;
+        if (is_array($params) && isset($params['id_customer'])) {
+            $idCustomer = (int) $params['id_customer'];
+        } elseif (is_array($params) && isset($params['customer']) && is_object($params['customer'])) {
+            $idCustomer = (int) $params['customer']->id;
+        }
+        if ($idCustomer <= 0) {
+            return '';
+        }
+        $customer = new Customer($idCustomer);
+        if (!Validate::isLoadedObject($customer)) {
             return '';
         }
 
-        return $this->renderAdminOrderPanel((int) $params['id_order']);
-    }
+        $service = IfirmaCustomerContractorService::build($this);
+        $link = $service->linkState($idCustomer);
+        $labels = array();
+        foreach (array('module', 'nip', 'name', 'email', 'import-nip', 'import-email', 'import-name', 'document', 'manual') as $code) {
+            $labels[$code] = $this->matchedByLabel($code);
+        }
 
-    /**
-     * @return bool
-     */
-    private function isModernOrderPage()
-    {
-        return version_compare(_PS_VERSION_, '1.7.7.0', '>=');
+        $canRegister = false;
+        $registerReason = '';
+        if (!IfirmaContractorService::build($this)->isEnabled()) {
+            $registerReason = $this->l('Contractor registration is disabled in the module settings.');
+        } elseif (!Order::getCustomerOrders($idCustomer)) {
+            $registerReason = $this->l('Registration needs at least one order of this customer.');
+        } else {
+            $canRegister = true;
+        }
+
+        $token = Tools::getAdminTokenLite('AdminIfirma');
+        $this->context->smarty->assign(array(
+            'ifirma_customer_id' => $idCustomer,
+            'ifirma_customer_configured' => $this->isConfigured(),
+            'ifirma_customer_link' => $link,
+            'ifirma_customer_match_label' => $link['linked'] ? $this->matchedByLabel((string) $link['matched_by']) : '',
+            // JSON with <, >, & and quotes hex-escaped so it is safe inside the inline script
+            'ifirma_customer_match_labels_json' => json_encode($labels, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT),
+            'ifirma_customer_counts' => $service->localCounts($idCustomer),
+            'ifirma_customer_criteria' => $service->defaultCriteria($idCustomer),
+            'ifirma_customer_can_register' => $canRegister,
+            'ifirma_customer_register_reason' => $registerReason,
+            'ifirma_customer_ajax_url' => $this->context->link->getAdminLink('AdminIfirma', false) . '&token=' . $token,
+            // the back office does not load the module stylesheet by itself; the template links it
+            'ifirma_customer_css_url' => $this->_path . 'views/css/ifirma.css?v=' . rawurlencode((string) $this->version),
+        ));
+
+        return $this->display(__FILE__, 'views/templates/hook/admin_customer_panel.tpl');
     }
 
     /**
@@ -1185,8 +1230,6 @@ class Ifirma extends Module
             'ifirma_request_payload' => $receipt ? (string) $receipt->request_payload : '',
             'ifirma_response_payload' => $receipt ? (string) $receipt->response_payload : '',
             'ifirma_module_version' => (string) $this->version,
-            // Bootstrap 4 card on the 1.7.7+ order page, legacy Bootstrap 3 panel before that
-            'ifirma_layout' => $this->isModernOrderPage() ? 'card' : 'panel',
             // tells a merchant (and us) which build is installed when the version number did not change
             'ifirma_build_stamp' => date('Y-m-d H:i', (int) filemtime(__FILE__)),
             'ifirma_has_receipt' => (bool) $receipt,

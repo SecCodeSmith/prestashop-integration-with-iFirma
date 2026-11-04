@@ -64,6 +64,13 @@ class Module
         return true;
     }
 
+    public function unregisterHook($hookName, $shopList = null)
+    {
+        self::$hooks = array_values(array_diff(self::$hooks, array($hookName)));
+
+        return true;
+    }
+
     public function isRegisteredInHook($hook)
     {
         return in_array($hook, self::$hooks, true);

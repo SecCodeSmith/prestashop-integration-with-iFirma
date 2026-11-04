@@ -229,6 +229,34 @@ class IfirmaReceipt extends ObjectModel
     }
 
     /**
+     * Number of the customer's documents per document type and status (every status, errors
+     * included, external rows too).
+     *
+     * @param int $idCustomer
+     * @return array rows of document_type, status, total (int)
+     */
+    public static function countByCustomer($idCustomer)
+    {
+        $rows = Db::getInstance()->executeS(
+            'SELECT document_type, status, COUNT(*) AS total FROM `' . _DB_PREFIX_ . 'ifirma_receipt`
+             WHERE id_customer = ' . (int) $idCustomer . '
+             GROUP BY document_type, status'
+        );
+        $out = array();
+        if (is_array($rows)) {
+            foreach ($rows as $row) {
+                $out[] = array(
+                    'document_type' => (string) $row['document_type'],
+                    'status' => (string) $row['status'],
+                    'total' => (int) $row['total'],
+                );
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * @return bool
      */
     public function isIssued()

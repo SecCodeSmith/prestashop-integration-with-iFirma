@@ -21,7 +21,7 @@ class ConfigurationKeysTest extends TestCase
     public function testInstallSetsEveryKeyAndUninstallRemovesThem()
     {
         $module = IfirmaTestModuleLoader::loadModule();
-        $this->assertSame('1.1.0', $module->version);
+        $this->assertSame('1.2.0', $module->version);
 
         $this->assertTrue($module->install());
 
@@ -42,11 +42,11 @@ class ConfigurationKeysTest extends TestCase
     public function testVersionFilesAreBumped()
     {
         $root = dirname(__DIR__, 2);
-        $this->assertStringContainsString('<![CDATA[1.1.0]]>', file_get_contents($root . '/config.xml'));
+        $this->assertStringContainsString('<![CDATA[1.2.0]]>', file_get_contents($root . '/config.xml'));
         $package = json_decode(file_get_contents($root . '/package.json'), true);
-        $this->assertSame('1.1.0', $package['version']);
+        $this->assertSame('1.2.0', $package['version']);
         $lock = json_decode(file_get_contents($root . '/package-lock.json'), true);
-        $this->assertSame('1.1.0', $lock['version']);
-        $this->assertSame('1.1.0', $lock['packages']['']['version']);
+        $this->assertSame('1.2.0', $lock['version']);
+        $this->assertSame('1.2.0', $lock['packages']['']['version']);
     }
 }

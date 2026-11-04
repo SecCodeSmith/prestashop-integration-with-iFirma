@@ -337,12 +337,130 @@ class ModuleHooksTest extends TestCase
         $this->assertCount(2, $v['ifirma_request_history']);
     }
 
-    public function testAdminPanelLegacyHookIsSilentOnModernPages()
+    public function testAdminPanelRendersOncePerRequest()
     {
-        $this->assertSame('', $this->module->hookDisplayAdminOrder(array('id_order' => 15)));
+        $this->assertFalse(method_exists($this->module, 'hookDisplayAdminOrder'));
         $this->module->hookDisplayAdminOrderMainBottom(array('id_order' => 15));
         // render guard: the second call on the same request renders nothing
         $this->assertSame('', $this->module->hookDisplayAdminOrderMainBottom(array('id_order' => 15)));
+    }
+
+    // ---- admin customer page panel ---------------------------------------------------------
+
+    private function receiptCountsByCustomer(array $rows)
+    {
+        // same pattern as IfirmaWiringFixture::wiringScriptDb(), which would otherwise answer first
+        Db::getInstance()->whenExecuteS('/FROM `ps_ifirma_receipt`\s+WHERE id_customer = (\d+)/', function ($sql, $m) use ($rows) {
+            return strpos($sql, 'GROUP BY document_type, status') !== false && (int) $m[1] === 5 ? $rows : array();
+        });
+    }
+
+    public function testPanelShownOnAFreshInstall()
+    {
+        Module::reset();
+        $this->assertTrue($this->module->install());
+        $this->assertContains('displayAdminCustomers', Module::$hooks);
+
+        $out = $this->module->hookDisplayAdminCustomers(array('id_customer' => 5));
+        $v = $this->vars();
+
+        $this->assertSame('<rendered:views/templates/hook/admin_customer_panel.tpl>', $out);
+        $this->assertSame('views/templates/hook/admin_customer_panel.tpl', $this->lastDisplayed()[0]);
+        $this->assertSame(5, $v['ifirma_customer_id']);
+        $this->assertSame('PS-C5', $v['ifirma_customer_link']['identifier']);
+        $this->assertFalse($v['ifirma_customer_link']['linked']);
+        $this->assertStringContainsString('token=admin-token-AdminIfirma', $v['ifirma_customer_ajax_url']);
+        $this->assertSame('Jan', $v['ifirma_customer_criteria']['firstname']);
+        $this->assertSame(0, $v['ifirma_customer_counts']['issued']);
+        $this->assertTrue($v['ifirma_customer_can_register']);
+    }
+
+    public function testPanelAcceptsACustomerObjectAndRefusesUnknownCustomers()
+    {
+        $out = $this->module->hookDisplayAdminCustomers(array('customer' => Customer::$instances[5]));
+        $this->assertSame('<rendered:views/templates/hook/admin_customer_panel.tpl>', $out);
+        $this->assertSame(5, $this->vars()['ifirma_customer_id']);
+
+        $this->assertSame('', $this->module->hookDisplayAdminCustomers(array()));
+        $this->assertSame('', $this->module->hookDisplayAdminCustomers(array('id_customer' => 0)));
+        $this->assertSame('', $this->module->hookDisplayAdminCustomers(array('id_customer' => 999)));
+    }
+
+    public function testPanelPageDoesNotWaitForIfirma()
+    {
+        IfirmaContractorMap::link(5, 'KOWALSKI-01', 'manual', 'Jan Kowalski');
+        $this->receiptCountsByCustomer(array(array('document_type' => 'fakturakraj', 'status' => 'paid', 'total' => 2)));
+
+        $this->module->hookDisplayAdminCustomers(array('id_customer' => 5));
+
+        $this->assertSame(array(), $this->t->calls);
+        $v = $this->vars();
+        $this->assertSame(2, $v['ifirma_customer_counts']['issued']);
+        $this->assertSame(2, $v['ifirma_customer_counts']['by_type']['invoice']);
+    }
+
+    public function testPanelShowsTheLinkWithATranslatedMatchLabel()
+    {
+        IfirmaContractorMap::link(5, 'KOWALSKI-01', 'import-email', 'Jan Kowalski');
+
+        $this->module->hookDisplayAdminCustomers(array('id_customer' => 5));
+        $v = $this->vars();
+
+        $this->assertSame('KOWALSKI-01', $v['ifirma_customer_link']['identifier']);
+        $this->assertTrue($v['ifirma_customer_link']['linked']);
+        $this->assertSame('import, e-mail', $v['ifirma_customer_match_label']);
+        $labels = json_decode($v['ifirma_customer_match_labels_json'], true);
+        $this->assertSame('manual link', $labels['manual']);
+        $this->assertCount(9, $labels);
+    }
+
+    public function testMarkupInAContractorNameNeverReachesThePageUnescaped()
+    {
+        IfirmaContractorMap::link(5, 'KOWALSKI-01', 'manual', '<script>alert(1)</script>');
+
+        $this->module->hookDisplayAdminCustomers(array('id_customer' => 5));
+        $this->assertSame('<script>alert(1)</script>', $this->vars()['ifirma_customer_link']['name']);
+
+        // the stubbed Smarty does not render, so pin the template: every output is escaped or cast
+        $tpl = file_get_contents(dirname(__DIR__, 2) . '/views/templates/hook/admin_customer_panel.tpl');
+        preg_match_all('/\{\$[^}]*\}/', $tpl, $m);
+        $this->assertNotEmpty($m[0]);
+        foreach ($m[0] as $output) {
+            $this->assertSame(
+                1,
+                preg_match("/\|(escape:'html':'UTF-8'|escape:'javascript':'UTF-8'|intval)\}$/", $output),
+                'unescaped output ' . $output
+            );
+        }
+        $this->assertStringNotContainsString('nofilter', $tpl);
+        $this->assertStringNotContainsString('.html(', $tpl);
+    }
+
+    public function testRegisterIsUnavailableWithoutAnOrder()
+    {
+        $c = new Customer();
+        $c->id = 8;
+        $c->firstname = 'Anna';
+        $c->lastname = 'Nowak';
+        Customer::register($c);
+
+        $this->module->hookDisplayAdminCustomers(array('id_customer' => 8));
+        $v = $this->vars();
+
+        $this->assertFalse($v['ifirma_customer_can_register']);
+        $this->assertSame('Registration needs at least one order of this customer.', $v['ifirma_customer_register_reason']);
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testRegisterIsUnavailableWhenContractorSyncIsDisabled()
+    {
+        Configuration::updateValue('IFIRMA_CONTRACTOR_SYNC', 0);
+
+        $this->module->hookDisplayAdminCustomers(array('id_customer' => 5));
+        $v = $this->vars();
+
+        $this->assertFalse($v['ifirma_customer_can_register']);
+        $this->assertSame('Contractor registration is disabled in the module settings.', $v['ifirma_customer_register_reason']);
     }
 
     // ---- configuration form --------------------------------------------------------------

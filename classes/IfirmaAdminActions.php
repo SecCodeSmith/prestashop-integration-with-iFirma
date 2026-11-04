@@ -17,6 +17,7 @@ require_once dirname(__FILE__) . '/IfirmaApiClient.php';
 require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaDataRequest.php';
 require_once dirname(__FILE__) . '/IfirmaContractorService.php';
+require_once dirname(__FILE__) . '/IfirmaCustomerContractorService.php';
 require_once dirname(__FILE__) . '/IfirmaReceiptService.php';
 require_once dirname(__FILE__) . '/IfirmaIssuancePipeline.php';
 require_once dirname(__FILE__) . '/IfirmaDuplicateGuard.php';
@@ -35,6 +36,9 @@ class IfirmaAdminActions
 {
     /** @var Module */
     private $module;
+
+    /** @var IfirmaCustomerContractorService|null */
+    private $customerService;
 
     /**
      * @param Module $module
@@ -410,6 +414,282 @@ class IfirmaAdminActions
             }
 
             return $this->result(true, $message, $data);
+        } catch (Exception $e) {
+            return $this->failure($e);
+        } catch (Throwable $e) {
+            return $this->failure($e);
+        }
+    }
+
+    // ---- customer page (customer-contractor-panel) -----------------------------------------
+
+    /**
+     * Test seam: replaces the service built from the module configuration.
+     *
+     * @param IfirmaCustomerContractorService|null $service
+     */
+    public function setCustomerService(IfirmaCustomerContractorService $service = null)
+    {
+        $this->customerService = $service;
+    }
+
+    /**
+     * @return IfirmaCustomerContractorService
+     */
+    private function customerService()
+    {
+        if ($this->customerService === null) {
+            $this->customerService = IfirmaCustomerContractorService::build($this->module);
+        }
+
+        return $this->customerService;
+    }
+
+    /**
+     * @param int $idCustomer
+     * @return Customer|null
+     */
+    private function loadCustomer($idCustomer)
+    {
+        if ((int) $idCustomer <= 0) {
+            return null;
+        }
+        $customer = new Customer((int) $idCustomer);
+
+        return Validate::isLoadedObject($customer) ? $customer : null;
+    }
+
+    /**
+     * @return array
+     */
+    private function invalidCustomer()
+    {
+        return $this->result(false, $this->module->l('Invalid customer.', 'ifirmaadminactions'));
+    }
+
+    /**
+     * Looks the shown identifier up in iFirma once.
+     *
+     * @param int $idCustomer
+     * @return array
+     */
+    public function customerCheck($idCustomer)
+    {
+        try {
+            if (!$this->loadCustomer($idCustomer)) {
+                return $this->invalidCustomer();
+            }
+            $check = $this->customerService()->check((int) $idCustomer);
+            switch ($check['state']) {
+                case IfirmaCustomerContractorService::CHECK_REGISTERED:
+                    $check['label'] = sprintf($this->module->l('Registered in iFirma as %s', 'ifirmaadminactions'), $check['identifier']);
+                    break;
+                case IfirmaCustomerContractorService::CHECK_MISSING:
+                    $check['label'] = $this->module->l('Not found in iFirma', 'ifirmaadminactions');
+                    break;
+                default:
+                    $check['label'] = sprintf($this->module->l('Could not check: %s', 'ifirmaadminactions'), $check['message']);
+            }
+
+            return $this->result(
+                $check['state'] !== IfirmaCustomerContractorService::CHECK_ERROR,
+                $check['label'],
+                array('check' => $check)
+            );
+        } catch (Exception $e) {
+            return $this->failure($e);
+        } catch (Throwable $e) {
+            return $this->failure($e);
+        }
+    }
+
+    /**
+     * @param array $criteria firstname, lastname, company, nip, email, phone
+     * @return array
+     */
+    public function customerSearch(array $criteria)
+    {
+        try {
+            $search = $this->customerService()->searchCandidates($criteria);
+            if (!empty($search['refused'])) {
+                return $this->result(
+                    false,
+                    $this->module->l('iFirma searches contractors by name, company or NIP. E-mail and phone are only used to confirm the results; fill in a name, company or NIP.', 'ifirmaadminactions'),
+                    array('search' => $search)
+                );
+            }
+
+            $count = count($search['rows']);
+            $message = $count > 0
+                ? sprintf($this->module->l('Found %d contractor(s).', 'ifirmaadminactions'), $count)
+                : $this->module->l('No contractor was found in iFirma.', 'ifirmaadminactions');
+            if (!empty($search['errors'])) {
+                $parts = array();
+                foreach ($search['errors'] as $phrase => $error) {
+                    $parts[] = $phrase . ': ' . $error;
+                }
+                $message .= ' ' . sprintf($this->module->l('Search failed for: %s', 'ifirmaadminactions'), implode('; ', $parts));
+            }
+
+            return $this->result(true, $message, array('search' => $search));
+        } catch (Exception $e) {
+            return $this->failure($e);
+        } catch (Throwable $e) {
+            return $this->failure($e);
+        }
+    }
+
+    /**
+     * @param int    $idCustomer
+     * @param string $identifier
+     * @return array
+     */
+    public function customerLink($idCustomer, $identifier)
+    {
+        try {
+            if (!$this->loadCustomer($idCustomer)) {
+                return $this->invalidCustomer();
+            }
+            $service = $this->customerService();
+            $link = $service->link((int) $idCustomer, $identifier);
+            $data = array('link_state' => $service->linkState((int) $idCustomer));
+            $shown = $link['identifier'];
+
+            switch ($link['code']) {
+                case IfirmaCustomerContractorService::LINK_LINKED:
+                    return $this->result(true, sprintf($this->module->l('Customer linked to contractor %s.', 'ifirmaadminactions'), $shown), $data);
+                case IfirmaCustomerContractorService::LINK_NOT_FOUND:
+                    return $this->result(
+                        false,
+                        sprintf($this->module->l('Contractor %s was not found in iFirma; nothing was linked.', 'ifirmaadminactions'), $shown),
+                        $data
+                    );
+                case IfirmaCustomerContractorService::LINK_ERROR:
+                    return $this->result(
+                        false,
+                        sprintf($this->module->l('Contractor %s could not be checked: %s', 'ifirmaadminactions'), $shown, $link['message']),
+                        $data
+                    );
+                default:
+                    return $this->result(false, $this->module->l('Invalid contractor identifier.', 'ifirmaadminactions'), $data);
+            }
+        } catch (Exception $e) {
+            return $this->failure($e);
+        } catch (Throwable $e) {
+            return $this->failure($e);
+        }
+    }
+
+    /**
+     * @param int $idCustomer
+     * @return array
+     */
+    public function customerUnlink($idCustomer)
+    {
+        try {
+            if (!$this->loadCustomer($idCustomer)) {
+                return $this->invalidCustomer();
+            }
+            $service = $this->customerService();
+            $removed = $service->unlink((int) $idCustomer);
+            $data = array('link_state' => $service->linkState((int) $idCustomer));
+
+            if ($removed) {
+                return $this->result(true, $this->module->l('The link was removed. Nothing was changed in iFirma.', 'ifirmaadminactions'), $data);
+            }
+
+            return $this->result(false, $this->module->l('The customer was not linked.', 'ifirmaadminactions'), $data);
+        } catch (Exception $e) {
+            return $this->failure($e);
+        } catch (Throwable $e) {
+            return $this->failure($e);
+        }
+    }
+
+    /**
+     * Registers the customer through the newest order, using the order registration path.
+     *
+     * @param int $idCustomer
+     * @return array data: contractor (as registerContractor), link_state
+     */
+    public function registerCustomer($idCustomer)
+    {
+        try {
+            if (!$this->loadCustomer($idCustomer)) {
+                return $this->invalidCustomer();
+            }
+            $orders = Order::getCustomerOrders((int) $idCustomer);
+            if (empty($orders)) {
+                return $this->result(false, $this->module->l('Registration needs at least one order of this customer.', 'ifirmaadminactions'));
+            }
+            $first = reset($orders);
+
+            $result = $this->registerContractor((int) $first['id_order']);
+            $result['data'] = array(
+                'contractor' => $result['data'],
+                'link_state' => $this->customerService()->linkState((int) $idCustomer),
+            );
+
+            return $result;
+        } catch (Exception $e) {
+            return $this->failure($e);
+        } catch (Throwable $e) {
+            return $this->failure($e);
+        }
+    }
+
+    /**
+     * Alias with the naming of the other customer actions.
+     *
+     * @param int $idCustomer
+     * @return array
+     */
+    public function customerRegister($idCustomer)
+    {
+        return $this->registerCustomer($idCustomer);
+    }
+
+    /**
+     * @param int $idCustomer
+     * @return array
+     */
+    public function customerCountRemote($idCustomer)
+    {
+        try {
+            if (!$this->loadCustomer($idCustomer)) {
+                return $this->invalidCustomer();
+            }
+            $count = $this->customerService()->remoteCount((int) $idCustomer);
+            if (empty($count['ok'])) {
+                return $this->result(
+                    false,
+                    sprintf($this->module->l('The documents could not be counted: %s', 'ifirmaadminactions'), $count['error']),
+                    array('count' => $count)
+                );
+            }
+
+            if (empty($count['complete']) && (string) $count['period_from'] === '') {
+                // the call budget ran out before a single yearly window was listed completely
+                return $this->result(
+                    true,
+                    sprintf(
+                        $this->module->l('At least %1$d document(s) in iFirma (%2$d paid); the call limit was reached before a full year was listed.', 'ifirmaadminactions'),
+                        (int) $count['total'],
+                        (int) $count['paid']
+                    ),
+                    array('count' => $count)
+                );
+            }
+
+            $format = !empty($count['complete'])
+                ? $this->module->l('%1$d document(s) in iFirma (%2$d paid), %3$s – %4$s.', 'ifirmaadminactions')
+                : $this->module->l('At least %1$d document(s) in iFirma (%2$d paid), %3$s – %4$s; the call limit was reached.', 'ifirmaadminactions');
+
+            return $this->result(
+                true,
+                sprintf($format, (int) $count['total'], (int) $count['paid'], $count['period_from'], $count['period_to']),
+                array('count' => $count)
+            );
         } catch (Exception $e) {
             return $this->failure($e);
         } catch (Throwable $e) {

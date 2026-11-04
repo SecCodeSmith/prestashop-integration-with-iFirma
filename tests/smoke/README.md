@@ -19,6 +19,7 @@ Each scenario resets the mock (`POST /__mock/reset`) and creates a fresh order.
 | F | KSeF submission | a B2B order (NIP on the invoice address, KSeF mode b2b) gets a `ksef` pipeline step; skipped when the mock lacks the KSeF endpoint |
 | G | PDF not ready | the mock answers Kod 404 for the first 2 PDF downloads; the module retries (waits of 3 s and 7 s, so the scenario takes about 10 s); receipt issued, `delivery_status` `sent`, mock counter back to 0 |
 | H | Contractor renamed by iFirma | mock in `rename` contractor mode, customer without a contractor link; the document carries the `IFI...` identifier iFirma assigned, `_contractor.action` is `created` with the same `assigned_identifier`, the contractor map holds it with `matched_by` `module`, and the admin order panel shows it |
+| I | Customer panel actions | a mock contractor `KOWALSKI-01` carries the customer's name and phone; `customerSearch` lists it with the phone and name flags; `customerLink` writes a map row with `matched_by` `manual`; a document issued for the customer's order references `KOWALSKI-01`; `customerCountRemote` reports a total of at least 1 and a complete count; `customerUnlink` leaves no map row |
 
 ## Prerequisites
 

@@ -102,6 +102,94 @@ class AdminIfirmaController extends ModuleAdminController
         ));
     }
 
+    /**
+     * @return int
+     */
+    private function customerId()
+    {
+        return (int) Tools::getValue('id_customer');
+    }
+
+    /**
+     * Whether the employee may edit customers (spec: customer-contractor-panel, D8).
+     *
+     * @return bool
+     */
+    private function canEditCustomers()
+    {
+        $idProfile = (isset($this->context->employee) && $this->context->employee) ? (int) $this->context->employee->id_profile : 0;
+        if ($idProfile <= 0) {
+            return false;
+        }
+
+        return (bool) Access::isGranted('ROLE_MOD_TAB_ADMINCUSTOMERS_UPDATE', $idProfile);
+    }
+
+    /**
+     * Refuses the request when the employee may not edit customers.
+     * Responds (and ends the request) with the permission message.
+     *
+     * @return bool true when the action may proceed
+     */
+    private function requireEditCustomers()
+    {
+        if ($this->canEditCustomers()) {
+            return true;
+        }
+        $this->respond(array(
+            'success' => false,
+            'message' => $this->module->l('You do not have permission to edit customers.', 'adminifirmacontroller'),
+            'data' => array(),
+        ));
+
+        return false;
+    }
+
+    public function ajaxProcessCustomerCheck()
+    {
+        $this->respond($this->actions()->customerCheck($this->customerId()));
+    }
+
+    public function ajaxProcessCustomerSearch()
+    {
+        $posted = Tools::getValue('criteria', null);
+        $criteria = array();
+        foreach (array('firstname', 'lastname', 'company', 'nip', 'email', 'phone') as $key) {
+            $criteria[$key] = (is_array($posted) && isset($posted[$key]) && !is_array($posted[$key])) ? (string) $posted[$key] : '';
+        }
+
+        $this->respond($this->actions()->customerSearch($criteria));
+    }
+
+    public function ajaxProcessCustomerLink()
+    {
+        if (!$this->requireEditCustomers()) {
+            return;
+        }
+        $this->respond($this->actions()->customerLink($this->customerId(), trim((string) Tools::getValue('identifier'))));
+    }
+
+    public function ajaxProcessCustomerUnlink()
+    {
+        if (!$this->requireEditCustomers()) {
+            return;
+        }
+        $this->respond($this->actions()->customerUnlink($this->customerId()));
+    }
+
+    public function ajaxProcessCustomerRegister()
+    {
+        if (!$this->requireEditCustomers()) {
+            return;
+        }
+        $this->respond($this->actions()->registerCustomer($this->customerId()));
+    }
+
+    public function ajaxProcessCustomerCountRemote()
+    {
+        $this->respond($this->actions()->customerCountRemote($this->customerId()));
+    }
+
     public function ajaxProcessApproveRequest()
     {
         $data = Tools::getValue('data', null);
@@ -174,23 +262,32 @@ class AdminIfirmaController extends ModuleAdminController
 
     private function ajaxSuccess($message, array $data = array())
     {
-        header('Content-Type: application/json');
-        die(json_encode(array(
+        $this->output(array(
             'success' => true,
             'message' => $message,
             'data' => $data,
             'receipt' => isset($data['receipt']) ? $data['receipt'] : array(),
-        )));
+        ));
+    }
+
+    /**
+     * Sends the JSON envelope and ends the request. Overridable so tests can capture the payload.
+     *
+     * @param array $payload
+     */
+    protected function output(array $payload)
+    {
+        header('Content-Type: application/json');
+        die(json_encode($payload));
     }
 
     private function ajaxError($message, array $data = array())
     {
-        header('Content-Type: application/json');
-        die(json_encode(array(
+        $this->output(array(
             'success' => false,
             'message' => $message,
             'data' => $data,
             'receipt' => isset($data['receipt']) ? $data['receipt'] : array(),
-        )));
+        ));
     }
 }

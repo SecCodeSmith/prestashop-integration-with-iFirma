@@ -20,6 +20,7 @@ class Customer
     public $id_lang = 1;
     public $is_guest = 0;
     public $company;
+    public $date_add;
     /** @var bool value returned by isLogged() */
     public $logged = false;
 
@@ -31,6 +32,32 @@ class Customer
     public function isLogged($withGuest = false)
     {
         return (bool) $this->logged;
+    }
+
+    /**
+     * Like core: rows of the customer's non-deleted addresses (id_address, id_customer, firstname,
+     * lastname, company, vat_number, address1, postcode, city, id_country, phone, phone_mobile),
+     * from the Address registry, lowest id first.
+     *
+     * @param int $idLang
+     * @return array[]
+     */
+    public function getAddresses($idLang)
+    {
+        $rows = [];
+        $ids = array_keys(Address::$instances);
+        sort($ids);
+        foreach ($ids as $id) {
+            $a = Address::$instances[$id];
+            if ((int) $a->id_customer !== (int) $this->id) {
+                continue;
+            }
+            $row = get_object_vars($a);
+            $row['id_address'] = $a->id;
+            $rows[] = $row;
+        }
+
+        return $rows;
     }
 
     public function isGuest()
