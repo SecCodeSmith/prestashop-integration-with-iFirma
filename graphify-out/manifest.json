@@ -30,9 +30,9 @@
     "semantic_hash": ""
   },
   "controllers/admin/AdminIfirmaController.php": {
-    "mtime": 1793812228.600875,
-    "seen": 1793812916.0658064,
-    "ast_hash": "a3af7e372e02ad1ff4287d92f189acf8",
+    "mtime": 1793817719.090144,
+    "seen": 1793817988.1583214,
+    "ast_hash": "c738ac22913fd3adfbab93c3ee73543d",
     "semantic_hash": ""
   },
   "controllers/admin/index.php": {
@@ -60,9 +60,9 @@
     "semantic_hash": ""
   },
   "ifirma.php": {
-    "mtime": 1793812188.3783922,
-    "seen": 1793812916.065812,
-    "ast_hash": "2e54206aa494fa9c9b7bdcfa43859df2",
+    "mtime": 1793817719.090144,
+    "seen": 1793817988.158329,
+    "ast_hash": "a9146ceffdaa0136b82789fed3dd6ff2",
     "semantic_hash": ""
   },
   "index.php": {
@@ -258,9 +258,9 @@
     "semantic_hash": "67d88e9d0760c3ba54c75dfd9551c1c5"
   },
   "README.md": {
-    "mtime": 1793812765.0080607,
-    "seen": 1793812916.0659158,
-    "ast_hash": "9777a82b84f4c65767892fe7ab5b2fcd",
+    "mtime": 1793817777.1802096,
+    "seen": 1793817988.1584458,
+    "ast_hash": "914dfe5551ac5ee2f27d0468547caa46",
     "semantic_hash": ""
   },
   "openspec/config.yaml": {
@@ -510,9 +510,9 @@
     "semantic_hash": ""
   },
   "tests/Stubs/Module.php": {
-    "mtime": 1793558552.776549,
-    "seen": 1793561917.3163285,
-    "ast_hash": "d77fc0ca014ca059350f71c15ace4e87",
+    "mtime": 1793817719.091644,
+    "seen": 1793817988.1583698,
+    "ast_hash": "7388ec946572664c290bf99e893b9e9f",
     "semantic_hash": ""
   },
   "tests/Stubs/ModuleAdminController.php": {
@@ -612,9 +612,9 @@
     "semantic_hash": ""
   },
   "tests/Support/IfirmaTestState.php": {
-    "mtime": 1793811632.4937208,
-    "seen": 1793812916.0658636,
-    "ast_hash": "f341121c9cca4f275fd7d2ef385d9e44",
+    "mtime": 1793817719.103664,
+    "seen": 1793817988.1583872,
+    "ast_hash": "c1cc5041ac2b049826bd3c805219ecef",
     "semantic_hash": ""
   },
   "tests/Support/IfirmaWiringFixture.php": {
@@ -720,9 +720,9 @@
     "semantic_hash": ""
   },
   "tests/Unit/ModuleHooksTest.php": {
-    "mtime": 1793812478.0429122,
-    "seen": 1793812916.0658844,
-    "ast_hash": "f2df4d052d1206a8a819dfed1c43245a",
+    "mtime": 1793817719.098659,
+    "seen": 1793817988.15841,
+    "ast_hash": "7f8c91d750e6f7baf371a12ea208d485",
     "semantic_hash": ""
   },
   "tests/Unit/PayloadBuilderTest.php": {
@@ -756,9 +756,9 @@
     "semantic_hash": ""
   },
   "tests/Unit/UpgradeTest.php": {
-    "mtime": 1793812423.377393,
-    "seen": 1793812916.0658903,
-    "ast_hash": "2980f5b837a019c4df9f3bae327418e5",
+    "mtime": 1793817728.9117374,
+    "seen": 1793817988.1584163,
+    "ast_hash": "afbcb04c5cdf4e2297b97894bf146f1c",
     "semantic_hash": ""
   },
   "tests/bootstrap.php": {
@@ -774,9 +774,9 @@
     "semantic_hash": ""
   },
   "tests/smoke/run.php": {
-    "mtime": 1793812842.4541452,
-    "seen": 1793812916.0658944,
-    "ast_hash": "24424b108344a3f38c69e0f2858a7dc1",
+    "mtime": 1793817777.1812143,
+    "seen": 1793817988.1584208,
+    "ast_hash": "6d572ade87fb04413d645a3550f6d72e",
     "semantic_hash": ""
   },
   "tools/generate_pl_translations.php": {
@@ -912,9 +912,9 @@
     "semantic_hash": ""
   },
   "tests/Stubs/README.md": {
-    "mtime": 1793812314.11255,
-    "seen": 1793812916.0659657,
-    "ast_hash": "9fee93942ae3cc9188cfed6f35cc4366",
+    "mtime": 1793817728.9107366,
+    "seen": 1793817988.1585026,
+    "ast_hash": "ba91c1f2e8cc212c66d18548a09636a6",
     "semantic_hash": ""
   },
   "tests/fixtures/README.md": {
@@ -924,21 +924,21 @@
     "semantic_hash": ""
   },
   "tests/smoke/README.md": {
-    "mtime": 1793812784.273685,
-    "seen": 1793812916.065967,
-    "ast_hash": "b648fc06ef33a1e6817c6e028a412fff",
+    "mtime": 1793817777.182214,
+    "seen": 1793817988.1585045,
+    "ast_hash": "d4813b5d2a96fa428f05f3e0310bf961",
     "semantic_hash": ""
   },
   "tests/smoke/upgrade-phase1.php": {
-    "mtime": 1793646613.2344158,
-    "seen": 1793646728.7833967,
-    "ast_hash": "f4d8e534f98c520293f647c44e5d1eb9",
+    "mtime": 1793817777.1812143,
+    "seen": 1793817988.1584215,
+    "ast_hash": "3589f3e5a205dad1c3d799c97338d6af",
     "semantic_hash": ""
   },
   "tests/smoke/upgrade-phase2.php": {
-    "mtime": 1793566004.297894,
-    "seen": 1793566367.3833518,
-    "ast_hash": "7b02e6027dc8e048eb39ffb4ef522c7c",
+    "mtime": 1793817777.182214,
+    "seen": 1793817988.158422,
+    "ast_hash": "4748ded38468b3bcf582f211b1c606c2",
     "semantic_hash": ""
   },
   "classes/IfirmaPaymentMethodResolver.php": {
@@ -1128,15 +1128,15 @@
     "semantic_hash": ""
   },
   "openspec/changes/customer-ifirma-panel/design.md": {
-    "mtime": 1793810987.319539,
-    "seen": 1793811073.2134824,
-    "ast_hash": "54a07df3a542740fd0014d0a47fc2649",
+    "mtime": 1793817777.1897178,
+    "seen": 1793817988.1584861,
+    "ast_hash": "4c4fd78a77e0bd21edfc388f87159d12",
     "semantic_hash": ""
   },
   "openspec/changes/customer-ifirma-panel/proposal.md": {
-    "mtime": 1793811047.952301,
-    "seen": 1793811073.213483,
-    "ast_hash": "88bd6e752629b9663405acb73c077b28",
+    "mtime": 1793817777.1862135,
+    "seen": 1793817988.1584868,
+    "ast_hash": "f269aa4ac3fc4f5ad322628de65f14b9",
     "semantic_hash": ""
   },
   "openspec/changes/customer-ifirma-panel/specs/customer-contractor-panel/spec.md": {
@@ -1146,9 +1146,9 @@
     "semantic_hash": ""
   },
   "openspec/changes/customer-ifirma-panel/tasks.md": {
-    "mtime": 1793812796.2745314,
-    "seen": 1793812916.0659528,
-    "ast_hash": "067466620b3aeacc8dd26741bff789ea",
+    "mtime": 1793817777.1965914,
+    "seen": 1793817988.1584888,
+    "ast_hash": "d0f0c7e5b19b3e0377b0cbd26ba49701",
     "semantic_hash": ""
   },
   "classes/IfirmaCustomerContractorService.php": {
@@ -1163,16 +1163,10 @@
     "ast_hash": "fe857b386dde43c682080708601d2491",
     "semantic_hash": ""
   },
-  "tests/Stubs/Profile.php": {
-    "mtime": 1793811619.4083817,
-    "seen": 1793812916.0658543,
-    "ast_hash": "91358688098571141789bcd149172c92",
-    "semantic_hash": ""
-  },
   "tests/Unit/AdminControllerCustomerTest.php": {
-    "mtime": 1793812654.6991436,
-    "seen": 1793812916.0658677,
-    "ast_hash": "3d0022c233c4745ff3d2032a78e8509c",
+    "mtime": 1793817719.103664,
+    "seen": 1793817988.1583927,
+    "ast_hash": "ddf203ab2d9ba114d81249e1154e471c",
     "semantic_hash": ""
   },
   "tests/Unit/CustomerContractorServiceTest.php": {
@@ -1182,9 +1176,9 @@
     "semantic_hash": ""
   },
   "upgrade/upgrade-1.2.0.php": {
-    "mtime": 1793812271.5310905,
-    "seen": 1793812916.0659027,
-    "ast_hash": "f77cab98f28ec6cec357f0c82fdbfc4b",
+    "mtime": 1793817719.091644,
+    "seen": 1793817988.1584299,
+    "ast_hash": "565241f561852d36e2427f8501148cc5",
     "semantic_hash": ""
   },
   "openspec/changes/archive/2026-11-04-harden-auto-issuance-delivery/.openspec.yaml": {
