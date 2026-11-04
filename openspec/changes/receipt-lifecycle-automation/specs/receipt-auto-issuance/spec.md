@@ -115,19 +115,19 @@ The admin Create action SHALL run the identical pipeline (hold, guard, create, n
 - **THEN** the admin is told the guard step stopped the run
 
 ### Requirement: Document type selection
-The created document type SHALL follow the merchant setting, `fakturaparagon` (default) or `fakturakraj`, and unknown values SHALL fall back to `fakturaparagon`.
+The created document type SHALL be `fakturakraj`. `fakturaparagon` is disabled for now: the configuration select SHALL offer only `fakturakraj`, and a stored `fakturaparagon` or unknown value SHALL be normalised to `fakturakraj` when read and when saved.
 
 #### Scenario: Default type
 - **WHEN** no document type is configured
-- **THEN** the document is created as `fakturaparagon`
-
-#### Scenario: Invoice type configured
-- **WHEN** the setting is `fakturakraj`
 - **THEN** the document is created as `fakturakraj`
 
-#### Scenario: Unknown value
-- **WHEN** the setting holds an unrecognised value
-- **THEN** the document is created as `fakturaparagon`
+#### Scenario: Stored fakturaparagon
+- **WHEN** the stored setting is `fakturaparagon`
+- **THEN** the document is created as `fakturakraj`
+
+#### Scenario: Single option in configuration
+- **WHEN** the merchant opens the document type setting
+- **THEN** the select offers only `fakturakraj`
 
 ### Requirement: Payment registration unchanged
 The admin SHALL be able to register the paid amount on an issued document through the existing "Update status in iFirma" action, including for adopted external documents.

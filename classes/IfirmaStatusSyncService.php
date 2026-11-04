@@ -173,8 +173,13 @@ class IfirmaStatusSyncService
         $receipt->remote_paid_amount = $paid;
         $receipt->remote_sent = !empty($row['CzyWyslano']);
         $receipt->remote_draft = !empty($row['CzySzkic']);
-        $receipt->ksef_status = isset($row['KsefStatus']) ? (string) $row['KsefStatus'] : '';
-        $receipt->ksef_number = isset($row['KsefNumer']) ? (string) $row['KsefNumer'] : '';
+        // The module's own "sent" marker survives until iFirma reports a KSeF status.
+        if (isset($row['KsefStatus']) && trim((string) $row['KsefStatus']) !== '') {
+            $receipt->ksef_status = (string) $row['KsefStatus'];
+        }
+        if (isset($row['KsefNumer']) && trim((string) $row['KsefNumer']) !== '') {
+            $receipt->ksef_number = (string) $row['KsefNumer'];
+        }
         $receipt->linked_document = isset($row['NumerPowiazanegoPrzychodu'])
             ? (string) $row['NumerPowiazanegoPrzychodu'] : '';
         if (empty($receipt->ifirma_number) && !empty($row['PelnyNumer'])) {

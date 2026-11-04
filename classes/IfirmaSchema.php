@@ -39,6 +39,8 @@ class IfirmaSchema
             'remote_missing' => 'TINYINT(1) NOT NULL DEFAULT 0',
             'ksef_status' => "VARCHAR(32) NOT NULL DEFAULT ''",
             'ksef_number' => "VARCHAR(64) NOT NULL DEFAULT ''",
+            'ksef_sent_at' => 'DATETIME NULL',
+            'ksef_error' => 'TEXT NULL',
             'linked_document' => "VARCHAR(128) NOT NULL DEFAULT ''",
             'last_sync_at' => 'DATETIME NULL',
             'sync_error' => 'TEXT NULL',
@@ -217,12 +219,47 @@ class IfirmaSchema
         );
     }
 
+    /** @var bool the KSeF receipt columns were already ensured in this request */
+    private static $receiptKsefEnsured = false;
+
+    /**
+     * Adds the KSeF bookkeeping columns to the receipt table when missing. Idempotent; at most once per request.
+     *
+     * @return bool
+     */
+    public static function ensureReceiptKsefColumns()
+    {
+        if (self::$receiptKsefEnsured) {
+            return true;
+        }
+        $db = Db::getInstance();
+        $table = _DB_PREFIX_ . 'ifirma_receipt';
+        $columns = self::newReceiptColumnsFor110();
+        $ok = true;
+        foreach (array('ksef_sent_at', 'ksef_error') as $column) {
+            $exists = (int) $db->getValue(
+                "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()"
+                . " AND TABLE_NAME = '" . pSQL($table) . "' AND COLUMN_NAME = '" . pSQL($column) . "'"
+            );
+            if ($exists) {
+                continue;
+            }
+            if (!$db->execute('ALTER TABLE `' . $table . '` ADD COLUMN `' . $column . '` ' . $columns[$column])) {
+                $ok = false;
+            }
+        }
+        self::$receiptKsefEnsured = $ok;
+
+        return $ok;
+    }
+
     /**
      * Forget that the table was ensured (tests).
      */
     public static function resetEnsureCache()
     {
         self::$contractorMapEnsured = false;
+        self::$receiptKsefEnsured = false;
     }
 
     /**
@@ -239,7 +276,8 @@ class IfirmaSchema
             'IFIRMA_KEY_FAKTURA' => '',
             'IFIRMA_KEY_ABONENT' => '',
             'IFIRMA_KEY_RACHUNEK' => '',
-            'IFIRMA_DOC_TYPE' => 'fakturaparagon',
+            'IFIRMA_DOC_TYPE' => 'fakturakraj',
+            'IFIRMA_SIGNATURE_TYPE' => 'BPO',
             'IFIRMA_PAYMENT_METHOD' => 'PRZ',
             'IFIRMA_PAYMENT_METHOD_MODE' => 'order',
             'IFIRMA_PAYMENT_METHOD_MAP' => '',
@@ -250,6 +288,7 @@ class IfirmaSchema
             'IFIRMA_MARK_PAID_ON_CREATE' => 1,
             'IFIRMA_SEND_CHANNEL' => 'shop_mail',
             'IFIRMA_SEND_TEXT' => '',
+            'IFIRMA_KSEF_MODE' => 'b2b',
             'IFIRMA_DUPLICATE_CHECK' => 1,
             'IFIRMA_DUPLICATE_WINDOW_DAYS' => 60,
             'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE' => '0.01',

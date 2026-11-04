@@ -18,16 +18,18 @@ require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaReceiptService.php';
 require_once dirname(__FILE__) . '/IfirmaDuplicateGuard.php';
 require_once dirname(__FILE__) . '/IfirmaDeliveryService.php';
+require_once dirname(__FILE__) . '/IfirmaKsefService.php';
 require_once dirname(__FILE__) . '/IfirmaDataRequestService.php';
 
 require_once dirname(__FILE__) . '/IfirmaPipelineResult.php';
 
 /**
- * Issuance pipeline: hold check -> duplicate guard -> create -> number -> delivery.
+ * Issuance pipeline: hold check -> duplicate guard -> create -> number -> KSeF -> delivery.
  *
  * Contract (used by the status hook, the admin Create action and the data-request resume):
  *  - run(Order, options) -> IfirmaPipelineResult; never throws. Options: trigger (status|manual|resume|
- *    issue_anyway, default manual), bypass_guard (bool), id_employee (int|null), skip_delivery (bool).
+ *    issue_anyway, default manual), bypass_guard (bool), id_employee (int|null), skip_delivery (bool),
+ *    skip_ksef (bool).
  *  - onOrderStatusChange(idOrder, idNewState) -> IfirmaPipelineResult|null; null (nothing done) when the
  *    trigger status is 0, differs from the new state, or credentials are missing. Never throws.
  *  - shouldResume(Order) -> bool; resumeAfterRequest(IfirmaDataRequest) -> IfirmaPipelineResult|null.
@@ -36,7 +38,9 @@ require_once dirname(__FILE__) . '/IfirmaPipelineResult.php';
  *
  * Result outcomes: issued, already_issued, adopted (ok = true); held, suspected, inconclusive, unknown,
  * rate_limited, error (ok = false); disabled, not_configured are reserved for callers. A failed delivery
- * never changes ok/outcome: it sets stoppedAt = deliver and the deliver step to "stopped".
+ * never changes ok/outcome: it sets stoppedAt = deliver and the deliver step to "stopped". A failed KSeF
+ * submission does not stop the run either: the ksef step is "failed", delivery still runs, the outcome stays
+ * issued and the message ends with "KSeF: <error>".
  */
 class IfirmaIssuancePipeline
 {
@@ -44,6 +48,7 @@ class IfirmaIssuancePipeline
     const STEP_GUARD = 'guard';
     const STEP_CREATE = 'create';
     const STEP_NUMBER = 'number';
+    const STEP_KSEF = 'ksef';
     const STEP_DELIVER = 'deliver';
 
     const TRIGGER_STATUS = 'status';
@@ -59,6 +64,9 @@ class IfirmaIssuancePipeline
 
     /** @var IfirmaDeliveryService */
     private $delivery;
+
+    /** @var IfirmaKsefService */
+    private $ksef;
 
     /** @var IfirmaDataRequestService */
     private $requests;
@@ -76,6 +84,7 @@ class IfirmaIssuancePipeline
      * @param IfirmaDataRequestService $requests
      * @param Module                   $module
      * @param callable|null            $clock
+     * @param IfirmaKsefService|null   $ksef
      */
     public function __construct(
         IfirmaReceiptService $service,
@@ -83,7 +92,8 @@ class IfirmaIssuancePipeline
         IfirmaDeliveryService $delivery,
         IfirmaDataRequestService $requests,
         Module $module,
-        $clock = null
+        $clock = null,
+        ?IfirmaKsefService $ksef = null
     ) {
         $this->service = $service;
         $this->guard = $guard;
@@ -91,6 +101,7 @@ class IfirmaIssuancePipeline
         $this->requests = $requests;
         $this->module = $module;
         $this->clock = $clock;
+        $this->ksef = $ksef !== null ? $ksef : IfirmaKsefService::build($module);
     }
 
     /**
@@ -111,13 +122,16 @@ class IfirmaIssuancePipeline
         );
 
         $service = new IfirmaReceiptService($client, $module);
+        IfirmaSchema::ensureReceiptKsefColumns();
 
         return new self(
             $service,
             new IfirmaDuplicateGuard($client),
             new IfirmaDeliveryService($client, $service, $module),
             new IfirmaDataRequestService($module),
-            $module
+            $module,
+            null,
+            new IfirmaKsefService($client, $module)
         );
     }
 
@@ -244,6 +258,12 @@ class IfirmaIssuancePipeline
                     $this->stepMessage($r, self::STEP_DELIVER)
                 );
             }
+            if ($this->stepStatus($r, self::STEP_KSEF) === 'failed') {
+                $text .= ' ' . sprintf(
+                    $this->module->l('KSeF submission failed: %s', 'ifirmaissuancepipeline'),
+                    $this->stepMessage($r, self::STEP_KSEF)
+                );
+            }
 
             return $text;
         }
@@ -294,7 +314,7 @@ class IfirmaIssuancePipeline
         switch ($g->outcome) {
             case IfirmaGuardResult::OUTCOME_LOCAL_ISSUED:
                 $result->receipt = $g->receipt;
-                foreach (array(self::STEP_GUARD, self::STEP_CREATE, self::STEP_NUMBER, self::STEP_DELIVER) as $s) {
+                foreach (array(self::STEP_GUARD, self::STEP_CREATE, self::STEP_NUMBER, self::STEP_KSEF, self::STEP_DELIVER) as $s) {
                     $this->step($result, $s, 'skipped', 'document already issued');
                 }
                 $result->ok = true;
@@ -376,8 +396,12 @@ class IfirmaIssuancePipeline
             $result->message = 'document issued';
         }
 
-        // 5. DELIVER
+        // 5. KSEF (a failure never stops the run)
+        $ksefError = $this->submitToKsef($order, $options, $result);
+
+        // 6. DELIVER
         if (!empty($options['skip_delivery'])) {
+            $this->appendKsefError($result, $ksefError);
             $this->step($result, self::STEP_DELIVER, 'skipped', 'delivery skipped by caller');
 
             return;
@@ -394,6 +418,63 @@ class IfirmaIssuancePipeline
         } else {
             $this->step($result, self::STEP_DELIVER, 'stopped', $message);
             $result->stoppedAt = self::STEP_DELIVER;
+        }
+        $this->appendKsefError($result, $ksefError);
+    }
+
+    /**
+     * KSeF step: skipped with a reason, ok with iFirma's message, or failed (non-stopping).
+     *
+     * @param Order                $order
+     * @param array                $options
+     * @param IfirmaPipelineResult $result
+     * @return string error text when the submission failed, '' otherwise
+     */
+    private function submitToKsef(Order $order, array $options, IfirmaPipelineResult $result)
+    {
+        if (!empty($options['skip_ksef'])) {
+            $this->step($result, self::STEP_KSEF, 'skipped', 'KSeF skipped by caller');
+
+            return '';
+        }
+        $receipt = $result->receipt;
+        if (!$receipt instanceof IfirmaReceipt) {
+            $this->step($result, self::STEP_KSEF, 'skipped', 'no document');
+
+            return '';
+        }
+        try {
+            $reason = $this->ksef->skipReason($receipt, $order);
+            if ($reason !== '') {
+                $this->step($result, self::STEP_KSEF, 'skipped', $reason);
+
+                return '';
+            }
+            $k = $this->ksef->submit($receipt, $order);
+        } catch (Exception $e) {
+            $k = array('ok' => false, 'message' => $e->getMessage());
+        } catch (Throwable $e) {
+            $k = array('ok' => false, 'message' => $e->getMessage());
+        }
+        $message = isset($k['message']) ? (string) $k['message'] : '';
+        if (!empty($k['ok'])) {
+            $this->step($result, self::STEP_KSEF, 'ok', $message);
+
+            return '';
+        }
+        $this->step($result, self::STEP_KSEF, 'failed', $message);
+
+        return $message !== '' ? $message : 'KSeF submission failed';
+    }
+
+    /**
+     * @param IfirmaPipelineResult $result
+     * @param string               $error
+     */
+    private function appendKsefError(IfirmaPipelineResult $result, $error)
+    {
+        if ($error !== '') {
+            $result->message = rtrim((string) $result->message) . ' KSeF: ' . $error;
         }
     }
 
@@ -433,7 +514,7 @@ class IfirmaIssuancePipeline
      */
     private function runningStep(IfirmaPipelineResult $result)
     {
-        $order = array(self::STEP_HOLD, self::STEP_GUARD, self::STEP_CREATE, self::STEP_NUMBER, self::STEP_DELIVER);
+        $order = array(self::STEP_HOLD, self::STEP_GUARD, self::STEP_CREATE, self::STEP_NUMBER, self::STEP_KSEF, self::STEP_DELIVER);
         $done = count($result->steps);
 
         return isset($order[$done]) ? $order[$done] : null;
@@ -480,7 +561,7 @@ class IfirmaIssuancePipeline
     /**
      * @param IfirmaPipelineResult $r
      * @param string               $step
-     * @param string               $status ok|skipped|stopped
+     * @param string               $status ok|skipped|stopped|failed
      * @param string               $message
      */
     private function step(IfirmaPipelineResult $r, $step, $status, $message)
@@ -498,6 +579,22 @@ class IfirmaIssuancePipeline
         foreach ($r->steps as $s) {
             if ($s['step'] === $step) {
                 return $s['message'];
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @param IfirmaPipelineResult $r
+     * @param string               $step
+     * @return string
+     */
+    private function stepStatus(IfirmaPipelineResult $r, $step)
+    {
+        foreach ($r->steps as $s) {
+            if ($s['step'] === $step) {
+                return $s['status'];
             }
         }
 

@@ -144,6 +144,30 @@ class StatusSyncServiceTest extends TestCase
         $this->assertEquals(50.0, $r->remote_paid_amount);
     }
 
+    public function testEmptyKsefStatusKeepsTheModuleMarker()
+    {
+        $r = $this->receipt(21, '2026-10-30', array('ksef_status' => 'WYSLANA', 'ksef_sent_at' => '2026-11-01 10:00:00'));
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row(21))));
+        $this->svc->syncReceipt($r);
+        $r = new IfirmaReceipt((int) $r->id);
+
+        $this->assertSame('WYSLANA', $r->ksef_status);
+        $this->assertSame('', $r->ksef_number);
+    }
+
+    public function testReportedKsefStatusAndNumberOverwriteTheMarker()
+    {
+        $r = $this->receipt(22, '2026-10-30', array('ksef_status' => 'WYSLANA'));
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row(22, 100, 0, array(
+            'KsefStatus' => 'PRZYJETA', 'KsefNumer' => '1111112228-20260702-6505FF400000-26',
+        )))));
+        $this->svc->syncReceipt($r);
+        $r = new IfirmaReceipt((int) $r->id);
+
+        $this->assertSame('PRZYJETA', $r->ksef_status);
+        $this->assertSame('1111112228-20260702-6505FF400000-26', $r->ksef_number);
+    }
+
     public function testPaidIsNeverDowngraded()
     {
         $r = $this->receipt(16, '2026-10-30', array('status' => IfirmaReceipt::STATUS_PAID));

@@ -245,10 +245,178 @@ class PayloadBuilderTest extends TestCase
         $this->assertSame('BRT', $p['LiczOd']);
         $this->assertSame(0.23, $p['Pozycje'][0]['StawkaVat']);
         $this->assertSame('PRC', $p['Pozycje'][0]['TypStawkiVat']);
-        $this->assertSame('ZW', $p['Pozycje'][1]['TypStawkiVat']);
+        // 0% lines are PRC too: ZW (exempt) would need a PKWiU code per position
+        $this->assertSame('PRC', $p['Pozycje'][1]['TypStawkiVat']);
+        $this->assertSame(0.0, $p['Pozycje'][1]['StawkaVat']);
         $this->assertCount(3, $p['Pozycje']);
         $this->assertSame(12.3, $p['Pozycje'][2]['CenaJednostkowa']);
         $this->assertSame(1, $p['Pozycje'][2]['Ilosc']);
         $this->assertSame('2026-03-04', $p['DataSprzedazy']);
+    }
+
+    public function testDocumentTypeNormalisesToFakturakraj()
+    {
+        $this->assertSame('fakturakraj', IfirmaReceiptService::normalizeDocumentType('fakturakraj'));
+        $this->assertSame('fakturakraj', IfirmaReceiptService::normalizeDocumentType('fakturaparagon'));
+        $this->assertSame('fakturakraj', IfirmaReceiptService::normalizeDocumentType(''));
+        $this->assertSame('fakturakraj', IfirmaReceiptService::normalizeDocumentType(null));
+        $this->assertSame('fakturakraj', IfirmaReceiptService::normalizeDocumentType('something-else'));
+    }
+
+    public function testOnlyFakturakrajIsEnabled()
+    {
+        $this->assertSame(array('fakturakraj'), array_keys(IfirmaReceiptService::enabledDocumentTypes()));
+    }
+
+    public function testStoredParagonSettingReadsAsFakturakraj()
+    {
+        Configuration::updateValue('IFIRMA_DOC_TYPE', 'fakturaparagon');
+        $this->assertSame('fakturakraj', $this->service->getDocumentType());
+    }
+
+    public function testZeroPercentLineIsPercentageRate()
+    {
+        $o = $this->order();
+        $o->details = array(array(
+            'product_name' => 'Zero rated',
+            'product_quantity' => 1,
+            'unit_price_tax_incl' => 10.00,
+            'unit_price_tax_excl' => 10.00,
+            'tax_rate' => 0,
+        ));
+        $p = $this->service->buildInvoicePayload($o);
+        $this->assertSame('PRC', $p['Pozycje'][0]['TypStawkiVat']);
+        $this->assertSame(0.0, $p['Pozycje'][0]['StawkaVat']);
+    }
+
+    public function testShippingWithZeroTaxIsPercentageRate()
+    {
+        $o = $this->order();
+        $o->total_shipping_tax_incl = 10.00;
+        $o->total_shipping_tax_excl = 10.00;
+        $o->carrier_tax_rate = 0;
+        $p = $this->service->buildInvoicePayload($o);
+        $last = $p['Pozycje'][count($p['Pozycje']) - 1];
+        $this->assertSame('PRC', $last['TypStawkiVat']);
+        $this->assertSame(0.0, $last['StawkaVat']);
+    }
+
+    public function testEightPercentLineIsPercentageRate()
+    {
+        $o = $this->order();
+        $o->details = array(array(
+            'product_name' => 'Food',
+            'product_quantity' => 1,
+            'unit_price_tax_incl' => 108.00,
+            'unit_price_tax_excl' => 100.00,
+            'tax_rate' => 8,
+        ));
+        $p = $this->service->buildInvoicePayload($o);
+        $this->assertSame('PRC', $p['Pozycje'][0]['TypStawkiVat']);
+        $this->assertSame(0.08, $p['Pozycje'][0]['StawkaVat']);
+    }
+
+    public function testSnapVatRateToDocumentedRates()
+    {
+        $this->assertSame(8.0, IfirmaReceiptService::snapVatRate(7.99));
+        $this->assertSame(23.0, IfirmaReceiptService::snapVatRate(23.2));
+        $this->assertSame(5.0, IfirmaReceiptService::snapVatRate(4.6));
+        $this->assertSame(7.0, IfirmaReceiptService::snapVatRate(7.0));
+        $this->assertSame(0.0, IfirmaReceiptService::snapVatRate(0.3));
+    }
+
+    public function testStoredLineRateBeatsRoundingNoise()
+    {
+        $o = $this->order();
+        $o->details = array(array(
+            'product_name' => 'Noisy',
+            'product_quantity' => 1,
+            'unit_price_tax_incl' => 107.99,
+            'unit_price_tax_excl' => 100.00,
+            'tax_rate' => '8.000',
+        ));
+        $p = $this->service->buildInvoicePayload($o);
+        $this->assertSame(0.08, $p['Pozycje'][0]['StawkaVat']);
+    }
+
+    public function testSignatureTypeDefaultsToBpo()
+    {
+        $p = $this->service->buildInvoicePayload($this->order());
+        $this->assertSame('BPO', $p['RodzajPodpisuOdbiorcy']);
+    }
+
+    public function testConfiguredSignatureTypeIsNormalised()
+    {
+        Configuration::updateValue('IFIRMA_SIGNATURE_TYPE', ' bwo ');
+        $p = $this->service->buildInvoicePayload($this->order());
+        $this->assertSame('BWO', $p['RodzajPodpisuOdbiorcy']);
+    }
+
+    public function testRemovedBrkValueFallsBackToBpo()
+    {
+        Configuration::updateValue('IFIRMA_SIGNATURE_TYPE', 'BRK');
+        $p = $this->service->buildInvoicePayload($this->order());
+        $this->assertSame('BPO', $p['RodzajPodpisuOdbiorcy']);
+    }
+
+    public function testSignatureTypesAreTheFourAcceptedCodes()
+    {
+        $this->assertSame(array('BPO', 'BWO', 'OUP', 'UPO'), array_keys(IfirmaReceiptService::signatureTypes()));
+    }
+
+    public function testEmptyOrNullSignatureTypeFallsBackToBpo()
+    {
+        $this->assertSame('BPO', IfirmaReceiptService::normalizeSignatureType(null));
+        $this->assertSame('BPO', IfirmaReceiptService::normalizeSignatureType(''));
+        $this->assertSame('OUP', IfirmaReceiptService::normalizeSignatureType('oup'));
+    }
+
+    public function testOrderSaleDateIsTheOrderDate()
+    {
+        $o = $this->order();
+        $this->assertSame('2026-03-04', IfirmaReceiptService::orderSaleDate($o));
+        $this->assertSame('2026-03-04', $this->service->buildInvoicePayload($o)['DataSprzedazy']);
+        $o->date_add = '';
+        $this->assertSame(date('Y-m-d'), IfirmaReceiptService::orderSaleDate($o));
+    }
+
+    public function testOrderProductLinesCarryTruncatedNameAndFloatQuantity()
+    {
+        $o = $this->order();
+        $o->details[] = array(
+            'product_name' => str_repeat('x', 600),
+            'product_quantity' => '3',
+            'unit_price_tax_incl' => 10,
+            'unit_price_tax_excl' => 10,
+        );
+        $lines = IfirmaReceiptService::orderProductLines($o);
+        $this->assertCount(2, $lines);
+        $this->assertSame('Widget', $lines[0]['name']);
+        $this->assertSame(2.0, $lines[0]['quantity']);
+        $this->assertSame(23, $lines[0]['tax_rate']);
+        $this->assertSame(500, mb_strlen($lines[1]['name'], 'UTF-8'));
+        $this->assertSame(3.0, $lines[1]['quantity']);
+        $this->assertNull($lines[1]['tax_rate']);
+
+        $p = $this->service->buildInvoicePayload($o);
+        $this->assertCount(2, $p['Pozycje']);
+        $this->assertSame('Widget', $p['Pozycje'][0]['NazwaPelna']);
+        $this->assertSame(2.0, $p['Pozycje'][0]['Ilosc']);
+        $this->assertSame(500, mb_strlen($p['Pozycje'][1]['NazwaPelna'], 'UTF-8'));
+    }
+
+    public function testBuyerNamesBusinessAndPrivate()
+    {
+        $this->assertSame(array('Jan Kowalski'), IfirmaReceiptService::buyerNames($this->order()));
+
+        $a = new Address();
+        $a->id = 7;
+        $a->firstname = 'Jan';
+        $a->lastname = 'Kowalski';
+        $a->company = ' ACME Sp. z o.o. ';
+        $a->vat_number = '1234567890';
+        $a->id_country = 14;
+        Address::register($a);
+        $this->assertSame(array('ACME Sp. z o.o.', 'Jan Kowalski'), IfirmaReceiptService::buyerNames($this->order()));
     }
 }

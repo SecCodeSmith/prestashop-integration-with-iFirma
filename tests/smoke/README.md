@@ -10,8 +10,9 @@ Each scenario resets the mock (`POST /__mock/reset`) and creates a fresh order.
 
 | | Scenario | Asserts |
 |--|----------|---------|
-| A | Duplicate guard, suspected then linked | external document with the order's gross is seeded; pipeline outcome `suspected`, receipt `duplicate_suspected`, candidates stored, nothing created in iFirma; `linkCandidate` makes the receipt `external`, issued, with the seeded id |
-| B | Duplicate guard, adopt by reference | external document whose `Uwagi` holds the order reference; outcome `adopted`, no document created |
+| A | Duplicate guard, suspected then linked | a document of the buyer (its contractor identifier, the order's sale date and product lines, the order's gross) and a same-amount document of another buyer are seeded; pipeline outcome `suspected`, receipt `duplicate_suspected`, only the buyer's document recorded as a candidate (with its sale date), nothing created in iFirma; `linkCandidate` makes the receipt `external`, issued, with the seeded id |
+| A2 | Duplicate guard, other buyer's document ignored | only a same-amount document of another buyer is seeded (the unfiltered window query returns it); outcome `issued`, no candidate recorded, a new document created |
+| B | Duplicate guard, adopt by reference | external document under another contractor identifier but the buyer's name whose `Uwagi` holds the order reference; outcome `adopted`, no document created |
 | C | Data request | company request submitted; moving the order to "Payment accepted" is held (no document); `approveRequest` issues immediately; payload has the override company, NIP and order reference; delivery `sent`; reference visible in the iFirma detail |
 | D | Status sync and cron | `updateStatus` + `refreshStatus` give `paid` and `remote_paid_amount`; cron token check; deleting the document in the mock and `runCron()` set `remote_missing`; the real cron URL answers 403 (wrong token) and 200 + JSON (right token) |
 | E | Customer visibility | the owner's order page contains the document number; another customer gets an empty string |
@@ -124,3 +125,10 @@ them as `?Type $x = null` (PHP 7.1+ syntax, still inside the 7.2 floor).
 `contractor-link-check.php` seeds an "old" contractor in the mock, imports a CSV naming the demo customer,
 verifies the mapping and issues a document that must carry the mapped identifier (and update the contractor
 through PUT). Run it as `docker compose exec -T -u www-data prestashop php modules/ifirma/tests/smoke/contractor-link-check.php`.
+
+The document request references the resolved contractor through the top-level `IdentyfikatorKontrahenta` field
+(`NIPKontrahenta` carries the buyer NIP of a business customer). The check reads that field from the decoded
+`request_payload` and also asserts that the `Kontrahent` block carries no `Identyfikator`, because the module
+never sends `Kontrahent.Identyfikator`.
+
+`guard-unknown-contractor-check.php` resets the mock state, confirms that `faktury.json?kontrahent=<unknown>` is answered with Kod 201 "Nie znaleziono kontrahenta o zadanym identyfikatorze" (the live-API behaviour that stopped every first issuance at the guard step before 2026-11-02), and then runs the duplicate guard and the whole pipeline for an order whose customer has no contractor yet: the guard must proceed and the document must be issued with the freshly created `PS-C` contractor. Run it as `docker compose exec -T -u www-data prestashop php modules/ifirma/tests/smoke/guard-unknown-contractor-check.php`. It wipes the mock's in-memory contractors and documents, so run it last.

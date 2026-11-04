@@ -19,6 +19,20 @@
 {if $ifirma_state == 'error' || $ifirma_state == 'missing'}{assign var='ifirma_badge' value='danger'}{/if}
 {if $ifirma_state == 'unknown' || $ifirma_state == 'suspected' || $ifirma_state == 'held'}{assign var='ifirma_badge' value='warning'}{/if}
 
+{* The 1.7.7+ order page is Bootstrap 4: a `card` gets the same border and header as the other
+   blocks on the page, while `panel` (Bootstrap 3, legacy order page) renders unstyled there. *}
+{if $ifirma_layout == 'card'}
+<div class="card mt-2" id="ifirma-panel">
+    <div class="card-header">
+        <h3 class="card-header-title">
+            <i class="material-icons">receipt_long</i> {l s='iFirma' mod='ifirma'}
+            {if $ifirma_configured}
+                <span id="ifirma-status" class="badge badge-{if $ifirma_badge == 'default'}secondary{else}{$ifirma_badge|escape:'html':'UTF-8'}{/if}" data-state="{$ifirma_state|escape:'html':'UTF-8'}">{$ifirma_state_label|escape:'html':'UTF-8'}</span>
+            {/if}
+        </h3>
+    </div>
+    <div class="card-body">
+{else}
 <div class="panel" id="ifirma-panel">
     <div class="panel-heading">
         <i class="icon-file-text-o"></i> {l s='iFirma' mod='ifirma'}
@@ -26,6 +40,7 @@
             <span id="ifirma-status" class="label label-{$ifirma_badge|escape:'html':'UTF-8'}" data-state="{$ifirma_state|escape:'html':'UTF-8'}">{$ifirma_state_label|escape:'html':'UTF-8'}</span>
         {/if}
     </div>
+{/if}
 
     {if !$ifirma_configured}
         <div class="alert alert-warning">
@@ -98,12 +113,10 @@
                                 <br><span class="text-muted" id="ifirma-delivery">{$ifirma_delivery_text|escape:'html':'UTF-8'}</span>
                             </td>
                         </tr>
-                        {if $ifirma_receipt->ksef_status || $ifirma_receipt->ksef_number}
                         <tr>
                             <th>{l s='KSeF' mod='ifirma'}</th>
-                            <td>{$ifirma_receipt->ksef_status|escape:'html':'UTF-8'} {$ifirma_receipt->ksef_number|escape:'html':'UTF-8'}</td>
+                            <td id="ifirma-ksef">{$ifirma_ksef_text|escape:'html':'UTF-8'}</td>
                         </tr>
-                        {/if}
                         {if $ifirma_receipt->linked_document}
                         <tr>
                             <th>{l s='Linked document' mod='ifirma'}</th>
@@ -129,7 +142,7 @@
                 {/if}
                 {if $ifirma_receipt && ($ifirma_request_payload || $ifirma_response_payload)}
                     <details class="ifirma-diagnostics" style="margin-top:10px;">
-                        <summary>{l s='Diagnostics: last iFirma request and response' mod='ifirma'} <span class="text-muted">(v{$ifirma_module_version|escape:'html':'UTF-8'})</span></summary>
+                        <summary>{l s='Diagnostics: last iFirma request and response' mod='ifirma'} <span class="text-muted">(v{$ifirma_module_version|escape:'html':'UTF-8'}, {$ifirma_build_stamp|escape:'html':'UTF-8'})</span></summary>
                         <p class="text-muted">{l s='Copy this when reporting a problem. API keys are never included.' mod='ifirma'}</p>
                         {if $ifirma_contractor_note}<p><strong>{l s='Contractor step' mod='ifirma'}:</strong> {$ifirma_contractor_note|escape:'html':'UTF-8'}</p>{/if}
                         {if $ifirma_contractor_map}<p><strong>{l s='Linked contractor' mod='ifirma'}:</strong> {$ifirma_contractor_map.identifier|escape:'html':'UTF-8'} ({$ifirma_contractor_map.matched_by_label|escape:'html':'UTF-8'})</p>{/if}
@@ -156,7 +169,7 @@
                 {/if}
                 {if $ifirma_receipt && ($ifirma_request_payload || $ifirma_response_payload)}
                     <details class="ifirma-diagnostics" style="margin-top:10px;">
-                        <summary>{l s='Diagnostics: last iFirma request and response' mod='ifirma'} <span class="text-muted">(v{$ifirma_module_version|escape:'html':'UTF-8'})</span></summary>
+                        <summary>{l s='Diagnostics: last iFirma request and response' mod='ifirma'} <span class="text-muted">(v{$ifirma_module_version|escape:'html':'UTF-8'}, {$ifirma_build_stamp|escape:'html':'UTF-8'})</span></summary>
                         <p class="text-muted">{l s='Copy this when reporting a problem. API keys are never included.' mod='ifirma'}</p>
                         {if $ifirma_contractor_note}<p><strong>{l s='Contractor step' mod='ifirma'}:</strong> {$ifirma_contractor_note|escape:'html':'UTF-8'}</p>{/if}
                         {if $ifirma_contractor_map}<p><strong>{l s='Linked contractor' mod='ifirma'}:</strong> {$ifirma_contractor_map.identifier|escape:'html':'UTF-8'} ({$ifirma_contractor_map.matched_by_label|escape:'html':'UTF-8'})</p>{/if}
@@ -184,6 +197,7 @@
                             <tr>
                                 <th>{l s='Document number' mod='ifirma'}</th>
                                 <th>{l s='Issue date' mod='ifirma'}</th>
+                                <th>{l s='Sale date' mod='ifirma'}</th>
                                 <th>{l s='Gross' mod='ifirma'}</th>
                                 <th>{l s='Paid' mod='ifirma'}</th>
                                 <th>{l s='Contractor' mod='ifirma'}</th>
@@ -197,6 +211,7 @@
                             <tr>
                                 <td>{$candidate.number|escape:'html':'UTF-8'}</td>
                                 <td>{$candidate.date|escape:'html':'UTF-8'}</td>
+                                <td>{$candidate.sale_date|default:''|escape:'html':'UTF-8'}</td>
                                 <td>{$candidate.gross|string_format:'%.2f'|escape:'html':'UTF-8'} {$candidate.currency|escape:'html':'UTF-8'}</td>
                                 <td>{$candidate.paid|string_format:'%.2f'|escape:'html':'UTF-8'}</td>
                                 <td>{$candidate.contractor|escape:'html':'UTF-8'}</td>
@@ -271,6 +286,14 @@
                             data-id-order="{$ifirma_id_order|intval}">
                         <i class="icon-cloud-download"></i> {l s='Refresh from iFirma' mod='ifirma'}
                     </button>
+
+                    {if !$ifirma_receipt->ksef_number && $ifirma_receipt->ksef_status != 'PRZYJETA'}
+                    <button type="button" class="btn btn-default"
+                            id="ifirma-ksef-send"
+                            data-id-order="{$ifirma_id_order|intval}">
+                        <i class="icon-upload"></i> {l s='Send to KSeF' mod='ifirma'}
+                    </button>
+                    {/if}
                 {/if}
 
                 {if $ifirma_configured}
@@ -375,6 +398,7 @@
             </div>
         {/if}
     {/if}
+    {if $ifirma_layout == 'card'}</div>{/if}
 </div>
 
 <script type="text/javascript">
@@ -473,6 +497,15 @@
         e.preventDefault();
         var $btn = $(this);
         run($btn, 'RefreshStatus', { id_order: $btn.data('id-order') }, "{l s='Refreshing…' mod='ifirma' js=1}", true);
+    });
+
+    $(document).on('click', '#ifirma-ksef-send', function (e) {
+        e.preventDefault();
+        var $btn = $(this);
+        if (!window.confirm("{l s='A submission to KSeF cannot be withdrawn. Send the document now?' mod='ifirma' js=1}")) {
+            return;
+        }
+        run($btn, 'SendToKsef', { id_order: $btn.data('id-order') }, "{l s='Sending…' mod='ifirma' js=1}", true);
     });
 
     $(document).on('click', '#ifirma-register-contractor', function (e) {

@@ -201,6 +201,43 @@ class AdminActionsTest extends TestCase
         $this->assertFalse($this->actions->resend(15)['success']);
     }
 
+    // ---- KSeF --------------------------------------------------------------------------------
+
+    public function testSendToKsefForcesSubmissionEvenWhenModeIsOff()
+    {
+        Configuration::updateValue('IFIRMA_KSEF_MODE', 'off');
+        $this->makeReceipt();
+        $this->t->queue('POST', '#fakturakraj/ksef/send/77\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"Wyslano"}}'));
+
+        $r = $this->actions->sendToKsef(15);
+
+        $this->assertTrue($r['success'], $r['message']);
+        $this->assertCount(1, $this->posts());
+        $this->assertSame('{"DataWysylki":null}', $this->posts()[0]['body']);
+        $this->assertSame('WYSLANA', $r['data']['receipt']['ksef_status']);
+        $this->assertNotEmpty($r['data']['receipt']['ksef_sent_at']);
+        $this->assertSame('', $r['data']['receipt']['ksef_error']);
+        $this->assertSame('WYSLANA', (new IfirmaReceipt(1))->ksef_status);
+    }
+
+    public function testSendToKsefReportsFailure()
+    {
+        $this->makeReceipt();
+        $this->t->queue('POST', '#ksef/send#', array('body' => '{"response":{"Kod":200,"Informacja":"Odmowa"}}'));
+
+        $r = $this->actions->sendToKsef(15);
+
+        $this->assertFalse($r['success']);
+        $this->assertSame('BLAD', $r['data']['receipt']['ksef_status']);
+        $this->assertNotSame('', $r['data']['receipt']['ksef_error']);
+    }
+
+    public function testSendToKsefWithoutDocumentFails()
+    {
+        $this->assertFalse($this->actions->sendToKsef(15)['success']);
+        $this->assertCount(0, $this->posts());
+    }
+
     // ---- refresh -----------------------------------------------------------------------------
 
     public function testRefreshStatusUpdatesRemoteFields()

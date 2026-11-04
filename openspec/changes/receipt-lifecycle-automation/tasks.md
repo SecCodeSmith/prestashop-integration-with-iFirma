@@ -119,6 +119,32 @@ Conventions for every task: keep PHP 7.2-compatible syntax (`array()`, no typed 
 - [x] 15.3 Implement the CSV import on the configuration page (upload, delimiter/encoding detection, header mapping, offline matching, idempotent storage, counts report) and show the mapping in the order panel; verify PHPUnit covers the parser, the matcher and the report, the Smarty compile passes, and a manual import on the Docker shop links the demo customer.
 - [x] 15.4 Document contractor linking and the import in README (how to export from iFirma, expected columns, limits); verify the section exists.
 
+## 16. Contractor reference on documents
+
+- [x] 16.1 Move the contractor reference to `IdentyfikatorKontrahenta`/`NIPKontrahenta`, never send `Kontrahent.Identyfikator`, extend the Kod 201 retry; verify PHPUnit covers every scenario of "Contractor reference on documents".
+- [x] 16.2 Read the issued document back when no (or a >15-character) identifier was referenced and store the attached contractor as mapping `document`; verify PHPUnit and the panel label.
+- [x] 16.3 Mirror the documented lookup order in the mock (top-level identifier, NIP, creation) and keep the nested-identifier rejection; verify pytest and both Docker smoke runs plus the import probe.
+- [x] 16.4 Document the lookup order and the 15-character limit in README troubleshooting; verify the section exists.
+
+## 17. Guard contractor filter
+
+- [x] 17.1 Filter by the linked contractor and treat iFirma's unknown-contractor Kod 201 as an empty filtered query; verify PHPUnit covers the three scenarios of "Unknown contractor filter is conclusive" and the pipeline proceeds to create.
+- [x] 17.2 Mirror the rejection in the mock; verify pytest and both Docker smoke runs.
+- [x] 17.3 Document the guard message in README troubleshooting; verify the entry exists.
+
+## 18. Documented enumerations
+
+- [x] 18.1 Replace the hard-coded `BRK` with the `IFIRMA_SIGNATURE_TYPE` setting (default BPO, normalised); verify PHPUnit covers the three scenarios of "Documented enumerations only".
+- [x] 18.2 Make the mock answer Kod 200 for undocumented enumeration values; verify pytest and both Docker smoke runs.
+- [x] 18.3 Document the setting and the Kod 200 message in README; verify both entries exist.
+
+## 19. fakturakraj only and position VAT
+
+- [x] 19.1 Disable `fakturaparagon` (select, default, normalisation); verify PHPUnit covers default, stored-value normalisation and the single-option select.
+- [x] 19.2 Send positions as `PRC` with snapped documented rates and prefer the order line tax rate; verify PHPUnit covers rounding noise and zero-rated lines.
+- [x] 19.3 Retry once without `DodatkoweUwagi` on Kod 200; verify PHPUnit and both Docker smoke runs.
+- [x] 19.4 Update README (document type, VAT rates, Kod 200 entry); verify the statements exist.
+
 ## Workflow follow-up
 
 - Archive the change with `/openspec-archive-change` after the merchant has reviewed the default delivery channel and the duplicate-guard behaviour on a staging shop.

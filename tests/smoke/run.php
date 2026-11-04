@@ -437,7 +437,7 @@ foreach (array('IfirmaApiClient', 'IfirmaReceipt', 'IfirmaDataRequest', 'IfirmaR
 Configuration::updateValue('IFIRMA_BASE_URL', $mockUrl);
 Configuration::updateValue('IFIRMA_USER', 'test@example.com');
 Configuration::updateValue('IFIRMA_KEY_FAKTURA', str_repeat('1', 64));
-Configuration::updateValue('IFIRMA_DOC_TYPE', 'fakturaparagon');
+Configuration::updateValue('IFIRMA_DOC_TYPE', 'fakturakraj');
 Configuration::updateValue('IFIRMA_AUTO_CREATE_STATE', (int) Configuration::get('PS_OS_PAYMENT'));
 Configuration::updateValue('IFIRMA_MARK_PAID_ON_CREATE', 0);
 Configuration::updateValue('IFIRMA_SEND_CHANNEL', 'shop_mail');
@@ -463,27 +463,102 @@ $triggerState = (int) Configuration::get('PS_OS_PAYMENT');
 
 // ---------------------------------------------------------------- scenarios
 
+/**
+ * Positions of a seeded document that mirror the order: the module's product lines plus one
+ * filler position for shipping and rounding, so the mock's gross (sum of the positions) equals
+ * the order total. The guard ignores positions beyond the order's product lines.
+ */
+function seedPositionsFor(Order $order)
+{
+    $positions = array();
+    $sum = 0.0;
+    foreach (IfirmaReceiptService::orderProductLines($order) as $line) {
+        $unit = round($line['unit_price_tax_incl'], 2);
+        $positions[] = array(
+            'NazwaPelna' => $line['name'],
+            'Ilosc' => $line['quantity'],
+            'CenaJednostkowa' => $unit,
+            'StawkaVat' => 0.23,
+            'TypStawkiVat' => 'PRC',
+        );
+        $sum += $unit * $line['quantity'];
+    }
+    $rest = round((float) $order->total_paid_tax_incl - $sum, 2);
+    if (abs($rest) >= 0.005) {
+        $positions[] = array(
+            'NazwaPelna' => $rest > 0 ? 'Koszt dostawy' : 'Rabat',
+            'Ilosc' => 1,
+            'CenaJednostkowa' => $rest,
+            'StawkaVat' => 0.23,
+            'TypStawkiVat' => 'PRC',
+        );
+    }
+
+    return $positions;
+}
+
+/** The contractor identifier the guard filters by: the stored link, otherwise PS-C{id_customer}. */
+function guardIdentifierFor(Order $order)
+{
+    $map = IfirmaContractorMap::getByCustomer((int) $order->id_customer);
+    if ($map && trim((string) $map->ifirma_identifier) !== '') {
+        return trim((string) $map->ifirma_identifier);
+    }
+
+    return 'PS-C' . (int) $order->id_customer;
+}
+
+/** Ids of the candidates recorded on the receipt, in stored order. */
+function candidateIds($receipt)
+{
+    $data = $receipt ? $receipt->getDuplicateCandidates() : array();
+    $ids = array();
+    foreach ((isset($data['candidates']) && is_array($data['candidates'])) ? $data['candidates'] : array() as $c) {
+        $ids[] = isset($c['id']) ? (string) $c['id'] : '';
+    }
+
+    return $ids;
+}
+
 function scenarioA($module, $actions)
 {
     $order = freshScenario('A. Duplicate guard: suspected, then link');
     if (!$order) {
         return;
     }
+    // A document of the buyer for the order's sale date and products, without the order reference.
     $seedId = seedDocument(array(
-        'doc_type' => 'fakturaparagon',
-        'contractor' => array('Nazwa' => 'Smoke Customer', 'Identyfikator' => 'PS-C' . (int) $order->id_customer),
-        'gross' => round((float) $order->total_paid_tax_incl, 2),
+        'doc_type' => 'fakturakraj',
+        'contractor' => array('Nazwa' => 'Smoke Customer', 'Identyfikator' => guardIdentifierFor($order)),
         'currency' => currencyIso($order),
+        'sale_date' => IfirmaReceiptService::orderSaleDate($order),
+        'Pozycje' => seedPositionsFor($order),
         'created_by' => 'external',
     ));
-    assertTrue($seedId !== '', 'external document seeded', 'id=' . $seedId);
+    assertTrue($seedId !== '', 'external document of the buyer seeded', 'id=' . $seedId);
+    // A same-amount document of another buyer, issued today: never a candidate.
+    $otherId = seedDocument(array(
+        'doc_type' => 'fakturakraj',
+        'contractor' => array('Nazwa' => 'Other Buyer', 'Identyfikator' => 'OTHER-1'),
+        'gross' => round((float) $order->total_paid_tax_incl, 2),
+        'currency' => currencyIso($order),
+        'sale_date' => date('Y-m-d'),
+        'created_by' => 'external',
+    ));
+    assertTrue($otherId !== '', 'same-amount document of another buyer seeded', 'id=' . $otherId);
 
     $result = IfirmaIssuancePipeline::build($module)->run($order, array('trigger' => 'manual'));
     assertSame('suspected', $result->outcome, 'pipeline outcome is suspected');
     $receipt = receiptOf($order);
     assertSame('duplicate_suspected', $receipt ? $receipt->status : null, 'receipt status duplicate_suspected');
-    assertTrue($receipt && count($receipt->getDuplicateCandidates()) > 0, 'duplicate candidates recorded');
-    assertSame(1, remoteDocumentCount(), 'no module-created document in iFirma (1 document: the seeded one)');
+    assertSame(array($seedId), candidateIds($receipt), 'only the buyer\'s document is recorded as a candidate');
+    $data = $receipt ? $receipt->getDuplicateCandidates() : array();
+    assertSame(
+        IfirmaReceiptService::orderSaleDate($order),
+        isset($data['candidates'][0]['sale_date']) ? $data['candidates'][0]['sale_date'] : null,
+        'recorded candidate carries the sale date read from its detail'
+    );
+    assertSame(2, remoteDocumentCount(), 'no module-created document in iFirma (2 documents: the seeded ones)');
 
     $r = $actions->linkCandidate((int) $order->id, $seedId, 1);
     assertTrue($r['success'], 'linkCandidate succeeds', $r['message']);
@@ -493,15 +568,48 @@ function scenarioA($module, $actions)
     assertTrue($receipt && $receipt->isIssued(), 'linked receipt isIssued');
 }
 
+function scenarioA2($module)
+{
+    $order = freshScenario('A2. Duplicate guard: same-amount document of another buyer does not block');
+    if (!$order) {
+        return;
+    }
+    // The production case: the buyer has no document yet, the unfiltered window query returns
+    // another customer's document with the same gross for the same sale date.
+    $otherId = seedDocument(array(
+        'doc_type' => 'fakturakraj',
+        'contractor' => array('Nazwa' => 'Other Buyer', 'Identyfikator' => 'OTHER-1'),
+        'gross' => round((float) $order->total_paid_tax_incl, 2),
+        'currency' => currencyIso($order),
+        'sale_date' => IfirmaReceiptService::orderSaleDate($order),
+        'created_by' => 'external',
+    ));
+    assertTrue($otherId !== '', 'same-amount document of another buyer seeded', 'id=' . $otherId);
+
+    $result = IfirmaIssuancePipeline::build($module)->run($order, array('trigger' => 'manual'));
+    assertSame('issued', $result->outcome, 'pipeline outcome is issued (other buyer\'s document is not a candidate)');
+    $receipt = receiptOf($order);
+    assertTrue(
+        $receipt && $receipt->isIssued() && (string) $receipt->ifirma_id !== '' && (string) $receipt->ifirma_id !== $otherId,
+        'receipt carries a newly created document id',
+        $receipt ? (string) $receipt->ifirma_id : 'no receipt'
+    );
+    assertSame(array(), candidateIds($receipt), 'no candidate recorded');
+    assertSame(2, remoteDocumentCount(), 'a new document was created (2 in iFirma: seeded + created)');
+}
+
 function scenarioB($module)
 {
     $order = freshScenario('B. Duplicate guard: adopt by order reference');
     if (!$order) {
         return;
     }
+    // iFirma's own contractor for this buyer: another identifier, the buyer's name (the guard
+    // keeps the row by name, then adopts it by the order reference in its detail).
+    $address = new Address((int) $order->id_address_invoice);
     $seedId = seedDocument(array(
-        'doc_type' => 'fakturaparagon',
-        'contractor' => array('Nazwa' => 'Other Name', 'Identyfikator' => 'EXT1'),
+        'doc_type' => 'fakturakraj',
+        'contractor' => array('Nazwa' => trim($address->firstname . ' ' . $address->lastname), 'Identyfikator' => 'EXT1'),
         'gross' => round((float) $order->total_paid_tax_incl, 2),
         'currency' => currencyIso($order),
         'uwagi' => IfirmaReceiptService::buildOrderReference($order),
@@ -566,7 +674,7 @@ function scenarioC($module, $actions, $triggerState)
     assertSame('sent', $receipt ? $receipt->delivery_status : null, 'delivery recorded as sent (PS_MAIL_METHOD 3)');
 
     if ($receipt && $receipt->isIssued()) {
-        $detail = ifirmaClient()->getDetail('fakturaparagon', $receipt->ifirma_id);
+        $detail = ifirmaClient()->getDetail('fakturakraj', $receipt->ifirma_id);
         assertTrue(
             $detail !== null && strpos($detail['raw'], $reference) !== false,
             'order reference present in the iFirma document detail'
@@ -665,9 +773,51 @@ function scenarioE($module)
     $context->customer = $owner;
 }
 
+function scenarioF($module)
+{
+    $order = freshScenario('F. KSeF submission for a B2B order');
+    if (!$order) {
+        return;
+    }
+    $address = new Address((int) $order->id_address_invoice);
+    $original = array('vat_number' => $address->vat_number, 'dni' => $address->dni);
+    $address->vat_number = '1234567890';
+    $address->update();
+    $mode = Configuration::get('IFIRMA_KSEF_MODE');
+    Configuration::updateValue('IFIRMA_KSEF_MODE', 'b2b');
+
+    try {
+        $result = IfirmaIssuancePipeline::build($module)->run($order, array('trigger' => 'manual', 'skip_delivery' => true));
+        $ksef = null;
+        foreach ($result->steps as $step) {
+            if ($step['step'] === 'ksef') {
+                $ksef = $step;
+            }
+        }
+        if (!assertTrue($result->ok && $ksef !== null, 'B2B order issued and the pipeline has a ksef step', $result->message)) {
+            return;
+        }
+        if ($ksef['status'] === 'failed' && (strpos($ksef['message'], '404') !== false || stripos($ksef['message'], 'not found') !== false)) {
+            skip('KSeF step against the mock', 'the mock has no POST /iapi/{type}/ksef/send/{id}.json endpoint (HTTP 404)');
+        } else {
+            assertSame('ok', $ksef['status'], 'ksef step is ok for a B2B order (' . $ksef['message'] . ')');
+            $receipt = receiptOf($order);
+            assertSame('WYSLANA', $receipt ? (string) $receipt->ksef_status : null, 'receipt records the KSeF submission');
+        }
+    } finally {
+        $address->vat_number = $original['vat_number'];
+        $address->dni = $original['dni'];
+        $address->update();
+        Configuration::updateValue('IFIRMA_KSEF_MODE', $mode === false ? 'b2b' : $mode);
+    }
+}
+
 $scenarios = array(
     'A' => function () use ($module, $actions) {
         scenarioA($module, $actions);
+    },
+    'A2' => function () use ($module) {
+        scenarioA2($module);
     },
     'B' => function () use ($module) {
         scenarioB($module);
@@ -680,6 +830,9 @@ $scenarios = array(
     },
     'E' => function () use ($module) {
         scenarioE($module);
+    },
+    'F' => function () use ($module) {
+        scenarioF($module);
     },
 );
 

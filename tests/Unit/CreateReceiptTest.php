@@ -64,7 +64,7 @@ class CreateReceiptTest extends TestCase
 
     public function testSuccessStampsReference()
     {
-        $this->t->queue('POST', '#fakturaparagon\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"ok","Identyfikator":"77"}}'));
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"ok","Identyfikator":"77"}}'));
         $this->t->queue('GET', '#faktury\.json#', array('body' => json_encode(array('response' => array(
             'Kod' => 0,
             'Wynik' => array(array('FakturaId' => 77, 'PelnyNumer' => '7/2026')),
@@ -86,7 +86,7 @@ class CreateReceiptTest extends TestCase
 
     public function testSkipOptionReachesRequest()
     {
-        $this->t->queue('POST', '#fakturaparagon\.json#', array('body' => '{"response":{"Kod":0,"Identyfikator":"1","PelnyNumer":"1/2026"}}'));
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":0,"Identyfikator":"1","PelnyNumer":"1/2026"}}'));
         $this->service->createReceipt($this->order(), array('skip_dodatkowe_uwagi' => true));
         $this->assertStringNotContainsString('DodatkoweUwagi', $this->t->calls[0]['body']);
         $this->assertStringContainsString('"Uwagi":"PS-ORDER-15-ABCDEFGHI"', $this->t->calls[0]['body']);
@@ -94,13 +94,52 @@ class CreateReceiptTest extends TestCase
 
     public function testRejectionSetsErrorStatus()
     {
-        $this->t->queue('POST', '#fakturaparagon\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"bad"}}'));
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"bad"}}'));
         try {
             $this->service->createReceipt($this->order());
             $this->fail('expected exception');
         } catch (Exception $e) {
             $this->assertStringContainsString('bad', $e->getMessage());
         }
+        $rows = IfirmaTestState::objects('ifirma_receipt');
+        $row = reset($rows);
+        $this->assertSame('error', $row['status']);
+    }
+
+    public function testKod200WithDodatkoweUwagiRetriesOnceWithoutIt()
+    {
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":200,"Informacja":"Niepoprawna zawartość żądania - nie można utworzyć obiektu na podstawie zawartości żądania."}}'));
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"ok","Identyfikator":"77","PelnyNumer":"7/2026"}}'));
+        $this->t->queue('GET', '#faktury\.json#', array('body' => json_encode(array('response' => array(
+            'Kod' => 0,
+            'Wynik' => array(array('FakturaId' => 77, 'PelnyNumer' => '7/2026')),
+        )))));
+
+        $this->service->createReceipt($this->order());
+
+        $posts = array_values(array_filter($this->t->calls, function ($c) {
+            return $c['method'] === 'POST';
+        }));
+        $this->assertCount(2, $posts);
+        $this->assertStringContainsString('DodatkoweUwagi', $posts[0]['body']);
+        $this->assertStringNotContainsString('DodatkoweUwagi', $posts[1]['body']);
+        $rows = IfirmaTestState::objects('ifirma_receipt');
+        $row = reset($rows);
+        $this->assertSame('created', $row['status']);
+        $this->assertSame('7/2026', $row['ifirma_number']);
+    }
+
+    public function testKod200WithoutDodatkoweUwagiIsAnError()
+    {
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":200,"Informacja":"Niepoprawna zawartość żądania - nie można utworzyć obiektu na podstawie zawartości żądania."}}'));
+        try {
+            $this->service->createReceipt($this->order(), array('skip_dodatkowe_uwagi' => true));
+            $this->fail('expected exception');
+        } catch (Exception $e) {
+            $this->assertStringContainsString('Niepoprawna', $e->getMessage());
+        }
+        $this->assertCount(1, $this->t->calls);
+        $this->assertStringNotContainsString('DodatkoweUwagi', $this->t->calls[0]['body']);
         $rows = IfirmaTestState::objects('ifirma_receipt');
         $row = reset($rows);
         $this->assertSame('error', $row['status']);
@@ -145,7 +184,7 @@ class CreateReceiptTest extends TestCase
     {
         $out = array();
         foreach ($this->t->calls as $c) {
-            if ($c['method'] === 'POST' && substr(parse_url($c['url'], PHP_URL_PATH), -19) === 'fakturaparagon.json') {
+            if ($c['method'] === 'POST' && substr(parse_url($c['url'], PHP_URL_PATH), -16) === 'fakturakraj.json') {
                 $out[] = $c;
             }
         }
@@ -216,7 +255,7 @@ class CreateReceiptTest extends TestCase
         $this->t->queue('GET', '#kontrahenci/Jan%20K\.json#', $this->notFound());
         $this->t->queue('POST', '#kontrahenci\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"Dodano kontrahenta","Wynik":"1"}}'));
         $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', $this->foundContractor('PS-C5'));
-        $this->t->queue('POST', '#fakturaparagon\.json#', $this->docOk());
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
 
         $this->service->createReceipt($this->order());
 
@@ -228,7 +267,8 @@ class CreateReceiptTest extends TestCase
         $docs = $this->docCalls();
         $this->assertCount(1, $docs);
         $sent = json_decode($docs[0]['body'], true);
-        $this->assertSame('PS-C5', $sent['Kontrahent']['Identyfikator']);
+        $this->assertSame('PS-C5', $sent['IdentyfikatorKontrahenta']);
+        $this->assertArrayNotHasKey('Identyfikator', $sent['Kontrahent']);
         $this->assertArrayNotHasKey('_contractor', $sent);
         $this->assertStringNotContainsString('_contractor', $docs[0]['body']);
         $stored = $this->storedPayload();
@@ -240,13 +280,13 @@ class CreateReceiptTest extends TestCase
         $this->enableSync();
         $row = $this->service->buildContractor($this->order());
         $this->t->queue('GET', '#kontrahenci/id/#', array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array($row))))));
-        $this->t->queue('POST', '#fakturaparagon\.json#', $this->docOk());
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
 
         $this->service->createReceipt($this->order());
 
         $this->assertSame(array('GET', 'POST'), array_column($this->t->calls, 'method'));
         $sent = json_decode($this->docCalls()[0]['body'], true);
-        $this->assertSame('PS-C5', $sent['Kontrahent']['Identyfikator']);
+        $this->assertSame('PS-C5', $sent['IdentyfikatorKontrahenta']);
         $this->assertSame('kept', $this->storedPayload()['_contractor']['action']);
     }
 
@@ -255,7 +295,7 @@ class CreateReceiptTest extends TestCase
         $this->enableSync();
         $this->t->queue('GET', '#kontrahenci/id/#', $this->contractorRow('Stare Miasto'));
         $this->t->queue('PUT', '#kontrahenci/PS-C5\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"Zaktualizowano kontrahenta","Wynik":"1"}}'));
-        $this->t->queue('POST', '#fakturaparagon\.json#', $this->docOk());
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
         Address::$instances[7]->city = 'Nowe Miasto';
 
         $this->service->createReceipt($this->order());
@@ -264,18 +304,19 @@ class CreateReceiptTest extends TestCase
         $put = json_decode($this->t->calls[1]['body'], true);
         $this->assertSame('Nowe Miasto', $put['Miejscowosc']);
         $this->assertSame('updated', $this->storedPayload()['_contractor']['action']);
-        $this->assertSame('PS-C5', json_decode($this->docCalls()[0]['body'], true)['Kontrahent']['Identyfikator']);
+        $this->assertSame('PS-C5', json_decode($this->docCalls()[0]['body'], true)['IdentyfikatorKontrahenta']);
     }
 
     public function testContractorLookupFailureFallsBackToNullIdentifier()
     {
         $this->enableSync();
         $this->t->queue('GET', '#kontrahenci/id/#', array('status' => 0, 'error' => 'timeout'));
-        $this->t->queue('POST', '#fakturaparagon\.json#', $this->docOk());
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
 
         $this->service->createReceipt($this->order());
 
         $sent = json_decode($this->docCalls()[0]['body'], true);
+        $this->assertArrayNotHasKey('IdentyfikatorKontrahenta', $sent);
         $this->assertArrayNotHasKey('Identyfikator', $sent['Kontrahent']);
         $stored = $this->storedPayload();
         $this->assertSame('fallback', $stored['_contractor']['action']);
@@ -287,16 +328,16 @@ class CreateReceiptTest extends TestCase
         $this->enableSync();
         $this->t->queue('GET', '#kontrahenci/id/#', $this->contractorRow('Stare Miasto'));
         $this->t->queue('PUT', '#kontrahenci/#', array('body' => '{"response":{"Kod":0,"Informacja":"Zaktualizowano kontrahenta"}}'));
-        $this->t->queue('POST', '#fakturaparagon\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"Validation error in document data (Kod 201): Nie znaleziono kontrahenta o zadanym identyfikatorze"}}'));
-        $this->t->queue('POST', '#fakturaparagon\.json#', $this->docOk());
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"Validation error in document data (Kod 201): Nie znaleziono kontrahenta o zadanym identyfikatorze"}}'));
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
         Address::$instances[7]->city = 'Nowe Miasto';
 
         $receipt = $this->service->createReceipt($this->order());
 
         $docs = $this->docCalls();
         $this->assertCount(2, $docs);
-        $this->assertSame('PS-C5', json_decode($docs[0]['body'], true)['Kontrahent']['Identyfikator']);
-        $this->assertArrayNotHasKey('Identyfikator', json_decode($docs[1]['body'], true)['Kontrahent']);
+        $this->assertSame('PS-C5', json_decode($docs[0]['body'], true)['IdentyfikatorKontrahenta']);
+        $this->assertArrayNotHasKey('IdentyfikatorKontrahenta', json_decode($docs[1]['body'], true));
         $this->assertSame('created', $receipt->status);
         $this->assertSame('fallback', $this->storedPayload()['_contractor']['action']);
     }
@@ -305,7 +346,7 @@ class CreateReceiptTest extends TestCase
     {
         $this->enableSync();
         $this->t->queue('GET', '#kontrahenci/id/#', array('status' => 0, 'error' => 'timeout'));
-        $this->t->queue('POST', '#fakturaparagon\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"Nie znaleziono kontrahenta"}}'));
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"Nie znaleziono kontrahenta"}}'));
         try {
             $this->service->createReceipt($this->order());
             $this->fail('expected exception');
@@ -318,27 +359,30 @@ class CreateReceiptTest extends TestCase
     public function testSyncDisabledSkipsContractorCalls()
     {
         Configuration::updateValue('IFIRMA_CONTRACTOR_SYNC', 0);
-        $this->t->queue('POST', '#fakturaparagon\.json#', $this->docOk());
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
 
         $this->service->createReceipt($this->order());
 
         $this->assertCount(1, $this->t->calls);
         $this->assertStringNotContainsString('kontrahenci', $this->t->calls[0]['url']);
         $sent = json_decode($this->t->calls[0]['body'], true);
+        $this->assertArrayNotHasKey('IdentyfikatorKontrahenta', $sent);
         $this->assertArrayNotHasKey('Identyfikator', $sent['Kontrahent']);
         $this->assertSame('disabled', $this->storedPayload()['_contractor']['action']);
     }
 
-    public function testSkipContractorSyncOptionKeepsIdentifierAndMakesNoContractorCall()
+    public function testSkipContractorSyncOptionSendsNoReferenceAndMakesNoContractorCall()
     {
         $this->enableSync();
-        $this->t->queue('POST', '#fakturaparagon\.json#', $this->docOk());
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
 
         $this->service->createReceipt($this->order(), array('skip_contractor_sync' => true));
 
         $this->assertCount(1, $this->t->calls);
+        $this->assertStringNotContainsString('kontrahenci', $this->t->calls[0]['url']);
         $sent = json_decode($this->t->calls[0]['body'], true);
-        $this->assertSame('PS-C5', $sent['Kontrahent']['Identyfikator']);
+        $this->assertArrayNotHasKey('IdentyfikatorKontrahenta', $sent);
+        $this->assertArrayNotHasKey('Identyfikator', $sent['Kontrahent']);
         $this->assertSame('PL', $sent['Kontrahent']['KodKraju']);
         $this->assertSame('Polska', $sent['Kontrahent']['Kraj']);
     }
@@ -351,14 +395,14 @@ class CreateReceiptTest extends TestCase
         IfirmaContractorMap::link(5, 'KOWALSKI-01', 'import-nip', 'Jan K');
         $row = array_merge($this->service->buildContractor($this->order()), array('Identyfikator' => 'KOWALSKI-01'));
         $this->t->queue('GET', '#kontrahenci/id/KOWALSKI-01\.json#', array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array($row))))));
-        $this->t->queue('POST', '#fakturaparagon\.json#', $this->docOk());
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
 
         $this->service->createReceipt($this->order());
 
         $this->assertSame(array('GET', 'POST'), array_column($this->t->calls, 'method'));
         $this->assertStringContainsString('/kontrahenci/id/KOWALSKI-01.json', $this->t->calls[0]['url']);
         $sent = json_decode($this->docCalls()[0]['body'], true);
-        $this->assertSame('KOWALSKI-01', $sent['Kontrahent']['Identyfikator']);
+        $this->assertSame('KOWALSKI-01', $sent['IdentyfikatorKontrahenta']);
         $stored = $this->storedPayload();
         $this->assertSame('kept', $stored['_contractor']['action']);
         $this->assertSame('import-nip', $stored['_contractor']['matched_by']);
@@ -375,7 +419,7 @@ class CreateReceiptTest extends TestCase
         $this->assertSame('5252248481', $row['NIP']);
         $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', $this->notFound());
         $this->t->queue('GET', '#kontrahenci/5252248481\.json#', array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array($row))))));
-        $this->t->queue('POST', '#fakturaparagon\.json#', $this->docOk());
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
 
         $this->service->createReceipt($this->order());
 
@@ -383,7 +427,7 @@ class CreateReceiptTest extends TestCase
         $this->assertStringContainsString('/kontrahenci/id/PS-C5.json', $this->t->calls[0]['url']);
         $this->assertStringContainsString('/kontrahenci/5252248481.json', $this->t->calls[1]['url']);
         $sent = json_decode($this->docCalls()[0]['body'], true);
-        $this->assertSame('ACME-02', $sent['Kontrahent']['Identyfikator']);
+        $this->assertSame('ACME-02', $sent['IdentyfikatorKontrahenta']);
         $map = IfirmaContractorMap::getByCustomer(5);
         $this->assertSame('ACME-02', $map->ifirma_identifier);
         $this->assertSame('nip', $map->matched_by);
@@ -399,7 +443,7 @@ class CreateReceiptTest extends TestCase
         $this->t->queue('GET', '#kontrahenci/Jan%20K\.json#', $this->notFound());
         $this->t->queue('POST', '#kontrahenci\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"Dodano kontrahenta","Wynik":"1"}}'));
         $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', $this->foundContractor('PS-C5'));
-        $this->t->queue('POST', '#fakturaparagon\.json#', $this->docOk());
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
 
         $this->service->createReceipt($this->order());
 

@@ -61,7 +61,7 @@ class SchemaTest extends TestCase
             $this->sorted(array_keys(IfirmaSchema::contractorMapColumns())),
             $this->sorted(array_merge(array_keys(IfirmaContractorMap::$definition['fields']), array(IfirmaContractorMap::$definition['primary'])))
         );
-        $this->assertCount(18, IfirmaSchema::newReceiptColumnsFor110());
+        $this->assertCount(20, IfirmaSchema::newReceiptColumnsFor110());
     }
 
     public function testUninstallDropsThreeTables()
@@ -111,6 +111,48 @@ class SchemaTest extends TestCase
         $this->assertTrue(IfirmaSchema::widenContractorMapIdentifier());
 
         $this->assertSame(array(), $this->modifyStatements());
+    }
+
+    public function testKsefColumnsAreDefinedAndDefaultModeIsB2b()
+    {
+        $columns = IfirmaSchema::receiptColumns();
+        $this->assertArrayHasKey('ksef_sent_at', $columns);
+        $this->assertArrayHasKey('ksef_error', $columns);
+        $this->assertArrayHasKey('ksef_sent_at', IfirmaReceipt::$definition['fields']);
+        $this->assertArrayHasKey('ksef_error', IfirmaReceipt::$definition['fields']);
+        $this->assertSame('b2b', IfirmaSchema::configurationDefaults()['IFIRMA_KSEF_MODE']);
+    }
+
+    public function testEnsureReceiptKsefColumnsAddsBothColumnsOnce()
+    {
+        $this->assertTrue(IfirmaSchema::ensureReceiptKsefColumns());
+        $this->assertTrue(IfirmaSchema::ensureReceiptKsefColumns());
+
+        $alters = array_values(array_filter(Db::getInstance()->executed, function ($q) {
+            return strpos($q, 'ALTER TABLE') === 0 && strpos($q, 'ADD COLUMN') !== false;
+        }));
+        $this->assertSame(array(
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `ksef_sent_at` DATETIME NULL',
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `ksef_error` TEXT NULL',
+        ), $alters);
+    }
+
+    public function testEnsureReceiptKsefColumnsSkipsExistingColumns()
+    {
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'ksef_sent_at'/", 1);
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'ksef_error'/", 1);
+
+        $this->assertTrue(IfirmaSchema::ensureReceiptKsefColumns());
+
+        $alters = array_filter(Db::getInstance()->executed, function ($q) {
+            return strpos($q, 'ALTER TABLE') === 0;
+        });
+        $this->assertSame(array(), array_values($alters));
+    }
+
+    public function testSignatureTypeDefaultIsBpo()
+    {
+        $this->assertSame('BPO', IfirmaSchema::configurationDefaults()['IFIRMA_SIGNATURE_TYPE']);
     }
 
     private function sorted(array $a)

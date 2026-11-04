@@ -81,6 +81,11 @@ class AdminIfirmaController extends ModuleAdminController
         $this->respond($this->actions()->resend($this->orderId()));
     }
 
+    public function ajaxProcessSendToKsef()
+    {
+        $this->respond($this->actions()->sendToKsef($this->orderId()));
+    }
+
     public function ajaxProcessRefreshStatus()
     {
         $this->respond($this->actions()->refreshStatus($this->orderId()));

@@ -46,6 +46,7 @@ function upgrade_module_1_1_0($module)
         return false;
     }
     IfirmaSchema::widenContractorMapIdentifier();
+    IfirmaSchema::ensureReceiptKsefColumns();
 
     foreach (IfirmaSchema::configurationDefaults() as $key => $value) {
         if (Configuration::get($key) !== false) {

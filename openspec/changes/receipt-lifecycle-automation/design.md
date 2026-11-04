@@ -129,6 +129,30 @@ New columns on `ifirma_receipt`: `source VARCHAR(16) DEFAULT 'module'`, `order_r
 
 **Why.** The search endpoint returns at most 20 rows per phrase and there is no list endpoint, so enumerating 2,000+ contractors through the API is impossible; the merchant's own export is the only complete source. Per-order API matching remains for customers that were not in the export. Name-only matches are deliberately refused without a second confirming field: linking a document to the wrong contractor is worse than one duplicate contractor.
 
+### D14. Reference contractors through IdentyfikatorKontrahenta (live-API finding, 2026-11-02)
+
+**Choice.** Documents carry the resolved contractor in the top-level `IdentyfikatorKontrahenta` and the buyer's Polish NIP in `NIPKontrahenta`; the nested `Kontrahent.Identyfikator` is never sent. A Kod 201 that reports an unknown contractor or names `IdentyfikatorKontrahenta` is retried once without the reference. When nothing (or an identifier longer than 15 characters) was referenced, the issued document is read back once and the contractor iFirma attached is recorded in the request note and stored as the customer's mapping (`document`), replacing a mapping it differs from.
+
+**Why.** The live API answered Kod 201 "Nie znaleziono kontrahenta o zadanym identyfikatorze" for every `Kontrahent.Identyfikator` it did not know, including `PS-C{id}` and a 16-character merchant identifier matched by name. The documentation of fakturaparagon and fakturakraj defines the lookup order as `IdentyfikatorKontrahenta`, then (PrefiksUE +) `NIPKontrahenta`, then creation from `Kontrahent`, and limits both identifier fields to 15 characters; the nested identifier is only a name for a contractor iFirma creates (null = generated) and is not a reference. Identifiers longer than 15 characters exist in real accounts (`EC_`-prefixed names) but cannot be referenced; rather than renaming the merchant's contractors, the module lets iFirma choose and learns the attached contractor so later orders reuse it. The mock mirrors the documented order; the live handling of a >15-character `IdentyfikatorKontrahenta` is unverified (sent as-is; the retry covers a rejection).
+
+### D15. Unknown contractor in the list filter is not an error (live-API finding, 2026-11-02)
+
+**Choice.** The guard filters by the linked contractor (or `PS-C{id}`) and treats a Kod 201 that mentions the contractor as an empty result for that filtered query, continuing with the NIP and window queries. Every other failure keeps the inconclusive outcome.
+
+**Why.** The live API rejects `faktury.json?kontrahent=<unknown>` with Kod 201 "Nie znaleziono kontrahenta o zadanym identyfikatorze"; the mock returned an empty list, which hid that every first issuance for a new customer stopped at the guard step before the document was even attempted. An identifier iFirma does not have cannot own documents, so the answer is conclusive, not inconclusive. The mock now mirrors the rejection.
+
+### D16. Only documented enumeration values (live-API finding, 2026-11-02)
+
+**Choice.** `RodzajPodpisuOdbiorcy` becomes the setting `IFIRMA_SIGNATURE_TYPE` with the four documented codes, default `BPO`, normalised on save and on payload build; the mock rejects undocumented enumeration values with iFirma's Kod 200 message.
+
+**Why.** The first live document request was answered with Kod 200 "nie można utworzyć obiektu na podstawie zawartości żądania" because the module sent `BRK`, a value that exists nowhere in the API. Kod 200 never names the offending field, so the only defence is to send documented values only and to have the mock fail the same way, which it did not until now.
+
+### D17. fakturakraj only, PRC-only positions (merchant decision and live-API table review, 2026-11-02)
+
+**Choice.** Receipts (`fakturaparagon`) are disabled for now: the only selectable and default document type is `fakturakraj`, and stored `fakturaparagon` values are normalised to it. Positions always use `TypStawkiVat` `PRC` with a rate snapped to the documented set; the order line's tax rate wins over gross/net. A Kod 200 with `DodatkoweUwagi` present is retried once without it.
+
+**Why.** The merchant wants invoices only for now, and the fakturakraj table shows two more ways the payload could be rejected: `ZW` positions require `PKWiU`, which PrestaShop does not hold, and `StawkaVat` accepts only 0, 0.05, 0.08, 0.23 while a ratio of rounded prices yields values like 0.0799. Kod 200 never names the field, and `DodatkoweUwagi` is the only optional object sent, so dropping it once is the cheapest way to tell whether it caused the mapping failure.
+
 ## Risks / Trade-offs
 
 - [Undocumented detail JSON may not include `Uwagi`/`DodatkoweUwagi`] -> Reference confirmation would never succeed and every amount match would block as "suspected". Mitigation: first implementation task captures a real detail response (merchant sandbox or a 1 PLN production test) and fixes the matcher; the substring search tolerates any nesting; admin *Link* keeps the flow unblocked meanwhile.

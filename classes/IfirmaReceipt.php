@@ -94,6 +94,12 @@ class IfirmaReceipt extends ObjectModel
     /** @var string */
     public $ksef_number = '';
 
+    /** @var string|null */
+    public $ksef_sent_at;
+
+    /** @var string|null */
+    public $ksef_error;
+
     /** @var string */
     public $linked_document = '';
 
@@ -156,6 +162,8 @@ class IfirmaReceipt extends ObjectModel
             'remote_missing' => array('type' => self::TYPE_BOOL, 'validate' => 'isBool'),
             'ksef_status' => array('type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'size' => 32),
             'ksef_number' => array('type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'size' => 64),
+            'ksef_sent_at' => array('type' => self::TYPE_DATE, 'validate' => 'isDate', 'allow_null' => true),
+            'ksef_error' => array('type' => self::TYPE_HTML),
             'linked_document' => array('type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'size' => 128),
             'last_sync_at' => array('type' => self::TYPE_DATE, 'validate' => 'isDate', 'allow_null' => true),
             'sync_error' => array('type' => self::TYPE_HTML),

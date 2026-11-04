@@ -303,6 +303,20 @@ class IfirmaApiClient
     }
 
     /**
+     * Submits an issued document to KSeF; a null date means "send now", a YYYY-MM-DD date schedules it.
+     *
+     * @param string      $type
+     * @param string      $id
+     * @param string|null $date
+     * @param int|null    $timeout
+     * @return array|null
+     */
+    public function sendToKsef($type, $id, $date = null, $timeout = null)
+    {
+        return $this->post($type . '/ksef/send/' . rawurlencode((string) $id) . '.json', 'faktura', array('DataWysylki' => $date), $timeout);
+    }
+
+    /**
      * Daily API limit; needs the optional "abonent" key.
      *
      * @return array|null array('used' => int, 'granted' => int)

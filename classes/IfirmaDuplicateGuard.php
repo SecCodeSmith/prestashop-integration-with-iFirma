@@ -18,6 +18,7 @@ require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaReceiptService.php';
 require_once dirname(__FILE__) . '/IfirmaDuplicateMatcher.php';
 require_once dirname(__FILE__) . '/IfirmaGuardResult.php';
+require_once dirname(__FILE__) . '/IfirmaContractorMap.php';
 
 /**
  * Duplicate guard: before a document is created, looks in iFirma for a document that
@@ -29,9 +30,14 @@ require_once dirname(__FILE__) . '/IfirmaGuardResult.php';
  * Otherwise lists faktury.json over [order date - 1 day, today] (page size 100, paged
  * until a short page): by contractor identifier (PS-C{id_customer}), then by NIP when
  * empty, then unfiltered when the window is within IFIRMA_DUPLICATE_WINDOW_DAYS (60).
- * Candidates (IfirmaDuplicateMatcher) are confirmed by finding the order reference in
- * the detail JSON: ADOPT (adopt(), source external), else SUSPECTED (markSuspected(),
- * status duplicate_suspected, nothing is created); no candidates -> PROCEED.
+ * Candidates are the rows of the order's buyer (IfirmaDuplicateMatcher::filterByBuyer():
+ * contractor identifier, NIP or buyer name) that pass selectCandidates() (type, draft,
+ * currency, gross). Each candidate's detail (newest first, max_detail_calls) is read: the
+ * order reference in it -> ADOPT (adopt(), source external); otherwise verifyDetail()
+ * compares DataSprzedazy and Pozycje with the order's sale date and product lines: a
+ * mismatch drops the candidate, a match or an unreadable/incomplete detail keeps it.
+ * Survivors -> SUSPECTED (markSuspected(), status duplicate_suspected, nothing is
+ * created); none -> PROCEED.
  * A failed list call -> INCONCLUSIVE (error + rateLimited). Admin resolution:
  * linkCandidate() or recordResolution($receipt, 'issue_anyway').
  * Options: bypass, enabled, tolerance (IFIRMA_DUPLICATE_AMOUNT_TOLERANCE, 0.01),
@@ -124,14 +130,16 @@ class IfirmaDuplicateGuard
         $result = new IfirmaGuardResult();
         $base = array('dataOd' => $dataOd, 'dataDo' => $dataDo, 'iloscNaStronie' => self::PAGE_SIZE);
 
+        $buyer = array(
+            'identifier' => $this->contractorFilter($order),
+            'nip' => $this->orderNip($order),
+            'names' => IfirmaReceiptService::buyerNames($order),
+        );
+
         $queries = array();
-        $queries[] = array('kontrahent' => IfirmaReceiptService::truncate(
-            IfirmaReceiptService::CONTRACTOR_ID_PREFIX . (int) $order->id_customer,
-            $this->contractorLimit()
-        ));
-        $nip = $this->orderNip($order);
-        if ($nip !== '') {
-            $queries[] = array('nipKontrahenta' => $nip);
+        $queries[] = array('kontrahent' => $buyer['identifier']);
+        if ($buyer['nip'] !== '') {
+            $queries[] = array('nipKontrahenta' => $buyer['nip']);
         }
         if ($days <= $windowDays) {
             $queries[] = array();
@@ -140,6 +148,13 @@ class IfirmaDuplicateGuard
         $rows = array();
         foreach ($queries as $filter) {
             $rows = $this->listAll(array_merge($base, $filter), $timeout, $result);
+            if ($rows === null && $filter && $this->filterValueUnknown()) {
+                // iFirma answers Kod 201 "Nie znaleziono kontrahenta..." when the filter names a
+                // contractor it does not have. No document of that contractor can exist, so this
+                // query is conclusively empty; the next query still runs.
+                $rows = array();
+                continue;
+            }
             if ($rows === null) {
                 $result->outcome = IfirmaGuardResult::OUTCOME_INCONCLUSIVE;
                 $result->error = (string) $this->client->getLastError();
@@ -154,6 +169,7 @@ class IfirmaDuplicateGuard
 
         $currency = new Currency((int) $order->id_currency);
         $iso = !empty($currency->iso_code) ? $currency->iso_code : 'PLN';
+        $rows = IfirmaDuplicateMatcher::filterByBuyer($rows, $buyer);
         $candidates = IfirmaDuplicateMatcher::selectCandidates($rows, round((float) $order->total_paid_tax_incl, 2), $iso, $tolerance);
         if (empty($candidates)) {
             $result->outcome = IfirmaGuardResult::OUTCOME_PROCEED;
@@ -172,11 +188,23 @@ class IfirmaDuplicateGuard
         });
 
         $reference = IfirmaReceiptService::buildOrderReference($order);
-        foreach (array_slice($candidates, 0, max(0, $maxDetail)) as $row) {
+        $saleDate = IfirmaReceiptService::orderSaleDate($order);
+        $lines = IfirmaReceiptService::orderProductLines($order);
+        $limit = max(0, $maxDetail);
+        $kept = array();
+        foreach ($candidates as $index => $row) {
+            if ($index >= $limit) {
+                // Beyond the per-run detail cap: cannot be verified, so it stays suspected.
+                $row['_sale_date'] = '';
+                $kept[] = $row;
+                continue;
+            }
             $type = IfirmaDuplicateMatcher::rodzajToDocumentType(isset($row['Rodzaj']) ? $row['Rodzaj'] : '');
             $detail = $type ? $this->client->getDetail($type, (string) $row['FakturaId'], $timeout) : null;
             if ($detail === null) {
                 $result->error = (string) $this->client->getLastError();
+                $row['_sale_date'] = '';
+                $kept[] = $row;
                 continue;
             }
             if (IfirmaDuplicateMatcher::confirm($detail['raw'], $reference)) {
@@ -187,11 +215,24 @@ class IfirmaDuplicateGuard
 
                 return $result;
             }
+            $verdict = IfirmaDuplicateMatcher::verifyDetail($this->detailNode($detail), $saleDate, $lines);
+            if ($verdict['matched'] === false) {
+                // Same buyer and amount, but another sale date or other products: not this order's document.
+                continue;
+            }
+            $row['_sale_date'] = $verdict['sale_date'];
+            $kept[] = $row;
+        }
+
+        if (empty($kept)) {
+            $result->outcome = IfirmaGuardResult::OUTCOME_PROCEED;
+
+            return $result;
         }
 
         $result->outcome = IfirmaGuardResult::OUTCOME_SUSPECTED;
-        $result->candidates = $candidates;
-        $result->receipt = $this->markSuspected($order, $candidates);
+        $result->candidates = $kept;
+        $result->receipt = $this->markSuspected($order, $kept);
 
         return $result;
     }
@@ -239,7 +280,13 @@ class IfirmaDuplicateGuard
             'candidates' => array(IfirmaDuplicateMatcher::summarize($row)),
             'resolution' => $res,
         ));
-        $r->response_payload = json_encode($row);
+        $public = array();
+        foreach ($row as $key => $value) {
+            if (strpos((string) $key, '_') !== 0) {
+                $public[$key] = $value;
+            }
+        }
+        $r->response_payload = json_encode($public);
         $r->save();
 
         return $r;
@@ -362,6 +409,17 @@ class IfirmaDuplicateGuard
     }
 
     /**
+     * @param array $detail getDetail() result (raw + data)
+     * @return array the document node of the decoded detail (empty when undecodable)
+     */
+    private function detailNode(array $detail)
+    {
+        $data = (isset($detail['data']) && is_array($detail['data'])) ? $detail['data'] : array();
+
+        return (isset($data['response']) && is_array($data['response'])) ? $data['response'] : $data;
+    }
+
+    /**
      * @param Order $order
      * @return IfirmaReceipt
      */
@@ -406,6 +464,44 @@ class IfirmaDuplicateGuard
         $limits = IfirmaReceiptService::fieldLimits();
 
         return isset($limits['Identyfikator']) ? (int) $limits['Identyfikator'] : 15;
+    }
+
+    /**
+     * The contractor identifier the module would reference for this customer: the stored mapping
+     * when there is one (an existing iFirma contractor), otherwise the module identifier PS-C{id}.
+     *
+     * @param Order $order
+     * @return string
+     */
+    private function contractorFilter(Order $order)
+    {
+        $idCustomer = (int) $order->id_customer;
+        try {
+            $map = IfirmaContractorMap::getByCustomer($idCustomer);
+            if ($map && trim((string) $map->ifirma_identifier) !== '') {
+                return trim((string) $map->ifirma_identifier);
+            }
+        } catch (Exception $e) {
+            // mapping unavailable: fall back to the module identifier
+        }
+
+        return IfirmaReceiptService::truncate(
+            IfirmaReceiptService::CONTRACTOR_ID_PREFIX . $idCustomer,
+            $this->contractorLimit()
+        );
+    }
+
+    /**
+     * True when the last list call was refused because the filter named a contractor iFirma does
+     * not know (Kod 201 whose message mentions the contractor), as opposed to a transport, auth or
+     * other validation failure.
+     *
+     * @return bool
+     */
+    private function filterValueUnknown()
+    {
+        return (int) $this->client->getLastKod() === 201
+            && mb_stripos((string) $this->client->getLastError(), 'kontrahent') !== false;
     }
 
     /**

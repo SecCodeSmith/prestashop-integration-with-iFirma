@@ -83,14 +83,25 @@ check($map && $map->ifirma_identifier === 'OLD-DOE-01', 'mapping stored for cust
 
 // 3. issue a document for the newest order of customer 2 without a receipt
 $idOrder = (int) $db->getValue('SELECT o.id_order FROM ' . _DB_PREFIX_ . 'orders o LEFT JOIN ' . _DB_PREFIX_ . 'ifirma_receipt r ON r.id_order = o.id_order WHERE o.id_customer = 2 AND r.id_ifirma_receipt IS NULL ORDER BY o.id_order DESC');
+if ($idOrder <= 0) {
+    // Every order already carries a document from earlier runs: recycle the newest one. Its module
+    // receipt row is dropped so the flow under test starts from a clean order (test shop only).
+    $idOrder = (int) $db->getValue('SELECT MAX(id_order) FROM ' . _DB_PREFIX_ . 'orders WHERE id_customer = 2');
+    if ($idOrder > 0) {
+        $db->delete('ifirma_receipt', 'id_order = ' . (int) $idOrder);
+        echo "recycled order $idOrder (previous receipt row removed)
+";
+    }
+}
 check($idOrder > 0, 'found an order of customer 2 without a receipt', (string) $idOrder);
 if ($idOrder > 0) {
     IfirmaDataRequestService::build($module); // ensure classes loaded
     $receipt = IfirmaReceiptService::build($module)->createReceipt(new Order($idOrder), array('skip_delivery' => true));
     $payload = json_decode((string) $receipt->request_payload, true);
-    $sentId = isset($payload['Kontrahent']['Identyfikator']) ? $payload['Kontrahent']['Identyfikator'] : '(absent)';
+    $sentId = isset($payload['IdentyfikatorKontrahenta']) ? $payload['IdentyfikatorKontrahenta'] : '(absent)';
     check($receipt->isIssued(), 'document issued', $receipt->status . ' ' . $receipt->last_error);
-    check($sentId === 'OLD-DOE-01', 'document used the mapped contractor', 'Identyfikator sent: ' . $sentId . '; _contractor: ' . json_encode(isset($payload['_contractor']) ? $payload['_contractor'] : null));
+    check($sentId === 'OLD-DOE-01', 'document used the mapped contractor', 'IdentyfikatorKontrahenta sent: ' . $sentId . '; _contractor: ' . json_encode(isset($payload['_contractor']) ? $payload['_contractor'] : null));
+    check(!array_key_exists('Identyfikator', isset($payload['Kontrahent']) ? $payload['Kontrahent'] : array()), 'Kontrahent block carries no Identyfikator', 'Kontrahent: ' . json_encode(isset($payload['Kontrahent']) ? $payload['Kontrahent'] : null));
 }
 echo ($fail ? 'IMPORT_PROBE_FAILED ' . $fail : 'IMPORT_PROBE_OK') . "\n";
 exit($fail ? 1 : 0);

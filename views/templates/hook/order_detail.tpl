@@ -29,6 +29,9 @@
             {/if}
         </p>
         <p>{l s='Issue date' mod='ifirma'}: {$doc.issue_date|escape:'html':'UTF-8'}</p>
+        {if $doc.ksef_number}
+            <p>{l s='KSeF number' mod='ifirma'}: {$doc.ksef_number|escape:'html':'UTF-8'}</p>
+        {/if}
         <p>
             {if $doc.sent}
                 {l s='Sent on' mod='ifirma'} {$doc.sent_at|escape:'html':'UTF-8'}

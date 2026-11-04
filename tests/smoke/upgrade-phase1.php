@@ -53,7 +53,7 @@ foreach (array(
     'IFIRMA_BASE_URL' => getenv('IFIRMA_MOCK_URL') ?: 'http://ifirma-mock:8001/iapi/',
     'IFIRMA_USER' => 'test@example.com',
     'IFIRMA_KEY_FAKTURA' => str_repeat('1', 64),
-    'IFIRMA_DOC_TYPE' => 'fakturaparagon',
+    'IFIRMA_DOC_TYPE' => 'fakturakraj',
 ) as $k => $v) {
     Configuration::updateValue($k, $v);
 }

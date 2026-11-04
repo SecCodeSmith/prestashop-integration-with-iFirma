@@ -21,6 +21,7 @@ require_once dirname(__FILE__) . '/IfirmaReceiptService.php';
 require_once dirname(__FILE__) . '/IfirmaIssuancePipeline.php';
 require_once dirname(__FILE__) . '/IfirmaDuplicateGuard.php';
 require_once dirname(__FILE__) . '/IfirmaDeliveryService.php';
+require_once dirname(__FILE__) . '/IfirmaKsefService.php';
 require_once dirname(__FILE__) . '/IfirmaStatusSyncService.php';
 require_once dirname(__FILE__) . '/IfirmaDataRequestService.php';
 
@@ -230,6 +231,41 @@ class IfirmaAdminActions
             return $this->result(!empty($d['ok']), $message, array(
                 'receipt' => $this->receiptToArray($receipt),
                 'delivery' => $delivery->describeDelivery($receipt),
+            ));
+        } catch (Exception $e) {
+            return $this->failure($e);
+        } catch (Throwable $e) {
+            return $this->failure($e);
+        }
+    }
+
+    /**
+     * Submits the issued document to KSeF regardless of the configured mode (manual button).
+     *
+     * @param int $idOrder
+     * @return array
+     */
+    public function sendToKsef($idOrder)
+    {
+        try {
+            $receipt = IfirmaReceipt::getByOrder((int) $idOrder);
+            $order = $this->loadOrder($idOrder);
+            if (!$receipt || !$receipt->isIssued() || !$order) {
+                return $this->result(false, $this->module->l('No issued iFirma document for this order.', 'ifirmaadminactions'));
+            }
+            $ksef = IfirmaKsefService::build($this->module);
+            $k = $ksef->submit($receipt, $order, true);
+            $receipt = new IfirmaReceipt((int) $receipt->id);
+            $message = isset($k['message']) ? (string) $k['message'] : '';
+            if (!empty($k['ok'])) {
+                $message = $this->module->l('Document sent to KSeF.', 'ifirmaadminactions') . ($message !== '' ? ' ' . $message : '');
+            } elseif ($message === '') {
+                $message = $this->module->l('The document could not be sent to KSeF.', 'ifirmaadminactions');
+            }
+
+            return $this->result(!empty($k['ok']), $message, array(
+                'receipt' => $this->receiptToArray($receipt),
+                'ksef' => $ksef->describe($receipt, $order),
             ));
         } catch (Exception $e) {
             return $this->failure($e);
@@ -479,6 +515,8 @@ class IfirmaAdminActions
             'remote_missing' => (bool) $receipt->remote_missing,
             'ksef_status' => (string) $receipt->ksef_status,
             'ksef_number' => (string) $receipt->ksef_number,
+            'ksef_sent_at' => $receipt->ksef_sent_at,
+            'ksef_error' => (string) $receipt->ksef_error,
             'linked_document' => (string) $receipt->linked_document,
             'last_sync_at' => $receipt->last_sync_at,
             'sync_error' => (string) $receipt->sync_error,

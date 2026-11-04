@@ -145,3 +145,18 @@ Manual Create and automatic status-triggered issuance SHALL run the same duplica
 - **WHEN** the merchant has disabled the duplicate guard
 - **THEN** no list query is sent before creation
 - **AND** only the local record check applies
+
+### Requirement: Unknown contractor filter is conclusive
+The remote lookup SHALL filter by the customer's linked contractor identifier when a mapping exists and by `PS-C{id_customer}` otherwise. When iFirma answers Kod 201 with a message about the contractor for a filtered query, the guard SHALL treat that query as returning no documents and continue with the remaining queries instead of reporting an inconclusive outcome.
+
+#### Scenario: Contractor unknown to iFirma
+- **WHEN** the `kontrahent` query is answered with Kod 201 "Nie znaleziono kontrahenta o zadanym identyfikatorze"
+- **THEN** the guard runs the NIP query (when the buyer has a NIP) and the unfiltered window query, and proceeds when they return nothing
+
+#### Scenario: Linked customer
+- **WHEN** customer 7 is mapped to contractor `KOWALSKI-01`
+- **THEN** the first query filters by `kontrahent=KOWALSKI-01`, not by `PS-C7`
+
+#### Scenario: Other failures stay inconclusive
+- **WHEN** the unfiltered query fails, or a filtered query fails with a transport error or a Kod 201 that does not mention the contractor
+- **THEN** the outcome is inconclusive and nothing is issued

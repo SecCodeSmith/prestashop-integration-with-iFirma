@@ -19,6 +19,7 @@ require_once __DIR__ . '/classes/IfirmaContractorImport.php';
 require_once __DIR__ . '/classes/IfirmaReceiptService.php';
 require_once __DIR__ . '/classes/IfirmaDuplicateGuard.php';
 require_once __DIR__ . '/classes/IfirmaDeliveryService.php';
+require_once __DIR__ . '/classes/IfirmaKsefService.php';
 require_once __DIR__ . '/classes/IfirmaStatusSyncService.php';
 require_once __DIR__ . '/classes/IfirmaDataRequestService.php';
 require_once __DIR__ . '/classes/IfirmaIssuancePipeline.php';
@@ -335,6 +336,8 @@ class Ifirma extends Module
             $channel = 'shop_mail';
         }
 
+        $ksefMode = IfirmaKsefService::normalizeMode(Tools::getValue('IFIRMA_KSEF_MODE'));
+
         $windowDays = $this->parseInt(Tools::getValue('IFIRMA_DUPLICATE_WINDOW_DAYS'), 1, 365);
         if ($windowDays === null) {
             $errors[] = $this->l('The duplicate-check window must be a whole number of days between 1 and 365.');
@@ -406,7 +409,8 @@ class Ifirma extends Module
         Configuration::updateValue('IFIRMA_KEY_FAKTURA', $keyFaktura);
         Configuration::updateValue('IFIRMA_KEY_ABONENT', trim(Tools::getValue('IFIRMA_KEY_ABONENT')));
         Configuration::updateValue('IFIRMA_KEY_RACHUNEK', trim(Tools::getValue('IFIRMA_KEY_RACHUNEK')));
-        Configuration::updateValue('IFIRMA_DOC_TYPE', Tools::getValue('IFIRMA_DOC_TYPE'));
+        Configuration::updateValue('IFIRMA_DOC_TYPE', IfirmaReceiptService::normalizeDocumentType(Tools::getValue('IFIRMA_DOC_TYPE')));
+        Configuration::updateValue('IFIRMA_SIGNATURE_TYPE', IfirmaReceiptService::normalizeSignatureType(Tools::getValue('IFIRMA_SIGNATURE_TYPE')));
         Configuration::updateValue('IFIRMA_PAYMENT_METHOD', $paymentCode);
         Configuration::updateValue('IFIRMA_PAYMENT_METHOD_MODE', $paymentMode);
         Configuration::updateValue('IFIRMA_PAYMENT_METHOD_MAP', $paymentMap);
@@ -417,6 +421,7 @@ class Ifirma extends Module
         Configuration::updateValue('IFIRMA_MARK_PAID_ON_CREATE', (int) Tools::getValue('IFIRMA_MARK_PAID_ON_CREATE'));
         Configuration::updateValue('IFIRMA_SEND_CHANNEL', $channel);
         Configuration::updateValue('IFIRMA_SEND_TEXT', $text);
+        Configuration::updateValue('IFIRMA_KSEF_MODE', $ksefMode);
         Configuration::updateValue('IFIRMA_DUPLICATE_CHECK', (int) (bool) Tools::getValue('IFIRMA_DUPLICATE_CHECK'));
         Configuration::updateValue('IFIRMA_DUPLICATE_WINDOW_DAYS', $windowDays);
         Configuration::updateValue('IFIRMA_DUPLICATE_AMOUNT_TOLERANCE', $tolerance);
@@ -637,10 +642,26 @@ class Ifirma extends Module
                 'type' => 'select',
                 'label' => $this->l('Document type'),
                 'name' => 'IFIRMA_DOC_TYPE',
+                'desc' => $this->l('Invoice to receipt (fakturaparagon) is disabled for now; every document is a domestic VAT invoice.'),
                 'options' => array(
                     'query' => array(
-                        array('id' => 'fakturaparagon', 'name' => $this->l('Invoice to receipt (fakturaparagon)')),
                         array('id' => 'fakturakraj', 'name' => $this->l('Domestic VAT invoice (fakturakraj)')),
+                    ),
+                    'id' => 'id',
+                    'name' => 'name',
+                ),
+            ),
+            array(
+                'type' => 'select',
+                'label' => $this->l('Recipient signature (RodzajPodpisuOdbiorcy)'),
+                'name' => 'IFIRMA_SIGNATURE_TYPE',
+                'desc' => $this->l('Printed signature line on the document. Online sales normally use "without recipient signature".'),
+                'options' => array(
+                    'query' => array(
+                        array('id' => 'BPO', 'name' => $this->l('BPO - without recipient signature')),
+                        array('id' => 'BWO', 'name' => $this->l('BWO - without recipient and issuer signature')),
+                        array('id' => 'OUP', 'name' => $this->l('OUP - person authorised to receive the invoice')),
+                        array('id' => 'UPO', 'name' => $this->l('UPO - written authorisation')),
                     ),
                     'id' => 'id',
                     'name' => 'name',
@@ -741,6 +762,21 @@ class Ifirma extends Module
                 'desc' => $this->l('Optional message added to the e-mail that delivers the document (up to 1000 characters).'),
             ),
             array(
+                'type' => 'select',
+                'label' => $this->l('KSeF submission (B2B e-invoicing)'),
+                'name' => 'IFIRMA_KSEF_MODE',
+                'desc' => $this->l('A submission to KSeF cannot be withdrawn. B2B invoices are legally required in KSeF; iFirma may also submit automatically depending on the account settings.'),
+                'options' => array(
+                    'query' => array(
+                        array('id' => 'b2b', 'name' => $this->l('B2B only: buyers with a NIP')),
+                        array('id' => 'all', 'name' => $this->l('Every invoice')),
+                        array('id' => 'off', 'name' => $this->l('Never (manual button only)')),
+                    ),
+                    'id' => 'id',
+                    'name' => 'name',
+                ),
+            ),
+            array(
                 'type' => 'switch',
                 'label' => $this->l('Duplicate check'),
                 'name' => 'IFIRMA_DUPLICATE_CHECK',
@@ -837,7 +873,8 @@ class Ifirma extends Module
             'IFIRMA_USER' => Configuration::get('IFIRMA_USER'),
             'IFIRMA_KEY_FAKTURA' => Configuration::get('IFIRMA_KEY_FAKTURA'),
             'IFIRMA_KEY_ABONENT' => Configuration::get('IFIRMA_KEY_ABONENT'),
-            'IFIRMA_DOC_TYPE' => Configuration::get('IFIRMA_DOC_TYPE'),
+            'IFIRMA_DOC_TYPE' => IfirmaReceiptService::normalizeDocumentType(Configuration::get('IFIRMA_DOC_TYPE')),
+            'IFIRMA_SIGNATURE_TYPE' => IfirmaReceiptService::normalizeSignatureType(Configuration::get('IFIRMA_SIGNATURE_TYPE')),
             'IFIRMA_PAYMENT_METHOD' => Configuration::get('IFIRMA_PAYMENT_METHOD'),
             'IFIRMA_PAYMENT_METHOD_MODE' => Configuration::get('IFIRMA_PAYMENT_METHOD_MODE'),
             'IFIRMA_PAYMENT_METHOD_MAP' => Configuration::get('IFIRMA_PAYMENT_METHOD_MAP'),
@@ -848,6 +885,7 @@ class Ifirma extends Module
             'IFIRMA_MARK_PAID_ON_CREATE' => (int) Configuration::get('IFIRMA_MARK_PAID_ON_CREATE'),
             'IFIRMA_SEND_CHANNEL' => Configuration::get('IFIRMA_SEND_CHANNEL') ?: 'shop_mail',
             'IFIRMA_SEND_TEXT' => Configuration::get('IFIRMA_SEND_TEXT'),
+            'IFIRMA_KSEF_MODE' => IfirmaKsefService::normalizeMode(Configuration::get('IFIRMA_KSEF_MODE')),
             'IFIRMA_DUPLICATE_CHECK' => (int) Configuration::get('IFIRMA_DUPLICATE_CHECK'),
             'IFIRMA_DUPLICATE_WINDOW_DAYS' => (int) Configuration::get('IFIRMA_DUPLICATE_WINDOW_DAYS'),
             'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE' => Configuration::get('IFIRMA_DUPLICATE_AMOUNT_TOLERANCE'),
@@ -1004,6 +1042,7 @@ class Ifirma extends Module
         }
         self::$adminOrderRendered = true;
 
+        $ksef = IfirmaKsefService::build($this);
         $receipt = IfirmaReceipt::getByOrder($idOrder);
         $token = Tools::getAdminTokenLite('AdminIfirma');
         $order = new Order($idOrder);
@@ -1022,6 +1061,12 @@ class Ifirma extends Module
                     (string) $sent['_contractor']['action'],
                     isset($sent['_contractor']['message']) ? (string) $sent['_contractor']['message'] : ''
                 );
+                // the contractor iFirma attached when the module could not reference one (D14)
+                $attached = isset($sent['_contractor']['document_identifier']) ? trim((string) $sent['_contractor']['document_identifier']) : '';
+                $referenced = isset($sent['_contractor']['identifier']) ? trim((string) $sent['_contractor']['identifier']) : '';
+                if ($attached !== '' && $attached !== $referenced) {
+                    $contractorNote = trim($contractorNote . ' ' . sprintf($this->l('iFirma attached contractor %s'), $attached));
+                }
             }
         }
 
@@ -1088,6 +1133,10 @@ class Ifirma extends Module
             'ifirma_request_payload' => $receipt ? (string) $receipt->request_payload : '',
             'ifirma_response_payload' => $receipt ? (string) $receipt->response_payload : '',
             'ifirma_module_version' => (string) $this->version,
+            // Bootstrap 4 card on the 1.7.7+ order page, legacy Bootstrap 3 panel before that
+            'ifirma_layout' => $this->isModernOrderPage() ? 'card' : 'panel',
+            // tells a merchant (and us) which build is installed when the version number did not change
+            'ifirma_build_stamp' => date('Y-m-d H:i', (int) filemtime(__FILE__)),
             'ifirma_has_receipt' => (bool) $receipt,
             'ifirma_is_issued' => $isIssued,
             'ifirma_is_external' => (bool) ($receipt && $receipt->isExternal()),
@@ -1104,6 +1153,7 @@ class Ifirma extends Module
             'ifirma_candidates' => $candidates,
             'ifirma_resolution' => $resolution,
             'ifirma_delivery_text' => $receipt ? $delivery->describeDelivery($receipt) : '',
+            'ifirma_ksef_text' => ($receipt && $isIssued) ? $ksef->describe($receipt, $order) : '',
             'ifirma_gross' => Validate::isLoadedObject($order) ? (float) $order->total_paid_tax_incl : 0.0,
             'ifirma_pending_request' => $pendingSummary,
             'ifirma_request_diff' => $diff,

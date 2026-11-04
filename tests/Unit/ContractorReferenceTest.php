@@ -1,0 +1,384 @@
+<?php
+/**
+ * SCM iFirma integration module for PrestaShop.
+ *
+ * @author    SCM Jakub Berechowski <admin@seccodesmith.pl>
+ * @copyright 2026 SCM Jakub Berechowski
+ * @license   SecCodeSmith Commercial License v1.3
+ * SPDX-License-Identifier: LicenseRef-SecCodeSmith-Commercial-1.2
+ * See the LICENCE file distributed with this module for the full terms.
+ */
+
+use PHPUnit\Framework\TestCase;
+
+/**
+ * How the document references its contractor: top-level IdentyfikatorKontrahenta / NIPKontrahenta,
+ * never Kontrahent.Identyfikator, plus the learn-back of the contractor iFirma attached.
+ */
+class ContractorReferenceTest extends TestCase
+{
+    use IfirmaContractorMapDb;
+
+    /** @var ScriptedTransport */
+    private $t;
+
+    /** @var IfirmaReceiptService */
+    private $service;
+
+    protected function setUp(): void
+    {
+        IfirmaTestState::resetAll();
+        $this->scriptContractorMapDb();
+        Configuration::updateValue('IFIRMA_CONTRACTOR_SYNC', 0);
+        $this->t = new ScriptedTransport();
+        $client = new IfirmaApiClient('u@example.com', array('faktura' => str_repeat('1', 64)), 'http://ifirma-mock:8001/iapi/', 30, $this->t);
+        $this->service = new IfirmaReceiptService($client, new Module());
+
+        $c = new Customer();
+        $c->id = 5;
+        $c->email = 'a@example.test';
+        Customer::register($c);
+        $a = new Address();
+        $a->id = 7;
+        $a->firstname = 'Jan';
+        $a->lastname = 'K';
+        $a->id_country = 14;
+        Address::register($a);
+    }
+
+    private function order()
+    {
+        $o = new Order();
+        $o->id = 15;
+        $o->id_customer = 5;
+        $o->id_address_invoice = 7;
+        $o->reference = 'ABCDEFGHI';
+        $o->date_add = date('Y-m-d H:i:s');
+        $o->total_paid_tax_incl = 10;
+        $o->details = array(array(
+            'product_name' => 'W',
+            'product_quantity' => 1,
+            'unit_price_tax_incl' => 10,
+            'unit_price_tax_excl' => 10,
+            'tax_rate' => 0,
+        ));
+
+        return $o;
+    }
+
+    private function enableSync()
+    {
+        Configuration::updateValue('IFIRMA_CONTRACTOR_SYNC', 1);
+        $country = new Country();
+        $country->id = 14;
+        $country->iso_code = 'pl';
+        $country->name = 'Polska';
+        Country::register($country);
+    }
+
+    private function docOk()
+    {
+        return array('body' => '{"response":{"Kod":0,"Informacja":"ok","Identyfikator":"77","PelnyNumer":"7/2026"}}');
+    }
+
+    private function docCalls()
+    {
+        $out = array();
+        foreach ($this->t->calls as $c) {
+            if ($c['method'] === 'POST' && substr(parse_url($c['url'], PHP_URL_PATH), -16) === 'fakturakraj.json') {
+                $out[] = $c;
+            }
+        }
+
+        return $out;
+    }
+
+    private function storedPayload()
+    {
+        $rows = IfirmaTestState::objects('ifirma_receipt');
+        $row = reset($rows);
+
+        return json_decode($row['request_payload'], true);
+    }
+
+    /** Contractor record iFirma returns for the buyer, stored under $identifier. */
+    private function foundContractor($identifier)
+    {
+        $row = array_merge($this->service->buildContractor($this->order()), array('Identyfikator' => $identifier));
+
+        return array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array($row)))));
+    }
+
+    /** Sent document body (decoded) of the single document POST. */
+    private function sentDocument()
+    {
+        $docs = $this->docCalls();
+        $this->assertCount(1, $docs);
+
+        return json_decode($docs[0]['body'], true);
+    }
+
+    private function urls()
+    {
+        return array_column($this->t->calls, 'url');
+    }
+
+    // ---- a. reference shape ---------------------------------------------------------------
+
+    public function testSentPayloadNeverCarriesNestedContractorIdentifier()
+    {
+        $this->enableSync();
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', $this->foundContractor('PS-C5'));
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
+
+        $this->service->createReceipt($this->order());
+
+        $sent = $this->sentDocument();
+        $this->assertSame('PS-C5', $sent['IdentyfikatorKontrahenta']);
+        $this->assertArrayHasKey('Kontrahent', $sent);
+        $this->assertArrayNotHasKey('Identyfikator', $sent['Kontrahent']);
+        $this->assertStringNotContainsString('"Identyfikator":"PS-C5","Nazwa"', $this->docCalls()[0]['body']);
+    }
+
+    // ---- b. NIPKontrahenta -----------------------------------------------------------------
+
+    public function testBusinessBuyerWithDashedNipSendsNipKontrahenta()
+    {
+        $address = Address::$instances[7];
+        $address->company = 'ACME Sp. z o.o.';
+        $address->vat_number = '123-456-78-90';
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
+
+        $this->service->createReceipt($this->order());
+
+        $sent = $this->sentDocument();
+        $this->assertSame('1234567890', $sent['NIPKontrahenta']);
+        $this->assertSame('1234567890', $sent['Kontrahent']['NIP']);
+    }
+
+    public function testPrivatePersonSendsNoNipKontrahenta()
+    {
+        $address = Address::$instances[7];
+        $address->company = '';
+        $address->vat_number = '';
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
+
+        $this->service->createReceipt($this->order());
+
+        $sent = $this->sentDocument();
+        $this->assertArrayNotHasKey('NIPKontrahenta', $sent);
+    }
+
+    public function testForeignVatIdSendsNoNipKontrahenta()
+    {
+        $address = Address::$instances[7];
+        $address->company = 'ACME Sp. z o.o.';
+        $address->vat_number = 'PL1234567890';
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
+
+        $this->service->createReceipt($this->order());
+
+        $sent = $this->sentDocument();
+        $this->assertArrayNotHasKey('NIPKontrahenta', $sent);
+    }
+
+    // ---- c. Kod 201 about the contractor reference ----------------------------------------
+
+    public function testContractorReferenceKodRetriesOnceWithoutIdentifier()
+    {
+        $this->enableSync();
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', $this->foundContractor('PS-C5'));
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"IdentyfikatorKontrahenta: wartość nieprawidłowa"}}'));
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
+
+        $receipt = $this->service->createReceipt($this->order());
+
+        $docs = $this->docCalls();
+        $this->assertCount(2, $docs);
+        $this->assertSame('PS-C5', json_decode($docs[0]['body'], true)['IdentyfikatorKontrahenta']);
+        $this->assertArrayNotHasKey('IdentyfikatorKontrahenta', json_decode($docs[1]['body'], true));
+        $this->assertSame('created', $receipt->status);
+        $this->assertSame('fallback', $this->storedPayload()['_contractor']['action']);
+    }
+
+    public function testSecondContractorReferenceKodIsReportedAsError()
+    {
+        $this->enableSync();
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', $this->foundContractor('PS-C5'));
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"IdentyfikatorKontrahenta: wartość nieprawidłowa"}}'));
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"IdentyfikatorKontrahenta: nadal nieprawidłowa"}}'));
+
+        try {
+            $this->service->createReceipt($this->order());
+            $this->fail('expected exception');
+        } catch (Exception $e) {
+            $this->assertStringContainsString('nadal nieprawidłowa', $e->getMessage());
+        }
+
+        $this->assertCount(2, $this->docCalls());
+        $rows = IfirmaTestState::objects('ifirma_receipt');
+        $row = reset($rows);
+        $this->assertSame('error', $row['status']);
+    }
+
+    // ---- c2. Kod 201 retry rules (length and wording) --------------------------------------
+
+    public function testKod201NamingContractorIdentifierLimitRetriesOnceWithoutIdentifier()
+    {
+        $this->enableSync();
+        IfirmaContractorMap::link(5, 'PS-C000005', 'import-nip', 'Jan K');
+        $this->t->queue('GET', '#kontrahenci/id/PS-C000005\.json#', $this->foundContractor('PS-C000005'));
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"Identyfikator kontrahenta może mieć maksymalnie 15 znaków."}}'));
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
+
+        $receipt = $this->service->createReceipt($this->order());
+
+        $docs = $this->docCalls();
+        $this->assertCount(2, $docs);
+        $this->assertSame('PS-C000005', json_decode($docs[0]['body'], true)['IdentyfikatorKontrahenta']);
+        $this->assertArrayNotHasKey('IdentyfikatorKontrahenta', json_decode($docs[1]['body'], true));
+        $this->assertSame('created', $receipt->status);
+        $this->assertSame('fallback', $this->storedPayload()['_contractor']['action']);
+    }
+
+    public function testSixteenCharacterReferenceRetriesOnEmptyKod201()
+    {
+        $this->enableSync();
+        IfirmaContractorMap::link(5, 'EC_JACEK ORZECHO', 'import-nip', 'Jan K');
+        $this->t->queue('GET', '#kontrahenci/id/EC_JACEK%20ORZECHO\.json#', $this->foundContractor('EC_JACEK ORZECHO'));
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":201,"Informacja":""}}'));
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('status' => 0, 'error' => 'timeout'));
+
+        $receipt = $this->service->createReceipt($this->order());
+
+        $docs = $this->docCalls();
+        $this->assertCount(2, $docs);
+        $this->assertSame('EC_JACEK ORZECHO', json_decode($docs[0]['body'], true)['IdentyfikatorKontrahenta']);
+        $this->assertArrayNotHasKey('IdentyfikatorKontrahenta', json_decode($docs[1]['body'], true));
+        $this->assertSame('created', $receipt->status);
+        $this->assertSame('77', (string) $receipt->ifirma_id);
+    }
+
+    public function testUnrelatedKod201WithShortReferenceIsNotRetried()
+    {
+        $this->enableSync();
+        IfirmaContractorMap::link(5, 'PS-C007', 'import-nip', 'Jan K');
+        $this->t->queue('GET', '#kontrahenci/id/PS-C007\.json#', $this->foundContractor('PS-C007'));
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"Pozycje: brak pozycji"}}'));
+
+        try {
+            $this->service->createReceipt($this->order());
+            $this->fail('expected exception');
+        } catch (Exception $e) {
+            $this->assertStringContainsString('Pozycje: brak pozycji', $e->getMessage());
+        }
+
+        $this->assertCount(1, $this->docCalls());
+        $rows = IfirmaTestState::objects('ifirma_receipt');
+        $row = reset($rows);
+        $this->assertSame('error', $row['status']);
+        $this->assertStringContainsString('Pozycje: brak pozycji', $row['last_error']);
+    }
+
+    // ---- d. learning the contractor iFirma attached ----------------------------------------
+
+    public function testAttachedContractorIsLearnedFromIssuedDocument()
+    {
+        $this->enableSync();
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('status' => 0, 'error' => 'timeout'));
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"ok","Identyfikator":"555","PelnyNumer":"555/2026"}}'));
+        $this->t->queue('GET', '#fakturakraj/555\.json#', array('body' => json_encode(array('response' => array(
+            'Kod' => 0,
+            'Identyfikator' => 555,
+            'Kontrahent' => array('Nazwa' => 'Jan K', 'Identyfikator' => 'AUTO-77'),
+        )))));
+
+        $receipt = $this->service->createReceipt($this->order());
+
+        $this->assertSame(array('GET', 'POST', 'GET'), array_column($this->t->calls, 'method'));
+        $this->assertStringContainsString('fakturakraj/555.json', $this->t->calls[2]['url']);
+        $map = IfirmaContractorMap::getByCustomer(5);
+        $this->assertSame('AUTO-77', $map->ifirma_identifier);
+        $this->assertSame('document', $map->matched_by);
+        $this->assertSame('AUTO-77', $this->storedPayload()['_contractor']['document_identifier']);
+        $this->assertSame('created', $receipt->status);
+    }
+
+    // ---- e. long (16-character) mapped identifier ------------------------------------------
+
+    public function testLongMappedIdentifierIsReadBackAndRelinkedWhenIssuedUnderAnother()
+    {
+        $this->enableSync();
+        IfirmaContractorMap::link(5, 'EC_JACEK ORZECHO', 'import-nip', 'Jan K');
+        $this->t->queue('GET', '#kontrahenci/id/EC_JACEK%20ORZECHO\.json#', $this->foundContractor('EC_JACEK ORZECHO'));
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => json_encode(array('response' => array(
+            'Kod' => 0,
+            'Identyfikator' => 77,
+            'Kontrahent' => array('Nazwa' => 'Jan K', 'Identyfikator' => 'AUTO-78'),
+        )))));
+
+        $this->service->createReceipt($this->order());
+
+        $this->assertSame(array('GET', 'POST', 'GET'), array_column($this->t->calls, 'method'));
+        $this->assertSame('EC_JACEK ORZECHO', $this->sentDocument()['IdentyfikatorKontrahenta']);
+        $this->assertStringContainsString('fakturakraj/77.json', $this->t->calls[2]['url']);
+        $map = IfirmaContractorMap::getByCustomer(5);
+        $this->assertSame('AUTO-78', $map->ifirma_identifier);
+        $this->assertSame('document', $map->matched_by);
+    }
+
+    public function testLongMappedIdentifierKeepsMatchedByWhenIssuedUnderSameIdentifier()
+    {
+        $this->enableSync();
+        IfirmaContractorMap::link(5, 'EC_JACEK ORZECHO', 'import-nip', 'Jan K');
+        $this->t->queue('GET', '#kontrahenci/id/EC_JACEK%20ORZECHO\.json#', $this->foundContractor('EC_JACEK ORZECHO'));
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => json_encode(array('response' => array(
+            'Kod' => 0,
+            'Identyfikator' => 77,
+            'Kontrahent' => array('Nazwa' => 'Jan K', 'Identyfikator' => 'EC_JACEK ORZECHO'),
+        )))));
+
+        $this->service->createReceipt($this->order());
+
+        $this->assertStringContainsString('fakturakraj/77.json', $this->t->calls[2]['url']);
+        $map = IfirmaContractorMap::getByCustomer(5);
+        $this->assertSame('EC_JACEK ORZECHO', $map->ifirma_identifier);
+        $this->assertSame('import-nip', $map->matched_by);
+    }
+
+    // ---- f. short identifier: no detail read ----------------------------------------------
+
+    public function testShortReferencedIdentifierMakesNoDetailCall()
+    {
+        $this->enableSync();
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', $this->foundContractor('PS-C5'));
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
+
+        $this->service->createReceipt($this->order());
+
+        $this->assertSame(array('GET', 'POST'), array_column($this->t->calls, 'method'));
+        foreach ($this->urls() as $url) {
+            $this->assertStringNotContainsString('fakturakraj/77.json', $url);
+        }
+    }
+
+    // ---- g. failed detail read never blocks issuance ---------------------------------------
+
+    public function testFailedDetailReadDoesNotBlockIssuance()
+    {
+        $this->enableSync();
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('status' => 0, 'error' => 'timeout'));
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"ok","Identyfikator":"555","PelnyNumer":"555/2026"}}'));
+        $this->t->queue('GET', '#fakturakraj/555\.json#', array('status' => 0, 'error' => 'timeout'));
+
+        $receipt = $this->service->createReceipt($this->order());
+
+        $this->assertSame('created', $receipt->status);
+        $this->assertSame('555', (string) $receipt->ifirma_id);
+        $this->assertFalse(IfirmaContractorMap::getByCustomer(5) ? true : false);
+        $this->assertArrayNotHasKey('document_identifier', $this->storedPayload()['_contractor']);
+    }
+}

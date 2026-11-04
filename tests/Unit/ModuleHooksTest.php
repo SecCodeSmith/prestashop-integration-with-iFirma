@@ -267,6 +267,25 @@ class ModuleHooksTest extends TestCase
         $this->assertStringContainsString('token=admin-token-AdminIfirma', $v['ifirma_ajax_url']);
     }
 
+    public function testAdminPanelAssignsTheKsefText()
+    {
+        $this->makeReceipt(array('ksef_status' => 'WYSLANA', 'ksef_sent_at' => '2026-11-02 20:30:00'));
+
+        $this->module->hookDisplayAdminOrderMainBottom(array('id_order' => 15));
+        $v = $this->vars();
+
+        $this->assertSame('sent 2026-11-02 20:30, awaiting KSeF', $v['ifirma_ksef_text']);
+    }
+
+    public function testAdminPanelKsefTextForAPrivateBuyer()
+    {
+        $this->makeReceipt();
+
+        $this->module->hookDisplayAdminOrderMainBottom(array('id_order' => 15));
+
+        $this->assertSame('not sent (private buyer (B2B mode))', $this->vars()['ifirma_ksef_text']);
+    }
+
     public function testAdminPanelStateDerivation()
     {
         $cases = array(
@@ -292,6 +311,7 @@ class ModuleHooksTest extends TestCase
         $this->assertFalse($v['ifirma_has_receipt']);
         $this->assertTrue($v['ifirma_can_create']);
         $this->assertTrue($v['ifirma_configured']);
+        $this->assertSame(1, preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/', $v['ifirma_build_stamp']));
         $this->assertFalse($v['ifirma_can_issue_anyway']);
     }
 
@@ -386,6 +406,37 @@ class ModuleHooksTest extends TestCase
         $this->assertSame(60, $values['IFIRMA_DUPLICATE_WINDOW_DAYS']);
     }
 
+    public function testConfigFormHasTheKsefModeSelect()
+    {
+        $this->module->getContent();
+        $inputs = $this->formInputNames();
+
+        $this->assertArrayHasKey('IFIRMA_KSEF_MODE', $inputs);
+        $this->assertSame('select', $inputs['IFIRMA_KSEF_MODE']['type']);
+        $this->assertStringContainsString('cannot be withdrawn', $inputs['IFIRMA_KSEF_MODE']['desc']);
+        $modes = array();
+        foreach ($inputs['IFIRMA_KSEF_MODE']['options']['query'] as $o) {
+            $modes[] = $o['id'];
+        }
+        $this->assertSame(array('b2b', 'all', 'off'), $modes);
+        $this->assertSame('b2b', HelperForm::$lastHelper->fields_value['IFIRMA_KSEF_MODE']);
+    }
+
+    public function testKsefModeIsSavedNormalised()
+    {
+        Tools::$values = $this->validPost(array('IFIRMA_KSEF_MODE' => 'off'));
+        $this->module->getContent();
+        $this->assertSame('off', Configuration::get('IFIRMA_KSEF_MODE'));
+
+        Tools::$values = $this->validPost(array('IFIRMA_KSEF_MODE' => 'ALL'));
+        $this->module->getContent();
+        $this->assertSame('all', Configuration::get('IFIRMA_KSEF_MODE'));
+
+        Tools::$values = $this->validPost(array('IFIRMA_KSEF_MODE' => 'whenever'));
+        $this->module->getContent();
+        $this->assertSame('b2b', Configuration::get('IFIRMA_KSEF_MODE'));
+    }
+
     public function testCronInfoShowsTokenAndUrl()
     {
         $this->module->getContent();
@@ -428,6 +479,51 @@ class ModuleHooksTest extends TestCase
         $this->assertSame(60, Configuration::get('IFIRMA_RATE_MAX_PER_MIN'));
         $this->assertSame('fakturakraj', Configuration::get('IFIRMA_DOC_TYPE'));
         $this->assertSame(5, Configuration::get('IFIRMA_AUTO_CREATE_STATE'));
+    }
+
+    public function testSignatureSelectOffersTheFourCodes()
+    {
+        $this->module->getContent();
+        $inputs = $this->formInputNames();
+
+        $this->assertArrayHasKey('IFIRMA_SIGNATURE_TYPE', $inputs);
+        $ids = array();
+        foreach ($inputs['IFIRMA_SIGNATURE_TYPE']['options']['query'] as $o) {
+            $ids[] = $o['id'];
+        }
+        $this->assertSame(array('BPO', 'BWO', 'OUP', 'UPO'), $ids);
+        $this->assertSame('BPO', HelperForm::$lastHelper->fields_value['IFIRMA_SIGNATURE_TYPE']);
+    }
+
+    public function testPostedSignatureTypeIsNormalisedOnSave()
+    {
+        Tools::$values = $this->validPost(array('IFIRMA_SIGNATURE_TYPE' => 'brk'));
+        $out = $this->module->getContent();
+
+        $this->assertStringContainsString('<confirmation>', $out);
+        $this->assertSame('BPO', Configuration::get('IFIRMA_SIGNATURE_TYPE'));
+    }
+
+    public function testDocumentTypeSelectOffersOnlyFakturakraj()
+    {
+        $this->module->getContent();
+        $inputs = $this->formInputNames();
+
+        $this->assertArrayHasKey('IFIRMA_DOC_TYPE', $inputs);
+        $ids = array();
+        foreach ($inputs['IFIRMA_DOC_TYPE']['options']['query'] as $o) {
+            $ids[] = $o['id'];
+        }
+        $this->assertSame(array('fakturakraj'), $ids);
+    }
+
+    public function testPostedParagonDocumentTypeIsStoredAsFakturakraj()
+    {
+        Tools::$values = $this->validPost(array('IFIRMA_DOC_TYPE' => 'fakturaparagon'));
+        $out = $this->module->getContent();
+
+        $this->assertStringContainsString('<confirmation>', $out);
+        $this->assertSame('fakturakraj', Configuration::get('IFIRMA_DOC_TYPE'));
     }
 
     public function testInvalidNotifyEmailIsRejectedAndNothingSaved()

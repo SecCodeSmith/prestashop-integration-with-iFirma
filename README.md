@@ -22,7 +22,7 @@ header  = Authentication: IAPIS user=<user>, hmac-sha1=<hash>
 
 | Action | HTTP | Endpoint | Key |
 |--------|------|----------|-----|
-| Create receipt | `POST` | `iapi/fakturaparagon.json` (or `fakturakraj.json`) | `faktura` |
+| Create receipt | `POST` | `iapi/fakturakraj.json` (`fakturaparagon.json` is disabled for now) | `faktura` |
 | Download PDF | `GET` | `iapi/fakturaparagon/{id}.pdf` (`?typ=dup` = duplicate) | `faktura` |
 | Register payment (status) | `POST` | `iapi/faktury/wplaty/{type}/{id}.json` body `{"Kwota": …}` | `faktura` |
 | List documents (filters) | `GET` | `iapi/faktury.json?dataOd=…&dataDo=…&iloscNaStronie=…` (all three always sent) | `faktura` |
@@ -70,15 +70,16 @@ the order → payload mapping and business rules live in
    - **iFirma login** – your account login / e‑mail.
    - **API key: faktura** – the hexadecimal *faktura* key from
      iFirma → *Konfiguracja → Abonent → API → Klucze*.
-   - **Document type** – *Invoice to receipt* (`fakturaparagon`, default) or
-     *Domestic VAT invoice* (`fakturakraj`).
+   - **Document type** – *Domestic VAT invoice* (`fakturakraj`), the only enabled and default
+     type. *Invoice to receipt* (`fakturaparagon`) is disabled for now; a stored `fakturaparagon`
+     value is treated as `fakturakraj`.
    - **Payment registration type** – URL token for the payment endpoint
      (default `prz_faktura_kraj`; adjust to your document/payment type).
    - Optionally an **Auto‑create on order status** to issue documents automatically.
    - **API key: abonent** (optional) – shows today's API usage on this page ("used/granted").
    - **Delivery channel** – *Shop e‑mail with PDF attached* (default), *iFirma e‑mail*
-     (fakturakraj and other supported invoice types only; receipts fall back to the shop
-     e‑mail) or *Do not send*. With the default channel, documents are e‑mailed to customers
+     (available for every created document, since `fakturakraj` is a documented send type) or
+     *Do not send*. With the default channel, documents are e‑mailed to customers
      automatically on the next trigger; choose *Do not send* to disable. **E‑mail text** adds an
      optional message (up to 1000 characters).
    - **Duplicate check**, **window (days, 1‑365)** and **amount tolerance** – look for an existing
@@ -105,10 +106,10 @@ the outcome of every step is stored on the order's receipt record:
 2. **Duplicate guard** - looks in iFirma for a document that already belongs to the order
    (see "Duplicate guard"). A confirmed match is adopted instead of creating a second
    document; an unconfirmed match stops the run.
-3. **Issue** - creates `fakturaparagon` (default) or `fakturakraj` (setting
-   `IFIRMA_DOC_TYPE`) and stores the returned `Identyfikator`. If iFirma answers `Kod 201`
-   naming `DodatkoweUwagi`, the request is repeated once without that object (the
-   reference stays in `Uwagi`); any other rejection is recorded as an error.
+3. **Issue** - creates a `fakturakraj` document (the only enabled type, see `IFIRMA_DOC_TYPE`)
+   and stores the returned `Identyfikator`. If iFirma answers `Kod 201` naming `DodatkoweUwagi`,
+   or `Kod 200` while `DodatkoweUwagi` was sent, the request is repeated once without that object
+   (the reference stays in `Uwagi`); any other rejection is recorded as an error.
 4. **Number** - the document number is read from iFirma and stored.
 5. **Deliver** - the document is sent through the configured channel (see "Delivery").
    A delivery failure does not undo the issued document; use **Send again**.
@@ -129,7 +130,7 @@ A failure never breaks the PrestaShop status change: exceptions are logged
 | State | Meaning | What to do |
 |---|---|---|
 | `unknown` | The create request got no usable answer (timeout, transport error), so the document may or may not exist in iFirma. The module never repeats the create blindly. | Click **Create Receipt** again: the duplicate guard first looks for the document; if it exists it is adopted, if nothing is found a new one is created. |
-| `duplicate_suspected` | The guard found a matching document it could not confirm (stopped at the **guard** step). Nothing was created. | Open the candidates in the panel and **Link** the right one, or choose **Issue anyway** after checking iFirma. |
+| `duplicate_suspected` | The guard found a document of the same buyer with the same total, sale date and products that it could not confirm by the order reference (stopped at the **guard** step). Nothing was created. | Open the candidates in the panel and **Link** the right one, or choose **Issue anyway** after checking iFirma. Orders blocked by an earlier module version, which matched on the amount alone, can simply be re-run with **Create Receipt**: the guard runs again with the current rules. |
 | `held` | A customer data-change request is pending (stopped at the **hold** step). | Approve or reject the request under the order; the pipeline then runs automatically when the trigger status was already reached, or click **Create Receipt**. |
 | `error` | iFirma rejected the document or could not be reached before anything was sent; the reason is in the last error. | Fix the cause (data, credentials, limits) and click **Create Receipt**. |
 
@@ -188,23 +189,36 @@ hand. How it works:
 3. **List window.** `faktury.json` is queried from one day before the order date to today
    (always with `dataOd`/`dataDo`, 100 rows per page, paged until a short page): first by
    contractor identifier (`PS-C{id_customer}`), then by `nipKontrahenta` when the order has
-   a NIP, then unfiltered if the window is within `IFIRMA_DUPLICATE_WINDOW_DAYS`.
-4. **Identity match.** A listed row is a candidate only if it is not a draft, is a
-   `prz_faktura_paragon` / `prz_faktura_kraj`, has the order currency and its gross is
-   within `IFIRMA_DUPLICATE_AMOUNT_TOLERANCE` of the order total.
-5. **Detail confirmation.** The detail of each candidate (newest first, at most 10) is
-   searched for the order reference.
+   a NIP, then unfiltered if the window is within `IFIRMA_DUPLICATE_WINDOW_DAYS`. When the customer is linked to an iFirma contractor,
+   that identifier is used instead of `PS-C{id_customer}`, and an unknown-contractor answer
+   (Kod 201) from iFirma counts as no documents for that query.
+4. **Buyer and amount match.** A listed row is a candidate only if it is not a draft, is a
+   `prz_faktura_paragon` / `prz_faktura_kraj`, has the order currency, its gross is within
+   `IFIRMA_DUPLICATE_AMOUNT_TOLERANCE` of the order total, and it belongs to the order's
+   buyer: its contractor identifier equals the one the module would reference for the
+   customer (the stored link or `PS-C{id_customer}`), or its NIP equals the invoice-address
+   NIP, or its contractor name equals the buyer name the module would send (company, or
+   first and last name; compared ignoring case and extra spaces). Documents of other
+   customers are never candidates, even when they have the same total.
+5. **Detail confirmation and verification.** The detail of each candidate (newest first,
+   at most 10) is searched for the order reference. A candidate without the reference
+   stays a candidate only when its sale date (`DataSprzedazy`) is the order date and every
+   product line of the order appears among its positions with the same name and quantity
+   (extra positions such as shipping are ignored). A candidate that fails either check is
+   not a duplicate. A detail that cannot be read, or that lacks the sale date or the
+   positions, keeps the candidate because it cannot be ruled out.
 
 Outcomes:
 
 - **Adopt** - a candidate contains the order reference: it becomes the order receipt
   (source *external*, status *paid* when its paid amount covers the gross, no automatic
   delivery) and no new document is created.
-- **Suspected** - candidates exist but none contains the reference: nothing is created,
-  the receipt gets status *duplicate suspected* and the candidates are listed in the
-  admin order panel (the customer sees no detail). The admin chooses **Link** (adopt that
-  candidate) or **Issue anyway** (one-time bypass of the guard for that order); both
-  actions are recorded on the receipt.
+- **Suspected** - candidates of the buyer exist, none contains the reference, and at least
+  one matches the sale date and products (or could not be verified): nothing is created,
+  the receipt gets status *duplicate suspected* and the candidates are listed with their
+  issue date and sale date in the admin order panel (the customer sees no detail). The
+  admin chooses **Link** (adopt that candidate) or **Issue anyway** (one-time bypass of the
+  guard for that order); both actions are recorded on the receipt.
 - **Inconclusive** - the list query failed (network, authentication, rate limit):
   automatic issuance aborts and records the error; manual issuance shows the error and
   offers **Issue anyway**.
@@ -248,12 +262,36 @@ Customer texts are translatable (`translations/pl.php` ships Polish).
 After a document is issued the module e-mails it to the order customer as the last step of the pipeline and records the outcome (status, channel, timestamp, error) on the receipt. The channel is set with `IFIRMA_SEND_CHANNEL`:
 
 - `shop_mail` (default): the PDF is fetched from iFirma and attached to the `receipt_issued` e-mail sent by the shop mail system, in the order language (Polish and English templates in `mails/`; other languages fall back to English).
-- `ifirma_mail`: iFirma sends the e-mail itself (`POST {type}/send/{id}.json`, recipient `SkrzynkaEmailOdbiorcy`, text from `IFIRMA_SEND_TEXT`, cut to 1000 characters; only `Kod` 0 counts as success). Only the documented types are supported (`fakturakraj` and the other invoice types, **not** `fakturaparagon`); for unsupported types the module automatically falls back to shop mail and records the channel as `shop_mail_fallback`.
+- `ifirma_mail`: iFirma sends the e-mail itself (`POST {type}/send/{id}.json`, recipient `SkrzynkaEmailOdbiorcy`, text from `IFIRMA_SEND_TEXT`, cut to 1000 characters; only `Kod` 0 counts as success). Only the documented types are supported (`fakturakraj` is a documented send type and is the only type created, so this channel is available for every document). If a type without iFirma send support is ever enabled again, such as `fakturaparagon`, the module automatically falls back to shop mail and records the channel as `shop_mail_fallback`.
 - `none`: nothing is sent and delivery is recorded as skipped.
 
 Documents adopted from iFirma (created elsewhere) are never auto-delivered; they are recorded as skipped (external). A failed delivery never undoes the issuance; the error is shown only in the back office. Use **Send again** in the order panel to resend any issued document, including adopted ones, through the configured channel (refused with a message when the channel is `none`).
 
 > Warning: with the default channel, documents start being e-mailed to customers on the next trigger. Select `none` first if you do not want that.
+
+## KSeF (e-invoicing)
+
+From 2026, B2B invoices must be submitted to the National e-Invoicing System (KSeF). The module can submit issued invoices through iFirma (`POST {type}/ksef/send/{id}.json`, body `{"DataWysylki": null}`, meaning send now). The setting is `IFIRMA_KSEF_MODE`:
+
+- `b2b` (default): submit invoices whose buyer has a NIP. The buyer NIP is read from the stored request payload (`Kontrahent.NIP`), and when the payload has none, from the order's invoice address. Invoices to private buyers are skipped.
+- `all`: submit every issued invoice, including invoices to private buyers. Private invoices are not required to be sent to KSeF, so use this only deliberately.
+- `off`: never submit automatically. The manual button stays available.
+
+Any other stored value is treated as `b2b`.
+
+**Pipeline step `ksef`.** The issuing pipeline runs the `ksef` step between `number` and `deliver`. The step is skipped with a recorded reason when submission is disabled (`off`), the buyer is private in `b2b` mode, the document is already in KSeF, or the document type does not support KSeF submission. When iFirma accepts the submission (`Kod` 0), the receipt records `ksef_status` = `WYSLANA` and `ksef_sent_at`. When the submission fails, the step is non-blocking: delivery still runs, the document stays issued, the result message carries `KSeF: <error>`, and the receipt records `ksef_status` = `BLAD` and `ksef_error`.
+
+**Order panel.** The KSeF row shows one state: not sent (with the reason), sent at (awaiting iFirma), accepted (with the KSeF number), or error (with the message). **Send to KSeF** submits the document regardless of the mode. It is never offered for a document that is already accepted.
+
+**Customer order page.** The KSeF number is shown when one is present. KSeF errors are not shown to the customer.
+
+**Status values.**
+
+- `WYSLANA`: the module submitted the invoice and iFirma has not yet reported a KSeF status. The marker is kept until status sync receives a non-empty `KsefStatus`.
+- `PRZYJETA`: iFirma reports that KSeF accepted the invoice; `KsefNumer` is stored with it.
+- `BLAD`: the last submission failed. The message is in `ksef_error` and in the order panel.
+
+> Warning: a KSeF submission cannot be withdrawn through the API or the module. Before enabling `all`, decide whether private-buyer invoices should go to KSeF, and check whether the iFirma account already submits invoices to KSeF on its own; the module does not detect that setting, so a second submission is possible.
 
 ## Data model
 
@@ -294,7 +332,8 @@ The schema is defined once in `classes/IfirmaSchema.php` and used by
 |---|---|
 | `IFIRMA_BASE_URL` | iFirma API base URL |
 | `IFIRMA_USER`, `IFIRMA_KEY_FAKTURA`, `IFIRMA_KEY_ABONENT`, `IFIRMA_KEY_RACHUNEK` | empty |
-| `IFIRMA_DOC_TYPE` | `fakturaparagon` |
+| `IFIRMA_DOC_TYPE` | `fakturakraj` (the only enabled type; `fakturaparagon` is disabled for now and normalised to `fakturakraj`) |
+| `IFIRMA_SIGNATURE_TYPE` (new) | `BPO`: recipient signature (`RodzajPodpisuOdbiorcy`), one of `OUP` (osoba upoważniona do otrzymania faktury VAT), `UPO` (upoważnienie), `BPO` (bez podpisu odbiorcy) or `BWO` (bez podpisu odbiorcy i wystawcy). Any other value, including the old `BRK`, is normalised to `BPO` when saved and when the payload is built. |
 | `IFIRMA_PAYMENT_METHOD` | `PRZ` |
 | `IFIRMA_PAYMENT_METHOD_MODE` (new) | `order` |
 | `IFIRMA_PAYMENT_METHOD_MAP` (new) | empty |
@@ -305,6 +344,7 @@ The schema is defined once in `classes/IfirmaSchema.php` and used by
 | `IFIRMA_MARK_PAID_ON_CREATE` | `1` |
 | `IFIRMA_SEND_CHANNEL` (new) | `shop_mail` |
 | `IFIRMA_SEND_TEXT` (new) | empty |
+| `IFIRMA_KSEF_MODE` (new) | `b2b` (`b2b`, `all` or `off`; any other value is treated as `b2b`) |
 | `IFIRMA_DUPLICATE_CHECK` (new) | `1` |
 | `IFIRMA_DUPLICATE_WINDOW_DAYS` (new) | `60` |
 | `IFIRMA_DUPLICATE_AMOUNT_TOLERANCE` (new) | `0.01` |
@@ -363,6 +403,7 @@ Each customer gets one link. A customer that already has a link keeps it unless 
 ### Matching while issuing a document
 
 For customers that are not in the import, the module looks for an existing contractor when it issues a document, in this order: the stored link (verified in iFirma; dropped when the contractor no longer exists), the module contractor `PS-C<id>`, a contractor with exactly the order NIP (`GET kontrahenci/<NIP>.json`; with several results the one with the same name, then the same postcode), and a contractor whose name equals the buyer name and whose e-mail or postcode confirms it. Name matching without a confirming e-mail or postcode is deliberately refused: a document on the wrong contractor is worse than one extra contractor. When nothing matches, `PS-C<id>` is created as before. iFirma returns at most 20 search results and offers no contractor list, which is why the export import exists. A failing search (network error, rejected signature) counts as "no match" and never blocks issuing. A linked contractor is updated with the shop's buyer data only when those fields differ (the same merge as for `PS-C<id>`), and the order panel shows the linked contractor and how it was matched.
+Because `IdentyfikatorKontrahenta` accepts at most 15 characters, a link whose identifier is longer is still sent as-is and, when iFirma attaches a different contractor to the issued document, that contractor is stored as the link with match type `document` (label "attached by iFirma to an issued document").
 
 ### Forgetting links
 
@@ -441,8 +482,13 @@ an order **before** the document is issued. Enabled by `IFIRMA_ALLOW_DATA_REQUES
 - The **payment registration type token** varies per iFirma document/payment type.
   `prz_faktura_kraj` is a sensible default; verify yours against
   <https://api.ifirma.pl/rejestrowanie-wplat-do-faktur/> if the status update is rejected.
-- Product lines use the **gross** unit price (`LiczOd = BRT`); VAT is taken from
-  each order line’s tax rate (`0%` lines are marked `ZW`). Shipping is added as a line.
+- Product lines use the **gross** unit price (`LiczOd = BRT`). Shipping is added as a line.
+- **VAT rates on positions.** Every position is sent with `TypStawkiVat` `PRC`, never `ZW`: the
+  fakturakraj table requires `PKWiU` for `ZW` positions and the shop holds no PKWiU codes, so 0%
+  lines are sent as `PRC` with `StawkaVat` 0. The rate comes from the order line's stored tax rate
+  when present (otherwise from gross/net) and is snapped to the documented values 0, 0.05, 0.08 and
+  0.23 when it is within half a percentage point, so rounding noise (for example 7.99%) becomes
+  0.08. A rate further away is sent unchanged so that iFirma reports it.
 - Business customers (company + VAT/NIP on the invoice address) are sent as
   `OsobaFizyczna = false` with their NIP; everyone else as a private person.
 - The contractor identifier the module creates is `PS-C{id_customer}` (at most 15 characters,
@@ -506,14 +552,35 @@ With *Template compilation* set to "Never recompile template files" (the common 
 PrestaShop keeps serving the old admin panel and customer templates until the cache is cleared, even though
 the PHP code is already new. The module version shown in the panel diagnostics tells you which code runs.
 
-**`Nie znaleziono kontrahenta o zadanym identyfikatorze` (Kod 201).** iFirma only accepts a
-`Kontrahent.Identyfikator` that already exists in the account and creates a contractor itself only when the
-identifier is absent. Version 1.1.0 registers the contractor `PS-C<customer id>` before issuing (see
+**`Nie znaleziono kontrahenta o zadanym identyfikatorze` (Kod 201).** iFirma looks an existing contractor up
+through the document's top-level `IdentyfikatorKontrahenta` field, then by the buyer's NIP (`NIPKontrahenta`),
+and otherwise creates a contractor from the `Kontrahent` data. The module never sends `Kontrahent.Identyfikator`.
+`IdentyfikatorKontrahenta` accepts at most 15 characters (`NIPKontrahenta` 13), so a contractor whose identifier is longer (for example an
+`EC_`-prefixed name created by another integration) cannot be referenced. In that case the module still sends it; when iFirma ignores or rejects it, the document gets
+the contractor iFirma attaches or creates, and the module records that one on
+the order panel as "attached by iFirma to an issued document"; later orders of that customer reuse it. If iFirma
+rejects a referenced identifier with this message, the module retries once without it and reports a second
+rejection as an error. Version 1.1.0 registers the contractor `PS-C<customer id>` before issuing (see
 "Notes & assumptions") and falls back to a document without identifier when that fails. If you still see
 this message: (1) confirm the module version is 1.1.0 and the cache was cleared; (2) open the order's iFirma
 panel, expand **Diagnostics: last iFirma request and response**, and check the *Contractor step* line and the
 request body; (3) as a workaround, disable *Register the customer as an iFirma contractor* in the module
 settings so every document is created without an identifier.
+
+**`Zatrzymano na kroku „guard” (inconclusive)` / "stopped at the guard step".** Before issuing, the duplicate guard
+lists the customer's recent iFirma documents with `faktury.json?kontrahent=<identifier>`. When the identifier does
+not exist in the iFirma account (for example `PS-C<customer id>` of a customer that was never registered), iFirma
+answers this list call with Kod 201 "Nie znaleziono kontrahenta o zadanym identyfikatorze" instead of an empty list.
+Older builds treated every failed list call as inconclusive, so the order stopped at the guard step and no document
+was attempted. Builds from 2026-11-02 19:30 onward treat this answer, for the filtered query only, as "no documents for
+that contractor" and continue with the NIP query and the unfiltered window query. Other failures (network,
+authentication, rate limit, or a Kod 201 about something else) still stop the pipeline. On an older build, install the
+new module zip and clear the PrestaShop cache. As a manual workaround for one order, use **Wystaw mimo to / Issue
+anyway** in the order's iFirma panel; it bypasses the duplicate guard once for that order and is recorded on the receipt.
+
+**`Niepoprawna zawartość żądania - nie można utworzyć obiektu na podstawie zawartości żądania` (Kod 200).** iFirma could not map the JSON sent to it onto a document object. The message never names the offending field; the usual cause is an undocumented enumeration value. Builds before 2026-11-02 19:45 sent `RodzajPodpisuOdbiorcy: BRK`, a value that does not exist in the iFirma API. Fix: install the current module zip (the *Recipient signature* setting defaults to `BPO`, and any other stored value is normalised to `BPO`), then clear the PrestaShop cache. To check a request yourself, expand **Diagnostics: last iFirma request and response** in the order's iFirma panel and compare every enumerated field with the documented lists: `LiczOd`, `FormatDatySprzedazy`, `SposobZaplaty`, `RodzajPodpisuOdbiorcy` (`OUP`, `UPO`, `BPO`, `BWO`) and `TypStawkiVat`. Kod 200 never names the field, so when the request contained `DodatkoweUwagi` (the only optional object the module sends) the module retries once without it; if the retry is also rejected, or the request had no `DodatkoweUwagi`, the error is recorded.
+
+**`KSeF: <error>` (after issuing a document).** The document was issued and delivery ran, but the KSeF submission failed. The receipt shows state error (`BLAD`) with the same message. Check: (1) the iFirma account is authorised to send invoices to KSeF (the KSeF authorisation is configured in iFirma, not in the module); (2) the buyer data on the invoice is complete, since a B2B invoice needs a valid NIP; (3) retry with **Send to KSeF** in the order panel; if the same error returns, copy the diagnostics block and the message. Then refresh the status in the order panel: once iFirma reports `PRZYJETA`, the number appears on the receipt and the customer page.
 
 **Reporting a problem.** Copy the diagnostics block (request, response, contractor step, last error) and the
 relevant lines from Advanced Parameters > Logs (messages start with "iFirma"). Neither contains API keys.

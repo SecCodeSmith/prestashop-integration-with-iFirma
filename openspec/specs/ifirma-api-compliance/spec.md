@@ -220,3 +220,72 @@ The configuration page SHALL accept an iFirma contractor export (CSV, `;` or `,`
 #### Scenario: Mapping visible per order
 - **WHEN** an admin opens an order whose customer is mapped
 - **THEN** the panel shows the linked contractor identifier and how it was matched
+
+### Requirement: Contractor reference on documents
+When issuing a document the module SHALL reference the resolved contractor through the top-level `IdentyfikatorKontrahenta` field, SHALL send `NIPKontrahenta` with the buyer's NIP when it is a 10-digit Polish NIP, and SHALL NOT send `Kontrahent.Identyfikator`; when no contractor was resolved both top-level fields are omitted so iFirma matches by NIP or creates the contractor from the `Kontrahent` block.
+
+#### Scenario: Resolved contractor is referenced at the top level
+- **WHEN** the contractor step resolved `KOWALSKI-01` for the order
+- **THEN** the request carries `IdentyfikatorKontrahenta` = `KOWALSKI-01` and the `Kontrahent` block has no `Identyfikator`
+
+
+#### Scenario: Business buyer NIP
+- **WHEN** the invoice address carries NIP `123-456-78-90`
+- **THEN** the request carries `NIPKontrahenta` = `1234567890`; for a private person the field is absent
+
+
+### Requirement: Kod 201 retry for unknown contractor reference
+A Kod 201 response whose message says the contractor was not found or names `IdentyfikatorKontrahenta` SHALL trigger exactly one retry without `IdentyfikatorKontrahenta`.
+
+#### Scenario: Unknown reference is retried once
+- **WHEN** iFirma answers Kod 201 "Nie znaleziono kontrahenta o zadanym identyfikatorze"
+- **THEN** the module re-sends once without `IdentyfikatorKontrahenta`, stores the fallback note, and reports a second Kod 201 as an error
+
+
+### Requirement: Contractor attached by iFirma is learned
+After a successful issuance with no referenced identifier, or with one longer than 15 characters, the module SHALL read the document back once, record the contractor identifier iFirma attached in the stored request note, and store it as the customer's mapping (match type `document`) when it differs from the referenced one.
+
+#### Scenario: Contractor attached by iFirma is learned
+- **WHEN** the document was issued without a referenced identifier and its detail shows `Kontrahent.Identyfikator` = `AUTO-77`
+- **THEN** the customer is mapped to `AUTO-77` with match type `document` and the order panel shows it
+
+
+#### Scenario: Long identifiers
+- **WHEN** the mapped identifier has 16 characters
+- **THEN** it is sent as-is, the document is read back after issuance, and a different attached identifier replaces the mapping
+
+
+### Requirement: Documented enumerations only
+Every enumerated document field the module sends (`LiczOd`, `FormatDatySprzedazy`, `SposobZaplaty`, `RodzajPodpisuOdbiorcy`, `TypStawkiVat`) SHALL carry only a value listed in the fakturakraj/fakturaparagon documentation. `RodzajPodpisuOdbiorcy` SHALL come from the configuration setting `IFIRMA_SIGNATURE_TYPE` (OUP, UPO, BPO, BWO) and SHALL default to `BPO`; any other configured value SHALL be normalised to `BPO` when saved and when the payload is built.
+
+#### Scenario: Default signature type
+- **WHEN** the setting was never saved
+- **THEN** the request carries `RodzajPodpisuOdbiorcy` = `BPO`
+
+
+#### Scenario: Merchant choice
+- **WHEN** the merchant selects BWO
+- **THEN** the request carries `RodzajPodpisuOdbiorcy` = `BWO`
+
+
+#### Scenario: Invalid value never reaches iFirma
+- **WHEN** the stored value is `BRK` or empty
+- **THEN** the request carries `BPO` and no Kod 200 mapping error occurs
+
+### Requirement: Position VAT rates
+Every position SHALL be sent with `TypStawkiVat` = `PRC` and a `StawkaVat` from the documented set (0, 0.05, 0.08, 0.23). The rate SHALL come from the order line's stored tax rate when present, otherwise from gross/net, and SHALL be snapped to the nearest documented rate when within half a percentage point; a rate further away SHALL be sent unchanged so iFirma reports it.
+
+#### Scenario: Rounding noise
+- **WHEN** gross/net of a line implies 7.99%
+- **THEN** the position carries `StawkaVat` 0.08 and `TypStawkiVat` `PRC`
+
+#### Scenario: Zero-rated line
+- **WHEN** a line or the shipping carries no tax
+- **THEN** the position carries `StawkaVat` 0 and `TypStawkiVat` `PRC` (never `ZW`, which would require `PKWiU`)
+
+### Requirement: Kod 200 retry without DodatkoweUwagi
+When the create call answers Kod 200 while the request contained `DodatkoweUwagi`, the module SHALL retry exactly once without that object; a Kod 200 for a request without `DodatkoweUwagi` SHALL be reported as an error.
+
+#### Scenario: Optional object dropped once
+- **WHEN** the first create answers Kod 200 and the request carried `DodatkoweUwagi`
+- **THEN** the second request omits `DodatkoweUwagi` and its Kod 0 answer issues the document

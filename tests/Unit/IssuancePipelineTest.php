@@ -85,7 +85,9 @@ class IssuancePipelineTest extends TestCase
             new IfirmaDuplicateGuard($client),
             new IfirmaDeliveryService($client, $service, $module),
             $requests,
-            $module
+            $module,
+            null,
+            new IfirmaKsefService($client, $module)
         );
     }
 
@@ -121,12 +123,13 @@ class IssuancePipelineTest extends TestCase
     {
         return array_merge(array(
             'FakturaId' => 77,
+            'IdentyfikatorKontrahenta' => 'PS-C5',
             'PelnyNumer' => '7/2026',
             'DataWystawienia' => date('Y-m-d'),
             'Brutto' => 123.00,
             'Zaplacono' => 0,
             'KontrahentNazwa' => 'Jan K',
-            'Rodzaj' => 'prz_faktura_paragon',
+            'Rodzaj' => 'prz_faktura_kraj',
             'Waluta' => 'PLN',
             'CzySzkic' => false,
             'CzyWyslano' => false,
@@ -139,7 +142,7 @@ class IssuancePipelineTest extends TestCase
         $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row(array('FakturaId' => 1, 'Brutto' => 5)))));
     }
 
-    private function queueCreateOk($type = 'fakturaparagon')
+    private function queueCreateOk($type = 'fakturakraj')
     {
         $this->t->queue('POST', '#' . $type . '\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"ok","Identyfikator":"77"}}'));
     }
@@ -251,7 +254,7 @@ class IssuancePipelineTest extends TestCase
         $this->assertSame('issued', $r->outcome);
         $this->assertNull($r->stoppedAt);
         $this->assertSame(
-            array('hold:ok', 'guard:ok', 'create:ok', 'number:ok', 'deliver:ok'),
+            array('hold:ok', 'guard:ok', 'create:ok', 'number:ok', 'ksef:skipped', 'deliver:ok'),
             $this->stepNames($r)
         );
         $row = $this->dbRow();
@@ -264,10 +267,43 @@ class IssuancePipelineTest extends TestCase
         $this->assertStringContainsString('7/2026', $this->pipeline->describe($r));
     }
 
+    public function testUnknownContractorFilterDoesNotBlockIssuance()
+    {
+        // guard: kontrahent filter rejected with Kod 201, unfiltered window empty, then the number lookup
+        $this->t->queue('GET', '#faktury\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"Nie znaleziono kontrahenta o zadanym identyfikatorze"}}'));
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array()));
+        $this->queueNumber();
+        $this->queueCreateOk();
+        $this->queuePdf();
+
+        $r = $this->pipeline->run($this->order(), array('trigger' => 'status'));
+
+        $this->assertTrue($r->ok);
+        $this->assertSame('issued', $r->outcome);
+        $this->assertNull($r->stoppedAt);
+        $this->assertSame(
+            array('hold:ok', 'guard:ok', 'create:ok', 'number:ok', 'ksef:skipped', 'deliver:ok'),
+            $this->stepNames($r)
+        );
+        $this->assertCount(1, $this->posts());
+        $this->assertSame('7/2026', $this->dbRow()['ifirma_number']);
+    }
+
+    /** Detail of a document of the buyer without the order reference: same sale date and product line as order(). */
+    private function detailNoRef()
+    {
+        return array('body' => json_encode(array('response' => array(
+            'Uwagi' => 'other',
+            'DataSprzedazy' => date('Y-m-d', time() - 86400),
+            'FormatDatySprzedazy' => 'DZN',
+            'Pozycje' => array(array('NazwaPelna' => 'W', 'Ilosc' => 1, 'CenaJednostkowa' => 123.0)),
+        ))));
+    }
+
     public function testGuardSuspectedStopsLaterSteps()
     {
         $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row())));
-        $this->t->queue('GET', '#fakturaparagon/77\.json#', array('body' => '{"response":{"Uwagi":"other"}}'));
+        $this->t->queue('GET', '#fakturakraj/77\.json#', $this->detailNoRef());
 
         $r = $this->pipeline->run($this->order());
 
@@ -283,16 +319,46 @@ class IssuancePipelineTest extends TestCase
         $this->assertStringContainsString('guard', $this->pipeline->describe($r));
     }
 
+    public function testSameAmountDocumentOfAnotherContractorDoesNotBlock()
+    {
+        // guard: the only listed document has the order's gross but belongs to another buyer
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row(array(
+            'IdentyfikatorKontrahenta' => 'PS-C9',
+            'NIPKontrahenta' => '5555555555',
+            'KontrahentNazwa' => 'Anna Nowak',
+        )))));
+        $this->queueCreateOk();
+        $this->queueNumber();
+        $this->queuePdf();
+
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertTrue($r->ok);
+        $this->assertSame('issued', $r->outcome);
+        $this->assertSame(
+            array('hold:ok', 'guard:ok', 'create:ok', 'number:ok', 'ksef:skipped', 'deliver:ok'),
+            $this->stepNames($r)
+        );
+        $this->assertCount(1, $this->posts());
+        $this->assertSame('77', (string) $this->dbRow()['ifirma_id']);
+        // no detail was requested for the other buyer's document
+        foreach ($this->t->calls as $c) {
+            $this->assertStringNotContainsString('fakturakraj/77.json', $c['url']);
+        }
+    }
+
     public function testCreateRejectedRecordsErrorAndSkipsLaterSteps()
     {
         $this->queueGuardNone();
-        $this->t->queue('POST', '#fakturaparagon\.json#', array('body' => '{"response":{"Kod":200,"Informacja":"bad structure"}}'));
+        // Kod 200 with DodatkoweUwagi in the payload is retried once; the retry is rejected too
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":200,"Informacja":"bad structure"}}'));
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":200,"Informacja":"bad structure"}}'));
 
         $r = $this->pipeline->run($this->order());
         $this->assertSame('error', $r->outcome);
         $this->assertSame('create', $r->stoppedAt);
         $this->assertSame(array('hold:ok', 'guard:ok', 'create:stopped'), $this->stepNames($r));
-        $this->assertCount(1, $this->posts());
+        $this->assertCount(2, $this->posts());
         $this->assertCount(0, Mail::$sent);
         $row = $this->dbRow();
         $this->assertSame('error', $row['status']);
@@ -310,7 +376,7 @@ class IssuancePipelineTest extends TestCase
         $this->assertSame('already_issued', $r->outcome);
         $this->assertCount($before, $this->t->calls);
         $this->assertSame(
-            array('hold:skipped', 'guard:skipped', 'create:skipped', 'number:skipped', 'deliver:skipped'),
+            array('hold:skipped', 'guard:skipped', 'create:skipped', 'number:skipped', 'ksef:skipped', 'deliver:skipped'),
             $this->stepNames($r)
         );
     }
@@ -326,7 +392,7 @@ class IssuancePipelineTest extends TestCase
         $this->assertTrue($r->ok);
         $this->assertSame('issued', $r->outcome);
         $this->assertSame('deliver', $r->stoppedAt);
-        $this->assertSame('deliver:stopped', $this->stepNames($r)[4]);
+        $this->assertSame('deliver:stopped', $this->stepNames($r)[5]);
         $this->assertSame('failed', $r->delivery['status']);
         $this->assertSame('failed', $this->dbRow()['delivery_status']);
         $this->assertStringContainsString('Delivery step failed', $this->pipeline->describe($r));
@@ -339,8 +405,98 @@ class IssuancePipelineTest extends TestCase
         $this->queueNumber();
         $r = $this->pipeline->run($this->order(), array('skip_delivery' => true));
         $this->assertTrue($r->ok);
-        $this->assertSame('deliver:skipped', $this->stepNames($r)[4]);
+        $this->assertSame('deliver:skipped', $this->stepNames($r)[5]);
         $this->assertCount(0, Mail::$sent);
+    }
+
+    private function businessAddress()
+    {
+        $a = new Address();
+        $a->id = 7;
+        $a->id_customer = 5;
+        $a->firstname = 'Jan';
+        $a->lastname = 'K';
+        $a->company = 'ACME';
+        $a->vat_number = '1234567890';
+        $a->id_country = 14;
+        Address::register($a);
+    }
+
+    public function testBusinessOrderSubmitsToKsef()
+    {
+        $this->businessAddress();
+        $this->queueGuardNone();
+        $this->queueCreateOk();
+        $this->queueNumber();
+        $this->t->queue('POST', '#ksef/send/77\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"Faktura wyslana"}}'));
+        $this->queuePdf();
+
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertTrue($r->ok);
+        $this->assertSame('issued', $r->outcome);
+        $this->assertSame(
+            array('hold:ok', 'guard:ok', 'create:ok', 'number:ok', 'ksef:ok', 'deliver:ok'),
+            $this->stepNames($r)
+        );
+        $this->assertSame('Faktura wyslana', $r->steps[4]['message']);
+        $this->assertSame('WYSLANA', $this->dbRow()['ksef_status']);
+    }
+
+    public function testPrivateBuyerSkipsKsef()
+    {
+        $this->queueFullSuccess();
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertSame('ksef:skipped', $this->stepNames($r)[4]);
+        $this->assertSame('private buyer (B2B mode)', $r->steps[4]['message']);
+        $this->assertSame('', $this->dbRow()['ksef_status']);
+    }
+
+    public function testKsefDisabledSkipsKsef()
+    {
+        Configuration::updateValue('IFIRMA_KSEF_MODE', 'off');
+        $this->businessAddress();
+        $this->queueFullSuccess();
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertSame('ksef:skipped', $this->stepNames($r)[4]);
+        $this->assertSame('KSeF disabled', $r->steps[4]['message']);
+    }
+
+    public function testSkipKsefOption()
+    {
+        $this->businessAddress();
+        $this->queueFullSuccess();
+        $r = $this->pipeline->run($this->order(), array('skip_ksef' => true));
+
+        $this->assertSame('ksef:skipped', $this->stepNames($r)[4]);
+        $this->assertSame('', $this->dbRow()['ksef_status']);
+    }
+
+    public function testKsefFailureDoesNotStopDelivery()
+    {
+        $this->businessAddress();
+        $this->queueGuardNone();
+        $this->queueCreateOk();
+        $this->queueNumber();
+        $this->t->queue('POST', '#ksef/send#', array('body' => '{"response":{"Kod":200,"Informacja":"KSeF niedostepny"}}'));
+        $this->queuePdf();
+
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertTrue($r->ok);
+        $this->assertSame('issued', $r->outcome);
+        $this->assertNull($r->stoppedAt);
+        $this->assertSame(
+            array('hold:ok', 'guard:ok', 'create:ok', 'number:ok', 'ksef:failed', 'deliver:ok'),
+            $this->stepNames($r)
+        );
+        $this->assertStringContainsString('KSeF', $r->message);
+        $this->assertStringContainsString('KSeF: ', $r->message);
+        $this->assertSame('sent', $this->dbRow()['delivery_status']);
+        $this->assertSame('BLAD', $this->dbRow()['ksef_status']);
+        $this->assertStringContainsString('KSeF submission failed', $this->pipeline->describe($r));
     }
 
     public function testNumberNotYetAvailableStaysIssued()
@@ -426,7 +582,7 @@ class IssuancePipelineTest extends TestCase
     public function testCreateTimeoutIsUnknownWithSinglePost()
     {
         $this->queueGuardNone();
-        $this->t->queue('POST', '#fakturaparagon\.json#', array('status' => 0, 'error' => 'timeout'));
+        $this->t->queue('POST', '#fakturakraj\.json#', array('status' => 0, 'error' => 'timeout'));
 
         $r = $this->pipeline->run($this->order());
         $this->assertSame('unknown', $r->outcome);
@@ -442,19 +598,19 @@ class IssuancePipelineTest extends TestCase
     public function testLaterRunAdoptsDocumentFoundByGuard()
     {
         $this->queueGuardNone();
-        $this->t->queue('POST', '#fakturaparagon\.json#', array('status' => 0, 'error' => 'timeout'));
+        $this->t->queue('POST', '#fakturakraj\.json#', array('status' => 0, 'error' => 'timeout'));
         $this->pipeline->run($this->order());
         $this->assertCount(1, $this->posts());
 
         $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row())));
-        $this->t->queue('GET', '#fakturaparagon/77\.json#', array('body' => '{"response":{"Uwagi":"PS-ORDER-15-ABCDEFGHI"}}'));
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Uwagi":"PS-ORDER-15-ABCDEFGHI"}}'));
         $r = $this->pipeline->run($this->order(), array('trigger' => 'manual'));
 
         $this->assertSame('adopted', $r->outcome);
         $this->assertTrue($r->ok);
         $this->assertCount(1, $this->posts());
         $this->assertSame(
-            array('hold:ok', 'guard:ok', 'create:skipped', 'number:skipped', 'deliver:ok'),
+            array('hold:ok', 'guard:ok', 'create:skipped', 'number:skipped', 'ksef:skipped', 'deliver:ok'),
             $this->stepNames($r)
         );
         $this->assertSame('external', $this->dbRow()['source']);
@@ -466,7 +622,7 @@ class IssuancePipelineTest extends TestCase
     public function testLaterRunCreatesWhenNothingFound()
     {
         $this->queueGuardNone();
-        $this->t->queue('POST', '#fakturaparagon\.json#', array('status' => 0, 'error' => 'timeout'));
+        $this->t->queue('POST', '#fakturakraj\.json#', array('status' => 0, 'error' => 'timeout'));
         $this->pipeline->run($this->order());
 
         $this->queueFullSuccess();
@@ -495,7 +651,7 @@ class IssuancePipelineTest extends TestCase
     public function testDodatkoweUwagiRejectedRetriesOnce()
     {
         $this->queueGuardNone();
-        $this->t->queue('POST', '#fakturaparagon\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"Pole dodatkoweuwagi jest niepoprawne"}}'));
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"Pole dodatkoweuwagi jest niepoprawne"}}'));
         $this->queueCreateOk();
         $this->queueNumber();
         $this->queuePdf();
@@ -513,12 +669,11 @@ class IssuancePipelineTest extends TestCase
     public function testOtherRejectionsAreNotRetried()
     {
         foreach (array(
-            '{"response":{"Kod":200,"Informacja":"DodatkoweUwagi wrong"}}',
             '{"response":{"Kod":201,"Informacja":"NIP invalid"}}',
         ) as $body) {
             $this->setUp();
             $this->queueGuardNone();
-            $this->t->queue('POST', '#fakturaparagon\.json#', array('body' => $body));
+            $this->t->queue('POST', '#fakturakraj\.json#', array('body' => $body));
             $r = $this->pipeline->run($this->order());
             $this->assertSame('error', $r->outcome);
             $this->assertCount(1, $this->posts());
@@ -528,8 +683,8 @@ class IssuancePipelineTest extends TestCase
     public function testFailedRetryEndsInError()
     {
         $this->queueGuardNone();
-        $this->t->queue('POST', '#fakturaparagon\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"DodatkoweUwagi invalid"}}'));
-        $this->t->queue('POST', '#fakturaparagon\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"DodatkoweUwagi still invalid"}}'));
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"DodatkoweUwagi invalid"}}'));
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"DodatkoweUwagi still invalid"}}'));
 
         $r = $this->pipeline->run($this->order());
         $this->assertSame('error', $r->outcome);
@@ -637,7 +792,7 @@ class IssuancePipelineTest extends TestCase
 
         $this->assertSame('issued', $r->outcome);
         $this->assertSame('POST', $this->t->calls[0]['method']);
-        $this->assertStringContainsString('fakturaparagon.json', $this->t->calls[0]['url']);
+        $this->assertStringContainsString('fakturakraj.json', $this->t->calls[0]['url']);
         // only the number lookup lists documents; the guard did not
         $lists = 0;
         foreach ($this->t->calls as $c) {
@@ -669,7 +824,7 @@ class IssuancePipelineTest extends TestCase
     public function testUpdateStatusPaidWorksForAdoptedDocument()
     {
         $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row())));
-        $this->t->queue('GET', '#fakturaparagon/77\.json#', array('body' => '{"response":{"Uwagi":"PS-ORDER-15-ABCDEFGHI"}}'));
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Uwagi":"PS-ORDER-15-ABCDEFGHI"}}'));
         $r = $this->pipeline->run($this->order());
         $this->assertSame('adopted', $r->outcome);
 

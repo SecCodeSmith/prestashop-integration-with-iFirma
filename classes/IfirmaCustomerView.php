@@ -228,6 +228,7 @@ class IfirmaCustomerView
             'download_url' => $state === self::STATE_MISSING
                 ? null : $this->downloadUrl($this->prop($receipt, 'security_token')),
             'is_external' => $this->prop($receipt, 'source') === 'external',
+            'ksef_number' => trim((string) $this->prop($receipt, 'ksef_number')),
         );
     }
 

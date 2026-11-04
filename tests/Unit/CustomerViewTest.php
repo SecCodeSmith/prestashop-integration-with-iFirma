@@ -178,6 +178,15 @@ class CustomerViewTest extends TestCase
         $this->assertTrue($v['contact_shop']);
     }
 
+    public function testKsefNumberIsExposedWhenKnown()
+    {
+        $v = $this->view->forOrder($this->order(), $this->receipt(array('ksef_number' => '1111112228-20260702-6505FF400000-26')), null);
+        $this->assertSame('1111112228-20260702-6505FF400000-26', $v['document']['ksef_number']);
+
+        $v = $this->view->forOrder($this->order(), $this->receipt(), null);
+        $this->assertSame('', $v['document']['ksef_number']);
+    }
+
     public function testIssuedUnpaidNotSent()
     {
         $r = $this->receipt(array('remote_paid_amount' => 40.0));

@@ -30,7 +30,7 @@ trait IfirmaWiringFixture
         Configuration::updateValue('IFIRMA_USER', 'u@example.com');
         Configuration::updateValue('IFIRMA_KEY_FAKTURA', str_repeat('1', 64));
         Configuration::updateValue('IFIRMA_BASE_URL', 'http://ifirma-mock:8001/iapi/');
-        Configuration::updateValue('IFIRMA_DOC_TYPE', 'fakturaparagon');
+        Configuration::updateValue('IFIRMA_DOC_TYPE', 'fakturakraj');
         Configuration::updateValue('IFIRMA_SEND_CHANNEL', 'shop_mail');
         Configuration::updateValue('IFIRMA_DUPLICATE_CHECK', 1);
         Configuration::updateValue('IFIRMA_ALLOW_DATA_REQUEST', 1);
@@ -175,7 +175,7 @@ trait IfirmaWiringFixture
         $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->remoteRow(array('FakturaId' => 1, 'Brutto' => 5)))));
     }
 
-    protected function queueCreateOk($type = 'fakturaparagon')
+    protected function queueCreateOk($type = 'fakturakraj')
     {
         $this->t->queue('POST', '#' . $type . '\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"ok","Identyfikator":"77"}}'));
     }
@@ -229,7 +229,7 @@ trait IfirmaWiringFixture
         $defaults = array(
             'id_order' => 15,
             'id_customer' => 5,
-            'document_type' => 'fakturaparagon',
+            'document_type' => 'fakturakraj',
             'ifirma_id' => '77',
             'ifirma_number' => '7/2026',
             'status' => IfirmaReceipt::STATUS_CREATED,

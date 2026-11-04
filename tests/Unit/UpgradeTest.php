@@ -46,7 +46,7 @@ class UpgradeTest extends TestCase
         $this->scriptColumnProbe();
 
         $this->assertTrue(upgrade_module_1_1_0(new Module()));
-        $this->assertCount(18, $this->alters());
+        $this->assertCount(20, $this->alters());
 
         $creates = array_filter(Db::getInstance()->executed, function ($q) {
             return strpos($q, 'CREATE TABLE IF NOT EXISTS `ps_ifirma_data_request`') === 0;
@@ -58,7 +58,7 @@ class UpgradeTest extends TestCase
         $this->assertCount(1, $maps);
 
         $this->assertTrue(upgrade_module_1_1_0(new Module()));
-        $this->assertCount(18, $this->alters());
+        $this->assertCount(20, $this->alters());
     }
 
     public function testConfigurationNeverOverwritten()
