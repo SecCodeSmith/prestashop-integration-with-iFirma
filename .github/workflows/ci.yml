@@ -9,12 +9,20 @@ on:
 permissions:
   contents: read
 
+env:
+  # The commit every job checks out, tests and builds, and the one the test build's
+  # ifirma/BUILD names: the PR head on pull_request runs (not GitHub's synthetic
+  # merge commit), otherwise the pushed or dispatched commit.
+  IFIRMA_BUILD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+
 jobs:
   lint:
     name: PHP lint & license headers
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.IFIRMA_BUILD_COMMIT }}
       - uses: shivammathur/setup-php@v2
         with:
           php-version: "8.2"
@@ -35,6 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ env.IFIRMA_BUILD_COMMIT }}
           path: ifirma
       - uses: shivammathur/setup-php@v2
         with:
@@ -55,9 +64,10 @@ jobs:
       # version (ifirma.php / config.xml) is never changed by a test build.
       IFIRMA_BUILD_CHANNEL: test
       IFIRMA_BUILD_NUMBER: ${{ github.run_number }}
-      IFIRMA_BUILD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.IFIRMA_BUILD_COMMIT }}
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -66,7 +76,7 @@ jobs:
       - name: Build installable zip and npm tarball
         run: npm run build
       - name: Verify package layout and BUILD manifest
-        run: npm run verify:package
+        run: npm run verify:package -- --channel test
       - name: Resolve artifact name
         id: meta
         run: echo "name=ifirma-$(node -p "require('./package.json').version")+build.${IFIRMA_BUILD_NUMBER}" >> "$GITHUB_OUTPUT"
@@ -86,6 +96,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ env.IFIRMA_BUILD_COMMIT }}
           # test-stack is a public git submodule (github.com/SecCodeSmith/test-stack).
           submodules: true
       - uses: actions/setup-python@v5
@@ -102,6 +113,7 @@ jobs:
         run: pip install -r requirements-dev.txt
       - name: Run mock tests
         working-directory: test-stack/ifirma-mock
-        run: pytest -q
+        # pyproject.toml already sets -q; another -q would hide the pass count.
+        run: pytest
       - name: Verify mock licence headers
         run: python3 test-stack/tools/check_license_headers.py

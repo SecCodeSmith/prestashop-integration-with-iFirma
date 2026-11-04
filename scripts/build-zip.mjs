@@ -5,6 +5,9 @@
 // uploaded through Modules > Upload a module. Development and test assets
 // (test-stack, tools, scripts, CI config, node_modules, dist) are excluded by
 // using an explicit allow-list rather than a deny-list, so nothing leaks in.
+// Inside the allow-listed folders, dependency, VCS and test folders and OS junk
+// or local secrets (.DS_Store, Thumbs.db, .env*) are skipped as well. A missing
+// allow-listed path fails the build instead of producing an incomplete zip.
 //
 // Build identity comes from the environment and is written to ifirma/BUILD
 // (generated in memory, never into the working tree). The module version in
@@ -24,6 +27,17 @@ const { version } = JSON.parse(readFileSync("package.json", "utf8"));
 // Runtime files shipped to merchants. Keep in sync with package.json "files".
 const FILES = ["ifirma.php", "config.xml", "index.php", "logo.png", "LICENCE", "README.md"];
 const DIRS = ["classes", "controllers", "mails", "sql", "translations", "upgrade", "views"];
+
+// Never shipped, even when nested inside an allow-listed folder.
+const NESTED_DEV_DIRS = ["node_modules", ".git", "tests"];
+const JUNK_FILE = /^(\.DS_Store|Thumbs\.db|\.env(\..*)?)$/;
+
+/** archiver directory() entry filter: false skips the entry. */
+function shipped(entry) {
+  const segments = entry.name.split(/[\\/]/);
+  if (segments.some((s) => NESTED_DEV_DIRS.includes(s))) return false;
+  return JUNK_FILE.test(segments[segments.length - 1]) ? false : entry;
+}
 
 function gitCommit() {
   try {
@@ -52,6 +66,11 @@ function buildInfo(env) {
 const info = buildInfo(process.env);
 const suffix = info.channel === "test" ? `+build.${info.build}` : "";
 
+const missing = [...FILES, ...DIRS].filter((path) => !existsSync(path));
+if (missing.length) {
+  throw new Error(`build-zip: allow-listed path(s) missing: ${missing.join(", ")}`);
+}
+
 mkdirSync("dist", { recursive: true });
 const outPath = `dist/${MODULE}-${version}${suffix}.zip`;
 const output = createWriteStream(outPath);
@@ -70,10 +89,10 @@ archive.on("error", (err) => {
 
 archive.pipe(output);
 for (const file of FILES) {
-  if (existsSync(file)) archive.file(file, { name: `${MODULE}/${file}` });
+  archive.file(file, { name: `${MODULE}/${file}` });
 }
 for (const dir of DIRS) {
-  if (existsSync(dir)) archive.directory(dir, `${MODULE}/${dir}`);
+  archive.directory(dir, `${MODULE}/${dir}`, shipped);
 }
 archive.append(JSON.stringify(info, null, 2) + "\n", { name: `${MODULE}/BUILD` });
 await archive.finalize();

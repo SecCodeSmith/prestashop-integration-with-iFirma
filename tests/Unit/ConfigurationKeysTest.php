@@ -50,25 +50,27 @@ class ConfigurationKeysTest extends TestCase
         $this->assertSame(array(), self::versionMismatches($root));
     }
 
+    /**
+     * Runs on minimal fixtures, not on copies of the real files, so drift in the
+     * real tree cannot leak in: every source says 9.9.9 except config.xml.
+     */
     public function testVersionMismatchNamesTheLaggingSource()
     {
-        $root = dirname(__DIR__, 2);
         $tmp = sys_get_temp_dir() . '/ifirma-version-' . uniqid();
         mkdir($tmp);
         try {
-            foreach (array('package.json', 'package-lock.json', 'ifirma.php', 'config.xml') as $file) {
-                copy($root . '/' . $file, $tmp . '/' . $file);
-            }
-            $xml = preg_replace(
-                '/(<version><!\[CDATA\[)[^\]]*(\]\]><\/version>)/',
-                '${1}0.0.1${2}',
-                file_get_contents($tmp . '/config.xml')
-            );
-            file_put_contents($tmp . '/config.xml', $xml);
+            file_put_contents($tmp . '/package.json', json_encode(array('version' => '9.9.9')));
+            file_put_contents($tmp . '/package-lock.json', json_encode(array(
+                'version' => '9.9.9',
+                'packages' => array('' => array('version' => '9.9.9')),
+            )));
+            file_put_contents($tmp . '/ifirma.php', "<?php\n\$this->version = '9.9.9';\n");
+            file_put_contents($tmp . '/config.xml', '<module><version><![CDATA[0.0.1]]></version></module>');
 
-            $mismatches = self::versionMismatches($tmp);
-            $this->assertCount(1, $mismatches);
-            $this->assertStringContainsString('config.xml', $mismatches[0]);
+            $this->assertSame(
+                array("config.xml <version>: '0.0.1' != 9.9.9"),
+                self::versionMismatches($tmp)
+            );
         } finally {
             array_map('unlink', glob($tmp . '/*'));
             rmdir($tmp);

@@ -13,8 +13,9 @@ Every distributed source file must carry the module's license notice
 Check mode also fails on any file containing a string from FORBIDDEN (known
 header typos such as a misspelt author name).
 
-Exit status is 0 when every file already has the header and 1 otherwise, so the
-default mode drops straight into CI or a pre-commit hook. The file list comes
+Exit status is 0 when every file has the header and none contains a FORBIDDEN
+string, and 1 otherwise, so the default mode drops straight into CI or a
+pre-commit hook. The file list comes
 from `git ls-files`, so ignored paths (e.g. the mock's .venv) are never touched,
 and the `test-stack` submodule — which ships under its own MIT license — is
 skipped because it has its own copy of this script.
@@ -28,7 +29,7 @@ import sys
 from pathlib import Path
 
 # --------------------------------------------------------------------------- #
-# Per-repo policy — the only part that differs from the mock's copy.
+# Per-repo policy — differs from the mock's copy (test-stack/tools/).
 # --------------------------------------------------------------------------- #
 
 # A file counts as compliant if any of these strings appears near its top. The
@@ -60,7 +61,8 @@ FORBIDDEN = (
 )
 
 # --------------------------------------------------------------------------- #
-# Engine — identical in both repos.
+# Engine — the same as the mock's copy, except for the FORBIDDEN handling
+# (forbidden_hits and the tainted list), which only this repo has.
 # --------------------------------------------------------------------------- #
 
 # (opening line, line prefix, closing line); None means "no delimiter".

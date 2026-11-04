@@ -2,6 +2,7 @@
 
 ## Context
 
+The state before this change:
 - `ci.yml` has four independent jobs: lint, phpunit, build and mock. `build` does not depend on the test jobs, and it always produces `dist/ifirma-<package.json version>.zip`.
 - `release.yml` runs `php -l` and the licence check, then `npm version` (whose `version` lifecycle runs `scripts/sync-version.mjs`), pushes, builds, and publishes. It has never run.
 - PrestaShop stores the installed module version in `ps_module.version VARCHAR(8)` and picks `upgrade/upgrade-X.Y.Z.php` files with `version_compare` against it. Any suffix in the module version gets truncated, and it also changes which upgrade scripts run. That is why build identity must live outside the module version (see proposal.md - What Changes).
@@ -30,18 +31,23 @@
 - *Alternative:* the build number in the module version (`1.2.0.57`). Rejected because of the 8-character limit and because upgrade scripts would be selected differently.
 
 ### D2. The build number is `github.run_number`
-It only increases, it is unique per workflow, and it needs no state. The commit is `github.event.pull_request.head.sha || github.sha`, cut to 7 characters, so that pull request builds name the PR head and not GitHub's synthetic merge commit. The value is added to `BUILD` (not `builtAt`) so that builds can be reproduced.
+It only increases and needs no state. It is unique within `ci.yml`, the only workflow that makes test builds, so test build numbers are unique in the repository.
+
+The commit is `github.event.pull_request.head.sha || github.sha`. It is set once, as the workflow-level `IFIRMA_BUILD_COMMIT`, and cut to 7 characters in `BUILD.commit`. Every CI job checks out that commit, so on a pull request the lint, the tests, the zip and `BUILD` all refer to the PR head and not to GitHub's synthetic merge commit.
+- *Trade-off:* a pull request run tests the head as pushed, not its merge with the current base. The push to master after merging tests the merge itself.
+- `BUILD.commit` lets a build be repeated from source. The zip bytes still differ between two builds of one commit, because `builtAt` differs.
 
 ### D3. CI gating with `needs:`
-`build` gets `needs: [lint, phpunit, mock]`. The upload step uses `retention-days: 90` and the artifact name `ifirma-<version>+build.<n>`. The tgz is still produced by `npm pack` under npm's own name and stays in the same artifact. Only the zip carries the build identity.
+`build` gets `needs: [lint, phpunit, mock]`. Before the upload, `npm run verify:package -- --channel test` checks the zip. The upload step uses `retention-days: 90` and the artifact name `ifirma-<version>+build.<n>`. The tgz is still produced by `npm pack` under npm's own name and stays in the same artifact. Only the zip carries the build identity.
 
 ### D4. Release order: verify, bump locally, build, then push, then publish
 1. Check out (no submodules: nothing in the release job reads `test-stack`). Run `composer install`, PHPUnit, `php -l` and the licence check.
 2. Run `npm version <level>`. This creates the local commit and tag, but does not push them.
-3. Run `IFIRMA_BUILD_CHANNEL=release npm run build`.
-4. Run `git push --follow-tags`.
+3. Run `IFIRMA_BUILD_CHANNEL=release npm run build` and `npm run verify:package -- --channel release`. Then upload the verified zip and tarball as the run's `release-files` artifact, so a failed step 5 can be finished by hand with the same bytes.
+4. Run `git push --atomic --follow-tags`. The branch and the tag land together or not at all. A refused branch update (for example, master moved after the dispatch) therefore cannot leave an orphan tag, and a refused tag cannot leave an untagged release commit.
 5. Run `gh release create`.
-A failure in steps 1 to 3 leaves the remote untouched. PHPUnit needs the `ifirma/` folder name, so the release job checks out into `ifirma` and uses `working-directory: ifirma`, as the CI phpunit job does.
+6. Run `gh workflow run ci.yml --ref v<version>`, which needs `permissions: actions: write`. Pushes made with `GITHUB_TOKEN` never trigger workflows, but `workflow_dispatch` does, so this is how the release commit gets a CI run and a test build. Added at the user's request on 2026-11-04, after release v1.3.0 needed a manual CI dispatch. It runs last, so a failed dispatch cannot block publishing.
+A failure in steps 1 to 4 leaves the remote untouched. PHPUnit needs the `ifirma/` folder name, so the release job checks out into `ifirma` and uses `working-directory: ifirma`, as the CI phpunit job does.
 
 ### D5. A version-consistency test instead of a fixed version
 `ConfigurationKeysTest` reads the version from `package.json` and asserts that `package-lock.json` (both the top-level `version` and `packages[''].version`), `config.xml` CDATA, and the loaded module's `$version` are all equal to it. Each assertion names the mismatching file in its failure message.
@@ -58,7 +64,7 @@ A failure in steps 1 to 3 leaves the remote untouched. PHPUnit needs the `ifirma
 The graph stays tracked: `graph.json`, `GRAPH_REPORT.md`, `graph.html`, `manifest.json`, `cost.json`, the label and root files, the dated snapshots (`2026-11-01/`), and `cache/semantic/`. The semantic cache holds LLM output, which is expensive to rebuild.
 
 Only cache content that `graphify update .` rebuilds without an LLM, or that is purely session or temp state, leaves git. Each of these gets a `.gitignore` entry and a `git rm --cached`:
-- `graphify-out/cache/ast/`: about 21 MB and 468 files, rebuilt from source on CPU only.
+- `graphify-out/cache/ast/`: about 21 MB and 484 files, rebuilt from source on CPU only.
 - `graphify-out/cache/stat-index.json` and `graphify-out/cache/last_query_stamp`: rebuilt indexes and timestamps.
 - `graphify-out/cache/hook_sessions/`: state for individual Claude sessions, never shared.
 - `graphify-out/cache/.gfy-replace-bak-*.tmp`: leftover temp backups.
@@ -69,11 +75,11 @@ The rule: if rebuilding a path needs an LLM call, it stays tracked.
 - The package allow-list (spec "Installable package layout") already keeps all of `graphify-out/` out of the zip and the tgz.
 
 ### D8. The header typo becomes a checker failure
-`check_license_headers.py` gains a `FORBIDDEN` tuple (`"Berechowskir"`). Any tracked policed file that contains a forbidden string fails the check, so the typo cannot come back through copy-paste.
+`check_license_headers.py` gains a `FORBIDDEN` tuple (`"Berechowskir"`). Any tracked policed file that contains a forbidden string fails the check, so the typo cannot come back through copy-paste. The rule lives only in this repository's copy of the checker. The mock's copy in `test-stack` has no FORBIDDEN handling, and the engine comment in this copy says so.
 
 ## Risks / Trade-offs
 
-- [`gh release create` fails after the push, leaving a tag without a release] → The step is safe to re-run. The rollback is documented: `gh release create v<x>` by hand, or delete the tag.
+- [`gh release create` fails after the push, leaving a tag without a release] → The run keeps the verified files as its `release-files` artifact, and the README documents publishing them by hand with `gh release create v<x>`. Deleting the tag instead abandons that version: its release commit is already on master, so the next run releases the version after it.
 - [The submodule repository is made private later] → CI would then need a read token on the mock job's checkout (`token: ${{ secrets.TEST_STACK_TOKEN }}`). Until that is added, the mock job fails loudly instead of skipping.
 - [`+` in the file name trips a tool that does not URL-encode] → GitHub artifact names allow `+`. The zip's internal folder is still `ifirma/`, which is what PrestaShop's upload checks.
 - [Removing the AST cache or the stat index makes graphify think the semantic extraction is stale, which would trigger an LLM run] → Tasks 1.3 to 1.5 record a baseline, then gate the untracking on a fresh-clone rebuild with no LLM call, unchanged node and edge counts, an identical semantic cache and an unchanged `cost.json`. If any check fails, the offending path stays tracked.
@@ -84,8 +90,9 @@ The rule: if rebuilding a path needs an LLM call, it stays tracked.
 1. Land the housekeeping first: typo, checker rule, cheap graph cache untracked. These are independent and have low risk.
 2. Create the mock repository and convert the gitlink to a submodule. Verify that the CI mock job runs.
 3. Change `build-zip.mjs` and `ci.yml`, then confirm that one CI run produces `ifirma-1.2.0+build.<n>.zip` with a correct `BUILD`.
-4. Change `release.yml`. Do a first dry run with a `workflow_dispatch` on a fork or a throwaway branch, or else review it with the user before the first real release.
-Rollback: each step is a separate commit that can be reverted on its own. Converting the submodule back is `git submodule deinit` plus restoring the gitlink.
+4. Change `release.yml`. A dry run needs a fork: on a branch of this repository the workflow would push a real tag and publish a real release. Otherwise, review it with the user before the first real release. (Done: the user reviewed it and released v1.3.0.)
+
+Rollback: most of the change landed in one commit (`afca41f`), followed by the submodule bump (`958c1a6`) and the review fixes. Revert them newest first. Converting the submodule back is `git submodule deinit` plus restoring the gitlink.
 
 ## Open Questions
 
