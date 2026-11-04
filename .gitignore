@@ -10,6 +10,7 @@ __pycache__/
 # PHP tooling
 tests/vendor/
 .phpunit.result.cache
+build/
 
 # graphify: only cache that `graphify update .` rebuilds without an LLM, plus
 # session/temp state. The graph itself, its snapshots and cache/semantic/

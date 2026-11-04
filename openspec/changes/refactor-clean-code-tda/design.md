@@ -29,17 +29,20 @@ Each task runs in four steps:
 4. **Changed-line gate:** `diff-cover` against the task's base commit reports 100% of changed PHP lines covered.
 
 A task is not done until both gates pass. If a gate fails, the task stops; no later task starts on a red tree.
+
+The work lands straight on master, one commit per task, with no branch and no pull request (the user's choice on 2026-11-04). The gates therefore run locally before each commit (see D2), and CI repeats them after the push.
 - *Alternative:* a global coverage threshold. Rejected, because it lets new code ride on old coverage and does not prove that the touched lines are tested.
 
 ### D2. Coverage tooling: pcov plus Cobertura plus diff-cover
 - `phpunit.xml.dist` gets a `<coverage>` section that includes `classes/`, `controllers/` and `ifirma.php`.
 - `composer coverage` runs `phpunit --coverage-cobertura build/coverage.xml`.
-- CI adds a `coverage` job (setup-php `coverage: pcov`) that runs `diff-cover build/coverage.xml --compare-branch=origin/master --fail-under=100` on pull requests.
-- Locally, coverage runs in the WSL Docker PrestaShop container or the scratchpad toolchain, whichever has pcov or xdebug. Without a driver, the task relies on the CI job.
+- CI adds a `coverage` job (setup-php `coverage: pcov`) that runs `diff-cover build/coverage.xml --fail-under=100`. It compares a pull request with its base, a push with the commit before the push (`github.event.before`), and a manual run with master. The test build waits for it.
+- Locally, the gate is authoritative, because nothing goes through a pull request. It runs the whole suite in a PHP 8.2 image with pcov, the same PHP as CI. The checkout is mounted at `/work/ifirma`, because the bootstrap needs the folder name. It then runs diff-cover on the host against the task's base commit.
+- diff-cover's `--include-untracked` misses new files on this machine. The local gate marks untracked files intent-to-add (`git add -N`) for the check and restores the index afterwards. In CI, new files are committed, so they are always part of the diff.
 - *Alternative:* xdebug. It is slower, and pcov is enough for line coverage.
 
 ### D3. PHP 7.2 compatibility lint
-A CI job runs `php -l` on all PHP files with setup-php `7.2`. Lint only: the test suite needs PHPUnit 9 (PHP 7.3+), and syntax is the actual risk.
+A CI job runs `php -l` with setup-php `7.2` on all shipped PHP files, which means every tracked PHP file outside `tests/` and `tools/`. Lint only: the test suite needs PHPUnit 9 (PHP 7.3+), so the tests and dev tools may legitimately use newer syntax, and syntax is the actual risk in shipped code. The test build waits for this job.
 
 ### D4. API-client factory: `IfirmaApiClient::fromConfiguration($baseUrl = null)`
 It is a static named constructor that reads `IFIRMA_USER` and the three `IFIRMA_KEY_*` keys, and applies the `?: IFIRMA_BASE_URL` fallback uniformly. Each `X::build()` calls it. The constructor stays unchanged, so the tests that inject clients are untouched.
@@ -77,10 +80,10 @@ It owns template paths, the language fallback and `Mail::Send`. It is injected i
 
 - [The label consolidation changes visible wording on one screen] → Differences are listed and confirmed with the user before the change. `TranslationCoverageTest` must stay green.
 - [The `ensure()` return-type change breaks a caller that wasn't found] → It is grep-verified, and the full suite plus the changed-line gate apply. `php -l` on 7.2 catches syntax-level slips only.
-- [Coverage cannot run locally because no driver is installed] → The CI coverage job is authoritative. The task is not marked done until it is green on CI.
+- [A gap in the local gate lets an uncovered line reach master] → The local gate was proven against probes before use: an untested new class, a half-tested branch and an untested method in a tracked class all fail it, and a red test fails it. CI repeats the check after every push, and a failure there blocks the test build.
 - [`diff-cover` counts reformatted lines as changed] → Do not reformat unrelated lines. Keep diffs minimal.
 - [100% changed-line coverage pushes towards shallow tests] → Characterisation tests must assert outcomes (return values, saved fields, calls to fakes), not just execute lines. This is checked in review.
 
 ## Migration Plan
 
-Each task is one commit (or two, with the characterisation tests committed first), in the order of tasks.md, so it can be reverted on its own. Nothing changes at runtime that would need a data migration. A rollback is a revert of the task commit.
+Each task is one commit on master (or two, with the characterisation tests committed first), in the order of tasks.md, so it can be reverted on its own. There is no branch and no pull request. Nothing changes at runtime that would need a data migration. A rollback is a revert of the task commit.

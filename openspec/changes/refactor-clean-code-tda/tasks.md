@@ -6,13 +6,23 @@ Every refactor task (groups 2 to 13) follows design D1:
 3. The full PHPUnit suite passes.
 4. `diff-cover` reports 100% of changed lines covered.
 
-No task starts on a red tree.
+No task starts on a red tree. Each task is one commit straight on master, with no branch and no pull request. The local gate runs before the commit (the whole suite in a PHP 8.2 image with pcov, then diff-cover against the task's base commit), and CI repeats it after the push.
 
 ## 1. Safety net
 
-- [ ] 1.1 Add a `<coverage>` section (classes/, controllers/, ifirma.php) to `phpunit.xml.dist` and a `composer coverage` script that writes `build/coverage.xml` (Cobertura). Add `build/` to `.gitignore`. Verify that `composer coverage` produces the XML in an environment with pcov (CI or the WSL container), and record the per-class line coverage baseline in the PR description.
-- [ ] 1.2 Add a CI `coverage` job (setup-php `coverage: pcov`, `pip install diff-cover`, `diff-cover build/coverage.xml --compare-branch=origin/master --fail-under=100`) for pull requests. Verify that it passes on a no-op PR and fails on a scratch PR that adds an untested branch.
-- [ ] 1.3 Add a CI `lint-php72` job (setup-php `7.2`, `php -l` on all tracked PHP). Verify that it passes on the current tree and fails on a scratch file using a typed property.
+- [x] 1.1 Add a `<coverage>` section (classes/, controllers/, ifirma.php) to `phpunit.xml.dist` and a `composer coverage` script that writes `build/coverage.xml` (Cobertura). Add `build/` to `.gitignore`. Verify that `composer coverage` produces the XML in an environment with pcov (CI or the WSL container), and record the per-class line coverage baseline in these notes. Evidence:
+  - The coverage filter leaves out the four directory-guard `index.php` files.
+  - In a local PHP 8.2.33 image with pcov, the command behind `composer coverage` (`tests/vendor/bin/phpunit --coverage-cobertura build/coverage.xml`; the image has no composer) gives `OK (1080 tests, 3896 assertions)` and writes the report. File names in the report are repo-relative. CI runs `composer coverage` itself.
+  - Baseline: 4466 of 4877 shipped lines are covered (91.6%). The weakest files a task touches are `controllers/front/cron.php` 0% (task 6), `IfirmaReceipt` 75% (task 9), `IfirmaAdminActions` 81.6% (tasks 3, 4, 5, 12, 13) and `IfirmaIssuancePipeline` 88.2% (tasks 5, 9, 12, 13).
+  - Other low files no task touches: `IfirmaHttpTransport` 0%, `controllers/front/receipt.php` 0%, `AdminIfirmaController` 41%.
+  - Every other class is at 93% or more, and six files are at 100%.
+- [ ] 1.2 Add a CI `coverage` job (setup-php `coverage: pcov`, `pip install diff-cover`, `diff-cover build/coverage.xml --fail-under=100`). It compares pull requests with their base, pushes with `github.event.before`, and manual runs with master, and the test build waits for it. The work lands on master without pull requests, so verify the gate on the machine and in CI:
+  - Locally, the same diff-cover command must fail on an untested branch and pass once a test covers it.
+  - In CI, the job must pass on the push that adds it.
+- [x] 1.3 Add a CI `lint-php72` job (setup-php `7.2`, `php -l` on every tracked PHP file outside `tests/` and `tools/`; the tests need PHPUnit 9, so PHP 7.3+). Verify that it passes on the current tree and fails on a scratch file using a typed property. Evidence:
+  - With PHP 7.2.34, all 49 shipped PHP files lint clean, so the module's `php >=7.2` claim holds today.
+  - A scratch class with a typed property fails with `syntax error, unexpected 'int'`, exit 255.
+  - actionlint exits 0 on the new job, and the build job waits for it.
 
 ## 2. API-client factory (Tier 1)
 
@@ -26,7 +36,7 @@ No task starts on a red tree.
 
 ## 4. Match labels (Tier 1)
 
-- [ ] 4.1 List every code where `ifirma.php::matchedByLabel` and `IfirmaAdminActions::matchedByLabel` word labels differently, and get the user's choice for each. Verify that the decisions are recorded in this task's PR description.
+- [ ] 4.1 List every code where `ifirma.php::matchedByLabel` and `IfirmaAdminActions::matchedByLabel` word labels differently, and get the user's choice for each. Verify that the decisions are recorded in this task's notes.
 - [ ] 4.2 Characterise both label paths, plus `contractorActionLabel`, which has no direct test today: one test per code. Verify that they pass on unchanged code.
 - [ ] 4.3 Introduce `IfirmaMatchLabels` (design D6), keyed by `IfirmaContractorMap::BY_*`. Replace both methods and the hard-coded match-code lists (`ifirma.php:~984`, `IfirmaAdminActions.php:~376`). Verify that the suite is green, `TranslationCoverageTest` is green, and diff-cover is at 100%.
 
@@ -72,7 +82,7 @@ No task starts on a red tree.
 
 ## 14. Integration check
 
-- [ ] 14.1 Run the full CI pipeline on the branch (lint, lint-php72, phpunit, coverage, mock, build). Install the build on the local test-stack shop, then issue a receipt, run a delivery and approve a data request. Verify that the behaviour matches master, and that `php tests/smoke/run.php` passes in the container.
+- [ ] 14.1 Run the full CI pipeline on master after the last task (lint, lint-php72, phpunit, coverage, mock, build). Install the build on the local test-stack shop, then issue a receipt, run a delivery and approve a data request. Verify that the behaviour matches master, and that `php tests/smoke/run.php` passes in the container.
 - [ ] 14.2 Run `graphify update .` and `openspec validate refactor-clean-code-tda`. Verify that both succeed.
 
 ## Workflow follow-up

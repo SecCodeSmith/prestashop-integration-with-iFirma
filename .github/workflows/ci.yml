@@ -32,6 +32,22 @@ jobs:
       - name: Verify license headers
         run: python3 tools/check_license_headers.py
 
+  lint-php72:
+    name: PHP 7.2 syntax (shipped code)
+    # The module declares php >=7.2. Tests and dev tools are left out: the tests need
+    # PHPUnit 9, so PHP 7.3+.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.IFIRMA_BUILD_COMMIT }}
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "7.2"
+          coverage: none
+      - name: PHP 7.2 syntax check
+        run: git ls-files '*.php' ':!:tests/' ':!:tools/' | while read -r f; do php -l "$f"; done
+
   phpunit:
     name: PHPUnit
     runs-on: ubuntu-latest
@@ -54,10 +70,44 @@ jobs:
       - name: Run unit tests
         run: tests/vendor/bin/phpunit
 
+  coverage:
+    name: Changed-line coverage
+    # Every changed PHP line must be covered by a test. A pull request compares with its
+    # base, a push with the commit before the push, a manual run with master.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ifirma
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.IFIRMA_BUILD_COMMIT }}
+          path: ifirma
+          fetch-depth: 0
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          coverage: pcov
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          composer install --no-interaction --prefer-dist
+          pip install diff-cover
+      - name: Run unit tests with coverage
+        run: composer coverage
+      - name: Require 100% coverage of changed lines
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'origin/master' }}
+        run: |
+          if [ "$BASE" = 0000000000000000000000000000000000000000 ]; then BASE=origin/master; fi
+          diff-cover build/coverage.xml --compare-branch="$BASE" --fail-under=100
+
   build:
     name: Test build (zip + tgz)
     # A test build is only produced from a tree that passed every check.
-    needs: [lint, phpunit, mock]
+    needs: [lint, lint-php72, phpunit, coverage, mock]
     runs-on: ubuntu-latest
     env:
       # Build identity lives only in the zip name and ifirma/BUILD; the module

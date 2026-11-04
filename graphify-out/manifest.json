@@ -240,9 +240,9 @@
     "semantic_hash": "7a4fbeca10021f32441941bac76d3e4f"
   },
   ".github/workflows/ci.yml": {
-    "mtime": 1793827478.660071,
-    "seen": 1793827967.7341585,
-    "ast_hash": "77eed705723a2e2a410c6df730be752d",
+    "mtime": 1793830395.9747007,
+    "seen": 1793830500.5441535,
+    "ast_hash": "6dde7358d00a8f9afe672f70518a0a34",
     "semantic_hash": ""
   },
   ".github/workflows/release.yml": {
@@ -384,9 +384,9 @@
     "semantic_hash": ""
   },
   "composer.json": {
-    "mtime": 1793566178.4774058,
-    "seen": 1793566367.383272,
-    "ast_hash": "b1791450f7693ac9d5afe4aa52b7efd3",
+    "mtime": 1793829900.6651254,
+    "seen": 1793830500.5439003,
+    "ast_hash": "aab0f3afa02331f04b9ddcb2d6868ae8",
     "semantic_hash": ""
   },
   "controllers/front/cron.php": {
@@ -1332,9 +1332,9 @@
     "semantic_hash": ""
   },
   "openspec/changes/refactor-clean-code-tda/design.md": {
-    "mtime": 1793819577.9366524,
-    "seen": 1793827967.734241,
-    "ast_hash": "e7ff26d72cdb1192fc62ff77d7408ced",
+    "mtime": 1793830439.459306,
+    "seen": 1793830500.544265,
+    "ast_hash": "0b5edbefb4dcc1d7284ccc7faf911474",
     "semantic_hash": ""
   },
   "openspec/changes/refactor-clean-code-tda/proposal.md": {
@@ -1344,9 +1344,9 @@
     "semantic_hash": ""
   },
   "openspec/changes/refactor-clean-code-tda/tasks.md": {
-    "mtime": 1793819609.0547986,
-    "seen": 1793827967.7342432,
-    "ast_hash": "b6cb00434cd8b713653cdf37e4669b33",
+    "mtime": 1793830470.7156074,
+    "seen": 1793830500.5442688,
+    "ast_hash": "6d6c554e2bafef4967496aa4f627ede2",
     "semantic_hash": ""
   },
   "openspec/changes/refactor-srp-splits/.openspec.yaml": {

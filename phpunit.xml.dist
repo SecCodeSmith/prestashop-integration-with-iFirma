@@ -9,6 +9,21 @@
             <directory>tests/Unit</directory>
         </testsuite>
     </testsuites>
+    <!-- Code that coverage reports (composer coverage) measure. Only read when a coverage
+         option is given, so plain test runs are unaffected. -->
+    <coverage>
+        <include>
+            <directory suffix=".php">classes</directory>
+            <directory suffix=".php">controllers</directory>
+            <file>ifirma.php</file>
+        </include>
+        <exclude>
+            <file>classes/index.php</file>
+            <file>controllers/index.php</file>
+            <file>controllers/admin/index.php</file>
+            <file>controllers/front/index.php</file>
+        </exclude>
+    </coverage>
     <php>
         <ini name="error_reporting" value="-1"/>
     </php>

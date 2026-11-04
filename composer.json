@@ -17,6 +17,7 @@
         "vendor-dir": "tests/vendor"
     },
     "scripts": {
-        "test": "tests/vendor/bin/phpunit"
+        "test": "tests/vendor/bin/phpunit",
+        "coverage": "tests/vendor/bin/phpunit --coverage-cobertura build/coverage.xml"
     }
 }
