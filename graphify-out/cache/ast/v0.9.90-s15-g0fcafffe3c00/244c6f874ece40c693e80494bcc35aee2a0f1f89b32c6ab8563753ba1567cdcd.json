@@ -1,1 +1,0 @@
-{"nodes": [{"id": "pkg_ifirma_mock", "label": "ifirma-mock", "file_type": "code", "type": "package", "ecosystem": "python", "source_file": "test-stack/ifirma-mock/pyproject.toml", "source_location": "L1", "version": "1.0.0"}], "edges": []}

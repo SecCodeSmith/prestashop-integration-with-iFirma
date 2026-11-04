@@ -10,6 +10,9 @@ Every distributed source file must carry the module's license notice
     python tools/check_license_headers.py --add      # insert the header where missing
     python tools/check_license_headers.py FILE...    # only look at the given files
 
+Check mode also fails on any file containing a string from FORBIDDEN (known
+header typos such as a misspelt author name).
+
 Exit status is 0 when every file already has the header and 1 otherwise, so the
 default mode drops straight into CI or a pre-commit hook. The file list comes
 from `git ls-files`, so ignored paths (e.g. the mock's .venv) are never touched,
@@ -49,6 +52,12 @@ NOTICE = [
 
 # Which tracked files to police.
 EXTENSIONS = {".php", ".tpl", ".css", ".js"}
+
+# Strings that must never appear in a policed file (known header typos), so a
+# copy-pasted bad header fails the check instead of spreading.
+FORBIDDEN = (
+    "Berechowskir",
+)
 
 # --------------------------------------------------------------------------- #
 # Engine — identical in both repos.
@@ -111,6 +120,10 @@ def write_file(path: Path, text: str, eol: str) -> None:
 def has_marker(text: str) -> bool:
     head = "\n".join(text.split("\n")[:60])
     return any(marker in head for marker in MARKERS)
+
+
+def forbidden_hits(text: str) -> list[str]:
+    return [s for s in FORBIDDEN if s in text]
 
 
 def add_header(path: Path, ext: str) -> bool:
@@ -186,6 +199,7 @@ def main() -> int:
 
     missing: list[Path] = []
     changed: list[Path] = []
+    tainted: list[tuple[Path, list[str]]] = []
     scanned = 0
     for path in files:
         ext = path.suffix.lower()
@@ -193,6 +207,9 @@ def main() -> int:
             continue
         scanned += 1
         text, _ = read_file(path)
+        hits = forbidden_hits(text)
+        if hits:
+            tainted.append((path, hits))
         if has_marker(text):
             continue
         if args.add:
@@ -215,9 +232,14 @@ def main() -> int:
 
     for path in missing:
         print(f"missing header: {rel(path)}")
+    for path, hits in tainted:
+        print(f"forbidden text {', '.join(repr(h) for h in hits)}: {rel(path)}")
     if missing:
         print(f"\n{len(missing)} of {scanned} file(s) lack the license header.")
         print("Run: python tools/check_license_headers.py --add")
+    if tainted:
+        print(f"\n{len(tainted)} of {scanned} file(s) contain forbidden text (see FORBIDDEN).")
+    if missing or tainted:
         return 1
     print(f"All {scanned} source file(s) carry the license header.")
     return 0

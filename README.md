@@ -596,8 +596,68 @@ Other checks:
 
 ```bash
 npm run build                              # installable zip + npm tarball in dist/
+npm run verify:package                     # layout + ifirma/BUILD check of every zip in dist/
 python tools/check_license_headers.py      # every source file must carry the license header
 ```
+
+`python tools/check_license_headers.py` also fails on known header typos listed in its `FORBIDDEN` tuple.
+
+### Test stack (git submodule)
+
+The mock iFirma API and the Docker test stack live in the `test-stack/` git submodule
+(<https://github.com/SecCodeSmith/test-stack>, public, MIT licensed). This repo pins one commit of it.
+
+```bash
+# fresh clone; the folder must be named ifirma (the test bootstrap resolves _PS_MODULE_DIR_ from it)
+git clone --recurse-submodules https://github.com/SecCodeSmith/prestashop-integration-with-iFirma.git ifirma
+
+# existing clone
+git submodule update --init
+```
+
+To update the pinned mock, commit and push the change in the `test-stack` repo first. Then, in the module repo:
+
+```bash
+git -C test-stack pull origin master
+git add test-stack
+git commit -m "Update test-stack submodule"
+```
+
+CI's `mock` job checks the submodule out and fails if it is missing.
+
+### Builds and their identity
+
+Every package carries an `ifirma/BUILD` manifest (JSON: `version`, `build`, `commit`, `builtAt`, `channel`), generated
+at build time and never written to the working tree. The module version in `ifirma.php` / `config.xml` is **not**
+changed by a test build, so PrestaShop's `ps_module.version` (8 characters) and upgrade-script selection behave
+exactly as for the matching release. `scripts/build-zip.mjs` reads:
+
+| Variable | Values | Effect |
+|---|---|---|
+| `IFIRMA_BUILD_CHANNEL` | `local` (default), `test`, `release` | `test` names the zip `ifirma-<version>+build.<n>.zip` |
+| `IFIRMA_BUILD_NUMBER` | positive integer, required for `test` | CI uses `github.run_number` |
+| `IFIRMA_BUILD_COMMIT` | commit hash (cut to 7 chars) | defaults to `git rev-parse HEAD` |
+
+```bash
+npm run build:zip                                                    # dist/ifirma-1.2.0.zip, channel local
+IFIRMA_BUILD_CHANNEL=test IFIRMA_BUILD_NUMBER=7 npm run build:zip    # dist/ifirma-1.2.0+build.7.zip
+```
+
+**Test builds.** CI (`.github/workflows/ci.yml`) builds a test package on every push, pull request and manual run,
+only after lint, PHPUnit and the mock tests pass. Download it from the run's *Artifacts* section
+(`ifirma-<version>+build.<n>`, kept 90 days).
+
+**Releases.** Actions -> *Release* -> *Run workflow* with `patch`, `minor` or `major`. The workflow runs PHPUnit, lint
+and the licence check, bumps and syncs the version (`package.json`, `package-lock.json`, `ifirma.php`, `config.xml`)
+into a local commit + tag `v<version>`, builds and verifies `ifirma-<version>.zip` (channel `release`), and only then
+pushes and publishes the GitHub Release. A failure before the push leaves the remote untouched. If only the final
+publish step fails, the tag already exists: re-run it by hand,
+
+```bash
+gh release create v<version> --title v<version> --generate-notes dist/ifirma-<version>.zip scm-ifirma-<version>.tgz
+```
+
+or delete the tag (`git push --delete origin v<version>`) and run the workflow again.
 
 ### Dev dependencies and PrestaShop
 

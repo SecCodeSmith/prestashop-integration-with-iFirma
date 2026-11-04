@@ -1,6 +1,6 @@
 <?php
 /**
- * @author    SCM Jakub Berechowskir
+ * @author    SCM Jakub Berechowski
  * @license   SecCodeSmith Commercial License v1.3
  */
 

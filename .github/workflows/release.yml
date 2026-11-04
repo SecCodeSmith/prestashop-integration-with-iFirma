@@ -1,8 +1,14 @@
 name: Release
 
-# Manual release: bump the build version (synced across package.json, ifirma.php
-# and config.xml), tag it v<version>, push, then publish a GitHub Release with
-# the installable zip and the npm tarball attached.
+# Manual release, atomic up to the publish step:
+#   1. verify  - PHPUnit, PHP lint and licence headers on the commit being released
+#   2. bump    - `npm version` syncs package.json, ifirma.php and config.xml and
+#                creates the release commit + tag LOCALLY (nothing pushed yet)
+#   3. build   - release zip (BUILD channel "release") + npm tarball, then verified
+#   4. push    - commit and tag reach the remote only after 1-3 succeeded
+#   5. publish - GitHub Release with the zip and tarball attached
+# If step 5 fails the tag exists without a release: re-run
+# `gh release create v<version> --generate-notes dist/*.zip *.tgz` (see README).
 on:
   workflow_dispatch:
     inputs:
@@ -22,9 +28,15 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # The test bootstrap resolves _PS_MODULE_DIR_ from the folder name, so the
+    # module is checked out into "ifirma" exactly as in the CI phpunit job.
+    defaults:
+      run:
+        working-directory: ifirma
     steps:
       - uses: actions/checkout@v4
         with:
+          path: ifirma
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -32,15 +44,20 @@ jobs:
         with:
           node-version: "20"
           cache: npm
+          cache-dependency-path: ifirma/package-lock.json
       - uses: shivammathur/setup-php@v2
         with:
           php-version: "8.2"
           coverage: none
 
-      - run: npm ci
-
-      - name: Test build before releasing
+      - name: Install dependencies
         run: |
+          npm ci
+          composer install --no-interaction --prefer-dist
+
+      - name: Verify before releasing (PHPUnit, lint, licence headers)
+        run: |
+          tests/vendor/bin/phpunit
           git ls-files '*.php' | while read -r f; do php -l "$f"; done
           python3 tools/check_license_headers.py
 
@@ -49,15 +66,19 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Bump version, sync files, commit & tag
+      - name: Bump version, sync files, commit & tag (local only)
         run: |
           npm version ${{ inputs.bump }} -m "release: v%s"
 
+      - name: Build and verify release artifacts (zip + tgz)
+        env:
+          IFIRMA_BUILD_CHANNEL: release
+        run: |
+          npm run build
+          npm run verify:package
+
       - name: Push commit and tag
         run: git push --follow-tags
-
-      - name: Build release artifacts (zip + tgz)
-        run: npm run build
 
       - name: Publish GitHub Release
         env:
@@ -67,4 +88,4 @@ jobs:
           gh release create "$VERSION" \
             --title "$VERSION" \
             --generate-notes \
-            dist/*.zip *.tgz
+            ./dist/*.zip ./*.tgz

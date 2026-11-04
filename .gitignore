@@ -10,3 +10,12 @@ __pycache__/
 # PHP tooling
 tests/vendor/
 .phpunit.result.cache
+
+# graphify: only cache that `graphify update .` rebuilds without an LLM, plus
+# session/temp state. The graph itself, its snapshots and cache/semantic/
+# (LLM output, expensive to rebuild) stay committed.
+graphify-out/cache/ast/
+graphify-out/cache/stat-index.json
+graphify-out/cache/last_query_stamp
+graphify-out/cache/hook_sessions/
+graphify-out/cache/.gfy-replace-bak-*.tmp

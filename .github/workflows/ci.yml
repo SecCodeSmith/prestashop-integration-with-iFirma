@@ -4,6 +4,7 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -45,8 +46,16 @@ jobs:
         run: tests/vendor/bin/phpunit
 
   build:
-    name: Build package (zip + tgz)
+    name: Test build (zip + tgz)
+    # A test build is only produced from a tree that passed every check.
+    needs: [lint, phpunit, mock]
     runs-on: ubuntu-latest
+    env:
+      # Build identity lives only in the zip name and ifirma/BUILD; the module
+      # version (ifirma.php / config.xml) is never changed by a test build.
+      IFIRMA_BUILD_CHANNEL: test
+      IFIRMA_BUILD_NUMBER: ${{ github.run_number }}
+      IFIRMA_BUILD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -56,13 +65,19 @@ jobs:
       - run: npm ci
       - name: Build installable zip and npm tarball
         run: npm run build
-      - name: Upload package artifacts
+      - name: Verify package layout and BUILD manifest
+        run: npm run verify:package
+      - name: Resolve artifact name
+        id: meta
+        run: echo "name=ifirma-$(node -p "require('./package.json').version")+build.${IFIRMA_BUILD_NUMBER}" >> "$GITHUB_OUTPUT"
+      - name: Upload test build
         uses: actions/upload-artifact@v4
         with:
-          name: ifirma-package
+          name: ${{ steps.meta.outputs.name }}
           path: |
             dist/*.zip
             *.tgz
+          retention-days: 90
           if-no-files-found: error
 
   mock:
@@ -70,17 +85,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # test-stack is a public git submodule (github.com/SecCodeSmith/test-stack).
+          submodules: true
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Run mock tests if the submodule is checked out
+      - name: Require the test-stack submodule
         run: |
-          if [ -f test-stack/ifirma-mock/requirements-dev.txt ]; then
-            cd test-stack/ifirma-mock
-            pip install -r requirements-dev.txt
-            pytest -q
-            cd "$GITHUB_WORKSPACE"
-            python3 test-stack/tools/check_license_headers.py
-          else
-            echo "test-stack submodule not checked out — skipping (it has its own CI)."
+          if [ ! -f test-stack/ifirma-mock/requirements-dev.txt ]; then
+            echo "::error::test-stack submodule is missing: it must be registered in .gitmodules and checked out (actions/checkout submodules: true)"
+            exit 1
           fi
+      - name: Install mock dependencies
+        working-directory: test-stack/ifirma-mock
+        run: pip install -r requirements-dev.txt
+      - name: Run mock tests
+        working-directory: test-stack/ifirma-mock
+        run: pytest -q
+      - name: Verify mock licence headers
+        run: python3 test-stack/tools/check_license_headers.py
