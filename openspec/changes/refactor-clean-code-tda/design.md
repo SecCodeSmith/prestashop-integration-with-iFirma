@@ -38,6 +38,7 @@ The work lands straight on master, one commit per task, with no branch and no pu
 - `composer coverage` runs `phpunit --coverage-cobertura build/coverage.xml`.
 - CI adds a `coverage` job (setup-php `coverage: pcov`) that runs `diff-cover build/coverage.xml --fail-under=100`. It compares a pull request with its base, a push with the commit before the push (`github.event.before`), and a manual run with master. The test build waits for it.
 - Locally, the gate is authoritative, because nothing goes through a pull request. It runs the whole suite in a PHP 8.2 image with pcov, the same PHP as CI. The checkout is mounted at `/work/ifirma`, because the bootstrap needs the folder name. It then runs diff-cover on the host against the task's base commit.
+- One file is exempt, both locally and in CI: `controllers/front/cron.php`. Its `respond()` ends in `exit()`, so no PHPUnit test can run it; its docblock already says so. Task 6 therefore covers the new status-line helper at 100% and changes only one line in `cron.php`.
 - diff-cover's `--include-untracked` misses new files on this machine. The local gate marks untracked files intent-to-add (`git add -N`) for the check and restores the index afterwards. In CI, new files are committed, so they are always part of the diff.
 - *Alternative:* xdebug. It is slower, and pcov is enough for line coverage.
 

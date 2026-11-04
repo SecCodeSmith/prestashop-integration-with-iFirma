@@ -16,9 +16,15 @@ No task starts on a red tree. Each task is one commit straight on master, with n
   - Baseline: 4466 of 4877 shipped lines are covered (91.6%). The weakest files a task touches are `controllers/front/cron.php` 0% (task 6), `IfirmaReceipt` 75% (task 9), `IfirmaAdminActions` 81.6% (tasks 3, 4, 5, 12, 13) and `IfirmaIssuancePipeline` 88.2% (tasks 5, 9, 12, 13).
   - Other low files no task touches: `IfirmaHttpTransport` 0%, `controllers/front/receipt.php` 0%, `AdminIfirmaController` 41%.
   - Every other class is at 93% or more, and six files are at 100%.
-- [ ] 1.2 Add a CI `coverage` job (setup-php `coverage: pcov`, `pip install diff-cover`, `diff-cover build/coverage.xml --fail-under=100`). It compares pull requests with their base, pushes with `github.event.before`, and manual runs with master, and the test build waits for it. The work lands on master without pull requests, so verify the gate on the machine and in CI:
+- [x] 1.2 Add a CI `coverage` job (setup-php `coverage: pcov`, `pip install diff-cover`, `diff-cover build/coverage.xml --fail-under=100`). It compares pull requests with their base, pushes with `github.event.before`, and manual runs with master, and the test build waits for it. The work lands on master without pull requests, so verify the gate on the machine and in CI:
   - Locally, the same diff-cover command must fail on an untested branch and pass once a test covers it.
   - In CI, the job must pass on the push that adds it.
+
+  Evidence:
+  - The local gate (whole suite in PHP 8.2 plus pcov, then diff-cover on the host) was probed in a scratch worktree. An untested new class failed (exit 1, 0%, lines 7-8 and 11 missing). One of two branches tested failed (66.7%, line 11). Both branches tested passed (100%). An untested method added to a tracked class failed. A red test failed the suite step (exit 2).
+  - Two gaps were found and fixed while probing. Docker leaves an empty `tests/vendor` mount point behind, so the gate now checks for the phpunit binary instead. diff-cover's `--include-untracked` misses new files, so the gate now marks them intent-to-add and restores the index afterwards.
+  - The `cron.php` exemption is proven too: a changed `cron.php` line fails without `--exclude` (exit 1) and is skipped with it (exit 0).
+  - CI run #13 (41923647516) on `02bbbc8` passed all six jobs. The coverage job ran `composer coverage` (1080 tests), compared with `0acaa89` (the commit before the push), found no changed PHP lines and passed. The test build waited for it.
 - [x] 1.3 Add a CI `lint-php72` job (setup-php `7.2`, `php -l` on every tracked PHP file outside `tests/` and `tools/`; the tests need PHPUnit 9, so PHP 7.3+). Verify that it passes on the current tree and fails on a scratch file using a typed property. Evidence:
   - With PHP 7.2.34, all 49 shipped PHP files lint clean, so the module's `php >=7.2` claim holds today.
   - A scratch class with a typed property fails with `syntax error, unexpected 'int'`, exit 255.
@@ -47,7 +53,7 @@ No task starts on a red tree. Each task is one commit straight on master, with n
 
 ## 6. HTTP status line (Tier 1)
 
-- [ ] 6.1 Extract the status-line construction from `controllers/front/cron.php::respond` into a small pure helper that maps the status code to its reason phrase, and test it with 200, 403, 404, 429 and 500. Use it in `cron.php`. Verify that a 403 still yields `HTTP/1.1 403 Forbidden`, the suite is green, and diff-cover is at 100% on the helper.
+- [ ] 6.1 Extract the status-line construction from `controllers/front/cron.php::respond` into a small pure helper that maps the status code to its reason phrase, and test it with 200, 403, 404, 429 and 500. Use it in `cron.php`. Verify that a 403 still yields `HTTP/1.1 403 Forbidden`, the suite is green, and diff-cover is at 100% on the helper. `cron.php` itself is exempt from the gate (design D2), so change only the one status-line line there.
 
 ## 7. Schema helper (Tier 1)
 
