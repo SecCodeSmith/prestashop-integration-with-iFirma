@@ -1,6 +1,6 @@
 # Prestashop Module for integration with iFirma – Receipts & Invoices (PrestaShop module)
 
-Two‑way integration between **PrestaShop** (1.7.x / 8.x) and the **iFirma**
+Two‑way integration between **PrestaShop** (8.x / 9.x) and the **iFirma**
 accounting service (`www.ifirma.pl`). It covers the three requested features:
 
 | # | Feature | Where |
@@ -383,12 +383,14 @@ synchronisation URL at the interval set in `IFIRMA_SYNC_INTERVAL_MIN`).
 
 Upload the 1.2.0 module over the existing one and run the upgrade from the Module Manager.
 There is no schema or configuration change. `upgrade/upgrade-1.2.0.php` registers the
-`displayAdminCustomers` hook, which shows the iFirma panel on the back-office customer page.
+`displayAdminCustomers` hook, which shows the iFirma panel on the back-office customer page, and
+unregisters the legacy `displayAdminOrder` hook.
+
+1.2.0 drops PrestaShop 1.7: the minimum version is 8.0.0. Shops still on 1.7 stay on 1.1.x.
 
 ## Customer page
 
-The module adds an **iFirma** panel to the back-office customer view (hook `displayAdminCustomers`,
-on both the legacy and the Symfony pages). Existing installs get it through the 1.2.0 upgrade
+The module adds an **iFirma** panel to the back-office customer view (hook `displayAdminCustomers`). Existing installs get it through the 1.2.0 upgrade
 (see "Upgrading to 1.2.0").
 
 The panel shows:
@@ -564,7 +566,7 @@ an order **before** the document is issued. Enabled by `IFIRMA_ALLOW_DATA_REQUES
 
 ## Compatibility
 
-PrestaShop **1.7.0 – 9.x**, PHP **7.2 – 8.x**. Verified with the Docker smoke suite on PrestaShop 8.1.7 (PHP 8.1) and 9.1.4 (PHP 8.5); see `tests/smoke/README.md`. Requires the PHP `curl`, `hash`
+PrestaShop **8.0 – 9.x**, PHP **7.2 – 8.x**. PrestaShop 1.7 is supported up to module 1.1.x. Verified with the Docker smoke suite on PrestaShop 8.1.7 (PHP 8.1) and 9.1.4 (PHP 8.5); see `tests/smoke/README.md`. Requires the PHP `curl`, `hash`
 and `mbstring` extensions.
 
 ### PrestaShop 9.x notes
@@ -576,8 +578,8 @@ The module is written to be legacy-safe on PS 9 (PHP 8.1+):
 - Deprecated `Tools::strlen/substr/strtoupper` wrappers replaced by native
   `strlen` / `mb_*` calls.
 - Version compliance declared up to `9.99.99`.
-- Rendering on the refactored order page uses `displayAdminOrderMainBottom`
-  (1.7.7+/8/9); the deprecated `displayAdminOrder` path is used only on ≤ 1.7.6.
+- The order panel renders through `displayAdminOrderMainBottom`; the deprecated
+  `displayAdminOrder` hook is not used.
 
 ## Development
 

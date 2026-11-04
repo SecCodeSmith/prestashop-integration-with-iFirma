@@ -83,7 +83,7 @@ and list every failed assertion. `[SKIP]` lines do not affect the exit code.
 
 ## Notes from the first real run (PrestaShop 8.1.7, 2026-11-01)
 
-- **Symfony kernel.** PrestaShop 1.7.7+/8/9 resolve hooks and services through the Symfony container, so a CLI
+- **Symfony kernel.** PrestaShop 8/9 resolve hooks and services through the Symfony container, so a CLI
   script that only requires `config/config.inc.php` fails with `Kernel Container is not available`. `run.php`
   boots the kernel right after the bootstrap (PrestaShop 9 made `AppKernel` abstract and split it into
   `AdminKernel` / `FrontKernel`, so the block picks the first concrete one); copy it into any other CLI script.

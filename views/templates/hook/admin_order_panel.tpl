@@ -29,8 +29,6 @@
         </h3>
     </div>
     <div class="card-body">
-    </div>
-{/if}
 
     {if !$ifirma_configured}
         <div class="alert alert-warning">

@@ -29,7 +29,7 @@ if (!is_file($psRoot . '/config/config.inc.php')) {
 }
 require $psRoot . '/config/config.inc.php';
 
-// Boot the Symfony kernel: PrestaShop 1.7.7+/8/9 resolve hooks and services through the
+// Boot the Symfony kernel: PrestaShop 8/9 resolve hooks and services through the
 // container, which a plain CLI bootstrap of config.inc.php does not create. PrestaShop 9
 // made AppKernel abstract and split it into AdminKernel / FrontKernel.
 if (!isset($GLOBALS['kernel'])) {

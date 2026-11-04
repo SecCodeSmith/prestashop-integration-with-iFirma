@@ -24,7 +24,7 @@
 ## Decisions
 
 ### D1. Hook `displayAdminCustomers`, rendered from `ifirma.php`
-Register `displayAdminCustomers` in `install()` and in `upgrade/upgrade-1.2.0.php`, which is idempotent: `registerHook` is a no-op when the hook is already registered. Both the legacy controller (PS 1.7.0–1.7.5) and the Symfony customer view (1.7.6+, 8, 9) fire this hook with `id_customer` in `$params`. `hookDisplayAdminCustomers` loads the customer, computes the link state and the local counts (no API), and renders `views/templates/hook/admin_customer_panel.tpl`. The template follows the order panel: a Bootstrap 4 card on the Symfony page, a Bootstrap 3 panel on the legacy one, decided the same way as `isModernOrderPage()`.
+Register `displayAdminCustomers` in `install()` and in `upgrade/upgrade-1.2.0.php`, which is idempotent: `registerHook` is a no-op when the hook is already registered. The Symfony customer view of PrestaShop 8 and 9 fires this hook with `id_customer` in `$params`. `hookDisplayAdminCustomers` loads the customer, computes the link state and the local counts (no API), and renders `views/templates/hook/admin_customer_panel.tpl`. The template follows the order panel: a Bootstrap 4 card. PrestaShop 1.7 is no longer supported (minimum 8.0.0), so neither panel keeps a Bootstrap 3 layout, and the legacy `displayAdminOrder` hook is dropped and unregistered by the upgrade.
 *Alternative:* a separate admin tab with a customer picker. Rejected because the merchant wants the information where they already look at the customer.
 
 ### D2. New `IfirmaCustomerContractorService`
@@ -108,8 +108,7 @@ New actions, all POST with `id_customer` and the `AdminIfirma` token, as in the 
 - `CustomerRegister`
 
 `ModuleAdminController` already rejects an invalid token. Link, unlink and register also check that the employee may edit customers:
-- PS ≥ 1.7.0: `Access::isGranted('ROLE_MOD_TAB_ADMINCUSTOMERS_UPDATE', $idProfile)`
-- fallback: `Profile::getProfileAccess($idProfile, Tab::getIdFromClassName('AdminCustomers'))['edit']`
+- `Access::isGranted('ROLE_MOD_TAB_ADMINCUSTOMERS_UPDATE', $idProfile)` (always present on PrestaShop 8 and 9, so there is no `Profile` fallback)
 
 The check is wrapped in one private helper so the test stubs can drive it. `id_customer` is validated with `Validate::isLoadedObject(new Customer(...))`. Results reuse `respond()` and the `success/message/data` envelope. Template output uses `|escape:'html':'UTF-8'`, and the JS builds result rows with `text()`/`$('<td>').text(...)`, never with HTML strings, which covers the XSS scenario.
 

@@ -92,7 +92,7 @@ Design decisions are referenced as D1–D9 (design.md) and scenarios by name fro
   Add the Polish strings to the map and regenerate `pl.php`. Verify `tests/Unit/AdminActionsTest.php` covers "Register a customer" (delegates with the newest order id, `PS-C7` created and linked), "No order", "Sync disabled", an invalid customer id refused, and that `TranslationCoverageTest` passes.
 - [x] 5.3 In `controllers/admin/AdminIfirmaController.php` add the following, all via `respond()`:
   - `ajaxProcessCustomerCheck`, `CustomerSearch` (criteria read with `Tools::getValue` and cast to strings), `CustomerLink`, `CustomerUnlink`, `CustomerRegister`, `CustomerCountRemote`;
-  - a private `canEditCustomers()` helper: `Access::isGranted('ROLE_MOD_TAB_ADMINCUSTOMERS_UPDATE', id_profile)` when `Access` exists, else `Profile::getProfileAccess(...)['edit']`. Link, unlink and register are refused with a permission message when it returns false.
+  - a private `canEditCustomers()` helper: `Access::isGranted('ROLE_MOD_TAB_ADMINCUSTOMERS_UPDATE', id_profile)` (no `Profile` fallback: PrestaShop 1.7 support is dropped, see 6.2). Link, unlink and register are refused with a permission message when it returns false.
 
   Verify with new controller-level tests (in `AdminActionsTest.php` or a new `tests/Unit/AdminControllerCustomerTest.php`, using the stubs from 1.1) for "Employee without edit permission" (link row unchanged) and "Missing token". For the token case, assert that the action is not reached when `ModuleAdminController` token validation fails in the stub, or document in the test that core enforces it and assert the stub's `checkToken` path.
 
@@ -112,8 +112,8 @@ Design decisions are referenced as D1–D9 (design.md) and scenarios by name fro
   - "Markup in a contractor name": a mapped name `<script>alert(1)</script>` appears escaped;
   - "No order" and "Sync disabled" reasons rendered;
   - `TranslationCoverageTest` passes.
-- [x] 6.2 Add `upgrade/upgrade-1.2.0.php` (license header, `upgrade_module_1_2_0($module)` registering `displayAdminCustomers` and returning true; idempotent). Move the version to 1.2.0 in `ifirma.php`, `config.xml` and `package.json`. Verify:
-  - `tests/Unit/UpgradeTest.php` gains a case for "Panel shown after upgrade" (hook registered once even when run twice);
+- [x] 6.2 Add `upgrade/upgrade-1.2.0.php` (license header, `upgrade_module_1_2_0($module)` registering `displayAdminCustomers` and returning true; idempotent). Move the version to 1.2.0 in `ifirma.php`, `config.xml` and `package.json`. Drop PrestaShop 1.7: `ps_versions_compliancy` min `8.0.0`; remove the `displayAdminOrder` hook (install and handler; the upgrade unregisters it), the Bootstrap 3 `panel` layouts of both templates and the `Profile` permission fallback. Verify:
+  - `tests/Unit/UpgradeTest.php` gains a case for "Panel shown after upgrade" (hook registered once even when run twice) and one for the legacy `displayAdminOrder` hook being unregistered;
   - `ConfigurationKeysTest`/`SchemaTest` are unchanged and pass;
   - `python tools/check_license_headers.py` passes.
 
@@ -128,7 +128,7 @@ Design decisions are referenced as D1–D9 (design.md) and scenarios by name fro
 
 ## 8. Integration check against the mock
 
-- [ ] 8.1 Add the next free scenario letter after `H` (`I`) to `tests/smoke/run.php`, registered in the `SMOKE_ONLY` handling and in the `tests/smoke/README.md` table:
+- [x] 8.1 Add the next free scenario letter after `H` (`I`) to `tests/smoke/run.php`, registered in the `SMOKE_ONLY` handling and in the `tests/smoke/README.md` table:
   1. seed a mock contractor `KOWALSKI-01` with the customer's name and phone;
   2. call `IfirmaAdminActions::customerSearch` and assert it is listed with the phone flag;
   3. `customerLink` and assert the map row `manual`;
@@ -136,4 +136,4 @@ Design decisions are referenced as D1–D9 (design.md) and scenarios by name fro
   5. `customerCountRemote` and assert total ≥ 1 and complete;
   6. `customerUnlink` and assert no row.
 
-  Verify `wsl.exe docker compose exec -T -u www-data prestashop php modules/ifirma/tests/smoke/run.php` reports no FAIL line. After installing the zip in the stack, open a customer page in the 1.7/8/9 back office and confirm the panel renders. Record the PS versions checked in the task commit message.
+  Verify `wsl.exe docker compose exec -T -u www-data prestashop php modules/ifirma/tests/smoke/run.php` reports no FAIL line. Open a customer page in the 8.1 and 9.1 back office and confirm the panel renders (PrestaShop 1.7 support is dropped, see 6.2). Record the PS versions checked in the task commit message.

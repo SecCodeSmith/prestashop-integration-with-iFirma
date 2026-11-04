@@ -13,7 +13,7 @@
 // and issues one document against the mock so phase 2 can upgrade and verify it survives.
 $psRoot = getenv('PS_ROOT') ? rtrim(getenv('PS_ROOT'), '/\\') : dirname(__DIR__, 4);
 require $psRoot . '/config/config.inc.php';
-// Boot the Symfony kernel: PrestaShop 1.7.7+/8/9 resolve hooks and services through the
+// Boot the Symfony kernel: PrestaShop 8/9 resolve hooks and services through the
 // container, which a plain CLI bootstrap of config.inc.php does not create. PrestaShop 9
 // made AppKernel abstract and split it into AdminKernel / FrontKernel.
 if (!isset($GLOBALS['kernel'])) {

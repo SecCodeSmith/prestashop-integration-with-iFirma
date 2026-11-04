@@ -6,7 +6,7 @@ The merchant can see a customer's iFirma state only one order at a time, in the 
 
 ## What Changes
 
-- **iFirma panel on the customer page.** The back-office customer view (hook `displayAdminCustomers`, both the legacy and the Symfony customer page) shows an iFirma panel with:
+- **iFirma panel on the customer page.** The back-office customer view (hook `displayAdminCustomers`, the Symfony customer page of PrestaShop 8 and 9) shows an iFirma panel with:
   - the contractor link: the linked identifier, its name and how it was matched, or `PS-C<id>`, or "not linked";
   - a live registration check: one contractor lookup in iFirma when the panel opens, loaded asynchronously so the customer page never waits. It shows "registered", "not found in iFirma", or "could not check" with the error;
   - the document count from the module log for that customer, split by state (issued, paid, held, needs attention) and by type (receipt, domestic invoice, other);
@@ -14,7 +14,8 @@ The merchant can see a customer's iFirma state only one order at a time, in the 
 - **Contractor search and choice.** When the customer is not linked, or the linked contractor is not found, the panel offers a search for older contractors. The fields come pre-filled from the customer and their addresses: first name, last name, company, NIP, e-mail, phone. Name, surname, company and NIP are sent to the iFirma contractor search, which only matches identifier, name or NIP. The results are merged without duplicates. E-mail and phone can't be searched in iFirma. They are compared with each returned row to mark and rank matches (NIP, e-mail, phone, name). A search with only an e-mail or a phone is refused with an explanation. The employee picks one contractor from the list and confirms. The module re-reads it from iFirma and stores the link with match type `manual`. The same search and choice are available to replace an existing link, and an **Unlink** action removes the link.
 - **Register as new contractor.** When the employee finds no older contractor, the panel offers to register the customer as a new contractor (`PS-C<id>`). This uses the existing contractor registration with the data of the customer's latest order. It is unavailable when the customer has no order or contractor sync is disabled.
 - **Warning on linking.** The confirmation dialog states that the next document for this customer will update the chosen contractor's name, NIP, address and e-mail in iFirma with the shop data. This is the existing behaviour for every linked contractor.
-- **Upgrade.** The module version moves to 1.2.0. A new upgrade script registers the `displayAdminCustomers` hook on existing installations. Fresh installs register it in `install()`.
+- **Drop PrestaShop 1.7.** The minimum version moves to 8.0.0. The 1.7-only code goes: the legacy `displayAdminOrder` hook, the Bootstrap 3 panel layouts of the order and customer panels, and the `Profile::getProfileAccess()` permission fallback. Shops on 1.7 stay on 1.1.x.
+- **Upgrade.** The module version moves to 1.2.0. A new upgrade script registers the `displayAdminCustomers` hook on existing installations and unregisters `displayAdminOrder`. Fresh installs register it in `install()`.
 - **Translations and docs.** Polish translations for every new string. README gets a "Customer page" section and an entry in "Linking existing contractors".
 
 ## Capabilities
