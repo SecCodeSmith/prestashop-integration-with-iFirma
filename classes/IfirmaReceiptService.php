@@ -542,7 +542,7 @@ class IfirmaReceiptService
             throw new Exception($this->l('iFirma rejected the payment: %s', $message));
         }
 
-        $receipt->status = IfirmaReceipt::STATUS_PAID;
+        $receipt->markPaid();
         $receipt->paid_amount = $amount;
         $receipt->last_error = '';
         $receipt->response_payload = json_encode($response, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);

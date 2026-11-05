@@ -253,7 +253,11 @@ class IfirmaDuplicateGuard
         $r->remote_paid_amount = $paid;
         $r->remote_sent = !empty($row['CzyWyslano']) ? 1 : 0;
         $r->remote_draft = !empty($row['CzySzkic']) ? 1 : 0;
-        $r->status = ($paid >= $gross - $tolerance) ? IfirmaReceipt::STATUS_PAID : IfirmaReceipt::STATUS_CREATED;
+        if ($paid >= $gross - $tolerance) {
+            $r->markPaid();
+        } else {
+            $r->status = IfirmaReceipt::STATUS_CREATED;
+        }
         $r->recordDelivery(IfirmaReceipt::DELIVERY_SKIPPED, '', 'external document - not auto-delivered');
         $r->last_error = '';
         if (empty($r->security_token)) {
@@ -292,11 +296,8 @@ class IfirmaDuplicateGuard
         foreach ($candidates as $row) {
             $summaries[] = IfirmaDuplicateMatcher::summarize($row);
         }
-        $r->status = IfirmaReceipt::STATUS_DUPLICATE_SUSPECTED;
-        $r->ifirma_id = '';
-        $r->source = IfirmaReceipt::SOURCE_MODULE;
+        $r->markSuspected('Suspected duplicate: ' . count($summaries) . ' matching document(s) found in iFirma');
         $r->order_reference = IfirmaReceiptService::buildOrderReference($order);
-        $r->last_error = 'Suspected duplicate: ' . count($summaries) . ' matching document(s) found in iFirma';
         $r->duplicate_candidates = json_encode(array('candidates' => $summaries, 'resolution' => null));
         $r->save();
 

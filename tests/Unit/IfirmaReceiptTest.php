@@ -43,9 +43,9 @@ class IfirmaReceiptWriteSpy extends IfirmaReceipt
 }
 
 /**
- * The status intents of the receipt entity: markError, markUnknown, markHeld and recordDelivery.
- * Each one sets its fields in memory only; the caller keeps its own save(), so the number of
- * database writes on a path stays what it was.
+ * The status intents of the receipt entity: markError, markUnknown, markHeld, markSuspected,
+ * markPaid and recordDelivery. Each one sets its fields in memory only; the caller keeps its own
+ * save(), so the number of database writes on a path stays what it was.
  */
 class IfirmaReceiptTest extends TestCase
 {
@@ -183,6 +183,41 @@ class IfirmaReceiptTest extends TestCase
         );
     }
 
+    public function testMarkSuspectedSetsTheStatusTheReasonAndNoDocumentOnly()
+    {
+        // The fixture holds an issued external document, which a suspected record must not keep.
+        $receipt = $this->receipt();
+        $before = get_object_vars($receipt);
+
+        $receipt->markSuspected('Suspected duplicate: 2 matching document(s) found in iFirma');
+
+        // The candidates and the order reference depend on the order, so the guard stores them.
+        $this->assertOnlySet(
+            array(
+                'status' => 'duplicate_suspected',
+                'ifirma_id' => '',
+                'source' => 'module',
+                'last_error' => 'Suspected duplicate: 2 matching document(s) found in iFirma',
+            ),
+            $before,
+            $receipt
+        );
+    }
+
+    public function testMarkPaidSetsTheStatusOnly()
+    {
+        $receipt = $this->receipt();
+        $before = get_object_vars($receipt);
+
+        $receipt->markPaid();
+
+        // The callers differ on the rest: registering a payment stores the amount, clears the
+        // error and keeps iFirma's answer, a sync reads the amount into remote_paid_amount, and an
+        // adopted document stores its amount whatever the status. So the amount, the error and
+        // the answer are left to them.
+        $this->assertOnlySet(array('status' => 'paid'), $before, $receipt);
+    }
+
     public static function deliveryOutcomes()
     {
         return array(
@@ -248,12 +283,15 @@ class IfirmaReceiptTest extends TestCase
         $unknown->markUnknown($message);
         $held = $this->receipt();
         $held->markHeld($message);
+        $suspected = $this->receipt();
+        $suspected->markSuspected($message);
         $delivery = $this->receipt();
         $delivery->recordDelivery(IfirmaReceipt::DELIVERY_FAILED, 'shop_mail', $message);
 
         $this->assertSame($message, $error->last_error);
         $this->assertSame($message, $unknown->last_error);
         $this->assertSame($message, $held->last_error);
+        $this->assertSame($message, $suspected->last_error);
         $this->assertSame($message, $delivery->delivery_error);
     }
 
@@ -293,6 +331,23 @@ class IfirmaReceiptTest extends TestCase
                     $receipt->markHeld('held: data request #5 pending');
                 },
                 array('status' => 'held', 'last_error' => 'held: data request #5 pending'),
+            ),
+            'markSuspected' => array(
+                function (IfirmaReceipt $receipt) {
+                    $receipt->markSuspected('Suspected duplicate: 1 matching document(s) found in iFirma');
+                },
+                array(
+                    'status' => 'duplicate_suspected',
+                    'ifirma_id' => '',
+                    'source' => 'module',
+                    'last_error' => 'Suspected duplicate: 1 matching document(s) found in iFirma',
+                ),
+            ),
+            'markPaid' => array(
+                function (IfirmaReceipt $receipt) {
+                    $receipt->markPaid();
+                },
+                array('status' => 'paid'),
             ),
             'recordDelivery' => array(
                 function (IfirmaReceipt $receipt) {

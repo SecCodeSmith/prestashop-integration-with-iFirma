@@ -177,7 +177,7 @@ class IfirmaStatusSyncService
         }
 
         if ($receipt->status !== IfirmaReceipt::STATUS_PAID && $paid >= $gross - $this->tolerance()) {
-            $receipt->status = IfirmaReceipt::STATUS_PAID;
+            $receipt->markPaid();
             $outcome = 'paid';
         }
 

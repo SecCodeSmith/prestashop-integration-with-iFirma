@@ -331,6 +331,33 @@ class IfirmaReceipt extends ObjectModel
     }
 
     /**
+     * Marks the record as a suspected duplicate: iFirma already holds a document that may be this
+     * order's, so the module issued none. The record then holds no document and belongs to the
+     * module until an admin links a candidate. Sets the fields only; the caller stores the
+     * candidates and saves.
+     *
+     * @param string $reason stored as given in last_error
+     */
+    public function markSuspected($reason)
+    {
+        $this->status = self::STATUS_DUPLICATE_SUSPECTED;
+        $this->ifirma_id = '';
+        $this->source = self::SOURCE_MODULE;
+        $this->last_error = $reason;
+    }
+
+    /**
+     * Marks the record as paid. Sets the status only; the caller saves. The amount and the error
+     * are not part of it: registering a payment stores the amount, clears the error and keeps
+     * iFirma's answer, a status sync reads the amount into remote_paid_amount, and an adopted
+     * document stores its amount whatever its status, so the caller decides.
+     */
+    public function markPaid()
+    {
+        $this->status = self::STATUS_PAID;
+    }
+
+    /**
      * Records a delivery outcome. Sets the fields only; the caller saves. delivered_at is not
      * part of it: a send stamps it, a disabled channel clears it and the other outcomes keep it,
      * so the caller decides.
