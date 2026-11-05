@@ -372,6 +372,7 @@ class ModuleCustomerHooksTest extends TestCase
             'the first name when the language has none' => array(array(1 => 'Paid', 3 => 'Bezahlt'), 2, 'Paid'),
             'the first of the list, not the lowest id' => array(array(3 => 'Bezahlt', 1 => 'Paid'), 2, 'Bezahlt'),
             'a language without text counts as none' => array(array(3 => 'Bezahlt', 1 => null), 1, 'Bezahlt'),
+            'a language with an empty text keeps it' => array(array(3 => 'Bezahlt', 1 => ''), 1, ''),
             'no names at all' => array(array(), 1, ''),
             'a state without a name' => array(null, 1, ''),
         );
