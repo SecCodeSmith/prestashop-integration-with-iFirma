@@ -1820,10 +1820,10 @@ class ContractorServiceTest extends TestCase
         return $out;
     }
 
-    /** Stores the link of customer 7, then forgets the writes and queries it took: they are not the code under test. */
-    private function storeLink($identifier, $matchedBy, $name = 'Jan Kowalski')
+    /** Stores the link of a customer (7 by default), then forgets the writes and queries it took: they are not the code under test. */
+    private function storeLink($identifier, $matchedBy, $name = 'Jan Kowalski', $idCustomer = 7)
     {
-        IfirmaContractorMap::link(7, $identifier, $matchedBy, $name);
+        IfirmaContractorMap::link($idCustomer, $identifier, $matchedBy, $name);
         IfirmaTestState::clearWrites();
         Db::getInstance()->queries = array();
     }
@@ -1840,12 +1840,23 @@ class ContractorServiceTest extends TestCase
         return false;
     }
 
-    public function testAStoredMappingIsUsedWithoutWritingTheMapAgain()
+    public function customerIdProvider()
     {
-        $this->storeLink('KOWALSKI-01', 'import-nip', 'Stored Name');
+        return array(
+            'customer 7' => array(7),
+            'customer 1' => array(1),
+        );
+    }
+
+    /**
+     * @dataProvider customerIdProvider
+     */
+    public function testAStoredMappingIsUsedWithoutWritingTheMapAgain($idCustomer)
+    {
+        $this->storeLink('KOWALSKI-01', 'import-nip', 'Stored Name', $idCustomer);
         $this->t->queue('GET', '#kontrahenci/id/KOWALSKI-01\.json#', $this->rows(array($this->remote('KOWALSKI-01'))));
 
-        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+        $r = $this->svc->ensure($this->owned(), $idCustomer, $this->hints());
 
         $this->assertSame(array('GET /iapi/kontrahenci/id/KOWALSKI-01.json'), $this->journal());
         $this->assertSame(
@@ -1993,31 +2004,49 @@ class ContractorServiceTest extends TestCase
         $this->assertFalse($this->mapQueried());
     }
 
-    public function testAKeptModuleContractorIsLinkedWithOneWrite()
+    /**
+     * @dataProvider customerIdProvider
+     */
+    public function testAKeptModuleContractorIsLinkedWithOneWrite($idCustomer)
     {
         $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->found());
 
-        $this->svc->ensure($this->owned(), 7, $this->hints());
+        $this->svc->ensure($this->owned(), $idCustomer, $this->hints());
 
         $this->assertSame(array('GET /iapi/kontrahenci/id/PS-C7.json'), $this->journal());
+        $this->assertSame(array(array('add', $idCustomer, 'PS-C7', 'module', 'Jan Kowalski')), $this->mapWrites());
+    }
+
+    public function testAPaddedModuleIdentifierIsLookedUpUnderItsTrimmedIdentifier()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->found());
+
+        $r = $this->svc->ensure(array_merge($this->owned(), array('Identyfikator' => ' PS-C7 ')), 7, $this->hints());
+
+        $this->assertSame(array('GET /iapi/kontrahenci/id/PS-C7.json'), $this->journal());
+        $this->assertSame('PS-C7', $r->getIdentifier());
+        $this->assertSame('PS-C7', $r->getLinkedIdentifier());
         $this->assertSame(array(array('add', 7, 'PS-C7', 'module', 'Jan Kowalski')), $this->mapWrites());
     }
 
-    public function testANipMatchIsSearchedAfterTheModuleIdentifierAndLinkedWithOneWrite()
+    /**
+     * @dataProvider customerIdProvider
+     */
+    public function testANipMatchIsSearchedAfterTheModuleIdentifierAndLinkedWithOneWrite($idCustomer)
     {
         $remote = $this->remote('ACME-02', array('Nazwa' => 'ACME Sp. z o.o.', 'NIP' => '525-224-84-81', 'OsobaFizyczna' => false));
         $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
         $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->rows(array($remote)));
         $this->t->queue('PUT', '#kontrahenci/ACME-02\.json#', $this->ok('Zaktualizowano'));
 
-        $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
+        $this->svc->ensure($this->businessOwned(), $idCustomer, $this->businessHints());
 
         $this->assertSame(array(
             'GET /iapi/kontrahenci/id/PS-C7.json',
             'GET /iapi/kontrahenci/5252248481.json',
             'PUT /iapi/kontrahenci/ACME-02.json',
         ), $this->journal());
-        $this->assertSame(array(array('add', 7, 'ACME-02', 'nip', 'ACME Sp. z o.o.')), $this->mapWrites());
+        $this->assertSame(array(array('add', $idCustomer, 'ACME-02', 'nip', 'ACME Sp. z o.o.')), $this->mapWrites());
     }
 
     public function testANameMatchIsSearchedAfterTheNipMissAndLinkedWithOneWrite()
