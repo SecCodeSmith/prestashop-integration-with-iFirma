@@ -14,7 +14,9 @@ if (!defined('_PS_VERSION_')) {
 }
 
 require_once dirname(__FILE__) . '/IfirmaContractorMap.php';
+require_once dirname(__FILE__) . '/IfirmaContractorMatcher.php';
 require_once dirname(__FILE__) . '/IfirmaContractorService.php';
+require_once dirname(__FILE__) . '/IfirmaCustomerIndex.php';
 require_once dirname(__FILE__) . '/IfirmaSchema.php';
 
 /**
@@ -26,7 +28,7 @@ class IfirmaContractorImport
     const MAX_IDENTIFIER = IfirmaSchema::CONTRACTOR_IDENTIFIER_LENGTH;
 
     /** How many unmatched identifiers the report lists. */
-    const REPORT_UNMATCHED = 20;
+    const REPORT_UNMATCHED = IfirmaContractorMatcher::REPORT_UNMATCHED;
 
     /** @var array canonical column => normalised header aliases */
     private static $aliases = array(
@@ -35,18 +37,6 @@ class IfirmaContractorImport
         'nip' => array('nip', 'vat'),
         'email' => array('email', 'adresemail'),
         'postcode' => array('kodpocztowy', 'kod', 'postalcode'),
-    );
-
-    /** @var array match type => strength (higher wins) */
-    private static $rank = array(
-        'module' => 0,
-        'name' => 1,
-        'import-name' => 1,
-        'email' => 2,
-        'import-email' => 2,
-        'nip' => 3,
-        'import-nip' => 3,
-        'manual' => 4,
     );
 
     /**
@@ -204,165 +194,7 @@ class IfirmaContractorImport
      */
     public function match(array $rows)
     {
-        $db = Db::getInstance();
-        $customers = $db->executeS('SELECT id_customer, email, firstname, lastname FROM `' . _DB_PREFIX_ . 'customer`');
-        $addresses = $db->executeS(
-            'SELECT id_customer, vat_number, dni, postcode, company, firstname, lastname FROM `' . _DB_PREFIX_ . 'address`
-             WHERE id_customer > 0 AND deleted = 0'
-        );
-        $mappings = $db->executeS(
-            'SELECT id_customer, ifirma_identifier, matched_by FROM `' . _DB_PREFIX_ . 'ifirma_contractor_map`'
-        );
-
-        $nipIndex = array();
-        $emailIndex = array();
-        $nameIndex = array();
-        $postcodes = array();
-        foreach (is_array($addresses) ? $addresses : array() as $a) {
-            $id = (int) $a['id_customer'];
-            $postcode = preg_replace('/\D/', '', (string) $a['postcode']);
-            $postcodes[$id][$postcode] = true;
-            foreach (array('vat_number', 'dni') as $field) {
-                $nip = preg_replace('/\D/', '', (string) $a[$field]);
-                if (strlen($nip) >= 10) {
-                    $nipIndex[$nip][$id] = true;
-                }
-            }
-            $names = array(
-                IfirmaContractorService::normalizeName(trim((string) $a['company'])),
-                IfirmaContractorService::normalizeName(trim($a['firstname'] . ' ' . $a['lastname'])),
-            );
-            foreach ($names as $name) {
-                if ($name !== '' && $postcode !== '') {
-                    $nameIndex[$name . '|' . $postcode][$id] = true;
-                }
-            }
-        }
-        foreach (is_array($customers) ? $customers : array() as $c) {
-            $id = (int) $c['id_customer'];
-            $email = mb_strtolower(trim((string) $c['email']), 'UTF-8');
-            if ($email !== '') {
-                $emailIndex[$email][$id] = true;
-            }
-            $name = IfirmaContractorService::normalizeName(trim($c['firstname'] . ' ' . $c['lastname']));
-            if ($name !== '' && isset($postcodes[$id])) {
-                foreach (array_keys($postcodes[$id]) as $postcode) {
-                    if ($postcode !== '') {
-                        $nameIndex[$name . '|' . $postcode][$id] = true;
-                    }
-                }
-            }
-        }
-
-        $existing = array();
-        foreach (is_array($mappings) ? $mappings : array() as $m) {
-            $existing[(int) $m['id_customer']] = array(
-                'identifier' => (string) $m['ifirma_identifier'],
-                'type' => (string) $m['matched_by'],
-            );
-        }
-
-        $plan = array();
-        $unmatchedRows = array();
-        $unmatched = 0;
-        $skipped = 0;
-
-        foreach ($rows as $row) {
-            list($type, $ids) = $this->candidates($row, $nipIndex, $emailIndex, $nameIndex);
-            if (!$ids) {
-                $unmatched++;
-                if (count($unmatchedRows) < self::REPORT_UNMATCHED) {
-                    $unmatchedRows[] = $row['identifier'];
-                }
-                continue;
-            }
-            $rank = self::$rank[$type];
-            foreach ($ids as $id) {
-                $current = isset($plan[$id]) ? $plan[$id] : null;
-                $fromDb = false;
-                if ($current === null && isset($existing[$id])) {
-                    $current = $existing[$id];
-                    $fromDb = true;
-                }
-                if ($current === null || $rank > $this->rankOf($current['type'])) {
-                    $plan[$id] = array('identifier' => $row['identifier'], 'type' => $type, 'name' => $row['name'], 'changed' => true);
-                    continue;
-                }
-                if ($fromDb) {
-                    if ($current['identifier'] === $row['identifier'] && $current['type'] === $type) {
-                        $plan[$id] = array('identifier' => $current['identifier'], 'type' => $type, 'name' => $row['name'], 'changed' => false);
-                    } else {
-                        $skipped++;
-                    }
-                }
-            }
-        }
-
-        $by = array();
-        $links = array();
-        $unchanged = 0;
-        foreach ($plan as $id => $link) {
-            $by[$link['type']] = isset($by[$link['type']]) ? $by[$link['type']] + 1 : 1;
-            if (empty($link['changed'])) {
-                $unchanged++;
-            }
-            $links[] = array(
-                'id_customer' => (int) $id,
-                'identifier' => $link['identifier'],
-                'type' => $link['type'],
-                'name' => $link['name'],
-                'changed' => !empty($link['changed']),
-            );
-        }
-        ksort($by);
-
-        return array(
-            'linked' => count($plan),
-            'by' => $by,
-            'unmatched' => $unmatched,
-            'unmatched_rows' => $unmatchedRows,
-            'skipped_existing' => $skipped,
-            'unchanged' => $unchanged,
-            'links' => $links,
-        );
-    }
-
-    /**
-     * Stored types that are not known (e.g. written by a later version) are never replaced.
-     *
-     * @param string $type
-     * @return int
-     */
-    private function rankOf($type)
-    {
-        return isset(self::$rank[$type]) ? self::$rank[$type] : 4;
-    }
-
-    /**
-     * @param array $row
-     * @param array $nipIndex
-     * @param array $emailIndex
-     * @param array $nameIndex
-     * @return array [type, customer ids]
-     */
-    private function candidates(array $row, array $nipIndex, array $emailIndex, array $nameIndex)
-    {
-        $nip = preg_replace('/\D/', '', (string) $row['nip']);
-        if (strlen($nip) >= 10 && isset($nipIndex[$nip])) {
-            return array(IfirmaContractorMap::BY_IMPORT_NIP, array_keys($nipIndex[$nip]));
-        }
-        $email = mb_strtolower(trim((string) $row['email']), 'UTF-8');
-        if ($email !== '' && isset($emailIndex[$email])) {
-            return array(IfirmaContractorMap::BY_IMPORT_EMAIL, array_keys($emailIndex[$email]));
-        }
-        $name = IfirmaContractorService::normalizeName((string) $row['name']);
-        $postcode = preg_replace('/\D/', '', (string) $row['postcode']);
-        if ($name !== '' && $postcode !== '' && isset($nameIndex[$name . '|' . $postcode])
-            && count($nameIndex[$name . '|' . $postcode]) === 1) {
-            return array(IfirmaContractorMap::BY_IMPORT_NAME, array_keys($nameIndex[$name . '|' . $postcode]));
-        }
-
-        return array('', array());
+        return IfirmaContractorMatcher::match($rows, IfirmaCustomerIndex::load());
     }
 
     /**
