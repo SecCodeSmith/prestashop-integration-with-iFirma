@@ -1193,6 +1193,7 @@ class ContractorServiceTest extends TestCase
             'note' => array('code' => 'lookup_failed', 'params' => array('identifier' => 'KOWALSKI-01', 'error' => 'cURL error: timeout')),
             'assigned_identifier' => null,
         ), $r->toArray());
+        $this->assertSame(array('tried' => array(), 'search' => 'none', 'search_error' => ''), $r->getReadback());
     }
 
     public function testEnsureAnswersTheExactArrayWhenTheModuleContractorCannotBeLookedUp()
@@ -1210,6 +1211,7 @@ class ContractorServiceTest extends TestCase
             'note' => array('code' => 'lookup_failed', 'params' => array('identifier' => 'PS-C7', 'error' => 'cURL error: timeout')),
             'assigned_identifier' => null,
         ), $r->toArray());
+        $this->assertSame(array('tried' => array(), 'search' => 'none', 'search_error' => ''), $r->getReadback());
     }
 
     public function testEnsureAnswersTheExactArrayWhenTheUpdateIsRejected()
@@ -1228,6 +1230,7 @@ class ContractorServiceTest extends TestCase
             'note' => array('code' => 'update_failed', 'params' => array('identifier' => 'PS-C7', 'error' => 'Validation error in document data (Kod 201): bad')),
             'assigned_identifier' => null,
         ), $r->toArray());
+        $this->assertSame(array('tried' => array(), 'search' => 'none', 'search_error' => ''), $r->getReadback());
     }
 
     public function testEnsureAnswersTheExactArrayWhenTheCreateIsRejected()
@@ -1267,6 +1270,7 @@ class ContractorServiceTest extends TestCase
             'note' => array('code' => 'create_rejected', 'params' => array('error' => 'cURL error: timeout')),
             'assigned_identifier' => null,
         ), $r->toArray());
+        $this->assertSame(array('tried' => array(), 'search' => 'none', 'search_error' => ''), $r->getReadback());
         $this->assertSame(array('GET', 'GET', 'POST'), array_column($this->t->calls, 'method'));
         $this->assertSame(array(), $this->waits);
         $this->assertNull($this->mapped());

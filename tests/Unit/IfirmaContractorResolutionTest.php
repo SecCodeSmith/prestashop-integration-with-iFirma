@@ -41,6 +41,31 @@ class IfirmaContractorResolutionTest extends TestCase
         return array('tried' => array(), 'search' => 'none', 'search_error' => '');
     }
 
+    /** Every reader and the array form of a resolution that goes without an identifier. */
+    private function assertAFallback(IfirmaContractorResolution $r, $message, $note, array $readback)
+    {
+        $this->assertNull($r->getIdentifier());
+        $this->assertSame('fallback', $r->getAction());
+        $this->assertSame($message, $r->getMessage());
+        $this->assertSame('', $r->getMatchedBy());
+        $this->assertNull($r->getLinkedIdentifier());
+        $this->assertSame($note, $r->getNote());
+        $this->assertNull($r->getAssignedId());
+        $this->assertSame($readback, $r->getReadback());
+        $this->assertSame(
+            array(
+                'identifier' => null,
+                'action' => 'fallback',
+                'message' => $message,
+                'matched_by' => '',
+                'linked_identifier' => null,
+                'note' => $note,
+                'assigned_identifier' => null,
+            ),
+            $r->toArray()
+        );
+    }
+
     public function testEachReaderAnswersWithItsOwnField()
     {
         // every field has a value of its own, so a reader wired to another field shows
@@ -134,6 +159,37 @@ class IfirmaContractorResolutionTest extends TestCase
             ),
             $r->toArray()
         );
+    }
+
+    public function fallbackProvider()
+    {
+        $note = array('code' => 'lookup_failed', 'params' => array('identifier' => 'PS-C7', 'error' => 'cURL error: timeout'));
+        $readback = array(
+            'tried' => array(array('identifier' => 'PS-C7', 'answer' => 'Kod 208: Nie znaleziono kontrahenta')),
+            'search' => 'none',
+            'search_error' => '',
+        );
+        $empty = array('tried' => array(), 'search' => 'none', 'search_error' => '');
+
+        // message, note and read-back as given; then the message and the read-back as they read back
+        return array(
+            'a message alone' => array('cURL error: timeout', null, null, 'cURL error: timeout', $empty),
+            'a message and a note' => array('cURL error: timeout', $note, null, 'cURL error: timeout', $empty),
+            'a message, a note and the read-back of a created contractor' => array('cannot be read back', $note, $readback, 'cannot be read back', $readback),
+            'no message' => array(null, $note, null, '', $empty),
+            'a message that is not text' => array(42, null, null, '42', $empty),
+        );
+    }
+
+    /**
+     * @dataProvider fallbackProvider
+     */
+    public function testAFallbackBuiltTheLongWayHoldsOnlyItsMessageNoteAndReadback($message, $note, $readback, $text, $expectedReadback)
+    {
+        // the objects ensure() and the receipt service build for every answer without an identifier
+        $r = new IfirmaContractorResolution(null, 'fallback', $message, '', $note, null, $readback);
+
+        $this->assertAFallback($r, $text, $note, $expectedReadback);
     }
 
     public function testWithoutAReadbackItAnswersTheEmptyOne()
