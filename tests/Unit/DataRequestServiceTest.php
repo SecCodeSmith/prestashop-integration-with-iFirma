@@ -424,6 +424,227 @@ class DataRequestServiceTest extends TestCase
         $this->assertSame(1, Mail::$sent[0]['idLang']);
     }
 
+    // ---- approve / reject: what they set, in which order, and how they refuse -------------
+
+    /**
+     * A stored request in the given status. It records every save() with the status being written
+     * and the number of mails sent so far, which pins the order: fields set, save, mail.
+     *
+     * @param string $status
+     * @return IfirmaDataRequest
+     */
+    private function storedRequest($status = IfirmaDataRequest::STATUS_PENDING)
+    {
+        $request = new class extends IfirmaDataRequest {
+            /** @var array[] one entry per save() */
+            public $saves = array();
+
+            public function save($nullValues = false, $autoDate = true)
+            {
+                $this->saves[] = array('status' => $this->status, 'mails' => count(Mail::$sent));
+
+                return parent::save($nullValues, $autoDate);
+            }
+        };
+        $request->id_order = 15;
+        $request->id_customer = 7;
+        $request->status = $status;
+        $request->setRequestedData($this->requestedData());
+        $request->save();
+        $request->saves = array();
+
+        return $request;
+    }
+
+    /** @return array the data of companyInput(), as the service stores it */
+    private function requestedData()
+    {
+        return array(
+            'want_invoice_for_company' => true,
+            'company' => 'ACME Sp. z o.o.',
+            'vat_number' => '5250001234',
+            'firstname' => '',
+            'lastname' => '',
+            'address1' => 'Nowa 5',
+            'address2' => '',
+            'postcode' => '00-950',
+            'city' => 'Warszawa',
+            'id_country' => 14,
+        );
+    }
+
+    /** @return array the saved row of the request */
+    private function storedRow(IfirmaDataRequest $request)
+    {
+        $rows = IfirmaTestState::objects('ifirma_data_request');
+
+        return $rows[$request->id];
+    }
+
+    /** @return IfirmaDataRequestService a service whose clock stands still */
+    private function serviceAt($now)
+    {
+        return new IfirmaDataRequestService(new Module(), function () use ($now) {
+            return $now;
+        });
+    }
+
+    public function testApproveSavesOnceWithTheResolutionSetAndMailsAfterwards()
+    {
+        $request = $this->storedRequest();
+
+        $returned = $this->serviceAt('2026-11-01 10:00:00')->approve($request, '4', null, '  fixed postcode  ');
+
+        $this->assertSame($request, $returned);
+        $this->assertSame(array(array('status' => 'approved', 'mails' => 0)), $request->saves);
+        $this->assertCount(1, Mail::$sent);
+        $row = $this->storedRow($request);
+        $this->assertSame('approved', $row['status']);
+        $this->assertSame(4, $row['resolved_by']);
+        $this->assertSame('fixed postcode', $row['admin_note']);
+        $this->assertSame('2026-11-01 10:00:00', $row['date_resolved']);
+        $this->assertSame(json_encode($this->requestedData()), $row['approved_data']);
+        $this->assertSame($row['requested_data'], $row['approved_data']);
+    }
+
+    public function testApproveWithoutANoteStoresAnEmptyNote()
+    {
+        $request = $this->storedRequest();
+
+        $this->service->approve($request, 4, null, null);
+
+        $this->assertSame('', $request->admin_note);
+        $this->assertSame('', $this->storedRow($request)['admin_note']);
+    }
+
+    public function testRejectSavesOnceWithTheResolutionSetAndMailsAfterwards()
+    {
+        $request = $this->storedRequest();
+
+        $returned = $this->serviceAt('2026-11-01 11:30:00')->reject($request, '4', '  NIP does not match  ');
+
+        $this->assertSame($request, $returned);
+        $this->assertSame(array(array('status' => 'rejected', 'mails' => 0)), $request->saves);
+        $this->assertCount(1, Mail::$sent);
+        $row = $this->storedRow($request);
+        $this->assertSame('rejected', $row['status']);
+        $this->assertSame(4, $row['resolved_by']);
+        $this->assertSame('NIP does not match', $row['admin_note']);
+        $this->assertSame('2026-11-01 11:30:00', $row['date_resolved']);
+        $this->assertNull($row['approved_data']);
+    }
+
+    public function testResolvedRequestsAreRefusedWithoutAnyChange()
+    {
+        $calls = array(
+            'approve' => function ($request) {
+                $this->service->approve($request, 4, null, 'late');
+            },
+            'reject' => function ($request) {
+                $this->service->reject($request, 4, 'late');
+            },
+        );
+        $statuses = array(
+            IfirmaDataRequest::STATUS_APPROVED,
+            IfirmaDataRequest::STATUS_REJECTED,
+            IfirmaDataRequest::STATUS_CANCELLED,
+        );
+        foreach ($statuses as $status) {
+            foreach ($calls as $name => $call) {
+                $request = $this->storedRequest($status);
+                $stored = $this->storedRow($request);
+                $label = $name . ' on a ' . $status . ' request';
+
+                $e = $this->assertRefused('not_pending', function () use ($call, $request) {
+                    $call($request);
+                });
+
+                $this->assertSame('This request is no longer pending.', $e->getMessage(), $label);
+                $this->assertSame(array(), $e->errors, $label);
+                $this->assertSame($status, $request->status, $label);
+                $this->assertNull($request->approved_data, $label);
+                $this->assertNull($request->admin_note, $label);
+                $this->assertNull($request->resolved_by, $label);
+                $this->assertNull($request->date_resolved, $label);
+                $this->assertSame(array(), $request->saves, $label);
+                $this->assertSame($stored, $this->storedRow($request), $label);
+                $this->assertSame(array(), Mail::$sent, $label);
+            }
+        }
+    }
+
+    public function testRejectWithoutReasonChangesNothing()
+    {
+        $request = $this->storedRequest();
+        $stored = $this->storedRow($request);
+
+        $e = $this->assertRefused('reason_required', function () use ($request) {
+            $this->service->reject($request, 4, " \t ");
+        });
+
+        $this->assertSame('A reason is required.', $e->getMessage());
+        $this->assertSame(array(), $e->errors);
+        $this->assertSame(IfirmaDataRequest::STATUS_PENDING, $request->status);
+        $this->assertNull($request->admin_note);
+        $this->assertNull($request->resolved_by);
+        $this->assertNull($request->date_resolved);
+        $this->assertSame(array(), $request->saves);
+        $this->assertSame($stored, $this->storedRow($request));
+        $this->assertSame(array(), Mail::$sent);
+    }
+
+    public function testResolvedRequestIsRefusedBeforeItsEditsAreValidated()
+    {
+        $request = $this->storedRequest(IfirmaDataRequest::STATUS_REJECTED);
+
+        $this->assertRefused('not_pending', function () use ($request) {
+            $this->service->approve($request, 4, array('postcode' => '', 'city' => ''));
+        });
+    }
+
+    public function testResolvedRequestIsRefusedBeforeTheReasonIsChecked()
+    {
+        $request = $this->storedRequest(IfirmaDataRequest::STATUS_CANCELLED);
+
+        $this->assertRefused('not_pending', function () use ($request) {
+            $this->service->reject($request, 4, '   ');
+        });
+    }
+
+    public function testRefusalsAreWordedByTheModuleTranslator()
+    {
+        $module = new class extends Module {
+            public function l($string, $specific = null, $locale = null)
+            {
+                return '[pl] ' . $string;
+            }
+        };
+        $service = new IfirmaDataRequestService($module);
+        $resolved = $this->storedRequest(IfirmaDataRequest::STATUS_APPROVED);
+        $pending = $this->storedRequest();
+
+        $e = $this->assertRefused('not_pending', function () use ($service, $resolved) {
+            $service->approve($resolved, 4);
+        });
+        $this->assertSame('[pl] This request is no longer pending.', $e->getMessage());
+
+        $e = $this->assertRefused('not_pending', function () use ($service, $resolved) {
+            $service->reject($resolved, 4, 'late');
+        });
+        $this->assertSame('[pl] This request is no longer pending.', $e->getMessage());
+
+        $e = $this->assertRefused('reason_required', function () use ($service, $pending) {
+            $service->reject($pending, 4, ' ');
+        });
+        $this->assertSame('[pl] A reason is required.', $e->getMessage());
+
+        $e = $this->assertRefused('invalid', function () use ($service, $pending) {
+            $service->approve($pending, 4, array('postcode' => '', 'city' => ''));
+        });
+        $this->assertSame('[pl] Please correct the highlighted fields.', $e->getMessage());
+        $this->assertSame('[pl] This field is required.', $e->errors['postcode']);
+    }
+
     // ---- override --------------------------------------------------------
 
     private function approvedRequest(array $edited = null)
