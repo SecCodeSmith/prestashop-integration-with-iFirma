@@ -370,8 +370,11 @@ class AdminActionsTest extends TestCase
         $req = $this->makeRequest('pending');
         $r = $this->actions->rejectRequest((int) $req->id, 3, '   ');
 
-        $this->assertFalse($r['success']);
-        $this->assertSame('reason_required', $r['data']['code']);
+        // The action's own wording and only the code: not the guard's failure() envelope.
+        $this->assertSame(
+            array('success' => false, 'message' => 'A reason is required to reject the request.', 'data' => array('code' => 'reason_required')),
+            $r
+        );
         $this->assertSame('pending', (new IfirmaDataRequest((int) $req->id))->status);
     }
 

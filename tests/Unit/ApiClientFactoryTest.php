@@ -274,4 +274,50 @@ class ApiClientFactoryTest extends TestCase
         $this->assertCount(1, $this->t->calls);
         $this->assertSame(IfirmaApiClient::BASE_URL . 'abonent/limit.json', $this->t->lastCall()['url']);
     }
+
+    /**
+     * The client lets a transport failure through; the limit box must still render.
+     *
+     * @dataProvider limitRequestFailures
+     */
+    public function testTheModuleLimitBoxReportsAnUnavailableLimitWhenTheRequestThrows($thrown)
+    {
+        $module = IfirmaTestModuleLoader::loadModule();
+        IfirmaApiClient::setDefaultTransport(new ThrowingLimitTransport($thrown));
+
+        $module->getContent();
+
+        $limitBox = null;
+        foreach (HelperForm::$lastForm[0]['form']['input'] as $input) {
+            if ($input['name'] === 'IFIRMA_API_LIMIT') {
+                $limitBox = $input['html_content'];
+            }
+        }
+        $this->assertSame('<div class="alert alert-warning">iFirma API limit is currently unavailable.</div>', $limitBox);
+    }
+
+    public static function limitRequestFailures()
+    {
+        return array(
+            'exception' => array(new RuntimeException('connection reset')),
+            'error' => array(new Error('transport broke')),
+        );
+    }
+}
+
+/** Transport whose every request throws the given Throwable. */
+class ThrowingLimitTransport
+{
+    /** @var Throwable */
+    private $thrown;
+
+    public function __construct(Throwable $thrown)
+    {
+        $this->thrown = $thrown;
+    }
+
+    public function request($method, $url, array $headers, $body, $timeout)
+    {
+        throw $this->thrown;
+    }
 }
