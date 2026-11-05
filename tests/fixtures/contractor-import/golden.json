@@ -1,0 +1,527 @@
+{
+  "provenance": "Captured on 2026-11-05 from IfirmaContractorImport as of commit 3f6dfd2, before match() was split into IfirmaCustomerIndex and IfirmaContractorMatcher (refactor-srp-splits 3.2). Inputs are the scenarios of ContractorImportTest; report, written, writes and map are what match(), apply() and import() returned or stored. Change it only when the import behaviour is changed on purpose.",
+  "scenarios": [
+    {
+      "name": "nip then e-mail",
+      "from": "ContractorImportTest::testMatchesByNipThenEmail",
+      "customers": [
+        {"id_customer": 1, "email": "a@example.test", "firstname": "X", "lastname": "Y"},
+        {"id_customer": 2, "email": "b@example.test", "firstname": "X", "lastname": "Y"},
+        {"id_customer": 3, "email": "kowalczyk@example.test", "firstname": "X", "lastname": "Y"}
+      ],
+      "addresses": [
+        {"id_customer": 1, "vat_number": "525-224-84-81", "dni": "", "postcode": "", "company": "", "firstname": "A", "lastname": "B"},
+        {"id_customer": 2, "vat_number": "", "dni": "PL 1234567890", "postcode": "", "company": "", "firstname": "A", "lastname": "B"}
+      ],
+      "mappings": [],
+      "rows": [
+        {"identifier": "R-1", "name": "", "nip": "5252248481", "email": "", "postcode": ""},
+        {"identifier": "R-2", "name": "", "nip": "123 456 78 90", "email": "", "postcode": ""},
+        {"identifier": "R-3", "name": "", "nip": "", "email": "Kowalczyk@Example.test", "postcode": ""}
+      ],
+      "rounds": [
+        {
+          "report": {
+            "linked": 3,
+            "by": {"import-email": 1, "import-nip": 2},
+            "unmatched": 0,
+            "unmatched_rows": [],
+            "skipped_existing": 0,
+            "unchanged": 0,
+            "links": [
+              {"id_customer": 1, "identifier": "R-1", "type": "import-nip", "name": "", "changed": true},
+              {"id_customer": 2, "identifier": "R-2", "type": "import-nip", "name": "", "changed": true},
+              {"id_customer": 3, "identifier": "R-3", "type": "import-email", "name": "", "changed": true}
+            ]
+          },
+          "written": 3,
+          "writes": [
+            {"op": "add", "id_customer": 1, "ifirma_identifier": "R-1", "matched_by": "import-nip", "ifirma_name": ""},
+            {"op": "add", "id_customer": 2, "ifirma_identifier": "R-2", "matched_by": "import-nip", "ifirma_name": ""},
+            {"op": "add", "id_customer": 3, "ifirma_identifier": "R-3", "matched_by": "import-email", "ifirma_name": ""}
+          ]
+        }
+      ],
+      "map": {
+        "1": {"ifirma_identifier": "R-1", "matched_by": "import-nip", "ifirma_name": ""},
+        "2": {"ifirma_identifier": "R-2", "matched_by": "import-nip", "ifirma_name": ""},
+        "3": {"ifirma_identifier": "R-3", "matched_by": "import-email", "ifirma_name": ""}
+      }
+    },
+    {
+      "name": "name and postcode",
+      "from": "ContractorImportTest::testMatchesByNameAndPostcode",
+      "customers": [
+        {"id_customer": 1, "email": "a@example.test", "firstname": "Zażółć", "lastname": "Genslą"},
+        {"id_customer": 2, "email": "b@example.test", "firstname": "X", "lastname": "Y"}
+      ],
+      "addresses": [
+        {"id_customer": 1, "vat_number": "", "dni": "", "postcode": "30-001", "company": "", "firstname": "A", "lastname": "B"},
+        {"id_customer": 2, "vat_number": "", "dni": "", "postcode": "00-950", "company": "ACME Sp. z o.o.", "firstname": "A", "lastname": "B"}
+      ],
+      "mappings": [],
+      "rows": [
+        {"identifier": "R-1", "name": "ZAZOLC  GENSLA", "nip": "", "email": "", "postcode": "30001"},
+        {"identifier": "R-2", "name": "acme sp z o o", "nip": "", "email": "", "postcode": "00-950"},
+        {"identifier": "R-3", "name": "acme sp z o o", "nip": "", "email": "", "postcode": "11-111"},
+        {"identifier": "R-4", "name": "acme sp z o o", "nip": "", "email": "", "postcode": ""}
+      ],
+      "rounds": [
+        {
+          "report": {
+            "linked": 2,
+            "by": {"import-name": 2},
+            "unmatched": 2,
+            "unmatched_rows": ["R-3", "R-4"],
+            "skipped_existing": 0,
+            "unchanged": 0,
+            "links": [
+              {"id_customer": 1, "identifier": "R-1", "type": "import-name", "name": "ZAZOLC  GENSLA", "changed": true},
+              {"id_customer": 2, "identifier": "R-2", "type": "import-name", "name": "acme sp z o o", "changed": true}
+            ]
+          },
+          "written": 2,
+          "writes": [
+            {"op": "add", "id_customer": 1, "ifirma_identifier": "R-1", "matched_by": "import-name", "ifirma_name": "ZAZOLC  GENSLA"},
+            {"op": "add", "id_customer": 2, "ifirma_identifier": "R-2", "matched_by": "import-name", "ifirma_name": "acme sp z o o"}
+          ]
+        }
+      ],
+      "map": {
+        "1": {"ifirma_identifier": "R-1", "matched_by": "import-name", "ifirma_name": "ZAZOLC  GENSLA"},
+        "2": {"ifirma_identifier": "R-2", "matched_by": "import-name", "ifirma_name": "acme sp z o o"}
+      }
+    },
+    {
+      "name": "ambiguous name and postcode",
+      "from": "ContractorImportTest::testAmbiguousNameAndPostcodeIsNotLinked",
+      "customers": [
+        {"id_customer": 1, "email": "a@example.test", "firstname": "X", "lastname": "Y"},
+        {"id_customer": 2, "email": "b@example.test", "firstname": "X", "lastname": "Y"}
+      ],
+      "addresses": [
+        {"id_customer": 1, "vat_number": "", "dni": "", "postcode": "00-001", "company": "", "firstname": "Jan", "lastname": "Kowalski"},
+        {"id_customer": 2, "vat_number": "", "dni": "", "postcode": "00-001", "company": "", "firstname": "Jan", "lastname": "Kowalski"}
+      ],
+      "mappings": [],
+      "rows": [
+        {"identifier": "R-1", "name": "Jan Kowalski", "nip": "", "email": "", "postcode": "00-001"}
+      ],
+      "rounds": [
+        {
+          "report": {
+            "linked": 0,
+            "by": [],
+            "unmatched": 1,
+            "unmatched_rows": ["R-1"],
+            "skipped_existing": 0,
+            "unchanged": 0,
+            "links": []
+          },
+          "written": 0,
+          "writes": []
+        }
+      ],
+      "map": []
+    },
+    {
+      "name": "NIP outranks e-mail, first equal match wins",
+      "from": "ContractorImportTest::testNipOutranksEmailAndFirstEqualMatchWins",
+      "customers": [
+        {"id_customer": 1, "email": "a@example.test", "firstname": "X", "lastname": "Y"}
+      ],
+      "addresses": [
+        {"id_customer": 1, "vat_number": "5252248481", "dni": "", "postcode": "", "company": "", "firstname": "A", "lastname": "B"}
+      ],
+      "mappings": [],
+      "rows": [
+        {"identifier": "FIRST", "name": "", "nip": "", "email": "a@example.test", "postcode": ""},
+        {"identifier": "SECOND", "name": "", "nip": "", "email": "a@example.test", "postcode": ""},
+        {"identifier": "NIP", "name": "", "nip": "5252248481", "email": "", "postcode": ""},
+        {"identifier": "NIP-2", "name": "", "nip": "5252248481", "email": "", "postcode": ""}
+      ],
+      "rounds": [
+        {
+          "report": {
+            "linked": 1,
+            "by": {"import-nip": 1},
+            "unmatched": 0,
+            "unmatched_rows": [],
+            "skipped_existing": 0,
+            "unchanged": 0,
+            "links": [
+              {"id_customer": 1, "identifier": "NIP", "type": "import-nip", "name": "", "changed": true}
+            ]
+          },
+          "written": 1,
+          "writes": [
+            {"op": "add", "id_customer": 1, "ifirma_identifier": "NIP", "matched_by": "import-nip", "ifirma_name": ""}
+          ]
+        }
+      ],
+      "map": {
+        "1": {"ifirma_identifier": "NIP", "matched_by": "import-nip", "ifirma_name": ""}
+      }
+    },
+    {
+      "name": "first row wins at equal strength",
+      "from": "ContractorImportTest::testFirstRowWinsAtEqualStrength",
+      "customers": [
+        {"id_customer": 1, "email": "a@example.test", "firstname": "X", "lastname": "Y"}
+      ],
+      "addresses": [],
+      "mappings": [],
+      "rows": [
+        {"identifier": "FIRST", "name": "", "nip": "", "email": "a@example.test", "postcode": ""},
+        {"identifier": "SECOND", "name": "", "nip": "", "email": "a@example.test", "postcode": ""}
+      ],
+      "rounds": [
+        {
+          "report": {
+            "linked": 1,
+            "by": {"import-email": 1},
+            "unmatched": 0,
+            "unmatched_rows": [],
+            "skipped_existing": 0,
+            "unchanged": 0,
+            "links": [
+              {"id_customer": 1, "identifier": "FIRST", "type": "import-email", "name": "", "changed": true}
+            ]
+          },
+          "written": 1,
+          "writes": [
+            {"op": "add", "id_customer": 1, "ifirma_identifier": "FIRST", "matched_by": "import-email", "ifirma_name": ""}
+          ]
+        }
+      ],
+      "map": {
+        "1": {"ifirma_identifier": "FIRST", "matched_by": "import-email", "ifirma_name": ""}
+      }
+    },
+    {
+      "name": "stronger match replaces an existing weaker mapping",
+      "from": "ContractorImportTest::testStrongerMatchReplacesAnExistingWeakerMapping",
+      "customers": [
+        {"id_customer": 1, "email": "a@example.test", "firstname": "X", "lastname": "Y"},
+        {"id_customer": 2, "email": "b@example.test", "firstname": "X", "lastname": "Y"},
+        {"id_customer": 3, "email": "c@example.test", "firstname": "X", "lastname": "Y"}
+      ],
+      "addresses": [
+        {"id_customer": 1, "vat_number": "5252248481", "dni": "", "postcode": "", "company": "", "firstname": "A", "lastname": "B"},
+        {"id_customer": 3, "vat_number": "1234567890", "dni": "", "postcode": "", "company": "", "firstname": "A", "lastname": "B"}
+      ],
+      "mappings": [
+        {"id_customer": 1, "ifirma_identifier": "WEAK-1", "matched_by": "import-name"},
+        {"id_customer": 2, "ifirma_identifier": "PS-C2", "matched_by": "module"},
+        {"id_customer": 3, "ifirma_identifier": "HAND-3", "matched_by": "manual"}
+      ],
+      "rows": [
+        {"identifier": "NIP-1", "name": "", "nip": "5252248481", "email": "", "postcode": ""},
+        {"identifier": "MAIL-2", "name": "", "nip": "", "email": "b@example.test", "postcode": ""},
+        {"identifier": "NIP-3", "name": "", "nip": "1234567890", "email": "", "postcode": ""}
+      ],
+      "rounds": [
+        {
+          "report": {
+            "linked": 2,
+            "by": {"import-email": 1, "import-nip": 1},
+            "unmatched": 0,
+            "unmatched_rows": [],
+            "skipped_existing": 1,
+            "unchanged": 0,
+            "links": [
+              {"id_customer": 1, "identifier": "NIP-1", "type": "import-nip", "name": "", "changed": true},
+              {"id_customer": 2, "identifier": "MAIL-2", "type": "import-email", "name": "", "changed": true}
+            ]
+          },
+          "written": 2,
+          "writes": [
+            {"op": "update", "id_customer": 1, "ifirma_identifier": "NIP-1", "matched_by": "import-nip", "ifirma_name": ""},
+            {"op": "update", "id_customer": 2, "ifirma_identifier": "MAIL-2", "matched_by": "import-email", "ifirma_name": ""}
+          ]
+        }
+      ],
+      "map": {
+        "1": {"ifirma_identifier": "NIP-1", "matched_by": "import-nip", "ifirma_name": ""},
+        "2": {"ifirma_identifier": "MAIL-2", "matched_by": "import-email", "ifirma_name": ""},
+        "3": {"ifirma_identifier": "HAND-3", "matched_by": "manual", "ifirma_name": ""}
+      }
+    },
+    {
+      "name": "equal or weaker match keeps the existing mapping",
+      "from": "ContractorImportTest::testEqualOrWeakerMatchKeepsTheExistingMapping",
+      "customers": [
+        {"id_customer": 1, "email": "a@example.test", "firstname": "X", "lastname": "Y"}
+      ],
+      "addresses": [
+        {"id_customer": 1, "vat_number": "5252248481", "dni": "", "postcode": "", "company": "", "firstname": "A", "lastname": "B"}
+      ],
+      "mappings": [
+        {"id_customer": 1, "ifirma_identifier": "OLD-1", "matched_by": "import-nip"}
+      ],
+      "rows": [
+        {"identifier": "OTHER", "name": "", "nip": "5252248481", "email": "", "postcode": ""},
+        {"identifier": "WEAKER", "name": "", "nip": "", "email": "a@example.test", "postcode": ""}
+      ],
+      "rounds": [
+        {
+          "report": {
+            "linked": 0,
+            "by": [],
+            "unmatched": 0,
+            "unmatched_rows": [],
+            "skipped_existing": 2,
+            "unchanged": 0,
+            "links": []
+          },
+          "written": 0,
+          "writes": []
+        }
+      ],
+      "map": {
+        "1": {"ifirma_identifier": "OLD-1", "matched_by": "import-nip", "ifirma_name": ""}
+      }
+    },
+    {
+      "name": "re-import is idempotent",
+      "from": "ContractorImportTest::testReimportIsIdempotent",
+      "customers": [
+        {"id_customer": 1, "email": "a@example.test", "firstname": "X", "lastname": "Y"},
+        {"id_customer": 2, "email": "b@example.test", "firstname": "X", "lastname": "Y"},
+        {"id_customer": 3, "email": "c@example.test", "firstname": "X", "lastname": "Y"}
+      ],
+      "addresses": [
+        {"id_customer": 1, "vat_number": "5252248481", "dni": "", "postcode": "", "company": "", "firstname": "A", "lastname": "B"},
+        {"id_customer": 2, "vat_number": "1234567890", "dni": "", "postcode": "", "company": "", "firstname": "A", "lastname": "B"}
+      ],
+      "mappings": [],
+      "rows": [
+        {"identifier": "R-1", "name": "", "nip": "5252248481", "email": "", "postcode": ""},
+        {"identifier": "R-2", "name": "", "nip": "1234567890", "email": "", "postcode": ""},
+        {"identifier": "R-3", "name": "", "nip": "", "email": "c@example.test", "postcode": ""}
+      ],
+      "rounds": [
+        {
+          "report": {
+            "linked": 3,
+            "by": {"import-email": 1, "import-nip": 2},
+            "unmatched": 0,
+            "unmatched_rows": [],
+            "skipped_existing": 0,
+            "unchanged": 0,
+            "links": [
+              {"id_customer": 1, "identifier": "R-1", "type": "import-nip", "name": "", "changed": true},
+              {"id_customer": 2, "identifier": "R-2", "type": "import-nip", "name": "", "changed": true},
+              {"id_customer": 3, "identifier": "R-3", "type": "import-email", "name": "", "changed": true}
+            ]
+          },
+          "written": 3,
+          "writes": [
+            {"op": "add", "id_customer": 1, "ifirma_identifier": "R-1", "matched_by": "import-nip", "ifirma_name": ""},
+            {"op": "add", "id_customer": 2, "ifirma_identifier": "R-2", "matched_by": "import-nip", "ifirma_name": ""},
+            {"op": "add", "id_customer": 3, "ifirma_identifier": "R-3", "matched_by": "import-email", "ifirma_name": ""}
+          ]
+        },
+        {
+          "report": {
+            "linked": 3,
+            "by": {"import-email": 1, "import-nip": 2},
+            "unmatched": 0,
+            "unmatched_rows": [],
+            "skipped_existing": 0,
+            "unchanged": 3,
+            "links": [
+              {"id_customer": 1, "identifier": "R-1", "type": "import-nip", "name": "", "changed": false},
+              {"id_customer": 2, "identifier": "R-2", "type": "import-nip", "name": "", "changed": false},
+              {"id_customer": 3, "identifier": "R-3", "type": "import-email", "name": "", "changed": false}
+            ]
+          },
+          "written": 0,
+          "writes": []
+        }
+      ],
+      "map": {
+        "1": {"ifirma_identifier": "R-1", "matched_by": "import-nip", "ifirma_name": ""},
+        "2": {"ifirma_identifier": "R-2", "matched_by": "import-nip", "ifirma_name": ""},
+        "3": {"ifirma_identifier": "R-3", "matched_by": "import-email", "ifirma_name": ""}
+      }
+    },
+    {
+      "name": "unmatched list is capped at twenty",
+      "from": "ContractorImportTest::testUnmatchedListIsCappedAtTwenty",
+      "customers": [],
+      "addresses": [],
+      "mappings": [],
+      "rows": [
+        {"identifier": "U-1", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-2", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-3", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-4", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-5", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-6", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-7", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-8", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-9", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-10", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-11", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-12", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-13", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-14", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-15", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-16", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-17", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-18", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-19", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-20", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-21", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-22", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-23", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-24", "name": "", "nip": "", "email": "", "postcode": ""},
+        {"identifier": "U-25", "name": "", "nip": "", "email": "", "postcode": ""}
+      ],
+      "rounds": [
+        {
+          "report": {
+            "linked": 0,
+            "by": [],
+            "unmatched": 25,
+            "unmatched_rows": ["U-1", "U-2", "U-3", "U-4", "U-5", "U-6", "U-7", "U-8", "U-9", "U-10", "U-11", "U-12", "U-13", "U-14", "U-15", "U-16", "U-17", "U-18", "U-19", "U-20"],
+            "skipped_existing": 0,
+            "unchanged": 0,
+            "links": []
+          },
+          "written": 0,
+          "writes": []
+        }
+      ],
+      "map": []
+    },
+    {
+      "name": "apply writes the contractor name",
+      "from": "ContractorImportTest::testApplyWritesMappingsWithTheContractorName",
+      "customers": [
+        {"id_customer": 1, "email": "a@example.test", "firstname": "X", "lastname": "Y"}
+      ],
+      "addresses": [],
+      "mappings": [],
+      "rows": [
+        {"identifier": "R-1", "name": "Jan Kowalski", "nip": "", "email": "a@example.test", "postcode": ""}
+      ],
+      "rounds": [
+        {
+          "report": {
+            "linked": 1,
+            "by": {"import-email": 1},
+            "unmatched": 0,
+            "unmatched_rows": [],
+            "skipped_existing": 0,
+            "unchanged": 0,
+            "links": [
+              {"id_customer": 1, "identifier": "R-1", "type": "import-email", "name": "Jan Kowalski", "changed": true}
+            ]
+          },
+          "written": 1,
+          "writes": [
+            {"op": "add", "id_customer": 1, "ifirma_identifier": "R-1", "matched_by": "import-email", "ifirma_name": "Jan Kowalski"}
+          ]
+        }
+      ],
+      "map": {
+        "1": {"ifirma_identifier": "R-1", "matched_by": "import-email", "ifirma_name": "Jan Kowalski"}
+      }
+    },
+    {
+      "name": "import of the CSV fixture",
+      "from": "ContractorImportTest::testImportOfTheFixtureEndToEnd",
+      "customers": [
+        {"id_customer": 1, "email": "jan@example.test", "firstname": "X", "lastname": "Y"},
+        {"id_customer": 2, "email": "x@example.test", "firstname": "Zażółć", "lastname": "Genslą"}
+      ],
+      "addresses": [
+        {"id_customer": 1, "vat_number": "", "dni": "", "postcode": "00-001", "company": "", "firstname": "A", "lastname": "B"},
+        {"id_customer": 2, "vat_number": "", "dni": "", "postcode": "30-001", "company": "", "firstname": "A", "lastname": "B"},
+        {"id_customer": 3, "vat_number": "PL5252248481", "dni": "", "postcode": "00-950", "company": "ACME", "firstname": "A", "lastname": "B"}
+      ],
+      "mappings": [],
+      "import": {"file": "contractors-export.csv"},
+      "report": {
+        "linked": 3,
+        "by": {"import-email": 1, "import-name": 1, "import-nip": 1},
+        "unmatched": 1,
+        "unmatched_rows": ["NIEZNANY-04"],
+        "skipped_existing": 0,
+        "unchanged": 0,
+        "links": [
+          {"id_customer": 1, "identifier": "KOWALSKI-01", "type": "import-email", "name": "Jan Kowalski", "changed": true},
+          {"id_customer": 3, "identifier": "ACME-02", "type": "import-nip", "name": "ACME Sp. z o.o.", "changed": true},
+          {"id_customer": 2, "identifier": "ZOLC-03", "type": "import-name", "name": "Zażółć Genslą", "changed": true}
+        ],
+        "written": 3,
+        "rows": 4,
+        "errors": []
+      },
+      "writes": [
+        {"op": "add", "id_customer": 1, "ifirma_identifier": "KOWALSKI-01", "matched_by": "import-email", "ifirma_name": "Jan Kowalski"},
+        {"op": "add", "id_customer": 3, "ifirma_identifier": "ACME-02", "matched_by": "import-nip", "ifirma_name": "ACME Sp. z o.o."},
+        {"op": "add", "id_customer": 2, "ifirma_identifier": "ZOLC-03", "matched_by": "import-name", "ifirma_name": "Zażółć Genslą"}
+      ],
+      "map": {
+        "1": {"ifirma_identifier": "KOWALSKI-01", "matched_by": "import-email", "ifirma_name": "Jan Kowalski"},
+        "2": {"ifirma_identifier": "ZOLC-03", "matched_by": "import-name", "ifirma_name": "Zażółć Genslą"},
+        "3": {"ifirma_identifier": "ACME-02", "matched_by": "import-nip", "ifirma_name": "ACME Sp. z o.o."}
+      }
+    },
+    {
+      "name": "import refuses a file without the identifier column",
+      "from": "ContractorImportTest::testImportRefusesAFileWithoutIdentifierColumn",
+      "customers": [
+        {"id_customer": 1, "email": "a@example.test", "firstname": "X", "lastname": "Y"}
+      ],
+      "addresses": [],
+      "mappings": [],
+      "import": {"content": "Nazwa;E-mail\nJan;a@example.test\n"},
+      "report": {
+        "errors": ["missing column: Identyfikator"],
+        "rows": 0
+      },
+      "writes": [],
+      "map": []
+    },
+    {
+      "name": "import with a skipped long identifier and a blank line",
+      "from": "new: import() with a blank line, a skipped long identifier, matched and unmatched rows",
+      "customers": [
+        {"id_customer": 1, "email": "a@example.test", "firstname": "X", "lastname": "Y"},
+        {"id_customer": 2, "email": "b@example.test", "firstname": "X", "lastname": "Y"}
+      ],
+      "addresses": [
+        {"id_customer": 2, "vat_number": "5252248481", "dni": "", "postcode": "", "company": "", "firstname": "A", "lastname": "B"}
+      ],
+      "mappings": [],
+      "import": {"content": "Identyfikator;Nazwa;NIP;E-mail;Kod pocztowy\nA-1;Jan Kowalski;;a@example.test;00-001\n\nTOO-LONG-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX;Dlugi;;;\nB-2;ACME;5252248481;;\nC-3;Nikt;;nikt@example.test;99-999\n"},
+      "report": {
+        "linked": 2,
+        "by": {"import-email": 1, "import-nip": 1},
+        "unmatched": 1,
+        "unmatched_rows": ["C-3"],
+        "skipped_existing": 0,
+        "unchanged": 0,
+        "links": [
+          {"id_customer": 1, "identifier": "A-1", "type": "import-email", "name": "Jan Kowalski", "changed": true},
+          {"id_customer": 2, "identifier": "B-2", "type": "import-nip", "name": "ACME", "changed": true}
+        ],
+        "written": 2,
+        "rows": 3,
+        "errors": ["line 4: identifier longer than 64 characters skipped"]
+      },
+      "writes": [
+        {"op": "add", "id_customer": 1, "ifirma_identifier": "A-1", "matched_by": "import-email", "ifirma_name": "Jan Kowalski"},
+        {"op": "add", "id_customer": 2, "ifirma_identifier": "B-2", "matched_by": "import-nip", "ifirma_name": "ACME"}
+      ],
+      "map": {
+        "1": {"ifirma_identifier": "A-1", "matched_by": "import-email", "ifirma_name": "Jan Kowalski"},
+        "2": {"ifirma_identifier": "B-2", "matched_by": "import-nip", "ifirma_name": "ACME"}
+      }
+    }
+  ]
+}
