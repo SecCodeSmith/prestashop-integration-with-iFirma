@@ -798,6 +798,95 @@ class ModuleHooksTest extends TestCase
         $this->assertSame("ps_checkpayment=PRZ\nmygateway*=ELE", Configuration::get('IFIRMA_PAYMENT_METHOD_MAP'));
     }
 
+    public function testEmptyPaymentMethodMapClearsTheStoredMap()
+    {
+        Configuration::updateValue('IFIRMA_PAYMENT_METHOD_MAP', 'ps_wirepayment=PRZ');
+        Tools::$values = $this->validPost(array('IFIRMA_PAYMENT_METHOD_MAP' => ''));
+
+        $this->assertStringContainsString('<confirmation>', $this->module->getContent());
+        $this->assertSame('', Configuration::get('IFIRMA_PAYMENT_METHOD_MAP'));
+    }
+
+    public function testBlankAndCommentOnlyPaymentMethodMapIsStoredEmpty()
+    {
+        Configuration::updateValue('IFIRMA_PAYMENT_METHOD_MAP', 'ps_wirepayment=PRZ');
+        Tools::$values = $this->validPost(array('IFIRMA_PAYMENT_METHOD_MAP' => "  \r\n# only a comment\r\n\t\n"));
+
+        $this->assertStringContainsString('<confirmation>', $this->module->getContent());
+        $this->assertSame('', Configuration::get('IFIRMA_PAYMENT_METHOD_MAP'));
+    }
+
+    public function testPaymentMethodMapIsStoredOneEntryPerLineWhateverTheInputSeparators()
+    {
+        Tools::$values = $this->validPost(array(
+            'IFIRMA_PAYMENT_METHOD_MAP' => "ps_wirepayment=PRZ\rps_checkpayment=czk\r\n\nmygateway*=ELE\n",
+        ));
+
+        $this->assertStringContainsString('<confirmation>', $this->module->getContent());
+        $this->assertSame(
+            "ps_wirepayment=PRZ\nps_checkpayment=CZK\nmygateway*=ELE",
+            Configuration::get('IFIRMA_PAYMENT_METHOD_MAP')
+        );
+    }
+
+    public function testDuplicatePaymentMethodMapEntryKeepsItsFirstPositionAndLastCode()
+    {
+        Tools::$values = $this->validPost(array(
+            'IFIRMA_PAYMENT_METHOD_MAP' => "ps_checkpayment=PRZ\nmygateway*=ELE\nps_checkpayment=GTK",
+        ));
+
+        $this->assertStringContainsString('<confirmation>', $this->module->getContent());
+        $this->assertSame("ps_checkpayment=GTK\nmygateway*=ELE", Configuration::get('IFIRMA_PAYMENT_METHOD_MAP'));
+    }
+
+    public function testMissingLoginIsRejectedAndNothingSaved()
+    {
+        Tools::$values = $this->validPost(array('IFIRMA_USER' => '   '));
+        $out = $this->module->getContent();
+
+        $this->assertStringContainsString('<error>', $out);
+        $this->assertStringContainsString('The iFirma login is required.', $out);
+        $this->assertSame('u@example.com', Configuration::get('IFIRMA_USER'));
+        $this->assertSame('shop_mail', Configuration::get('IFIRMA_SEND_CHANNEL'));
+    }
+
+    public function testNonHexadecimalInvoiceKeyIsRejectedAndNothingSaved()
+    {
+        Tools::$values = $this->validPost(array('IFIRMA_KEY_FAKTURA' => 'not-a-hex-key'));
+        $out = $this->module->getContent();
+
+        $this->assertStringContainsString('<error>', $out);
+        $this->assertStringContainsString('The invoice API key must be a hexadecimal string.', $out);
+        $this->assertSame(str_repeat('1', 64), Configuration::get('IFIRMA_KEY_FAKTURA'));
+        $this->assertSame('shop_mail', Configuration::get('IFIRMA_SEND_CHANNEL'));
+    }
+
+    public function testUnknownPaymentMethodModeIsRejectedAndNothingSaved()
+    {
+        Configuration::updateValue('IFIRMA_PAYMENT_METHOD_MODE', 'fixed');
+        foreach (array('sometimes', '') as $bad) {
+            Tools::$values = $this->validPost(array('IFIRMA_PAYMENT_METHOD_MODE' => $bad));
+            $out = $this->module->getContent();
+
+            $this->assertStringContainsString('<error>', $out, 'mode ' . $bad);
+            $this->assertStringContainsString('The payment method mode must be "order" or "fixed".', $out);
+            $this->assertSame('fixed', Configuration::get('IFIRMA_PAYMENT_METHOD_MODE'));
+            $this->assertSame('shop_mail', Configuration::get('IFIRMA_SEND_CHANNEL'));
+        }
+    }
+
+    public function testUnknownFallbackPaymentMethodIsRejectedAndNothingSaved()
+    {
+        Configuration::updateValue('IFIRMA_PAYMENT_METHOD', 'GTK');
+        Tools::$values = $this->validPost(array('IFIRMA_PAYMENT_METHOD' => 'XYZ'));
+        $out = $this->module->getContent();
+
+        $this->assertStringContainsString('<error>', $out);
+        $this->assertStringContainsString('The fallback payment method must be one of the listed codes.', $out);
+        $this->assertSame('GTK', Configuration::get('IFIRMA_PAYMENT_METHOD'));
+        $this->assertSame('shop_mail', Configuration::get('IFIRMA_SEND_CHANNEL'));
+    }
+
     // ---- API limit box -------------------------------------------------------------------
 
     public function testLimitBoxShownWhenAbonentKeyIsSet()
