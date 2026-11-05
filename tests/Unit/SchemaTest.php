@@ -206,6 +206,58 @@ class SchemaTest extends TestCase
         );
     }
 
+    public function testContractorIdentifierLengthIs64()
+    {
+        $this->assertSame(64, IfirmaSchema::CONTRACTOR_IDENTIFIER_LENGTH);
+    }
+
+    public function columnProbeResultProvider()
+    {
+        return array(
+            'one match, as the driver returns it' => array('1', true),
+            'one match, as an int' => array(1, true),
+            'no match' => array('0', false),
+            'no match, as an int' => array(0, false),
+            'query failed' => array(false, false),
+            'no row' => array(null, false),
+        );
+    }
+
+    /**
+     * @dataProvider columnProbeResultProvider
+     */
+    public function testColumnExistsReadsTheNumberOfMatchingColumns($count, $expected)
+    {
+        Db::getInstance()->whenGetValue('/information_schema/', $count);
+
+        $this->assertSame($expected, IfirmaSchema::columnExists('ps_ifirma_receipt', 'source'));
+    }
+
+    public function testColumnExistsAsksInformationSchemaAboutTheNamedColumn()
+    {
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'wanted'/", 1);
+
+        $this->assertTrue(IfirmaSchema::columnExists('ps_demo', 'wanted'));
+        $this->assertFalse(IfirmaSchema::columnExists('ps_demo', 'other'));
+
+        $this->assertSame(array(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()"
+            . " AND TABLE_NAME = 'ps_demo' AND COLUMN_NAME = 'wanted'",
+            "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()"
+            . " AND TABLE_NAME = 'ps_demo' AND COLUMN_NAME = 'other'",
+        ), $this->columnProbes());
+    }
+
+    public function testColumnExistsEscapesTheTableAndColumnNames()
+    {
+        IfirmaSchema::columnExists("ps_a'b", "c'd");
+
+        $this->assertSame(array(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()"
+            . " AND TABLE_NAME = 'ps_a\\'b' AND COLUMN_NAME = 'c\\'d'",
+        ), $this->columnProbes());
+    }
+
     public function testKsefColumnsAreDefinedAndDefaultModeIsB2b()
     {
         $columns = IfirmaSchema::receiptColumns();

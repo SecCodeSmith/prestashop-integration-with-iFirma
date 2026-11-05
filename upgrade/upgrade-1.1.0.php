@@ -27,11 +27,7 @@ function upgrade_module_1_1_0($module)
     $table = _DB_PREFIX_ . 'ifirma_receipt';
 
     foreach (IfirmaSchema::newReceiptColumnsFor110() as $column => $ddl) {
-        $exists = (int) $db->getValue(
-            "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()"
-            . " AND TABLE_NAME = '" . pSQL($table) . "' AND COLUMN_NAME = '" . pSQL($column) . "'"
-        );
-        if ($exists) {
+        if (IfirmaSchema::columnExists($table, $column)) {
             continue;
         }
         if (!$db->execute('ALTER TABLE `' . $table . '` ADD COLUMN `' . $column . '` ' . $ddl)) {

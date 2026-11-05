@@ -19,6 +19,12 @@ if (!defined('_PS_VERSION_')) {
 class IfirmaSchema
 {
     /**
+     * Length of the iFirma identifier column in the contractor map. Identifiers in real accounts
+     * exceed the documented 15 characters, so a table created narrower is widened to this length.
+     */
+    const CONTRACTOR_IDENTIFIER_LENGTH = 64;
+
+    /**
      * Columns added to the receipt table in 1.1.0.
      *
      * @return array column name => DDL fragment
@@ -105,7 +111,7 @@ class IfirmaSchema
         return array(
             'id_ifirma_contractor_map' => 'INT(11) UNSIGNED NOT NULL AUTO_INCREMENT',
             'id_customer' => 'INT(11) UNSIGNED NOT NULL',
-            'ifirma_identifier' => 'VARCHAR(64) NOT NULL',
+            'ifirma_identifier' => 'VARCHAR(' . self::CONTRACTOR_IDENTIFIER_LENGTH . ') NOT NULL',
             'matched_by' => "VARCHAR(16) NOT NULL DEFAULT ''",
             'ifirma_name' => "VARCHAR(150) NOT NULL DEFAULT ''",
             'date_add' => 'DATETIME NOT NULL',
@@ -173,6 +179,21 @@ class IfirmaSchema
             . ') ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8;';
     }
 
+    /**
+     * Whether a table of the current database has the named column.
+     *
+     * @param string $table  full table name, prefix included
+     * @param string $column
+     * @return bool
+     */
+    public static function columnExists($table, $column)
+    {
+        return (int) Db::getInstance()->getValue(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()"
+            . " AND TABLE_NAME = '" . pSQL($table) . "' AND COLUMN_NAME = '" . pSQL($column) . "'"
+        ) !== 0;
+    }
+
     /** @var bool the contractor map table was already ensured in this request */
     private static $contractorMapEnsured = false;
 
@@ -210,12 +231,12 @@ class IfirmaSchema
             "SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()"
             . " AND TABLE_NAME = '" . pSQL($table) . "' AND COLUMN_NAME = 'ifirma_identifier'"
         );
-        if (!is_numeric($length) || (int) $length <= 0 || (int) $length >= 64) {
+        if (!is_numeric($length) || (int) $length <= 0 || (int) $length >= self::CONTRACTOR_IDENTIFIER_LENGTH) {
             return true;
         }
 
         return (bool) Db::getInstance()->execute(
-            'ALTER TABLE `' . $table . '` MODIFY `ifirma_identifier` VARCHAR(64) NOT NULL'
+            'ALTER TABLE `' . $table . '` MODIFY `ifirma_identifier` VARCHAR(' . self::CONTRACTOR_IDENTIFIER_LENGTH . ') NOT NULL'
         );
     }
 
@@ -237,11 +258,7 @@ class IfirmaSchema
         $columns = self::newReceiptColumnsFor110();
         $ok = true;
         foreach (array('ksef_sent_at', 'ksef_error') as $column) {
-            $exists = (int) $db->getValue(
-                "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()"
-                . " AND TABLE_NAME = '" . pSQL($table) . "' AND COLUMN_NAME = '" . pSQL($column) . "'"
-            );
-            if ($exists) {
+            if (self::columnExists($table, $column)) {
                 continue;
             }
             if (!$db->execute('ALTER TABLE `' . $table . '` ADD COLUMN `' . $column . '` ' . $columns[$column])) {
