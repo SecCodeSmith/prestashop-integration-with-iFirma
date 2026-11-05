@@ -21,6 +21,7 @@ require_once __DIR__ . '/classes/IfirmaDuplicateGuard.php';
 require_once __DIR__ . '/classes/IfirmaDeliveryService.php';
 require_once __DIR__ . '/classes/IfirmaKsefService.php';
 require_once __DIR__ . '/classes/IfirmaStatusSyncService.php';
+require_once __DIR__ . '/classes/IfirmaDataRequestNotifier.php';
 require_once __DIR__ . '/classes/IfirmaDataRequestService.php';
 require_once __DIR__ . '/classes/IfirmaIssuancePipeline.php';
 require_once __DIR__ . '/classes/IfirmaCustomerView.php';

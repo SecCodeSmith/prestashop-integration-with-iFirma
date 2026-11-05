@@ -17,6 +17,7 @@ require_once dirname(__FILE__) . '/IfirmaReceiptService.php';
 
 require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaDataRequest.php';
+require_once dirname(__FILE__) . '/IfirmaDataRequestNotifier.php';
 
 /**
  * Business rules of the customer data-change request.
@@ -28,6 +29,9 @@ require_once dirname(__FILE__) . '/IfirmaDataRequest.php';
  *    refused transitions throw IfirmaDataRequestException (see code_name)
  *  - getOverrideForOrder(idOrder): array|null in the IfirmaReceiptService::buildContractor override format
  *  - buildDiff, notifyMerchant, notifyCustomer, summarize, isValidToken
+ *
+ * notifyMerchant() and notifyCustomer() compose the e-mails (subject, template variables); the
+ * IfirmaDataRequestNotifier delivers them, so the decisions can be tested with a recording notifier.
  */
 class IfirmaDataRequestService
 {
@@ -37,14 +41,19 @@ class IfirmaDataRequestService
     /** @var callable|null returns "Y-m-d H:i:s" */
     private $clock;
 
+    /** @var IfirmaDataRequestNotifier */
+    private $notifier;
+
     /**
      * @param Module $module
      * @param callable|null $clock
+     * @param IfirmaDataRequestNotifier|null $notifier delivers the e-mails; the default one sends them
      */
-    public function __construct(Module $module, $clock = null)
+    public function __construct(Module $module, $clock = null, ?IfirmaDataRequestNotifier $notifier = null)
     {
         $this->module = $module;
         $this->clock = $clock;
+        $this->notifier = $notifier ?: new IfirmaDataRequestNotifier();
     }
 
     /**
@@ -450,10 +459,7 @@ class IfirmaDataRequestService
      */
     public function notifyMerchant(IfirmaDataRequest $request, Order $order)
     {
-        $to = trim((string) Configuration::get('IFIRMA_NOTIFY_EMAIL'));
-        if ($to === '') {
-            $to = trim((string) Configuration::get('PS_SHOP_EMAIL'));
-        }
+        $to = $this->notifier->merchantAddress();
         if ($to === '') {
             return false;
         }
@@ -492,20 +498,11 @@ class IfirmaDataRequestService
             '{admin_link}' => $adminLink,
         );
 
-        return (bool) Mail::Send(
-            (int) $context->language->id,
-            'data_request_received',
-            $this->module->l('Invoice data change request', 'ifirmadatarequestservice') . ' ' . $order->reference,
-            $vars,
+        return $this->notifier->sendToMerchant(
             $to,
-            null,
-            null,
-            null,
-            null,
-            null,
-            _PS_MODULE_DIR_ . 'ifirma/mails/',
-            false,
-            (int) $order->id_shop ?: null
+            $order,
+            $this->module->l('Invoice data change request', 'ifirmadatarequestservice') . ' ' . $order->reference,
+            $vars
         );
     }
 
@@ -522,23 +519,6 @@ class IfirmaDataRequestService
             return false;
         }
         $order = new Order((int) $request->id_order);
-        $template = 'data_request_' . $decision;
-
-        $idLang = (int) $order->id_lang;
-        $iso = $idLang ? Language::getIsoById($idLang) : false;
-        $dir = _PS_MODULE_DIR_ . 'ifirma/mails/';
-        if (!$iso || !is_file($dir . $iso . '/' . $template . '.html')) {
-            $idLang = 0;
-            foreach (Language::getLanguages(false) as $lang) {
-                if ($lang['iso_code'] === 'en') {
-                    $idLang = (int) $lang['id_lang'];
-                    break;
-                }
-            }
-            if (!$idLang) {
-                $idLang = (int) Context::getContext()->language->id;
-            }
-        }
 
         $vars = array(
             '{firstname}' => $this->esc($customer->firstname),
@@ -550,21 +530,7 @@ class IfirmaDataRequestService
             ? $this->module->l('Your invoice data change was approved', 'ifirmadatarequestservice')
             : $this->module->l('Your invoice data change was rejected', 'ifirmadatarequestservice');
 
-        return (bool) Mail::Send(
-            $idLang,
-            $template,
-            $subject,
-            $vars,
-            $customer->email,
-            trim($customer->firstname . ' ' . $customer->lastname),
-            null,
-            null,
-            null,
-            null,
-            $dir,
-            false,
-            (int) $order->id_shop ?: null
-        );
+        return $this->notifier->sendToCustomer($decision, $customer, $order, $subject, $vars);
     }
 
     /**

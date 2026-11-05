@@ -66,6 +66,7 @@ require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDeliveryService.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaGuardResult.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDuplicateMatcher.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDuplicateGuard.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDataRequestNotifier.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDataRequestService.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaPipelineResult.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaIssuancePipeline.php';

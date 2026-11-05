@@ -13,6 +13,7 @@ Note: controllers use `exit`/`die`/`header()`; those paths cannot be unit-tested
 | `IfirmaTestRedirect` (exception) | thrown by `Tools::redirect*`; `->url`, `getUrl()` |
 | `IfirmaTestController` | `Context::$controller`; `registerStylesheet()`/`addCSS()` recorded in `->stylesheets`/`->css`; `->php_self` |
 | `IfirmaTestRegistryTrait` | used by entity stubs: `static $instances` (id => object), `register($obj)` (keyed by `$obj->id`), `reset()`. `new X($id)` copies props from `X::$instances[$id]`; unknown id leaves `->id` null (so `Validate::isLoadedObject` is false) |
+| `IfirmaTestMailTrait` | for TestCases: `assertMailSent($expected, $index = 0)` compares one recorded `Mail::$sent[$index]` argument for argument and type for type, whatever the key order (sender, attachment, SMTP mode, template folder, die flag, bcc and reply-to are filled in); `mailDir()` is the folder the module reads its mail templates from |
 | `ScriptedTransport` | see "Transport contract" |
 
 ## Stubs (tests/Stubs)
