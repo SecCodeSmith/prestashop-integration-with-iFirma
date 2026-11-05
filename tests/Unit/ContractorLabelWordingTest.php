@@ -145,6 +145,34 @@ class ContractorLabelWordingTest extends TestCase
         ), json_decode($this->vars()['ifirma_customer_match_labels_json'], true));
     }
 
+    /**
+     * The labels are translations and their JSON lands in an inline script, so a label with markup, an
+     * ampersand or a quote of either kind must reach the page hex-escaped, never raw.
+     */
+    public function testCustomerPanelHexEscapesTheMarkupAndQuotesOfAMatchLabel()
+    {
+        $label = '<NIP> & \'NIP\' "NIP"';
+        $module = $this->getMockBuilder(get_class($this->module))->onlyMethods(array('l'))->getMock();
+        $module->method('l')->willReturnCallback(function ($string) use ($label) {
+            return $string === 'NIP' ? $label : $string;
+        });
+
+        $module->hookDisplayAdminCustomers(array('id_customer' => 5));
+        $json = $this->vars()['ifirma_customer_match_labels_json'];
+
+        // escaping loses nothing: the script still reads the translated text
+        $this->assertSame($label, json_decode($json, true)['nip']);
+        // each of < > & ' " is written as the escape of its JSON_HEX_* flag
+        $escapes = array('<' => '\u003C', '>' => '\u003E', '&' => '\u0026', "'" => '\u0027', '"' => '\u0022');
+        foreach ($escapes as $char => $escape) {
+            $this->assertStringContainsString($escape, $json, $char . ' must be written as ' . $escape);
+        }
+        // and none is left raw; a raw quote of the label would show as \" (the JSON's own delimiters stay)
+        foreach (array('<', '>', '&', "'", '\"') as $raw) {
+            $this->assertStringNotContainsString($raw, $json, $raw . ' must not appear in the JSON');
+        }
+    }
+
     // ---- the register action: the note names the match in the words of the panels ---------------------
 
     /**
