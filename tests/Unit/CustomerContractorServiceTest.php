@@ -309,6 +309,452 @@ class CustomerContractorServiceTest extends TestCase
         $this->assertSame('', $this->svc->customerNip(7));
     }
 
+    // ---- the customer's invoice data: names, company, phone, NIP, address order and reads -----
+    // (pins what refactor-srp-splits 1.2 moves into IfirmaCustomerInvoiceProfile)
+
+    /**
+     * Counts the reads of one call: the runs of Order::getCustomerOrders() and the language id of
+     * every Customer::getAddresses() call.
+     *
+     * @return stdClass orders (int), languages (array)
+     */
+    private function recordReads()
+    {
+        $log = new stdClass();
+        $log->orders = 0;
+        $log->languages = array();
+        Order::$customerOrdersHook = function ($idCustomer, $rows) use ($log) {
+            ++$log->orders;
+
+            return $rows;
+        };
+        Customer::$addressesHook = function ($idLang, $rows) use ($log) {
+            $log->languages[] = $idLang;
+
+            return $rows;
+        };
+
+        return $log;
+    }
+
+    public function testDefaultCriteriaTrimsTheCustomerNamesAndEmail()
+    {
+        $c = Customer::$instances[7];
+        $c->firstname = "  Jan\t";
+        $c->lastname = "\nKowalski ";
+        $c->email = ' jan@example.test ';
+
+        $this->assertSame(
+            array('firstname' => 'Jan', 'lastname' => 'Kowalski', 'company' => '', 'nip' => '', 'email' => 'jan@example.test', 'phone' => ''),
+            $this->svc->defaultCriteria(7)
+        );
+    }
+
+    public function testDefaultCriteriaOfAnUnknownCustomerIsEmpty()
+    {
+        $this->assertSame(
+            array('firstname' => '', 'lastname' => '', 'company' => '', 'nip' => '', 'email' => '', 'phone' => ''),
+            $this->svc->defaultCriteria(99)
+        );
+        $this->assertSame('', $this->svc->customerNip(99));
+    }
+
+    public function testDefaultCriteriaOfACustomerWithoutAddressesTakesTheCompanyFromTheCustomer()
+    {
+        Customer::$instances[7]->company = ' Customer Co ';
+
+        $this->assertSame(
+            array('firstname' => 'Jan', 'lastname' => 'Kowalski', 'company' => 'Customer Co', 'nip' => '', 'email' => 'Jan.Kowalski@Example.test', 'phone' => ''),
+            $this->svc->defaultCriteria(7)
+        );
+    }
+
+    /** @return array label => array(company of the address, company of the customer, expected company) */
+    public static function companyProvider()
+    {
+        return array(
+            'the address company, trimmed' => array("  ACME Sp. z o.o.\t", 'Customer Co', 'ACME Sp. z o.o.'),
+            'no address company: the customer company, trimmed' => array('', '  Customer Co ', 'Customer Co'),
+            'a blank address company counts as none' => array(" \t ", 'Customer Co', 'Customer Co'),
+            'an unset address company counts as none' => array(null, 'Customer Co', 'Customer Co'),
+            'a company called 0 is kept' => array('0', 'Customer Co', '0'),
+            'no company anywhere' => array('', null, ''),
+        );
+    }
+
+    /**
+     * @dataProvider companyProvider
+     */
+    public function testDefaultCriteriaCompany($addressCompany, $customerCompany, $expected)
+    {
+        $this->address(1, array('company' => $addressCompany));
+        Customer::$instances[7]->company = $customerCompany;
+
+        $this->assertSame($expected, $this->svc->defaultCriteria(7)['company']);
+    }
+
+    /** @return array label => array(phone, mobile phone, expected phone) */
+    public static function phoneProvider()
+    {
+        return array(
+            'the phone, trimmed' => array(' 600 100 200 ', '500 000 000', '600 100 200'),
+            'no phone: the mobile phone, trimmed' => array('', ' 500 000 000 ', '500 000 000'),
+            'a blank phone counts as none' => array(" \t", '500 000 000', '500 000 000'),
+            'an unset phone counts as none' => array(null, '500 000 000', '500 000 000'),
+            'a phone called 0 is kept' => array('0', '500 000 000', '0'),
+            'neither' => array('', '', ''),
+            'neither is set' => array(null, null, ''),
+        );
+    }
+
+    /**
+     * @dataProvider phoneProvider
+     */
+    public function testDefaultCriteriaPhone($phone, $mobile, $expected)
+    {
+        $this->address(1, array('phone' => $phone, 'phone_mobile' => $mobile));
+
+        $this->assertSame($expected, $this->svc->defaultCriteria(7)['phone']);
+    }
+
+    /** Company and phone come from the latest address only; the NIP alone looks further back. */
+    public function testCompanyAndPhoneAreNotTakenFromAnOlderAddress()
+    {
+        $this->address(1, array('company' => 'Old Co', 'phone' => '111', 'phone_mobile' => '112', 'vat_number' => '525-224-84-81'));
+        $this->address(2, array('company' => '', 'phone' => '', 'phone_mobile' => '', 'vat_number' => ''));
+        Customer::$instances[7]->company = 'Customer Co';
+
+        $this->assertSame(
+            array('firstname' => 'Jan', 'lastname' => 'Kowalski', 'company' => 'Customer Co', 'nip' => '5252248481', 'email' => 'Jan.Kowalski@Example.test', 'phone' => ''),
+            $this->svc->defaultCriteria(7)
+        );
+    }
+
+    /**
+     * The latest address is 2; an older one (1) carries a valid NIP.
+     *
+     * @return array label => array(vat_number of the latest address, nip of the form, customerNip())
+     */
+    public static function nipProvider()
+    {
+        return array(
+            'ten digits' => array('123-456-32-18', '1234563218', '1234563218'),
+            'letters and spaces are dropped' => array('PL 123 456 32 18', '1234563218', '1234563218'),
+            'five digits are kept as typed, whatever the length' => array('12-345', '12345', '5252248481'),
+            'nine digits are kept too' => array('123456789', '123456789', '5252248481'),
+            'eleven digits are kept too' => array('12345678901', '12345678901', '5252248481'),
+            'no digits: the NIP of an older address' => array('n/a', '5252248481', '5252248481'),
+            'empty: the NIP of an older address' => array('', '5252248481', '5252248481'),
+            'unset: the NIP of an older address' => array(null, '5252248481', '5252248481'),
+        );
+    }
+
+    /**
+     * @dataProvider nipProvider
+     */
+    public function testDefaultCriteriaNipAndCustomerNip($vatNumber, $expectedFormNip, $expectedCustomerNip)
+    {
+        $this->address(1, array('vat_number' => '525-224-84-81'));
+        $this->address(2, array('vat_number' => $vatNumber));
+
+        $this->assertSame($expectedFormNip, $this->svc->defaultCriteria(7)['nip']);
+        $this->assertSame($expectedCustomerNip, $this->svc->customerNip(7));
+    }
+
+    public function testCustomerNipIsTheFirstAddressWithExactlyTenDigits()
+    {
+        $this->address(1, array('vat_number' => '5252248481'));
+        $this->address(2, array('vat_number' => '222-222-22-22'));
+        $this->address(3, array('vat_number' => '123456789'));
+        $this->address(4, array('vat_number' => '12345678901'));
+        $this->address(5, array('vat_number' => ''));
+
+        // newest first: 5 has none, 4 has eleven digits, 3 has nine, 2 is the first with ten
+        $this->assertSame('2222222222', $this->svc->customerNip(7));
+        $this->assertSame('2222222222', $this->svc->defaultCriteria(7)['nip']);
+    }
+
+    public function testOrderAddressesComeBeforeTheOwnOnes()
+    {
+        $this->address(1, array('company' => 'Ordered Co'));
+        $this->address(2, array('company' => 'Second Co'));
+        $this->address(3, array('company' => 'Newest Co'));
+        $this->order(10, '2026-05-01 10:00:00', 1);
+
+        $this->assertSame('Ordered Co', $this->svc->defaultCriteria(7)['company']);
+    }
+
+    public function testAddressesAreLoadedOrdersNewestFirstThenOwnNewestFirstEachOnce()
+    {
+        foreach (array(1, 2, 3, 4) as $id) {
+            $this->address($id, array('company' => 'Co ' . $id));
+        }
+        $this->order(10, '2026-01-01 10:00:00', 1);
+        $this->order(11, '2026-03-01 10:00:00', 3);
+        $this->order(12, '2026-05-01 10:00:00', 2);
+        $this->order(13, '2026-04-01 10:00:00', 2);
+
+        $this->svc->customerNip(7);
+
+        // orders newest first: 12 -> 2, 13 -> 2, 11 -> 3, 10 -> 1; then the own ones: 4, 3, 2, 1
+        $this->assertSame(array(2, 3, 1, 4), Address::$loads);
+    }
+
+    public function testAddressesThatDoNotLoadAreSkipped()
+    {
+        $this->address(1, array('company' => 'Existing Co'));
+        $this->order(10, '2026-01-01 10:00:00', 1);
+        $this->order(11, '2026-05-01 10:00:00', 99); // the address was deleted
+
+        $this->svc->customerNip(7);
+
+        $this->assertSame(array(99, 1), Address::$loads);
+        $this->assertSame('Existing Co', $this->svc->defaultCriteria(7)['company']);
+    }
+
+    public function testOrdersWithoutAnInvoiceAddressAreSkipped()
+    {
+        $this->address(1, array('company' => 'Own Co'));
+        $this->order(10, '2026-01-01 10:00:00', 0);
+        $this->order(11, '2026-02-01 10:00:00', null);
+        $this->order(12, '2026-03-01 10:00:00', '');
+
+        $this->svc->customerNip(7);
+
+        $this->assertSame(array(1), Address::$loads);
+    }
+
+    public function testTheAddressesOfAnotherCustomerAreNotLoaded()
+    {
+        $this->address(1, array('company' => 'Own Co'));
+        $this->address(2, array('company' => 'Other Co'), 8);
+        $this->order(10, '2026-05-01 10:00:00', 2, 8);
+
+        $this->svc->customerNip(7);
+
+        $this->assertSame(array(1), Address::$loads);
+    }
+
+    public function testAddressIdsAreLoadedAsIntegers()
+    {
+        // core hands the ids over as strings
+        Order::$customerOrdersHook = function ($idCustomer, $rows) {
+            foreach ($rows as $i => $row) {
+                $rows[$i]['id_address_invoice'] = (string) $row['id_address_invoice'];
+            }
+
+            return $rows;
+        };
+        Customer::$addressesHook = function ($idLang, $rows) {
+            foreach ($rows as $i => $row) {
+                $rows[$i]['id_address'] = (string) $row['id_address'];
+            }
+
+            return $rows;
+        };
+        foreach (array(1, 2, 3) as $id) {
+            $this->address($id, array('company' => 'Co ' . $id));
+        }
+        $this->order(10, '2026-05-01 10:00:00', 2);
+
+        $this->svc->customerNip(7);
+
+        $this->assertSame(array(2, 3, 1), Address::$loads);
+    }
+
+    public function testAnExceptionOfTheOrderQueryMeansNoOrderAddresses()
+    {
+        $this->address(1, array('company' => 'Old Co'));
+        $this->address(2, array('company' => 'Own Co'));
+        $this->order(10, '2026-05-01 10:00:00', 1);
+        Order::$customerOrdersHook = function () {
+            throw new RuntimeException('orders unavailable');
+        };
+
+        $this->svc->customerNip(7);
+
+        $this->assertSame(array(2, 1), Address::$loads);
+        $this->assertSame('Own Co', $this->svc->defaultCriteria(7)['company']);
+    }
+
+    /** @return array method => array(method name) */
+    public static function readersOfTheInvoiceData()
+    {
+        return array(
+            'defaultCriteria' => array('defaultCriteria'),
+            'customerNip' => array('customerNip'),
+            'remoteCount' => array('remoteCount'),
+        );
+    }
+
+    /**
+     * Only an Exception of the order query is caught; an Error is not.
+     *
+     * @dataProvider readersOfTheInvoiceData
+     */
+    public function testAnErrorOfTheOrderQueryIsNotSwallowed($method)
+    {
+        Order::$customerOrdersHook = function () {
+            throw new TypeError('order query broke');
+        };
+
+        $this->expectException(TypeError::class);
+        $this->expectExceptionMessage('order query broke');
+
+        call_user_func(array($this->svc, $method), 7);
+    }
+
+    /** @return array label => array(answer) */
+    public static function answersThatAreNoRows()
+    {
+        return array(
+            'false' => array(false),
+            'null' => array(null),
+            'a string' => array('database error'),
+        );
+    }
+
+    /**
+     * @dataProvider answersThatAreNoRows
+     */
+    public function testAnOrderAnswerThatIsNoArrayMeansNoOrderAddresses($answer)
+    {
+        $this->address(1, array('company' => 'Old Co'));
+        $this->address(2, array('company' => 'Own Co'));
+        $this->order(10, '2026-05-01 10:00:00', 1);
+        Order::$customerOrdersHook = function () use ($answer) {
+            return $answer;
+        };
+
+        $this->assertSame('Own Co', $this->svc->defaultCriteria(7)['company']);
+    }
+
+    /**
+     * @dataProvider answersThatAreNoRows
+     */
+    public function testAnAddressAnswerThatIsNoArrayMeansNoOwnAddresses($answer)
+    {
+        $this->address(1, array('company' => 'Ordered Co'));
+        $this->address(2, array('company' => 'Own Co'));
+        $this->order(10, '2026-05-01 10:00:00', 1);
+        Customer::$addressesHook = function () use ($answer) {
+            return $answer;
+        };
+
+        $this->svc->customerNip(7);
+
+        $this->assertSame(array(1), Address::$loads);
+    }
+
+    public function testOwnAddressRowsWithoutAnIdAreIgnored()
+    {
+        $this->address(1, array('company' => 'Own Co'));
+        Customer::$addressesHook = function ($idLang, $rows) {
+            return array_merge(array(array('company' => 'No id'), 'junk'), $rows);
+        };
+
+        $this->svc->customerNip(7);
+
+        $this->assertSame(array(1), Address::$loads);
+    }
+
+    /** @return array label => array(language of the context, language asked for) */
+    public static function contextLanguages()
+    {
+        return array(
+            'an int' => array(3, 3),
+            'a numeric string' => array('2', 2),
+        );
+    }
+
+    /**
+     * @dataProvider contextLanguages
+     */
+    public function testTheOwnAddressesAreAskedForInTheContextLanguage($contextLanguage, $expected)
+    {
+        $reads = $this->recordReads();
+        Context::getContext()->language->id = $contextLanguage;
+
+        $this->svc->customerNip(7);
+
+        $this->assertSame(array($expected), $reads->languages);
+    }
+
+    public function testCustomerNipReadsTheAddressesOnce()
+    {
+        $this->address(1, array('vat_number' => '525-224-84-81'));
+        $this->order(10, '2026-05-01 10:00:00', 1);
+        $reads = $this->recordReads();
+
+        $this->assertSame('5252248481', $this->svc->customerNip(7));
+
+        $this->assertSame(1, $reads->orders);
+        $this->assertSame(array(1), $reads->languages);
+        $this->assertSame(array(1), Address::$loads);
+    }
+
+    public function testDefaultCriteriaReadsTheAddressesOnceWhenTheLatestAddressHasANip()
+    {
+        $this->address(1, array('vat_number' => '525-224-84-81'));
+        $this->order(10, '2026-05-01 10:00:00', 1);
+        $reads = $this->recordReads();
+
+        $this->assertSame('5252248481', $this->svc->defaultCriteria(7)['nip']);
+
+        $this->assertSame(1, $reads->orders);
+        $this->assertSame(array(1), $reads->languages);
+        $this->assertSame(array(1), Address::$loads);
+    }
+
+    public function testRemoteCountReadsTheAddressesOnce()
+    {
+        $this->linkCustomer();
+        $this->address(1, array('vat_number' => '525-224-84-81'));
+        $this->order(10, '2026-05-01 10:00:00', 1);
+        $this->queueList($this->results(array()));
+        $this->queueList($this->results(array()));
+        $reads = $this->recordReads();
+
+        $count = $this->svc->remoteCount(7);
+
+        $this->assertSame('5252248481', $count['nip']);
+        $this->assertSame(1, $reads->orders);
+        $this->assertSame(array(1), $reads->languages);
+        $this->assertSame(array(1), Address::$loads);
+    }
+
+    /** The count searches the NIP that customerNip() gives: the first address with exactly ten digits. */
+    public function testRemoteCountSearchesTheFirstTenDigitNip()
+    {
+        $this->linkCustomer();
+        $this->address(1, array('vat_number' => '123-456-32-18'));
+        $this->address(2, array('vat_number' => '12-345'));
+        $this->queueList($this->results(array($this->invoice(1))));
+        $this->queueList($this->results(array($this->invoice(2))));
+
+        $count = $this->svc->remoteCount(7);
+
+        $this->assertSame('1234563218', $count['nip']);
+        $queries = $this->listQueries();
+        $this->assertCount(2, $queries);
+        $this->assertSame('KOWALSKI-01', $queries[0]['kontrahent']);
+        $this->assertSame('1234563218', $queries[1]['nipKontrahenta']);
+    }
+
+    public function testRemoteCountSearchesNoNipWhenNoAddressHasTenDigits()
+    {
+        $this->linkCustomer();
+        $this->address(1, array('vat_number' => '123456789'));
+        $this->queueList($this->results(array($this->invoice(1))));
+
+        $count = $this->svc->remoteCount(7);
+
+        $this->assertSame('', $count['nip']);
+        $queries = $this->listQueries();
+        $this->assertCount(1, $queries);
+        $this->assertArrayNotHasKey('nipKontrahenta', $queries[0]);
+    }
+
     // ---- registration check -------------------------------------------------------------------
 
     /** Scenario: Contractor exists */

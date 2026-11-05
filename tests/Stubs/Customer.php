@@ -11,7 +11,9 @@
 
 class Customer
 {
-    use IfirmaTestRegistryTrait;
+    use IfirmaTestRegistryTrait {
+        reset as protected resetRegistry;
+    }
 
     public $id;
     public $email;
@@ -23,6 +25,19 @@ class Customer
     public $date_add;
     /** @var bool value returned by isLogged() */
     public $logged = false;
+
+    /**
+     * @var callable|null test seam of getAddresses(): it receives the language id and the rows the stub
+     *      would return, and what it returns replaces them. It may throw or return a non-array, as
+     *      core's executeS() can. Cleared by reset().
+     */
+    public static $addressesHook;
+
+    public static function reset()
+    {
+        self::resetRegistry();
+        self::$addressesHook = null;
+    }
 
     public function __construct($id = null)
     {
@@ -55,6 +70,9 @@ class Customer
             $row = get_object_vars($a);
             $row['id_address'] = $a->id;
             $rows[] = $row;
+        }
+        if (static::$addressesHook !== null) {
+            return call_user_func(static::$addressesHook, $idLang, $rows);
         }
 
         return $rows;

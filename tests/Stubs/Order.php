@@ -11,7 +11,9 @@
 
 class Order
 {
-    use IfirmaTestRegistryTrait;
+    use IfirmaTestRegistryTrait {
+        reset as protected resetRegistry;
+    }
 
     public $id;
     public $id_customer;
@@ -37,6 +39,19 @@ class Order
     public $totalPaidReal = 0;
     /** @var array rows with id_order_state */
     public $history = [];
+
+    /**
+     * @var callable|null test seam of getCustomerOrders(): it receives the customer id and the rows the
+     *      stub would return, and what it returns replaces them. It may throw (a failing query) or
+     *      return a non-array, as core's executeS() can. Cleared by reset().
+     */
+    public static $customerOrdersHook;
+
+    public static function reset()
+    {
+        self::resetRegistry();
+        self::$customerOrdersHook = null;
+    }
 
     public function __construct($id = null, $idLang = null)
     {
@@ -72,6 +87,9 @@ class Order
 
             return $c !== 0 ? $c : (int) $b['id_order'] - (int) $a['id_order'];
         });
+        if (static::$customerOrdersHook !== null) {
+            return call_user_func(static::$customerOrdersHook, $idCustomer, $rows);
+        }
 
         return $rows;
     }

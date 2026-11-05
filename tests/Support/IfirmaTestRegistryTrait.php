@@ -18,6 +18,9 @@ trait IfirmaTestRegistryTrait
     /** @var array id => object */
     public static $instances = [];
 
+    /** @var array ids passed to `new X($id)` since the last reset, in call order (`new X()` is not recorded) */
+    public static $loads = [];
+
     public static function register($object)
     {
         static::$instances[$object->id] = $object;
@@ -28,10 +31,14 @@ trait IfirmaTestRegistryTrait
     public static function reset()
     {
         static::$instances = [];
+        static::$loads = [];
     }
 
     protected function loadFromRegistry($id)
     {
+        if ($id !== null) {
+            static::$loads[] = $id;
+        }
         if ($id && isset(static::$instances[$id])) {
             foreach (get_object_vars(static::$instances[$id]) as $k => $v) {
                 $this->$k = $v;
