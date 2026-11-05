@@ -473,6 +473,87 @@ class IssuancePipelineTest extends TestCase
         $this->assertCount(0, Mail::$sent);
     }
 
+    // ---- what the pipeline keeps of the delivery: the deliver step and IfirmaPipelineResult::$delivery ----
+
+    public function testDeliverStepOfASentDocumentCarriesTheStatus()
+    {
+        $this->queueFullSuccess();
+
+        $r = $this->pipeline->run($this->order(), array('trigger' => 'status'));
+
+        $this->assertSame(array('step' => 'deliver', 'status' => 'ok', 'message' => 'sent'), $r->steps[5]);
+        $this->assertNull($r->stoppedAt);
+        $this->assertSame(
+            array('ok' => true, 'status' => 'sent', 'channel' => 'shop_mail', 'message' => ''),
+            $r->delivery
+        );
+    }
+
+    public function testDeliverStepOfASkippedDeliveryCarriesTheStatus()
+    {
+        Configuration::updateValue('IFIRMA_SEND_CHANNEL', 'none');
+        $this->queueGuardNone();
+        $this->queueCreateOk();
+        $this->queueNumber();
+
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertTrue($r->ok);
+        $this->assertNull($r->stoppedAt);
+        $this->assertSame(array('step' => 'deliver', 'status' => 'ok', 'message' => 'skipped'), $r->steps[5]);
+        $this->assertSame(
+            array('ok' => true, 'status' => 'skipped', 'channel' => 'none', 'message' => ''),
+            $r->delivery
+        );
+        $this->assertCount(0, Mail::$sent);
+    }
+
+    public function testDeliverStepOfAnAdoptedExternalDocumentCarriesTheSkipReason()
+    {
+        $this->queueGuardNone();
+        $this->t->queue('POST', '#fakturakraj\.json#', array('status' => 0, 'error' => 'timeout'));
+        $this->pipeline->run($this->order());
+
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row())));
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Uwagi":"PS-ORDER-15-ABCDEFGHI"}}'));
+        $r = $this->pipeline->run($this->order(), array('trigger' => 'manual'));
+
+        $this->assertSame('adopted', $r->outcome);
+        $this->assertNull($r->stoppedAt);
+        $this->assertSame(
+            array('step' => 'deliver', 'status' => 'ok', 'message' => 'external document - not auto-delivered'),
+            $r->steps[5]
+        );
+        $this->assertSame(
+            array('ok' => true, 'status' => 'skipped', 'channel' => 'shop_mail', 'message' => 'external document - not auto-delivered'),
+            $r->delivery
+        );
+    }
+
+    public function testDeliverStepOfAFailedDeliveryCarriesTheFailureMessage()
+    {
+        $this->queueGuardNone();
+        $this->queueCreateOk();
+        $this->queueNumber();
+        for ($i = 0; $i < 3; $i++) {
+            $this->t->queue('GET', '#\.pdf#', array('status' => 0, 'error' => 'timeout'));
+        }
+
+        $r = $this->pipeline->run($this->order());
+
+        // the one message the receipt records is the one the step, the result and the admin text carry
+        $message = $this->dbRow()['delivery_error'];
+        $this->assertStringStartsWith('Could not download the PDF after 3 attempts: ', $message);
+        $this->assertStringContainsString('timeout', $message);
+        $this->assertSame(array('step' => 'deliver', 'status' => 'stopped', 'message' => $message), $r->steps[5]);
+        $this->assertSame('deliver', $r->stoppedAt);
+        $this->assertSame(
+            array('ok' => false, 'status' => 'failed', 'channel' => 'shop_mail', 'message' => $message),
+            $r->delivery
+        );
+        $this->assertSame('Document issued: 7/2026 Delivery step failed: ' . $message, $this->pipeline->describe($r));
+    }
+
     private function businessAddress()
     {
         $a = new Address();

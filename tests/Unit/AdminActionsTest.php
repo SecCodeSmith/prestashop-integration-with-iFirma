@@ -252,6 +252,51 @@ class AdminActionsTest extends TestCase
         $this->assertStringContainsString('shop e-mail', $r['data']['delivery']);
     }
 
+    public function testResendAnswersWithTheDocumentSentEnvelope()
+    {
+        $this->makeReceipt();
+        $this->queuePdf();
+
+        $r = $this->actions->resend(15);
+
+        $this->assertTrue($r['success']);
+        $this->assertSame('Document sent.', $r['message']);
+        $this->assertSame(array('receipt', 'delivery'), array_keys($r['data']));
+        $this->assertMatchesRegularExpression(
+            '/^Sent on \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} via shop e-mail$/',
+            $r['data']['delivery']
+        );
+    }
+
+    public function testResendOfAChannelNoneInstallAnswersWithTheServiceReason()
+    {
+        Configuration::updateValue('IFIRMA_SEND_CHANNEL', 'none');
+        $this->makeReceipt();
+
+        $r = $this->actions->resend(15);
+
+        $this->assertFalse($r['success']);
+        $this->assertSame('Delivery is disabled (channel none)', $r['message']);
+        $this->assertSame(array('receipt', 'delivery'), array_keys($r['data']));
+        $this->assertSame('none', $r['data']['receipt']['delivery_status']);
+        $this->assertSame('Not sent', $r['data']['delivery']);
+        $this->assertSame(array(), Mail::$sent);
+    }
+
+    public function testResendFailureAnswersWithTheMailSystemReason()
+    {
+        Mail::$result = false;
+        $this->makeReceipt();
+        $this->queuePdf();
+
+        $r = $this->actions->resend(15);
+
+        $this->assertFalse($r['success']);
+        $this->assertSame('The shop mail system refused to send the e-mail.', $r['message']);
+        $this->assertSame('failed', $r['data']['receipt']['delivery_status']);
+        $this->assertSame('Failed: The shop mail system refused to send the e-mail.', $r['data']['delivery']);
+    }
+
     public function testResendWithChannelNoneReportsFailure()
     {
         Configuration::updateValue('IFIRMA_SEND_CHANNEL', 'none');
