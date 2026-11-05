@@ -57,7 +57,7 @@ class IfirmaContractorMap extends ObjectModel
         'primary' => 'id_ifirma_contractor_map',
         'fields' => array(
             'id_customer' => array('type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'required' => true),
-            'ifirma_identifier' => array('type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'required' => true, 'size' => 64),
+            'ifirma_identifier' => array('type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'required' => true, 'size' => IfirmaSchema::CONTRACTOR_IDENTIFIER_LENGTH),
             'matched_by' => array('type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'size' => 16),
             'ifirma_name' => array('type' => self::TYPE_STRING, 'size' => 150),
             'date_add' => array('type' => self::TYPE_DATE, 'validate' => 'isDate'),
@@ -125,7 +125,7 @@ class IfirmaContractorMap extends ObjectModel
             $map = new self();
             $map->id_customer = (int) $idCustomer;
         }
-        $map->ifirma_identifier = mb_substr((string) $identifier, 0, 64);
+        $map->ifirma_identifier = mb_substr((string) $identifier, 0, IfirmaSchema::CONTRACTOR_IDENTIFIER_LENGTH);
         $map->matched_by = mb_substr((string) $matchedBy, 0, 16);
         $map->ifirma_name = mb_substr((string) $name, 0, 150);
         $map->save();

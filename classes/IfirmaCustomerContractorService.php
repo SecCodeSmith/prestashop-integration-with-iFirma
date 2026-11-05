@@ -17,6 +17,7 @@ require_once dirname(__FILE__) . '/IfirmaApiClient.php';
 require_once dirname(__FILE__) . '/IfirmaContractorMap.php';
 require_once dirname(__FILE__) . '/IfirmaContractorService.php';
 require_once dirname(__FILE__) . '/IfirmaReceipt.php';
+require_once dirname(__FILE__) . '/IfirmaSchema.php';
 
 /**
  * Customer-level view of the iFirma contractor: link state, local and remote document counts,
@@ -38,7 +39,7 @@ class IfirmaCustomerContractorService
     /** Longest window of one list call, in days. */
     const REMOTE_WINDOW_DAYS = 365;
     /** Longest contractor identifier the map stores. */
-    const IDENTIFIER_MAX = 64;
+    const IDENTIFIER_MAX = IfirmaSchema::CONTRACTOR_IDENTIFIER_LENGTH;
     /** Identifier the module gives a contractor it registers (PS-C<id_customer>). */
     const IDENTIFIER_PREFIX = 'PS-C';
 

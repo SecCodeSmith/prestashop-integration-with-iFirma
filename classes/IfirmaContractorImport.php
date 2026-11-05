@@ -15,6 +15,7 @@ if (!defined('_PS_VERSION_')) {
 
 require_once dirname(__FILE__) . '/IfirmaContractorMap.php';
 require_once dirname(__FILE__) . '/IfirmaContractorService.php';
+require_once dirname(__FILE__) . '/IfirmaSchema.php';
 
 /**
  * Links shop customers to the contractors of an iFirma CSV export, offline (no API calls).
@@ -22,7 +23,7 @@ require_once dirname(__FILE__) . '/IfirmaContractorService.php';
 class IfirmaContractorImport
 {
     /** Maximum length of an iFirma contractor identifier. */
-    const MAX_IDENTIFIER = 64;
+    const MAX_IDENTIFIER = IfirmaSchema::CONTRACTOR_IDENTIFIER_LENGTH;
 
     /** How many unmatched identifiers the report lists. */
     const REPORT_UNMATCHED = 20;
