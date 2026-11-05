@@ -13,6 +13,8 @@ use PHPUnit\Framework\TestCase;
 
 class KsefServiceTest extends TestCase
 {
+    use IfirmaThrowableProviders;
+
     /** @var ScriptedTransport */
     private $t;
 
@@ -197,17 +199,6 @@ class KsefServiceTest extends TestCase
         $this->assertSame('BLAD', $row['ksef_status']);
         $this->assertNotSame('', (string) $row['ksef_error']);
         $this->assertSame($res['message'], $row['ksef_error']);
-    }
-
-    /**
-     * @return array name => array(Throwable)
-     */
-    public function throwables()
-    {
-        return array(
-            'Exception' => array(new RuntimeException('exception raised')),
-            'Error' => array(new TypeError('error raised')),
-        );
     }
 
     /** @dataProvider throwables */

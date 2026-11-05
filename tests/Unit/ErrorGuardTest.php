@@ -28,6 +28,7 @@ use PHPUnit\Framework\TestCase;
 class ErrorGuardTest extends TestCase
 {
     use IfirmaWiringFixture;
+    use IfirmaThrowableProviders;
 
     /** @var IfirmaAdminActions */
     private $actions;
@@ -44,14 +45,13 @@ class ErrorGuardTest extends TestCase
     }
 
     /**
+     * The two data sets of throwables(), with the words of a database that went away.
+     *
      * @return array name => array(Throwable)
      */
     public function failures()
     {
-        return array(
-            'Exception' => array(new RuntimeException('database exploded')),
-            'Error' => array(new TypeError('typed database exploded')),
-        );
+        return $this->throwablesRaising('database exploded', 'typed database exploded');
     }
 
     // ---- helpers ------------------------------------------------------------------------------

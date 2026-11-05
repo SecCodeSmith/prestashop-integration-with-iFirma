@@ -13,6 +13,8 @@ use PHPUnit\Framework\TestCase;
 
 class IssuancePipelineTest extends TestCase
 {
+    use IfirmaThrowableProviders;
+
     const PDF = "%PDF-1.4\nfake body\n%%EOF";
 
     /** @var ScriptedTransport */
@@ -197,18 +199,10 @@ class IssuancePipelineTest extends TestCase
         return array_column(IfirmaTestState::writes('ifirma_receipt'), 'op');
     }
 
-    /** A pipeline whose first data-request lookup (the hold step) throws. */
+    /** A pipeline whose first data-request lookup (the hold step) throws RuntimeException('db exploded'). */
     private function brokenHoldPipeline()
     {
-        $module = new Module();
-        $broken = new class($module) extends IfirmaDataRequestService {
-            public function hasPendingForOrder($idOrder)
-            {
-                throw new RuntimeException('db exploded');
-            }
-        };
-
-        return $this->buildPipeline($this->client, $broken, $module);
+        return $this->pipelineWhoseHoldCheckRaises(new RuntimeException('db exploded'));
     }
 
     /** A pipeline whose first data-request lookup (the hold step) raises $failure, an Exception or an Error. */
@@ -1055,22 +1049,11 @@ class IssuancePipelineTest extends TestCase
 
     // ---- every guard catches both an Exception and an Error -----------------------------
 
-    /**
-     * The pipeline guards its entry points and two of its steps with one catch of Throwable each. The
-     * tests below throw an Exception and an Error at one guard each and assert what the guard makes of
-     * them. The Exception side of the run's own guard is pinned above, by
-     * testExceptionIsLoggedRecordedAndNotThrown() and testExceptionOnANewOrderWritesTheErrorRowOnce();
-     * its Error side is the first test here.
-     *
-     * @return array name => array(Throwable)
-     */
-    public function throwables()
-    {
-        return array(
-            'Exception' => array(new RuntimeException('exception raised')),
-            'Error' => array(new TypeError('error raised')),
-        );
-    }
+    // The pipeline guards its entry points and two of its steps with one catch of Throwable each. The
+    // tests below throw an Exception and an Error at one guard each and assert what the guard makes of
+    // them; the throwables() provider is the one of IfirmaThrowableProviders. The Exception side of the
+    // run's own guard is pinned above, by testExceptionIsLoggedRecordedAndNotThrown() and
+    // testExceptionOnANewOrderWritesTheErrorRowOnce(); its Error side is the first test here.
 
     public function testAnErrorFromAStepIsLoggedRecordedAndNotThrown()
     {

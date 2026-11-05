@@ -13,6 +13,8 @@ use PHPUnit\Framework\TestCase;
 
 class StatusSyncServiceTest extends TestCase
 {
+    use IfirmaThrowableProviders;
+
     /** @var ScriptedTransport */
     private $t;
 
@@ -434,17 +436,6 @@ class StatusSyncServiceTest extends TestCase
         $this->assertEquals(100.0, $r->remote_paid_amount);
         $this->assertEquals(1, (int) $r->remote_sent);
         $this->assertSame('sent', $r->delivery_status);
-    }
-
-    /**
-     * @return array name => array(Throwable)
-     */
-    public function throwables()
-    {
-        return array(
-            'Exception' => array(new RuntimeException('exception raised')),
-            'Error' => array(new TypeError('error raised')),
-        );
     }
 
     /** @dataProvider throwables */
