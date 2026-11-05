@@ -82,6 +82,72 @@ class AdminActionsTest extends TestCase
         $this->assertSame('duplicate_suspected', (new IfirmaReceipt(1))->status);
     }
 
+    public function testCreateReceiptReportsOutcomeStopAndReceiptInThatOrder()
+    {
+        $this->queueFullSuccess();
+        $r = $this->actions->createReceipt(15, 3);
+
+        $this->assertSame(
+            array(
+                'outcome' => 'issued',
+                'stopped_at' => null,
+                'receipt' => $this->actions->receiptToArray(new IfirmaReceipt(1)),
+            ),
+            $r['data']
+        );
+    }
+
+    public function testCreateReceiptReportsTheStepThatStoppedTheRun()
+    {
+        $this->makeRequest('pending');
+        $held = $this->actions->createReceipt(15, 3);
+
+        $this->assertFalse($held['success']);
+        $this->assertSame(
+            array(
+                'outcome' => 'held',
+                'stopped_at' => 'hold',
+                'receipt' => $this->actions->receiptToArray(new IfirmaReceipt(1)),
+            ),
+            $held['data']
+        );
+    }
+
+    public function testCreateReceiptSuspectedReportsTheGuardAsTheStoppingStep()
+    {
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->remoteRow(array('Rodzaj' => 'prz_faktura_kraj')))));
+        $r = $this->actions->createReceipt(15, 3);
+
+        $this->assertFalse($r['success']);
+        $this->assertSame(
+            array(
+                'outcome' => 'suspected',
+                'stopped_at' => 'guard',
+                'receipt' => $this->actions->receiptToArray(new IfirmaReceipt(1)),
+            ),
+            $r['data']
+        );
+    }
+
+    public function testCreateReceiptWithNoStoredReceiptReportsAnEmptyReceipt()
+    {
+        Db::getInstance()->whenGetValue('/FROM `ps_ifirma_receipt`\s+WHERE id_order = (\d+)/', function () {
+            throw new RuntimeException('receipt table unavailable');
+        });
+
+        $r = $this->actions->createReceipt(15, 3);
+
+        $this->assertSame(
+            array(
+                'success' => false,
+                'message' => 'Stopped at the "hold" step (error): receipt table unavailable',
+                'data' => array('outcome' => 'error', 'stopped_at' => 'hold', 'receipt' => array()),
+            ),
+            $r
+        );
+        $this->assertSame(array(), IfirmaTestState::objects('ifirma_receipt'));
+    }
+
     public function testCreateReceiptInvalidOrderAndUnconfigured()
     {
         $this->assertFalse($this->actions->createReceipt(999, 3)['success']);

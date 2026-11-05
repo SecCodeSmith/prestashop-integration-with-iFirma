@@ -1023,6 +1023,44 @@ class IssuancePipelineTest extends TestCase
         $this->assertCount(0, $this->t->calls);
     }
 
+    // ---- describe: the one-line admin message ----------------------------------------------
+
+    public function testDescribeWordsAnAdoptedDocumentApartFromAnIssuedOne()
+    {
+        $receipt = new IfirmaReceipt();
+        $receipt->ifirma_number = '7/2026';
+        $words = array();
+        foreach (array('adopted', 'issued', 'already_issued') as $outcome) {
+            $r = new IfirmaPipelineResult();
+            $r->ok = true;
+            $r->outcome = $outcome;
+            $r->receipt = $receipt;
+            $words[$outcome] = $this->pipeline->describe($r);
+        }
+
+        $this->assertSame(
+            array(
+                'adopted' => 'Existing iFirma document adopted: 7/2026',
+                'issued' => 'Document issued: 7/2026',
+                'already_issued' => 'Document issued: 7/2026',
+            ),
+            $words
+        );
+    }
+
+    public function testDescribeNamesTheStepAndTheOutcomeOfAStoppedRun()
+    {
+        $req = $this->pendingRequest();
+
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertSame('held', $r->outcome);
+        $this->assertSame(
+            'Stopped at the "hold" step (held): held: data request #' . $req->id . ' pending',
+            $this->pipeline->describe($r)
+        );
+    }
+
     // ---- manual trigger, bypass, doc type, payment ---------------------------------------
 
     public function testManualTriggerRunsIdenticalSteps()
