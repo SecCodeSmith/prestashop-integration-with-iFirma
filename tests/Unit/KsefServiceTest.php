@@ -228,6 +228,92 @@ class KsefServiceTest extends TestCase
         $this->assertEmpty($row['ksef_sent_at']);
     }
 
+    public function testSubmitOfADocumentThatIsNotIssuedIsRefusedWithoutCallingIfirma()
+    {
+        $notIssued = new IfirmaReceipt();
+        $notIssued->document_type = 'fakturakraj';
+
+        $res = $this->svc->submit($notIssued, $this->order(), true);
+
+        $this->assertSame(array('ok' => false, 'message' => 'The document has not been issued yet.'), $res);
+        $this->assertCount(0, $this->t->calls);
+        $this->assertSame(array(), IfirmaTestState::writes('ifirma_receipt'));
+    }
+
+    /**
+     * @return array name => array(response body, message of the result)
+     */
+    public function acceptedAnswers()
+    {
+        return array(
+            'without an information text' => array('{"response":{"Kod":0}}', ''),
+            'with a padded information text' => array('{"response":{"Kod":0,"Informacja":"  Wyslano.\n"}}', 'Wyslano.'),
+            'without the response wrapper' => array('{"Kod":0,"Informacja":"Wyslano."}', 'Wyslano.'),
+        );
+    }
+
+    /** @dataProvider acceptedAnswers */
+    public function testSubmitRecordsAnAnswerWithKodZeroAsSent($body, $message)
+    {
+        $this->t->queue('POST', '#ksef/send#', array('body' => $body));
+        $r = $this->receipt('1234567890');
+        $r->ksef_status = 'BLAD';
+        $r->ksef_error = 'earlier failure';
+
+        $res = $this->svc->submit($r, $this->order());
+
+        $this->assertSame(array('ok' => true, 'message' => $message), $res);
+        $row = $this->row();
+        $this->assertSame('WYSLANA', $row['ksef_status']);
+        $this->assertSame('', $row['ksef_error']);
+        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $row['ksef_sent_at']);
+    }
+
+    /**
+     * @return array name => array(scripted response, text recorded as the error)
+     */
+    public function refusedAnswers()
+    {
+        $fallback = 'iFirma did not confirm the KSeF submission';
+
+        return array(
+            'a Kod other than 0' => array(
+                array('body' => '{"response":{"Kod":200,"Informacja":"Faktura nie moze byc wyslana"}}'),
+                'Invalid request structure (Kod 200): Faktura nie moze byc wyslana',
+            ),
+            'a Kod other than 0 without an information text' => array(
+                array('body' => '{"response":{"Kod":200}}'),
+                'Invalid request structure (Kod 200)',
+            ),
+            'a failed transport' => array(array('status' => 0, 'error' => 'timeout'), 'cURL error: timeout'),
+            'an HTTP error status' => array(array('status' => 503, 'body' => ''), 'HTTP 503 returned by iFirma.'),
+            'no Kod but an information text' => array(
+                array('body' => '{"response":{"Informacja":"  Brak kodu\n"}}'),
+                'Brak kodu',
+            ),
+            'no Kod and a blank information text' => array(array('body' => '{"response":{"Informacja":"   "}}'), $fallback),
+            'no Kod and no information text' => array(array('body' => '{"response":{}}'), $fallback),
+            'a body that is not JSON' => array(array('body' => 'not json'), $fallback),
+            'an empty body' => array(array('body' => ''), $fallback),
+        );
+    }
+
+    /** @dataProvider refusedAnswers */
+    public function testSubmitRecordsAnAnswerWithoutKodZeroAsTheError(array $response, $error)
+    {
+        $this->t->queue('POST', '#ksef/send#', $response);
+        $r = $this->receipt('1234567890');
+
+        $res = $this->svc->submit($r, $this->order());
+
+        $this->assertSame(array('ok' => false, 'message' => $error), $res);
+        $this->assertCount(1, $this->t->calls);
+        $row = $this->row();
+        $this->assertSame('BLAD', $row['ksef_status']);
+        $this->assertSame($error, $row['ksef_error']);
+        $this->assertEmpty($row['ksef_sent_at']);
+    }
+
     public function testSubmitNotEligibleDoesNotCallIfirma()
     {
         $this->address('');
