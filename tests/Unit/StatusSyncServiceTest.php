@@ -176,6 +176,174 @@ class StatusSyncServiceTest extends TestCase
         $this->assertSame(IfirmaReceipt::STATUS_PAID, (new IfirmaReceipt((int) $r->id))->status);
     }
 
+    // ---- applyRow(): the columns each path stores and the number of writes ------------------
+
+    /**
+     * Values in the columns applyRow() never writes, so that a stray assignment shows up.
+     *
+     * @return array column => value, for receipt()
+     */
+    private function columnsTheSyncLeavesAlone()
+    {
+        return array(
+            'paid_amount' => 99.9,
+            'last_error' => 'earlier error',
+            'request_payload' => '{"request":1}',
+            'response_payload' => '{"response":"earlier"}',
+            'source' => IfirmaReceipt::SOURCE_EXTERNAL,
+            'document_type' => 'fakturakraj',
+            'order_reference' => 'PS-ORDER-1-ABCDEFGHI',
+            'security_token' => 'tok-abc',
+            'delivery_channel' => 'shop_mail',
+            'delivered_at' => '2026-10-31 09:00:00',
+            'delivery_error' => 'earlier delivery error',
+            'ksef_sent_at' => '2026-10-31 10:00:00',
+            'ksef_error' => 'earlier ksef error',
+            'duplicate_candidates' => '[{"id":1}]',
+            'id_data_request' => 9,
+        );
+    }
+
+    /**
+     * Applies a list row to a stored receipt and checks the write that makes.
+     *
+     * @param IfirmaReceipt $receipt
+     * @param array         $row     list row
+     * @param array         $set     column => the value the sync had to store (the rest must stay)
+     * @return string the outcome applyRow() reported
+     */
+    private function assertApplyRowStores(IfirmaReceipt $receipt, array $row, array $set)
+    {
+        $rows = IfirmaTestState::objects('ifirma_receipt');
+        $before = $rows[(int) $receipt->id];
+        IfirmaTestState::clearWrites();
+
+        $outcome = $this->svc->applyRow($receipt, $row);
+
+        $writes = IfirmaTestState::writes('ifirma_receipt');
+        $this->assertSame(array('update'), array_column($writes, 'op'), 'exactly one update and nothing else');
+        $this->assertSame((int) $receipt->id, $writes[0]['id']);
+        $after = $writes[0]['row'];
+        // The ObjectModel stub stamps date_upd on every update.
+        unset($before['date_upd'], $after['date_upd']);
+        $this->assertSame(array_keys($before), array_keys($after), 'the same columns are stored');
+        foreach ($before as $column => $value) {
+            $this->assertSame(array_key_exists($column, $set) ? $set[$column] : $value, $after[$column], $column);
+        }
+
+        return $outcome;
+    }
+
+    public function testAFullyPaidRowStoresThePaidStatusAndTheRemoteFieldsInOneWrite()
+    {
+        $r = $this->receipt(50, '2026-10-30', $this->columnsTheSyncLeavesAlone());
+
+        $outcome = $this->assertApplyRowStores($r, $this->row(50, 123.45, 123.45, array('CzyWyslano' => true)), array(
+            'status' => 'paid',
+            'remote_missing' => 0,
+            'remote_paid_amount' => 123.45,
+            'remote_sent' => true,
+            'remote_draft' => false,
+            'linked_document' => '',
+            'sync_error' => '',
+            'last_sync_at' => date('Y-m-d H:i:s', $this->now),
+        ));
+
+        $this->assertSame('paid', $outcome);
+    }
+
+    public function testAPartiallyPaidRowStoresTheRemoteFieldsInOneWriteAndNotThePaidStatus()
+    {
+        $r = $this->receipt(51, '2026-10-30', $this->columnsTheSyncLeavesAlone());
+
+        $outcome = $this->assertApplyRowStores($r, $this->row(51, 100, 50), array(
+            'remote_missing' => 0,
+            'remote_paid_amount' => 50.0,
+            'remote_sent' => false,
+            'remote_draft' => false,
+            'linked_document' => '',
+            'sync_error' => '',
+            'last_sync_at' => date('Y-m-d H:i:s', $this->now),
+        ));
+
+        $this->assertSame('updated', $outcome);
+    }
+
+    public function testARowJustBelowTheToleranceIsNotPaid()
+    {
+        $r = $this->receipt(52, '2026-10-30', $this->columnsTheSyncLeavesAlone());
+
+        $outcome = $this->assertApplyRowStores($r, $this->row(52, 100, 99.98), array(
+            'remote_missing' => 0,
+            'remote_paid_amount' => 99.98,
+            'remote_sent' => false,
+            'remote_draft' => false,
+            'linked_document' => '',
+            'sync_error' => '',
+            'last_sync_at' => date('Y-m-d H:i:s', $this->now),
+        ));
+
+        $this->assertSame('updated', $outcome);
+    }
+
+    public function testAReceiptThatIsAlreadyPaidIsRefreshedAndNotReportedAsNewlyPaid()
+    {
+        $extra = array_merge($this->columnsTheSyncLeavesAlone(), array('status' => IfirmaReceipt::STATUS_PAID));
+        $r = $this->receipt(53, '2026-10-30', $extra);
+
+        $outcome = $this->assertApplyRowStores($r, $this->row(53, 123.45, 123.45), array(
+            'remote_missing' => 0,
+            'remote_paid_amount' => 123.45,
+            'remote_sent' => false,
+            'remote_draft' => false,
+            'linked_document' => '',
+            'sync_error' => '',
+            'last_sync_at' => date('Y-m-d H:i:s', $this->now),
+        ));
+
+        $this->assertSame('updated', $outcome);
+    }
+
+    public function testAReappearingPaidDocumentIsReportedAsPaid()
+    {
+        $extra = array_merge($this->columnsTheSyncLeavesAlone(), array('remote_missing' => 1));
+        $r = $this->receipt(54, '2026-10-30', $extra);
+
+        $outcome = $this->assertApplyRowStores($r, $this->row(54, 100, 100), array(
+            'status' => 'paid',
+            'remote_missing' => 0,
+            'remote_paid_amount' => 100.0,
+            'remote_sent' => false,
+            'remote_draft' => false,
+            'linked_document' => '',
+            'sync_error' => '',
+            'last_sync_at' => date('Y-m-d H:i:s', $this->now),
+        ));
+
+        $this->assertSame('paid', $outcome);
+    }
+
+    public static function documentNumbers()
+    {
+        return array(
+            'an empty number is taken from the row' => array('', '55/2026', '55/2026'),
+            'a stored number is kept' => array('55/2026', '55/2026-B', '55/2026'),
+            'an empty number stays empty when the row has none' => array('', '', ''),
+        );
+    }
+
+    /**
+     * @dataProvider documentNumbers
+     */
+    public function testTheDocumentNumberIsTakenFromTheRowOnlyWhenTheReceiptHasNone($stored, $listed, $expected)
+    {
+        $r = $this->receipt(55, '2026-10-30', array('ifirma_number' => $stored));
+
+        $this->svc->applyRow($r, $this->row(55, 100, 0, array('PelnyNumer' => $listed)));
+
+        $this->assertSame($expected, (new IfirmaReceipt((int) $r->id))->ifirma_number);
+    }
+
     public function testDeletedDocumentFlaggedMissingAndNumberKept()
     {
         $r = $this->receipt(17);

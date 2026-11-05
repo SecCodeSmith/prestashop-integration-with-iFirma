@@ -392,6 +392,113 @@ class DuplicateGuardTest extends TestCase
         $this->assertCount(1, IfirmaTestState::objects('ifirma_receipt'));
     }
 
+    public static function adoptedPayments()
+    {
+        return array(
+            'fully paid' => array(123.00, null, 'paid'),
+            'overpaid' => array(130.00, null, 'paid'),
+            'one grosz short is inside the default tolerance' => array(122.99, null, 'paid'),
+            'two groszy short is outside it' => array(122.98, null, 'created'),
+            'nothing paid' => array(0, null, 'created'),
+            'exactly at a configured tolerance' => array(118.00, '5', 'paid'),
+            'just outside a configured tolerance' => array(117.99, '5', 'created'),
+        );
+    }
+
+    /**
+     * @dataProvider adoptedPayments
+     */
+    public function testAdoptCallsTheDocumentPaidOnlyWhenTheToleranceCoversWhatIsUnpaid($paid, $tolerance, $status)
+    {
+        if ($tolerance !== null) {
+            Configuration::updateValue('IFIRMA_DUPLICATE_AMOUNT_TOLERANCE', $tolerance);
+        }
+
+        $receipt = $this->guard->adopt($this->order(), $this->row(array('Brutto' => 123.00, 'Zaplacono' => $paid)));
+
+        $this->assertSame($status, $receipt->status);
+        $writes = IfirmaTestState::writes('ifirma_receipt');
+        $this->assertSame(array('add'), array_column($writes, 'op'));
+        $this->assertSame($status, $writes[0]['row']['status']);
+        $this->assertSame((float) $paid, $writes[0]['row']['paid_amount']);
+    }
+
+    public static function adoptedStatuses()
+    {
+        return array(
+            'a paid document' => array(123.00, 'paid'),
+            'an unpaid document' => array(10.00, 'created'),
+        );
+    }
+
+    /**
+     * @dataProvider adoptedStatuses
+     */
+    public function testAdoptStoresTheDocumentInOneWriteAndLeavesTheRestOfAReusedRecordAlone($paid, $status)
+    {
+        // A record the guard may reuse: not issued, with a value in the columns an adoption does not write.
+        $old = new IfirmaReceipt();
+        $old->id_order = 15;
+        $old->id_customer = 5;
+        $old->id_shop = 1;
+        $old->order_reference = 'PS-ORDER-15-ABCDEFGHI';
+        $old->ifirma_id = '';
+        $old->status = IfirmaReceipt::STATUS_UNKNOWN;
+        $old->security_token = 'keep-me';
+        $old->request_payload = '{"request":1}';
+        $old->delivered_at = '2026-01-03 10:00:00';
+        $old->remote_missing = true;
+        $old->ksef_status = 'OK';
+        $old->ksef_number = 'KSEF-1';
+        $old->ksef_sent_at = '2026-01-04 11:00:00';
+        $old->ksef_error = 'earlier ksef error';
+        $old->linked_document = 'KOR 1/2026';
+        $old->last_sync_at = '2026-01-05 12:00:00';
+        $old->sync_error = 'earlier sync error';
+        $old->id_data_request = 9;
+        $old->save();
+        $before = $this->receiptRow();
+        IfirmaTestState::clearWrites();
+        $guard = new IfirmaDuplicateGuard($this->client, function () {
+            return 1700000000;
+        });
+        $row = $this->row(array('Zaplacono' => $paid, 'CzyWyslano' => true, 'CzySzkic' => true, '_sale_date' => '2026-01-01'));
+
+        $guard->adopt($this->order(), $row);
+
+        $writes = IfirmaTestState::writes('ifirma_receipt');
+        $this->assertSame(array('update'), array_column($writes, 'op'));
+        $this->assertSame((int) $old->id, $writes[0]['id']);
+        $set = array(
+            'document_type' => 'fakturaparagon',
+            'ifirma_id' => '77',
+            'ifirma_number' => '7/2026',
+            'status' => $status,
+            'paid_amount' => (float) $paid,
+            'source' => 'external',
+            'issue_date' => date('Y-m-d'),
+            'delivery_status' => 'skipped',
+            'delivery_channel' => '',
+            'delivery_error' => 'external document - not auto-delivered',
+            'remote_paid_amount' => (float) $paid,
+            'remote_sent' => 1,
+            'remote_draft' => 1,
+            'last_error' => '',
+            'response_payload' => json_encode(array_diff_key($row, array('_sale_date' => true))),
+            'duplicate_candidates' => json_encode(array(
+                'candidates' => array(IfirmaDuplicateMatcher::summarize($row)),
+                'resolution' => array('action' => 'adopt', 'id_employee' => null, 'at' => date('Y-m-d H:i:s', 1700000000)),
+            )),
+        );
+        $stored = $writes[0]['row'];
+        // The ObjectModel stub stamps date_upd on every update.
+        unset($before['date_upd'], $stored['date_upd']);
+        $this->assertSame(array_keys($before), array_keys($stored), 'the same columns are stored');
+        foreach ($before as $column => $value) {
+            $this->assertSame(array_key_exists($column, $set) ? $set[$column] : $value, $stored[$column], $column);
+        }
+    }
+
     public function testSuspectedWhenReferenceMissing()
     {
         $this->queueList(array($this->row()));
@@ -419,6 +526,98 @@ class DuplicateGuardTest extends TestCase
         $this->assertSame($this->saleDate(), $data['candidates'][0]['sale_date']);
         $this->assertSame('identifier', $data['candidates'][0]['matched_by']);
         $this->assertNull($data['resolution']);
+    }
+
+    public function testSuspectedStoresTheNewRecordInOneWriteWithNothingElseSet()
+    {
+        $this->queueList(array($this->row()));
+        $this->queueDetail('fakturaparagon', 77, $this->detailNoRef());
+
+        $res = $this->guard->check($this->order());
+
+        $this->assertSame(IfirmaGuardResult::OUTCOME_SUSPECTED, $res->outcome);
+        $writes = IfirmaTestState::writes('ifirma_receipt');
+        $this->assertSame(array('add'), array_column($writes, 'op'));
+        $stored = $writes[0]['row'];
+        $this->assertSame(15, $stored['id_order']);
+        $this->assertSame(5, $stored['id_customer']);
+        $this->assertSame(1, $stored['id_shop']);
+        $this->assertSame('duplicate_suspected', $stored['status']);
+        $this->assertSame('', $stored['ifirma_id']);
+        $this->assertSame('module', $stored['source']);
+        $this->assertSame('PS-ORDER-15-ABCDEFGHI', $stored['order_reference']);
+        $this->assertSame('Suspected duplicate: 1 matching document(s) found in iFirma', $stored['last_error']);
+        $data = json_decode($stored['duplicate_candidates'], true);
+        $this->assertSame(array('candidates', 'resolution'), array_keys($data));
+        $this->assertCount(1, $data['candidates']);
+        $this->assertNull($data['resolution']);
+        // nothing of a document, a payment or a delivery is recorded
+        $this->assertNull($stored['document_type']);
+        $this->assertNull($stored['ifirma_number']);
+        $this->assertNull($stored['paid_amount']);
+        $this->assertNull($stored['security_token']);
+        $this->assertNull($stored['response_payload']);
+        $this->assertSame('none', $stored['delivery_status']);
+        $this->assertSame('', $stored['delivery_channel']);
+        $this->assertNull($stored['delivered_at']);
+    }
+
+    public function testSuspectedClearsAStaleDocumentIdAndSourceOnAReusedRecordInOneUpdate()
+    {
+        // An errored record counts as not issued although it still carries a document id.
+        $old = new IfirmaReceipt();
+        $old->id_order = 15;
+        $old->id_customer = 5;
+        $old->id_shop = 1;
+        $old->order_reference = 'PS-ORDER-15-ABCDEFGHI';
+        $old->document_type = 'fakturakraj';
+        $old->ifirma_id = 'F-9';
+        $old->ifirma_number = '9/2026';
+        $old->status = IfirmaReceipt::STATUS_ERROR;
+        $old->source = IfirmaReceipt::SOURCE_EXTERNAL;
+        $old->paid_amount = 5.5;
+        $old->security_token = 'keep-me';
+        $old->request_payload = '{"request":1}';
+        $old->response_payload = '{"response":"earlier"}';
+        $old->last_error = 'earlier error';
+        $old->delivery_status = IfirmaReceipt::DELIVERY_FAILED;
+        $old->delivery_channel = 'shop_mail';
+        $old->delivered_at = '2026-01-03 10:00:00';
+        $old->delivery_error = 'earlier delivery error';
+        $old->remote_paid_amount = 5.5;
+        $old->remote_sent = true;
+        $old->ksef_status = 'OK';
+        $old->linked_document = 'KOR 1/2026';
+        $old->sync_error = 'earlier sync error';
+        $old->id_data_request = 9;
+        $old->save();
+        $before = $this->receiptRow();
+        IfirmaTestState::clearWrites();
+        $rows = array($this->row(), $this->row(array('FakturaId' => 78, 'PelnyNumer' => '8/2026')));
+
+        $receipt = $this->guard->markSuspected($this->order(), $rows);
+
+        $this->assertSame((int) $old->id, (int) $receipt->id);
+        $writes = IfirmaTestState::writes('ifirma_receipt');
+        $this->assertSame(array('update'), array_column($writes, 'op'));
+        $this->assertSame((int) $old->id, $writes[0]['id']);
+        $set = array(
+            'status' => 'duplicate_suspected',
+            'ifirma_id' => '',
+            'source' => 'module',
+            'last_error' => 'Suspected duplicate: 2 matching document(s) found in iFirma',
+            'duplicate_candidates' => json_encode(array(
+                'candidates' => array(IfirmaDuplicateMatcher::summarize($rows[0]), IfirmaDuplicateMatcher::summarize($rows[1])),
+                'resolution' => null,
+            )),
+        );
+        $stored = $writes[0]['row'];
+        // The ObjectModel stub stamps date_upd on every update.
+        unset($before['date_upd'], $stored['date_upd']);
+        $this->assertSame(array_keys($before), array_keys($stored), 'the same columns are stored');
+        foreach ($before as $column => $value) {
+            $this->assertSame(array_key_exists($column, $set) ? $set[$column] : $value, $stored[$column], $column);
+        }
     }
 
     public function testDetailFailureStillSuspected()
