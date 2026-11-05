@@ -1049,6 +1049,78 @@ class DuplicateGuardCheckTest extends TestCase
         $this->assertStringContainsString('/fakturakraj/77.json', $this->urls()[1]);
     }
 
+    // ---- what is read, and when ---------------------------------------------------------------
+
+    /** An order that counts how often its product lines are read. */
+    private function countingOrder()
+    {
+        $order = new class extends Order {
+            public $lineReads = 0;
+
+            public function getOrderDetailList()
+            {
+                ++$this->lineReads;
+
+                return parent::getOrderDetailList();
+            }
+        };
+        foreach (get_object_vars($this->order()) as $field => $value) {
+            if ($field !== 'lineReads') {
+                $order->{$field} = $value;
+            }
+        }
+
+        return $order;
+    }
+
+    public function testTheProductLinesOfTheOrderAreNotReadWhenNothingIsACandidate()
+    {
+        $this->queueList(array($this->row(array('Brutto' => 5))));
+        $order = $this->countingOrder();
+
+        $res = $this->guard->check($order);
+
+        $this->assertSame(IfirmaGuardResult::OUTCOME_PROCEED, $res->outcome);
+        $this->assertSame(0, $order->lineReads);
+    }
+
+    public function testTheProductLinesOfTheOrderAreReadOnceWhenThereAreCandidates()
+    {
+        $this->queueList(array(
+            $this->row(array('FakturaId' => 90, 'DataWystawienia' => '2026-01-02')),
+            $this->row(array('FakturaId' => 80, 'DataWystawienia' => '2026-01-01')),
+        ));
+        $this->queueDetail('fakturaparagon', 90, $this->detailNoRef());
+        $this->queueDetail('fakturaparagon', 80, $this->detailNoRef());
+        $order = $this->countingOrder();
+
+        $res = $this->guard->check($order);
+
+        $this->assertSame(IfirmaGuardResult::OUTCOME_SUSPECTED, $res->outcome);
+        $this->assertSame(1, $order->lineReads);
+    }
+
+    public function testTheClockIsReadOnceToFindTheWindowAndOnceMoreToStampAnAdoption()
+    {
+        $reads = 0;
+        $guard = new IfirmaDuplicateGuard($this->client, function () use (&$reads) {
+            ++$reads;
+
+            return time();
+        });
+        $this->queueList(array());
+        $this->queueList(array());
+
+        $guard->check($this->order());
+        $this->assertSame(1, $reads, 'a check that finds nothing');
+
+        $this->queueList(array($this->row()));
+        $this->queueDetail('fakturaparagon', 77, $this->detailWithRef());
+        $reads = 0;
+        $guard->check($this->order());
+        $this->assertSame(2, $reads, 'a check that adopts a document');
+    }
+
     // ---- the whole conversation with iFirma, call by call -----------------------------------
 
     public function testTheCallsToIFirmaOfAFullRunAreExactlyTheseInThisOrder()
