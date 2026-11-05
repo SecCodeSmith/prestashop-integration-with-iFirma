@@ -338,6 +338,8 @@ class IfirmaContractorService
      * Steps that need the customer (mapping, NIP and name search, storing the link) only run when
      * $idCustomer is given. No search failure ever blocks the call.
      *
+     * Each step is a private method: the first three answer a resolution or null (the next step runs).
+     *
      * @param array    $contractor buildContractor() result (must carry Identyfikator)
      * @param int|null $idCustomer
      * @param array    $hints      nip (digits), email, postcode, name; missing keys come from $contractor
@@ -354,46 +356,128 @@ class IfirmaContractorService
 
         $hints = $this->completeHints($contractor, $hints);
 
-        // a. stored mapping
-        if ($idCustomer > 0) {
-            $mapping = $this->safeMapping($idCustomer);
-            if ($mapping) {
-                $mapped = trim((string) $mapping->ifirma_identifier);
-                $existing = $this->fetch($mapped);
-                if (is_array($existing)) {
-                    return $this->useExisting($mapped, $existing, $contractor, (string) $mapping->matched_by, 0);
-                }
-                if ($existing === false) {
-                    return IfirmaContractorResolution::fallback($this->client->getLastError(), $this->note('lookup_failed', array('identifier' => $mapped, 'error' => (string) $this->client->getLastError())));
-                }
-                $this->safeUnlink($idCustomer);
-            }
+        $resolution = $this->resolveFromMapping($contractor, $idCustomer);
+        if ($resolution !== null) {
+            return $resolution;
+        }
+        $resolution = $this->resolveByIdentifier($contractor, $identifier, $idCustomer);
+        if ($resolution !== null) {
+            return $resolution;
+        }
+        $resolution = $this->resolveBySearch($contractor, $idCustomer, $hints);
+        if ($resolution !== null) {
+            return $resolution;
         }
 
-        // b. the module identifier
+        return $this->createModuleContractor($contractor, $idCustomer, $hints);
+    }
+
+    /**
+     * Step a of ensure(): the contractor stored for the customer (by an earlier document, the import
+     * or a manual choice). A contractor iFirma no longer knows drops the link and lets the next step
+     * run; an unknown outcome of the look-up keeps the link and ends the resolution in a fallback.
+     * The stored link is not written again.
+     *
+     * @param array $contractor shop-owned data
+     * @param int   $idCustomer 0 for none, which skips the step
+     * @return IfirmaContractorResolution|null null when the next step has to run
+     */
+    private function resolveFromMapping(array $contractor, $idCustomer)
+    {
+        $mapping = $idCustomer > 0 ? $this->safeMapping($idCustomer) : null;
+        if (!$mapping) {
+            return null;
+        }
+
+        $mapped = trim((string) $mapping->ifirma_identifier);
+        $existing = $this->fetch($mapped);
+        if (is_array($existing)) {
+            return $this->useExisting($mapped, $existing, $contractor, (string) $mapping->matched_by, 0);
+        }
+        if ($existing === false) {
+            return $this->fallbackOnFailedLookup($mapped);
+        }
+        $this->safeUnlink($idCustomer);
+
+        return null;
+    }
+
+    /**
+     * Step b of ensure(): the module's own contractor (PS-C<id>), kept or updated and linked to the
+     * customer when there is one.
+     *
+     * @param array  $contractor shop-owned data
+     * @param string $identifier the module identifier (Kontrahent.Identyfikator)
+     * @param int    $idCustomer customer to link; 0 for none
+     * @return IfirmaContractorResolution|null null when iFirma does not know the identifier
+     */
+    private function resolveByIdentifier(array $contractor, $identifier, $idCustomer)
+    {
         $existing = $this->fetch($identifier);
         if ($existing === false) {
-            return IfirmaContractorResolution::fallback($this->client->getLastError(), $this->note('lookup_failed', array('identifier' => $identifier, 'error' => (string) $this->client->getLastError())));
+            return $this->fallbackOnFailedLookup($identifier);
         }
-        if (is_array($existing)) {
-            return $this->useExisting($identifier, $existing, $contractor, IfirmaContractorMap::BY_MODULE, $idCustomer);
-        }
-
-        // c. + d. existing contractors found through the search endpoint
-        if ($idCustomer > 0) {
-            $found = $this->findByNip($hints)['row'];
-            $matchedBy = IfirmaContractorMap::BY_NIP;
-            if ($found === null) {
-                $found = $this->findByName($hints)['row'];
-                $matchedBy = IfirmaContractorMap::BY_NAME;
-            }
-            if ($found !== null && isset($found['Identyfikator']) && trim((string) $found['Identyfikator']) !== '') {
-                return $this->useExisting(trim((string) $found['Identyfikator']), $found, $contractor, $matchedBy, $idCustomer);
-            }
+        if (!is_array($existing)) {
+            return null;
         }
 
-        // e. create the module contractor
+        return $this->useExisting($identifier, $existing, $contractor, IfirmaContractorMap::BY_MODULE, $idCustomer);
+    }
+
+    /**
+     * Steps c and d of ensure(): an existing contractor found through the search endpoint, by the
+     * exact NIP first and, when that finds no row, by the exact normalised name. A found row without
+     * an identifier is no match, and the name is not searched after a NIP row without one.
+     *
+     * @param array $contractor shop-owned data
+     * @param int   $idCustomer customer to link; 0 for none, which skips the step
+     * @param array $hints      completed hints (nip, email, postcode, name)
+     * @return IfirmaContractorResolution|null null when no contractor with an identifier was found
+     */
+    private function resolveBySearch(array $contractor, $idCustomer, array $hints)
+    {
+        if ($idCustomer <= 0) {
+            return null;
+        }
+
+        $found = $this->findByNip($hints)['row'];
+        $matchedBy = IfirmaContractorMap::BY_NIP;
+        if ($found === null) {
+            $found = $this->findByName($hints)['row'];
+            $matchedBy = IfirmaContractorMap::BY_NAME;
+        }
+        if ($found === null || !$this->hasIdentifier($found)) {
+            return null;
+        }
+
+        return $this->useExisting(trim((string) $found['Identyfikator']), $found, $contractor, $matchedBy, $idCustomer);
+    }
+
+    /**
+     * Step e of ensure(): the module contractor does not exist yet, so it is created and read back.
+     *
+     * @param array $contractor shop-owned data
+     * @param int   $idCustomer customer to link the created contractor to; 0 for none
+     * @param array $hints      completed hints for the search after a create that cannot be read back
+     * @return IfirmaContractorResolution
+     */
+    private function createModuleContractor(array $contractor, $idCustomer, array $hints)
+    {
         return $this->createAndResolve($contractor, $idCustomer, $hints);
+    }
+
+    /**
+     * The document goes without a contractor identifier because the look-up got no usable answer from
+     * iFirma. Its outcome is unknown, so nothing is created, updated or unlinked.
+     *
+     * @param string $identifier the identifier that was looked up
+     * @return IfirmaContractorResolution fallback with the failure text and a lookup_failed note
+     */
+    private function fallbackOnFailedLookup($identifier)
+    {
+        $error = (string) $this->client->getLastError();
+
+        return IfirmaContractorResolution::fallback($error, $this->note('lookup_failed', array('identifier' => $identifier, 'error' => $error)));
     }
 
     /**
