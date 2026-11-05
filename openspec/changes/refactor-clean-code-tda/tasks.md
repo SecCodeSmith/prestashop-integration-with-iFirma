@@ -76,12 +76,32 @@ No task starts on a red tree. Each task is one commit straight on master, with n
   Every variant already has a Polish translation. The order panel already prints the long forms after "matched by:".
 
   The only visible change is in the AdminActions note "linked to existing contractor %s (matched by %s)" (PL "… (dopasowanie: %s)"): it now reads, for example, "dopasowanie: import, NIP" instead of "dopasowanie: NIP". The panels do not change.
-- [ ] 4.2 Characterise both label paths, plus `contractorActionLabel`, which has no direct test today: one test per code. Verify that they pass on unchanged code.
-- [ ] 4.3 Introduce `IfirmaMatchLabels` (design D6), keyed by `IfirmaContractorMap::BY_*`. Replace both methods and the hard-coded match-code lists (`ifirma.php:~984`, `IfirmaAdminActions.php:~376`). Verify that the suite is green, `TranslationCoverageTest` is green, and diff-cover is at 100%.
+- [x] 4.2 Characterise both label paths, plus `contractorActionLabel`, which has no direct test today: one test per code. Verify that they pass on unchanged code. Evidence, characterisation commit `909f253`, which passes on base:
+  - `ContractorLabelWordingTest` drives the real hooks and actions with a stored contractor link, one test per code:
+    - the order panel and customer panel labels for all 9 codes and for an unknown code;
+    - the customer panel's JSON of codes and labels, whose membership and order are pinned;
+    - the AdminActions link note for the 8 linked codes. `module` is excluded from that list, as are an unknown code and a link that points at the module identifier;
+    - `contractorActionLabel` for every action, including the read-back entries that are not records.
+- [x] 4.3 Introduce `IfirmaMatchLabels` (design D6), keyed by `IfirmaContractorMap::BY_*`. Replace both methods and the hard-coded match-code lists (`ifirma.php:~984`, `IfirmaAdminActions.php:~376`). Verify that the suite is green, `TranslationCoverageTest` is green, and diff-cover is at 100%. Evidence, refactor commit `5e600ad`:
+  - `Ifirma::matchLabels()` builds an `IfirmaMatchLabels` from the nine `$this->l()` literals, which stay in `ifirma.php`, keyed by the `BY_*` constants in the old display order.
+  - `label()` returns an unknown code unchanged. `labels()` replaces the customer-panel loop. `linkCodes()` keeps AdminActions' list: every code except `module`.
+  - Both `matchedByLabel()` copies and both hard-coded lists are gone; `git grep matchedByLabel` finds 0 hits.
+  - The only changed output is the 4.1-approved one: the four link-note expectations (import-nip, import-email, import-name, document) now carry the long wording.
+  - `TranslationCoverageTest` is green. `translations/pl.php` is untouched; the five AdminActions-domain label entries are now unused.
+  - Gate against `3c926eb`: `OK (1419 tests)`, 23 changed lines, 100%.
+  - Left for later: the customer-panel JSON's `JSON_HEX_*` flags were never pinned and still aren't.
 
 ## 5. Outcome and status constants (Tier 1)
 
-- [ ] 5.1 Add `IfirmaPipelineResult::OUTCOME_*` constants and `toArray()`. Replace the outcome literals in the Pipeline and the branches in AdminActions (`~111-120`, `~773`), and the result re-assembly. Verify that IssuancePipelineTest and AdminActionsTest are green and diff-cover is at 100%.
+- [x] 5.1 Add `IfirmaPipelineResult::OUTCOME_*` constants and `toArray()`. Replace the outcome literals in the Pipeline and the branches in AdminActions (`~111-120`, `~773`), and the result re-assembly. Verify that IssuancePipelineTest and AdminActionsTest are green and diff-cover is at 100%. Evidence:
+  - Characterisation `1d50a1f` pins the pipeline outcomes and the create action's payload, and passes on base.
+  - Refactor `6dbbc89`:
+    - one `OUTCOME_*` constant per documented outcome, with the same strings; the result's default uses the constant;
+    - the pipeline's literals and the AdminActions outcome checks use the constants;
+    - the create action reads `toArray()` (outcome and stopped_at) instead of re-assembling them, and its returned array is byte-identical.
+  - `resolved()`'s `$data['outcome'] = $result->outcome` (old ~773) is a plain field copy with no literal, so it stays.
+  - Added at integration: a PHP `Error` from delivery escapes the deliver step, and `fail()` turns the run into outcome `error`. That is today's behaviour, now pinned; deleting `fail()`'s outcome line used to survive and now fails.
+  - Gate against `5e600ad`: `OK (1430 tests)`, 17 changed lines, 100%.
 - [x] 5.2 Replace the raw status literals in IfirmaCustomerView and IfirmaCustomerContractorService with `IfirmaReceipt::STATUS_*` / `IfirmaDataRequest::STATUS_*` constants. Verify that no status value is compared or listed as a literal in those two files, the suite is green, and diff-cover is at 100%. The check is `git grep -nE "(===|!==|==|!=) '(created|paid|held|error|unknown|duplicate_suspected|pending|approved|rejected|cancelled)'|array\([^)]*'(created|paid|held|error|unknown|duplicate_suspected|pending|approved|rejected|cancelled)'" -- classes/IfirmaCustomerView.php classes/IfirmaCustomerContractorService.php`, which must be empty.
 
   It replaced the first check, ``git grep -nE "'(held|pending|duplicate_suspected)'" …``, which cannot pass as written. Three of its hits are not statuses:
@@ -172,7 +192,20 @@ No task starts on a red tree. Each task is one commit straight on master, with n
 
 ## 12. Delivery result object (Tier 2)
 
-- [ ] 12.1 Add `IfirmaDeliveryResult` (immutable, `isSent()`) with unit tests. Make `IfirmaDeliveryService::deliver()` return it, and migrate the Pipeline and AdminActions callers in the same commit. Verify that `git grep -n "\['ok'\]\|\['status'\]" classes/IfirmaIssuancePipeline.php` shows no delivery-array reads, DeliveryServiceTest and IssuancePipelineTest are green (assertions retargeted, not weakened), and diff-cover is at 100%.
+- [x] 12.1 Add `IfirmaDeliveryResult` (immutable, `isSent()`) with unit tests. Make `IfirmaDeliveryService::deliver()` return it, and migrate the Pipeline and AdminActions callers in the same commit. Verify that `git grep -n "\['ok'\]\|\['status'\]" classes/IfirmaIssuancePipeline.php` shows no delivery-array reads, DeliveryServiceTest and IssuancePipelineTest are green (assertions retargeted, not weakened), and diff-cover is at 100%. Evidence:
+  - Characterisation `d97f9e1` pins the deliver step and the resend envelope, and passes on base.
+  - Refactor `05b77ee`:
+    - `deliver()` and `resend()` return the immutable `IfirmaDeliveryResult`, which `IfirmaDeliveryService.php` loads itself;
+    - the pipeline's deliver step and the AdminActions resend action read the getters, and the action's returned array is byte-identical;
+    - the tests that asserted on the old array now assert the same values through the getters.
+  - `isSent()` keeps the old `ok` flag exactly: true for sent and for skipped (nothing needed sending), false for failed and disabled. That is what both callers test; `getStatus()` tells sent from skipped.
+  - The grep still prints two lines, `$k['ok']` (the KSeF result) and `$s['status']` (a pipeline step entry). Neither is a delivery read.
+  - Integration fixes: the docblock now says what `channel` and `message` hold. The 5.1 `toArray()` test fills `delivery` with an `IfirmaDeliveryResult` instead of the obsolete array.
+  - Gate against `6dbbc89`: `OK (1449 tests)`, 16 changed lines, 100%.
+
+  Wave 3 as a whole (tasks 4, 5.1 and 12):
+  - Gate against `3c926eb`: 1449 tests, 56 changed lines, 100%. The PHP 7.2 lint is clean.
+  - The end-to-end smoke gives `passed 90, failed 0, skipped 1`, the same checks and verdicts as before the wave.
 
 ## 13. Contractor resolution object (Tier 2)
 
