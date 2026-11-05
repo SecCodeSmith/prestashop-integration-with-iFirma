@@ -22,8 +22,8 @@ if (!defined('_PS_VERSION_')) {
  *  - isBypassed()         option `bypass`: skip the lookup for this call only (the one-time "Issue anyway")
  *  - getTolerance()       option `tolerance`, IFIRMA_DUPLICATE_AMOUNT_TOLERANCE: the largest difference, in the
  *                         currency of the order, between the gross of a document and the gross of the order
- *                         for the document to be a candidate (an adopted document counts as paid when it is
- *                         unpaid by no more than this)
+ *                         for the document to be a candidate. adopt() decides paid with the configured value
+ *                         or the default, never with the option.
  *  - getWindowDays()      option `window_days`, IFIRMA_DUPLICATE_WINDOW_DAYS: the longest search window, in
  *                         days from the day before the order to today, in which the guard still lists the
  *                         documents unfiltered
