@@ -347,4 +347,202 @@ class CustomerViewTest extends TestCase
             $this->assertNotSame('', $this->view->stateLabel($s));
         }
     }
+
+    // ---- orderOptions(): the options of the order page, read from the configuration ------------------
+
+    private function registerState($id, $name)
+    {
+        $state = new OrderState();
+        $state->id = $id;
+        $state->name = $name;
+        OrderState::register($state);
+    }
+
+    /**
+     * @param string     $key
+     * @param mixed|null $value null leaves the key out of the configuration
+     */
+    private function setting($key, $value)
+    {
+        if ($value === null) {
+            Configuration::deleteByName($key);
+        } else {
+            Configuration::updateValue($key, $value);
+        }
+    }
+
+    public function testOrderOptionsAreTheConfiguredOnes()
+    {
+        Configuration::updateValue('IFIRMA_ALLOW_DATA_REQUEST', 1);
+        Configuration::updateValue('IFIRMA_AUTO_CREATE_STATE', '5');
+        Configuration::updateValue('IFIRMA_DUPLICATE_AMOUNT_TOLERANCE', '0.01');
+        $this->registerState(5, 'Payment accepted');
+
+        // assertSame on an array also pins the keys, their order and the types of the values
+        $this->assertSame(array(
+            'data_request_enabled' => true,
+            'auto_issue_enabled' => true,
+            'trigger_state_name' => 'Payment accepted',
+            'tolerance' => '0.01',
+            'has_other_pending' => false,
+        ), $this->view->orderOptions());
+    }
+
+    public function testOrderOptionsOfAShopWithNothingConfigured()
+    {
+        $this->assertSame(array(
+            'data_request_enabled' => false,
+            'auto_issue_enabled' => false,
+            'trigger_state_name' => '',
+            'tolerance' => false,
+            'has_other_pending' => false,
+        ), $this->view->orderOptions());
+        $this->assertSame(array(), OrderState::$loads);
+    }
+
+    public function testTheToleranceIsHandedOverAsConfigured()
+    {
+        Configuration::updateValue('IFIRMA_DUPLICATE_AMOUNT_TOLERANCE', 0.5);
+
+        $this->assertSame(0.5, $this->view->orderOptions()['tolerance']);
+    }
+
+    /**
+     * @return array[] label => array(allow data request setting (null = not set), enabled)
+     */
+    public function dataRequestSettings()
+    {
+        return array(
+            'on' => array(1, true),
+            'on, saved as text' => array('1', true),
+            'off' => array(0, false),
+            'off, saved as text' => array('0', false),
+            'not set' => array(null, false),
+        );
+    }
+
+    /**
+     * @dataProvider dataRequestSettings
+     */
+    public function testTheDataRequestOptionIsAFlag($setting, $enabled)
+    {
+        $this->setting('IFIRMA_ALLOW_DATA_REQUEST', $setting);
+
+        $this->assertSame($enabled, $this->view->orderOptions()['data_request_enabled']);
+    }
+
+    /**
+     * @return array[] label => array(trigger state setting (null = not set), auto issue, name, ids loaded)
+     */
+    public function triggerStateSettings()
+    {
+        return array(
+            'not set' => array(null, false, '', array()),
+            'zero' => array(0, false, '', array()),
+            'zero, saved as text' => array('0', false, '', array()),
+            'negative' => array(-1, false, '', array()),
+            'not a number' => array('abc', false, '', array()),
+            'a state' => array(5, true, 'Payment accepted', array(5)),
+            'a state, saved as text' => array('5', true, 'Payment accepted', array(5)),
+        );
+    }
+
+    /**
+     * @dataProvider triggerStateSettings
+     */
+    public function testTheTriggerStateSwitchesAutoIssueOnAndIsNamed($setting, $autoIssue, $name, $loaded)
+    {
+        $this->registerState(5, 'Payment accepted');
+        $this->setting('IFIRMA_AUTO_CREATE_STATE', $setting);
+        OrderState::$loads = array();
+
+        $options = $this->view->orderOptions();
+
+        $this->assertSame($autoIssue, $options['auto_issue_enabled']);
+        $this->assertSame($name, $options['trigger_state_name']);
+        $this->assertSame($loaded, OrderState::$loads, 'only a state that is set is looked up, as a number');
+    }
+
+    /**
+     * @return array[] label => array(name of the state, id of the language of the shop, name shown)
+     */
+    public function triggerStateNames()
+    {
+        $names = array(1 => 'Paid', 2 => 'Zaplacono');
+
+        return array(
+            'a plain name' => array('Payment accepted', 1, 'Payment accepted'),
+            'a plain name, another language' => array('Payment accepted', 2, 'Payment accepted'),
+            'a name that is not text' => array(123, 1, '123'),
+            'the name in the language of the shop' => array($names, 1, 'Paid'),
+            'the name in the other language of the shop' => array($names, 2, 'Zaplacono'),
+            'the language id is text' => array($names, '2', 'Zaplacono'),
+            'the first name when the language has none' => array(array(1 => 'Paid', 3 => 'Bezahlt'), 2, 'Paid'),
+            'the first of the list, not the lowest id' => array(array(3 => 'Bezahlt', 1 => 'Paid'), 2, 'Bezahlt'),
+            'a language without text counts as none' => array(array(3 => 'Bezahlt', 1 => null), 1, 'Bezahlt'),
+            'a language with an empty text keeps it' => array(array(3 => 'Bezahlt', 1 => ''), 1, ''),
+            'no names at all' => array(array(), 1, ''),
+            'a state without a name' => array(null, 1, ''),
+        );
+    }
+
+    /**
+     * @dataProvider triggerStateNames
+     */
+    public function testTheTriggerStateIsNamedInTheLanguageOfTheShop($name, $idLang, $shown)
+    {
+        $this->registerState(5, $name);
+        Configuration::updateValue('IFIRMA_AUTO_CREATE_STATE', 5);
+        Context::getContext()->language->id = $idLang;
+
+        $this->assertSame($shown, $this->view->orderOptions()['trigger_state_name']);
+        $this->assertSame(array(5), OrderState::$loads);
+        $this->assertSame(array((int) $idLang), OrderState::$langs, 'the state is read in the language of the context, as a number');
+    }
+
+    /**
+     * Module::$context is protected in PrestaShop (the stub makes it public), so the language has to come from
+     * the context itself and never from the module the view was given.
+     */
+    public function testTheLanguageComesFromTheContextAndNotFromTheModule()
+    {
+        $module = new Module();
+        $module->context = null;
+        $view = new IfirmaCustomerView($module, Context::getContext()->link);
+        $this->registerState(5, array(1 => 'Paid', 2 => 'Zaplacono'));
+        Configuration::updateValue('IFIRMA_AUTO_CREATE_STATE', 5);
+        Context::getContext()->language->id = 2;
+
+        $this->assertSame('Zaplacono', $view->orderOptions()['trigger_state_name']);
+        $this->assertSame(array(2), OrderState::$langs);
+    }
+
+    public function testAStateThatIsNotRegisteredHasNoName()
+    {
+        Configuration::updateValue('IFIRMA_AUTO_CREATE_STATE', 9);
+
+        $options = $this->view->orderOptions();
+
+        $this->assertTrue($options['auto_issue_enabled']);
+        $this->assertSame('', $options['trigger_state_name']);
+        $this->assertSame(array(9), OrderState::$loads);
+    }
+
+    public function testOrderOptionsAreTheContextForOrderTakes()
+    {
+        Configuration::updateValue('IFIRMA_ALLOW_DATA_REQUEST', 1);
+        Configuration::updateValue('IFIRMA_AUTO_CREATE_STATE', 5);
+        Configuration::updateValue('IFIRMA_DUPLICATE_AMOUNT_TOLERANCE', '0.5');
+        $this->registerState(5, 'Payment accepted');
+
+        $notIssued = $this->view->forOrder($this->order(), null, null, $this->view->orderOptions());
+        $this->assertTrue($notIssued['can_request_change']);
+        $this->assertTrue($notIssued['auto_issue_enabled']);
+        $this->assertSame('Payment accepted', $notIssued['trigger_state_name']);
+
+        // 99.6 of 100.0 is paid within half a zloty, and not within the default cent
+        $paid = $this->receipt(array('remote_paid_amount' => 99.6));
+        $this->assertTrue($this->view->forOrder($this->order(100.0), $paid, null, $this->view->orderOptions())['document']['paid']);
+        $this->assertFalse($this->view->forOrder($this->order(100.0), $paid, null)['document']['paid']);
+    }
 }

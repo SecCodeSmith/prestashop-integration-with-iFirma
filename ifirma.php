@@ -964,14 +964,13 @@ class Ifirma extends Module
         $link = $service->linkState($idCustomer);
         $matchLabels = $this->matchLabels();
 
-        $canRegister = false;
+        $availability = $service->registerAvailability($idCustomer);
+        $canRegister = $availability['available'];
         $registerReason = '';
-        if (!IfirmaContractorService::build($this)->isEnabled()) {
+        if ($availability['reason'] === IfirmaCustomerContractorService::REGISTER_DISABLED) {
             $registerReason = $this->l('Contractor registration is disabled in the module settings.');
-        } elseif (!Order::getCustomerOrders($idCustomer)) {
+        } elseif ($availability['reason'] === IfirmaCustomerContractorService::REGISTER_NO_ORDERS) {
             $registerReason = $this->l('Registration needs at least one order of this customer.');
-        } else {
-            $canRegister = true;
         }
 
         $token = Tools::getAdminTokenLite('AdminIfirma');
@@ -1356,25 +1355,6 @@ class Ifirma extends Module
         return new IfirmaCustomerView($this, $this->context->link);
     }
 
-    /**
-     * @param int $idState
-     * @return string
-     */
-    private function orderStateName($idState)
-    {
-        if ($idState <= 0) {
-            return '';
-        }
-        $state = new OrderState((int) $idState, (int) $this->context->language->id);
-        $name = $state->name;
-        if (is_array($name)) {
-            $lang = (int) $this->context->language->id;
-            $name = isset($name[$lang]) ? $name[$lang] : reset($name);
-        }
-
-        return (string) $name;
-    }
-
     public function hookDisplayOrderDetail($params)
     {
         if (!$this->isConfigured() || !isset($params['order']) || !Validate::isLoadedObject($params['order'])) {
@@ -1400,15 +1380,9 @@ class Ifirma extends Module
         }
 
         $pending = IfirmaDataRequestService::build($this)->getPendingForOrder((int) $order->id);
-        $triggerState = (int) Configuration::get('IFIRMA_AUTO_CREATE_STATE');
 
-        $view = $this->customerView()->forOrder($order, $receipt, $pending, array(
-            'data_request_enabled' => (bool) Configuration::get('IFIRMA_ALLOW_DATA_REQUEST'),
-            'auto_issue_enabled' => $triggerState > 0,
-            'trigger_state_name' => $this->orderStateName($triggerState),
-            'tolerance' => Configuration::get('IFIRMA_DUPLICATE_AMOUNT_TOLERANCE'),
-            'has_other_pending' => false,
-        ));
+        $customerView = $this->customerView();
+        $view = $customerView->forOrder($order, $receipt, $pending, $customerView->orderOptions());
 
         $this->context->smarty->assign('ifirma_view', $view);
 

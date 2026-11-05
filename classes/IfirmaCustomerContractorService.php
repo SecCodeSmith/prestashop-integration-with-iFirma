@@ -22,10 +22,11 @@ require_once dirname(__FILE__) . '/IfirmaSchema.php';
 
 /**
  * Customer-level view of the iFirma contractor: link state, local and remote document counts,
- * contractor search with e-mail/phone ranking, manual link and unlink.
+ * contractor search with e-mail/phone ranking, manual link and unlink, and whether the contractor
+ * can be registered from the customer page.
  *
- * The service never translates: it returns codes and raw messages, the admin-actions layer
- * turns them into text. It never changes the stored link except in link() and unlink().
+ * The service never translates: it returns codes and raw messages, the admin-actions layer and the
+ * module class turn them into text. It never changes the stored link except in link() and unlink().
  */
 class IfirmaCustomerContractorService
 {
@@ -68,6 +69,10 @@ class IfirmaCustomerContractorService
     const LINK_NOT_FOUND = 'not_found';
     const LINK_ERROR = 'error';
     const LINK_INVALID = 'invalid';
+
+    /** registerAvailability() reasons, in the order the checks run. */
+    const REGISTER_DISABLED = 'disabled';
+    const REGISTER_NO_ORDERS = 'no_orders';
 
     /** @var IfirmaApiClient */
     private $client;
@@ -164,6 +169,26 @@ class IfirmaCustomerContractorService
         }
 
         return $out;
+    }
+
+    /**
+     * Whether the customer page may offer the contractor registration. Registration switched off in the
+     * module settings is told before a missing order, and the orders are not looked up for it. The
+     * reason is a code: the module class turns it into text.
+     *
+     * @param int $idCustomer
+     * @return array available (bool), reason ('' when available, else REGISTER_DISABLED or REGISTER_NO_ORDERS)
+     */
+    public function registerAvailability($idCustomer)
+    {
+        if (!$this->contractors->isEnabled()) {
+            return array('available' => false, 'reason' => self::REGISTER_DISABLED);
+        }
+        if (!Order::getCustomerOrders((int) $idCustomer)) {
+            return array('available' => false, 'reason' => self::REGISTER_NO_ORDERS);
+        }
+
+        return array('available' => true, 'reason' => '');
     }
 
     /**

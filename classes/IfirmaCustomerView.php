@@ -28,10 +28,12 @@ require_once dirname(__FILE__) . '/IfirmaDataRequest.php';
  *    auto_issue_enabled, trigger_state_name, document (issued/missing only), contact_shop.
  *    Context keys: data_request_enabled, has_other_pending, auto_issue_enabled,
  *    trigger_state_name, tolerance.
+ *  - orderOptions(): the context of forOrder() for the order page, read from the configuration.
  *  - forAccount($receiptRows, $pendingCount): receipts, pending_count, visible.
  *
  * The view-model NEVER carries last_error, sync_error, duplicate candidates or payloads.
- * Pure: it only reads the objects passed in.
+ * Pure, except orderOptions(), which reads the configuration, the language of the context and the order
+ * state: the other methods only read the objects passed in.
  */
 class IfirmaCustomerView
 {
@@ -130,6 +132,28 @@ class IfirmaCustomerView
     }
 
     /**
+     * The context of forOrder() for the order page of the customer: the data request and auto issue
+     * switches, the name of the state that triggers the issuing, and the amount tolerance, as the
+     * configuration holds them.
+     *
+     * @return array data_request_enabled (bool), auto_issue_enabled (bool), trigger_state_name (string,
+     *               '' without a trigger state), tolerance (the configured value, false when none),
+     *               has_other_pending (false)
+     */
+    public function orderOptions()
+    {
+        $triggerState = (int) Configuration::get('IFIRMA_AUTO_CREATE_STATE');
+
+        return array(
+            'data_request_enabled' => (bool) Configuration::get('IFIRMA_ALLOW_DATA_REQUEST'),
+            'auto_issue_enabled' => $triggerState > 0,
+            'trigger_state_name' => $this->orderStateName($triggerState),
+            'tolerance' => Configuration::get('IFIRMA_DUPLICATE_AMOUNT_TOLERANCE'),
+            'has_other_pending' => false,
+        );
+    }
+
+    /**
      * @param array $receiptRows rows from IfirmaReceipt::getByCustomer()
      * @param int   $pendingCount
      * @return array
@@ -192,6 +216,26 @@ class IfirmaCustomerView
         }
 
         return $this->module->l('Issued', 'ifirmacustomerview');
+    }
+
+    /**
+     * @param int $idState
+     * @return string name of the order state in the language of the shop, '' for no state
+     */
+    protected function orderStateName($idState)
+    {
+        if ($idState <= 0) {
+            return '';
+        }
+        // the context the module holds: Module::$context is protected, the view cannot read it from the module
+        $idLang = (int) Context::getContext()->language->id;
+        $state = new OrderState((int) $idState, $idLang);
+        $name = $state->name;
+        if (is_array($name)) {
+            $name = isset($name[$idLang]) ? $name[$idLang] : reset($name);
+        }
+
+        return (string) $name;
     }
 
     /**
