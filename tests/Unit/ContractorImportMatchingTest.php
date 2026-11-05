@@ -20,6 +20,8 @@ use PHPUnit\Framework\TestCase;
  */
 class ContractorImportMatchingTest extends TestCase
 {
+    use IfirmaFailingDbReads;
+
     /** @var IfirmaContractorImport */
     private $import;
 
@@ -117,37 +119,6 @@ class ContractorImportMatchingTest extends TestCase
             array($this->address(1, array('vat_number' => '5252248481', 'company' => 'ACME', 'postcode' => '00-001'))),
             array($this->stored(1, $identifier, $type))
         );
-    }
-
-    /**
-     * Makes the next read of the given table fail the way a failing query does: false.
-     *
-     * @param string $table without prefix
-     */
-    private function failingRead($table)
-    {
-        $db = new class extends Db {
-            /** @var string */
-            public $failing = '';
-
-            public function executeS($sql, $array = true, $useCache = true)
-            {
-                if (strpos($sql, $this->failing) !== false) {
-                    $this->queries[] = $sql;
-
-                    return false;
-                }
-
-                return parent::executeS($sql, $array, $useCache);
-            }
-
-            public function install()
-            {
-                self::$instance = $this;
-            }
-        };
-        $db->failing = '`ps_' . $table . '`';
-        $db->install();
     }
 
     // ---- reads ------------------------------------------------------------------------------

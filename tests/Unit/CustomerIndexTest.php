@@ -16,6 +16,8 @@ use PHPUnit\Framework\TestCase;
  */
 class CustomerIndexTest extends TestCase
 {
+    use IfirmaFailingDbReads;
+
     protected function setUp(): void
     {
         IfirmaTestState::resetAll();
@@ -54,37 +56,6 @@ class CustomerIndexTest extends TestCase
     private function collapse($sql)
     {
         return trim(preg_replace('/\s+/', ' ', $sql));
-    }
-
-    /**
-     * Makes the reads of the given table fail the way a failing query does: false.
-     *
-     * @param string $table without prefix
-     */
-    private function failingRead($table)
-    {
-        $db = new class extends Db {
-            /** @var string */
-            public $failing = '';
-
-            public function executeS($sql, $array = true, $useCache = true)
-            {
-                if (strpos($sql, $this->failing) !== false) {
-                    $this->queries[] = $sql;
-
-                    return false;
-                }
-
-                return parent::executeS($sql, $array, $useCache);
-            }
-
-            public function install()
-            {
-                self::$instance = $this;
-            }
-        };
-        $db->failing = '`ps_' . $table . '`';
-        $db->install();
     }
 
     // ---- fromRows: the NIP lookup -----------------------------------------------------------
