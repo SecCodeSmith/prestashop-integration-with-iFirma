@@ -1791,4 +1791,428 @@ class ContractorServiceTest extends TestCase
             $r->getMessage()
         );
     }
+
+    // ---- ensure() step by step: calls, contractor map writes and hints (refactor-srp-splits 2.1) -------
+    // Each step of ensure() (stored mapping, module identifier, search, create) is pinned by the calls it
+    // makes, in order, by the writes it causes in the contractor map and by the answer it gives, so that
+    // cutting the method into one method per step cannot change the order or the number of any of them.
+
+    /** "VERB /path" of every call so far, in order. */
+    private function journal()
+    {
+        $out = array();
+        foreach ($this->t->calls as $call) {
+            $out[] = $call['method'] . ' ' . parse_url($call['url'], PHP_URL_PATH);
+        }
+
+        return $out;
+    }
+
+    /** Every write to the contractor map since the last clearWrites(): op, customer, identifier, matched_by, name. */
+    private function mapWrites()
+    {
+        $out = array();
+        foreach (IfirmaTestState::writes('ifirma_contractor_map') as $write) {
+            $row = $write['row'];
+            $out[] = array($write['op'], (int) $row['id_customer'], $row['ifirma_identifier'], $row['matched_by'], $row['ifirma_name']);
+        }
+
+        return $out;
+    }
+
+    /** Stores the link of customer 7, then forgets the writes and queries it took: they are not the code under test. */
+    private function storeLink($identifier, $matchedBy, $name = 'Jan Kowalski')
+    {
+        IfirmaContractorMap::link(7, $identifier, $matchedBy, $name);
+        IfirmaTestState::clearWrites();
+        Db::getInstance()->queries = array();
+    }
+
+    /** Whether any query named the contractor map table. */
+    private function mapQueried()
+    {
+        foreach (Db::getInstance()->queries as $sql) {
+            if (strpos($sql, 'ifirma_contractor_map') !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function testAStoredMappingIsUsedWithoutWritingTheMapAgain()
+    {
+        $this->storeLink('KOWALSKI-01', 'import-nip', 'Stored Name');
+        $this->t->queue('GET', '#kontrahenci/id/KOWALSKI-01\.json#', $this->rows(array($this->remote('KOWALSKI-01'))));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame(array('GET /iapi/kontrahenci/id/KOWALSKI-01.json'), $this->journal());
+        $this->assertSame(
+            array('identifier' => 'KOWALSKI-01', 'action' => 'kept', 'message' => '', 'matched_by' => 'import-nip', 'linked_identifier' => 'KOWALSKI-01', 'note' => null, 'assigned_identifier' => null),
+            $r->toArray()
+        );
+        // the link is already stored: nothing is written, not even the name iFirma knows the contractor by
+        $this->assertSame(array(), $this->mapWrites());
+        $this->assertSame('Stored Name', $this->mapped()['ifirma_name']);
+    }
+
+    public function testAnUpdatedStoredMappingIsNotWrittenToTheMapEither()
+    {
+        $this->storeLink('KOWALSKI-01', 'nip', 'Stored Name');
+        $this->t->queue('GET', '#kontrahenci/id/KOWALSKI-01\.json#', $this->rows(array($this->remote('KOWALSKI-01', array('Ulica' => 'Stara 2')))));
+        $this->t->queue('PUT', '#kontrahenci/KOWALSKI-01\.json#', $this->ok('Zaktualizowano'));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame(array('GET /iapi/kontrahenci/id/KOWALSKI-01.json', 'PUT /iapi/kontrahenci/KOWALSKI-01.json'), $this->journal());
+        $this->assertSame('updated', $r->getAction());
+        $this->assertSame('nip', $r->getMatchedBy());
+        $this->assertSame(array(), $this->mapWrites());
+    }
+
+    public function testAStoredMappingIsLookedUpUnderItsTrimmedIdentifier()
+    {
+        $this->storeLink(' KOWALSKI-01 ', 'nip');
+        $this->t->queue('GET', '#kontrahenci/id/KOWALSKI-01\.json#', $this->rows(array($this->remote('KOWALSKI-01'))));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame(array('GET /iapi/kontrahenci/id/KOWALSKI-01.json'), $this->journal());
+        $this->assertSame('KOWALSKI-01', $r->getIdentifier());
+        $this->assertSame('KOWALSKI-01', $r->getLinkedIdentifier());
+    }
+
+    public function testAVanishedMappingIsUnlinkedAndTheModuleIdentifierIsLookedUpAgain()
+    {
+        // the stored link points at the module identifier itself: it is asked for twice, once per step
+        $this->storeLink('PS-C7', 'module');
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame(array(
+            'GET /iapi/kontrahenci/id/PS-C7.json',
+            'GET /iapi/kontrahenci/id/PS-C7.json',
+            'GET /iapi/kontrahenci/Jan%20Kowalski.json',
+            'POST /iapi/kontrahenci.json',
+            'GET /iapi/kontrahenci/id/PS-C7.json',
+        ), $this->journal());
+        $this->assertSame('created', $r->getAction());
+        // the old link was removed first, so the new one is a row of its own and not an update of the old
+        $this->assertSame(array(array('add', 7, 'PS-C7', 'module', 'Jan Kowalski')), $this->mapWrites());
+        $this->assertCount(1, $this->mapRows());
+    }
+
+    public function testAVanishedMappingStaysUnlinkedWhenTheResolutionFallsBack()
+    {
+        $this->storeLink('GONE-1', 'nip');
+        $this->t->queue('GET', '#kontrahenci/id/GONE-1\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"Zly kod pocztowy"}}'));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame('create_rejected', $r->getNote()['code']);
+        $this->assertSame(array(
+            'GET /iapi/kontrahenci/id/GONE-1.json',
+            'GET /iapi/kontrahenci/id/PS-C7.json',
+            'GET /iapi/kontrahenci/Jan%20Kowalski.json',
+            'POST /iapi/kontrahenci.json',
+        ), $this->journal());
+        $this->assertNull($this->mapped());
+        $this->assertSame(array(), $this->mapWrites());
+    }
+
+    public function testALinkThatCannotBeRemovedNeverBlocksTheResolution()
+    {
+        $this->storeLink('GONE-1', 'nip');
+        $lookups = 0;
+        // the first look-up of the customer's link finds it; the unlink and the new link then fail
+        Db::getInstance()->whenGetValue('/SELECT id_ifirma_contractor_map FROM `ps_ifirma_contractor_map`\s+WHERE id_customer = (\d+)/', function () use (&$lookups) {
+            if (++$lookups > 1) {
+                throw new Exception('the map is gone');
+            }
+
+            return 1;
+        });
+        $this->t->queue('GET', '#kontrahenci/id/GONE-1\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->found());
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame(array('GET /iapi/kontrahenci/id/GONE-1.json', 'GET /iapi/kontrahenci/id/PS-C7.json'), $this->journal());
+        $this->assertSame('kept', $r->getAction());
+        $this->assertSame('PS-C7', $r->getIdentifier());
+        $this->assertSame(3, $lookups);
+    }
+
+    public function withoutACustomerProvider()
+    {
+        return array(
+            'no customer' => array(null),
+            'customer 0' => array(0),
+            'negative id' => array(-3),
+        );
+    }
+
+    /**
+     * @dataProvider withoutACustomerProvider
+     */
+    public function testWithoutACustomerTheMapIsNeverTouched($idCustomer)
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
+
+        $r = $this->svc->ensure($this->owned(), $idCustomer, $this->hints());
+
+        $this->assertSame(array('GET /iapi/kontrahenci/id/PS-C7.json', 'POST /iapi/kontrahenci.json', 'GET /iapi/kontrahenci/id/PS-C7.json'), $this->journal());
+        $this->assertSame(
+            array('identifier' => 'PS-C7', 'action' => 'created', 'message' => '', 'matched_by' => '', 'linked_identifier' => null, 'note' => null, 'assigned_identifier' => null),
+            $r->toArray()
+        );
+        $this->assertFalse($this->mapQueried());
+        $this->assertSame(array(), $this->mapWrites());
+    }
+
+    public function testASwitchedOffSyncNeverReadsTheStoredLink()
+    {
+        $this->storeLink('KOWALSKI-01', 'nip');
+        Configuration::updateValue('IFIRMA_CONTRACTOR_SYNC', 0);
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame('disabled', $r->getAction());
+        $this->assertSame(array(), $this->journal());
+        $this->assertFalse($this->mapQueried());
+    }
+
+    public function testAKeptModuleContractorIsLinkedWithOneWrite()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->found());
+
+        $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame(array('GET /iapi/kontrahenci/id/PS-C7.json'), $this->journal());
+        $this->assertSame(array(array('add', 7, 'PS-C7', 'module', 'Jan Kowalski')), $this->mapWrites());
+    }
+
+    public function testANipMatchIsSearchedAfterTheModuleIdentifierAndLinkedWithOneWrite()
+    {
+        $remote = $this->remote('ACME-02', array('Nazwa' => 'ACME Sp. z o.o.', 'NIP' => '525-224-84-81', 'OsobaFizyczna' => false));
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->rows(array($remote)));
+        $this->t->queue('PUT', '#kontrahenci/ACME-02\.json#', $this->ok('Zaktualizowano'));
+
+        $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
+
+        $this->assertSame(array(
+            'GET /iapi/kontrahenci/id/PS-C7.json',
+            'GET /iapi/kontrahenci/5252248481.json',
+            'PUT /iapi/kontrahenci/ACME-02.json',
+        ), $this->journal());
+        $this->assertSame(array(array('add', 7, 'ACME-02', 'nip', 'ACME Sp. z o.o.')), $this->mapWrites());
+    }
+
+    public function testANameMatchIsSearchedAfterTheNipMissAndLinkedWithOneWrite()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/ACME%20Sp\.%20z%20o\.o\.\.json#', $this->rows(array(
+            $this->remote('ACME-NAME', array('Nazwa' => 'ACME Sp. z o.o.', 'NIP' => '5252248481', 'Email' => 'biuro@acme.test', 'OsobaFizyczna' => false)),
+        )));
+        $this->t->queue('PUT', '#kontrahenci/ACME-NAME\.json#', $this->ok('Zaktualizowano'));
+
+        $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
+
+        $this->assertSame(array(
+            'GET /iapi/kontrahenci/id/PS-C7.json',
+            'GET /iapi/kontrahenci/5252248481.json',
+            'GET /iapi/kontrahenci/ACME%20Sp.%20z%20o.o..json',
+            'PUT /iapi/kontrahenci/ACME-NAME.json',
+        ), $this->journal());
+        $this->assertSame('updated', $r->getAction());
+        $this->assertSame('name', $r->getMatchedBy());
+        $this->assertSame(array(array('add', 7, 'ACME-NAME', 'name', 'ACME Sp. z o.o.')), $this->mapWrites());
+    }
+
+    public function testACreatedContractorIsLinkedWithOneWriteAfterTheCreate()
+    {
+        $this->queueUntilCreate();
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
+
+        $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame(array(
+            'GET /iapi/kontrahenci/id/PS-C7.json',
+            'GET /iapi/kontrahenci/Jan%20Kowalski.json',
+            'POST /iapi/kontrahenci.json',
+            'GET /iapi/kontrahenci/id/PS-C7.json',
+        ), $this->journal());
+        $this->assertSame(array(array('add', 7, 'PS-C7', 'module', 'Jan Kowalski')), $this->mapWrites());
+    }
+
+    public function testARejectedUpdateOfAMatchedContractorLinksNothing()
+    {
+        $remote = $this->remote('ACME-02', array('Nazwa' => 'ACME Sp. z o.o.', 'NIP' => '525-224-84-81', 'OsobaFizyczna' => false));
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->rows(array($remote)));
+        $this->t->queue('PUT', '#kontrahenci/ACME-02\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"bad"}}'));
+
+        $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
+
+        $this->assertSame(array(
+            'identifier' => null,
+            'action' => 'fallback',
+            'message' => 'Validation error in document data (Kod 201): bad',
+            'matched_by' => '',
+            'linked_identifier' => null,
+            'note' => array('code' => 'update_failed', 'params' => array('identifier' => 'ACME-02', 'error' => 'Validation error in document data (Kod 201): bad')),
+            'assigned_identifier' => null,
+        ), $r->toArray());
+        $this->assertSame(array(
+            'GET /iapi/kontrahenci/id/PS-C7.json',
+            'GET /iapi/kontrahenci/5252248481.json',
+            'PUT /iapi/kontrahenci/ACME-02.json',
+        ), $this->journal());
+        $this->assertSame(array(), $this->mapWrites());
+        $this->assertNull($this->mapped());
+    }
+
+    public function testAMatchedContractorIsUsedUnderItsTrimmedIdentifier()
+    {
+        $remote = $this->remote('  ACME-02 ', array('Nazwa' => 'ACME Sp. z o.o.', 'NIP' => '5252248481', 'OsobaFizyczna' => false));
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->rows(array($remote)));
+
+        $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
+
+        $this->assertSame('ACME-02', $r->getIdentifier());
+        $this->assertSame('kept', $r->getAction());
+        $this->assertSame('ACME-02', $r->getLinkedIdentifier());
+        $this->assertSame(array(array('add', 7, 'ACME-02', 'nip', 'ACME Sp. z o.o.')), $this->mapWrites());
+    }
+
+    public function testAMatchedContractorWithABlankIdentifierIsNotUsed()
+    {
+        $remote = $this->remote('   ', array('Nazwa' => 'ACME Sp. z o.o.', 'NIP' => '5252248481', 'OsobaFizyczna' => false));
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->rows(array($remote)));
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
+
+        $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
+
+        // the NIP row is the match, so the name is not searched; without a usable identifier it is no match at all
+        $this->assertSame(array(
+            'GET /iapi/kontrahenci/id/PS-C7.json',
+            'GET /iapi/kontrahenci/5252248481.json',
+            'POST /iapi/kontrahenci.json',
+            'GET /iapi/kontrahenci/id/PS-C7.json',
+        ), $this->journal());
+        $this->assertSame('created', $r->getAction());
+        $this->assertSame('PS-C7', $r->getIdentifier());
+        $this->assertSame(array(array('add', 7, 'PS-C7', 'module', 'ACME Sp. z o.o.')), $this->mapWrites());
+    }
+
+    public function testWithoutHintsTheNipSearchUsesTheDigitsOfTheContractorNip()
+    {
+        $owned = array_merge($this->businessOwned(), array('NIP' => '525-224-84-81'));
+        $remote = $this->remote('ACME-02', array('Nazwa' => 'ACME Sp. z o.o.', 'NIP' => '525-224-84-81', 'OsobaFizyczna' => false));
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->rows(array($remote)));
+
+        $r = $this->svc->ensure($owned, 7);
+
+        $this->assertSame(array('GET /iapi/kontrahenci/id/PS-C7.json', 'GET /iapi/kontrahenci/5252248481.json'), $this->journal());
+        $this->assertSame('kept', $r->getAction());
+        $this->assertSame('ACME-02', $r->getIdentifier());
+        $this->assertSame('nip', $r->getMatchedBy());
+    }
+
+    public function testWithoutHintsTheNameSearchIsConfirmedByTheEmailOfTheContractor()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->rows(array(
+            $this->remote('KOWALSKI-02', array('Email' => 'inny@example.test')),
+            $this->remote('KOWALSKI-01', array('Email' => 'jan@example.test')),
+        )));
+
+        $r = $this->svc->ensure($this->owned(), 7);
+
+        $this->assertSame(array('GET /iapi/kontrahenci/id/PS-C7.json', 'GET /iapi/kontrahenci/Jan%20Kowalski.json'), $this->journal());
+        $this->assertSame('kept', $r->getAction());
+        $this->assertSame('KOWALSKI-01', $r->getIdentifier());
+        $this->assertSame('name', $r->getMatchedBy());
+    }
+
+    public function testWithoutHintsTheNameSearchFallsBackToThePostcodeOfTheContractor()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->rows(array(
+            $this->remote('KOWALSKI-01', array('Email' => 'a@example.test', 'KodPocztowy' => '30-001')),
+            $this->remote('KOWALSKI-02', array('Email' => 'b@example.test', 'KodPocztowy' => '00001')),
+        )));
+        $this->t->queue('PUT', '#kontrahenci/KOWALSKI-02\.json#', $this->ok('Zaktualizowano'));
+
+        $r = $this->svc->ensure($this->owned(), 7);
+
+        $this->assertSame('KOWALSKI-02', $r->getIdentifier());
+        $this->assertSame('updated', $r->getAction());
+        $this->assertSame('name', $r->getMatchedBy());
+    }
+
+    public function testHintsAreNormalisedBeforeTheNipSearch()
+    {
+        $remote = $this->remote('ACME-02', array('Nazwa' => 'ACME Sp. z o.o.', 'NIP' => '5252248481', 'OsobaFizyczna' => false));
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->rows(array($remote)));
+
+        $r = $this->svc->ensure($this->businessOwned(), 7, array('nip' => ' 525-224-84-81 ', 'email' => '', 'postcode' => '', 'name' => ''));
+
+        // the NIP is searched in digits
+        $this->assertSame(array('GET /iapi/kontrahenci/id/PS-C7.json', 'GET /iapi/kontrahenci/5252248481.json'), $this->journal());
+        $this->assertSame('ACME-02', $r->getIdentifier());
+        $this->assertSame('nip', $r->getMatchedBy());
+    }
+
+    public function testHintsAreNormalisedBeforeTheNameSearch()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->rows(array(
+            $this->remote('KOWALSKI-02', array('Email' => 'inny@example.test')),
+            $this->remote('KOWALSKI-01', array('Email' => 'jan@example.test')),
+        )));
+
+        $r = $this->svc->ensure($this->owned(), 7, array('nip' => '', 'email' => '  JAN@Example.test ', 'postcode' => '', 'name' => 'Jan Kowalski'));
+
+        // the e-mail address is compared trimmed and in lower case
+        $this->assertSame('KOWALSKI-01', $r->getIdentifier());
+        $this->assertSame('name', $r->getMatchedBy());
+    }
+
+    public function testWithoutHintsTheSearchAfterAnUnreadableCreateStillRuns()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/ACME#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->queueReadbackMisses(4);
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->rows(array(
+            array_merge($this->remote('IFI1909556979'), array('Nazwa' => 'ACME Sp. z o.o.', 'NIP' => '525-224-84-81', 'OsobaFizyczna' => false)),
+        )));
+
+        $r = $this->svc->ensure($this->businessOwned(), 7);
+
+        $this->assertSame('IFI1909556979', $r->getIdentifier());
+        $this->assertSame('created', $r->getAction());
+        $this->assertSame('found', $r->getReadback()['search']);
+        $this->assertSame(array(array('add', 7, 'IFI1909556979', 'module', 'ACME Sp. z o.o.')), $this->mapWrites());
+    }
 }
