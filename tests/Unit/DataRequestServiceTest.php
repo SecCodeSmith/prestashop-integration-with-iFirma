@@ -297,6 +297,42 @@ class DataRequestServiceTest extends TestCase
         $this->assertSame(array(array('field' => 'postcode', 'current' => '00-001', 'requested' => '00-950')), $diff);
     }
 
+    /**
+     * Fields set on top of the invoice address of setUp() => the VAT number that buildDiff() takes
+     * as the current one: the digits of the address's vat_number, else those of its dni.
+     *
+     * @return array
+     */
+    public function invoiceVatNumbers()
+    {
+        return array(
+            'the VAT number, as typed' => array(array('vat_number' => 'PL 525-000-12-34', 'dni' => '1112223344'), '5250001234'),
+            'a VAT number of 0 is a number' => array(array('vat_number' => '0', 'dni' => '1112223344'), '0'),
+            'the dni when the VAT number is empty' => array(array('vat_number' => '', 'dni' => '525-000-12-34'), '5250001234'),
+            'the dni when the VAT number is blanks' => array(array('vat_number' => " \t ", 'dni' => 'PL5250001234'), '5250001234'),
+            'nothing when the VAT number is blanks and there is no dni' => array(array('vat_number' => '   '), ''),
+            'nothing when the VAT number and the dni are empty' => array(array('vat_number' => '', 'dni' => ''), ''),
+            'nothing when the address has neither' => array(array(), ''),
+        );
+    }
+
+    /**
+     * @dataProvider invoiceVatNumbers
+     */
+    public function testBuildDiffComparesTheRequestWithTheVatNumberOfTheInvoiceAddress(array $fields, $current)
+    {
+        $this->changeInvoiceAddress($fields);
+
+        $diff = $this->service->buildDiff(array('vat_number' => '9999999999'), new Address(3));
+
+        $this->assertSame(
+            array(array('field' => 'vat_number', 'current' => $current, 'requested' => '9999999999')),
+            array_values(array_filter($diff, function ($change) {
+                return $change['field'] === 'vat_number';
+            }))
+        );
+    }
+
     // ---- cancel --------------------------------------------------------
 
     public function testCancelOwnPending()
