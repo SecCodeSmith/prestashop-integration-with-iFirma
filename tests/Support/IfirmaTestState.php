@@ -39,6 +39,9 @@ class IfirmaTestState
         if (class_exists('IfirmaSchema', false)) {
             IfirmaSchema::resetEnsureCache();
         }
+        if (class_exists('IfirmaHttpOutput', false)) {
+            IfirmaHttpOutput::useHeaderSink(null);
+        }
 
         // Ifirma keeps a private static render guard; clear it if the module is loaded.
         if (class_exists('Ifirma', false)) {

@@ -9,6 +9,7 @@ if (!defined('_PS_VERSION_')) {
 }
 
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaApiClient.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaHttpOutput.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaReceipt.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaReceiptService.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaAdminActions.php';
@@ -237,14 +238,7 @@ class AdminIfirmaController extends ModuleAdminController
     {
         $filename = 'ifirma-' . ($receipt->ifirma_number ? preg_replace('/[^0-9A-Za-z._-]/', '_', $receipt->ifirma_number) : $receipt->ifirma_id) . '.pdf';
 
-        if (ob_get_level()) {
-            ob_end_clean();
-        }
-        header('Content-Type: application/pdf');
-        header('Content-Disposition: inline; filename="' . $filename . '"');
-        header('Content-Length: ' . strlen($pdf));
-        header('Cache-Control: private, must-revalidate');
-        echo $pdf;
+        IfirmaHttpOutput::pdf($pdf, $filename);
         exit;
     }
 

@@ -2,7 +2,7 @@
 
 Loaded by `tests/bootstrap.php` (no PrestaShop needed). Call `IfirmaTestState::resetAll()` in `setUp()`; it resets every stub below and the private `Ifirma::$adminOrderRendered` guard. Constants: `_PS_VERSION_`=8.1.0, `_DB_PREFIX_`=ps_, `_MYSQL_ENGINE_`, `_PS_MODULE_DIR_` (parent of the repo, so `_PS_MODULE_DIR_.'ifirma/...'` works), `_PS_ROOT_DIR_`, `_PS_MAIL_DIR_`. Bootstrap preloads `IfirmaApiClient`, `IfirmaReceipt`, `IfirmaReceiptService`; use `IfirmaTestModuleLoader::loadModule()` (requires ifirma.php, returns `new Ifirma()` and stores it in `Module::$instances['ifirma']`), `::loadAdminController()`, `::loadFrontController('receipt')`.
 
-Note: controllers use `exit`/`die`/`header()`; those paths cannot be unit-tested in-process.
+Note: controllers use `exit`/`die`/`header()`; those paths cannot be unit-tested in-process. The exception is the PDF download of both controllers: `IfirmaHttpOutput::useHeaderSink($callable)` sends its header lines to the callable instead of `header()` (`resetAll()` restores `header()`); the callable throws after the fourth line to stop the request before the echo and the `exit` (see `HttpOutputTest`).
 
 ## Support (tests/Support)
 
