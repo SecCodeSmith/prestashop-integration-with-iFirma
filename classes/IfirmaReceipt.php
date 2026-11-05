@@ -293,4 +293,56 @@ class IfirmaReceipt extends ObjectModel
     {
         $this->duplicate_candidates = empty($candidates) ? null : json_encode(array_values($candidates));
     }
+
+    /**
+     * Marks the record as failed: the document was not issued. Sets the fields only; the caller
+     * saves.
+     *
+     * @param string $message stored as given in last_error
+     */
+    public function markError($message)
+    {
+        $this->status = self::STATUS_ERROR;
+        $this->last_error = $message;
+    }
+
+    /**
+     * Marks the outcome as unknown: the request reached iFirma, so the document may exist there.
+     * Sets the fields only; the caller saves.
+     *
+     * @param string $message stored as given in last_error
+     */
+    public function markUnknown($message)
+    {
+        $this->status = self::STATUS_UNKNOWN;
+        $this->last_error = $message;
+    }
+
+    /**
+     * Marks a non-issued record as held: the last pipeline run stopped at the hold step. Sets the
+     * fields only; the caller saves.
+     *
+     * @param string $reason stored as given in last_error
+     */
+    public function markHeld($reason)
+    {
+        $this->status = self::STATUS_HELD;
+        $this->last_error = $reason;
+    }
+
+    /**
+     * Records a delivery outcome. Sets the fields only; the caller saves. delivered_at is not
+     * part of it: a send stamps it, a disabled channel clears it and the other outcomes keep it,
+     * so the caller decides.
+     *
+     * @param string $status  one of the DELIVERY_* constants
+     * @param string $channel
+     * @param string $error   '' when there is none
+     */
+    public function recordDelivery($status, $channel, $error)
+    {
+        $this->delivery_status = $status;
+        $this->delivery_channel = $channel;
+        $this->delivery_error = $error;
+    }
 }
