@@ -19,6 +19,7 @@ if (!defined('_PS_VERSION_')) {
 }
 
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaApiClient.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaHttpStatus.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaReceipt.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaStatusSyncService.php';
 
@@ -50,7 +51,7 @@ class IfirmaCronModuleFrontController extends ModuleFrontController
         if (ob_get_level()) {
             ob_end_clean();
         }
-        header('HTTP/1.1 ' . (int) $status . ((int) $status === 200 ? ' OK' : ' Forbidden'));
+        header(IfirmaHttpStatus::statusLine($status));
         header('Content-Type: application/json');
         echo json_encode($payload);
         exit;
