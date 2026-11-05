@@ -138,6 +138,25 @@ class IfirmaPaymentMethodResolver
     }
 
     /**
+     * Serialises a merchant map to the text parseMap() reads: one "module=CODE" per line in
+     * the array's order, joined with "\n" and no trailing newline (an empty map gives ''). The
+     * entries are written as given, so for a map that parseMap() returned the text parses back
+     * to exactly that map.
+     *
+     * @param array $map pattern => code
+     * @return string
+     */
+    public static function formatMap(array $map)
+    {
+        $lines = array();
+        foreach ($map as $module => $code) {
+            $lines[] = $module . '=' . $code;
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
      * @param string $mode       MODE_ORDER or MODE_FIXED
      * @param string $fixedCode  fallback code; defaults to PRZ when empty or unknown
      * @param array  $merchantMap pattern => code, checked before the default map

@@ -119,6 +119,86 @@ class PaymentMethodResolverTest extends TestCase
         }
     }
 
+    public function testFormatMapWritesOneLinePerEntryInOrderWithoutTrailingNewline()
+    {
+        $text = IfirmaPaymentMethodResolver::formatMap(array(
+            'ps_wirepayment' => 'GTK',
+            'ps_checkpayment' => 'PRZ',
+            'mygateway*' => 'ELE',
+        ));
+
+        $this->assertSame("ps_wirepayment=GTK\nps_checkpayment=PRZ\nmygateway*=ELE", $text);
+    }
+
+    public function testFormatMapOfAnEmptyMapIsAnEmptyString()
+    {
+        $this->assertSame('', IfirmaPaymentMethodResolver::formatMap(array()));
+    }
+
+    public function roundTripMaps()
+    {
+        $everyCode = array();
+        foreach (array_keys(IfirmaPaymentMethodResolver::codes()) as $i => $code) {
+            $everyCode['module_' . $i] = $code;
+        }
+
+        return array(
+            'empty' => array(array()),
+            'one entry' => array(array('ps_checkpayment' => 'PRZ')),
+            'several entries keep their order' => array(array(
+                'ps_wirepayment' => 'GTK',
+                'ps_checkpayment' => 'PRZ',
+                'mygateway*' => 'ELE',
+            )),
+            'dot, dash, underscore and digits' => array(array('my-gate.way_2' => 'KAR', 'p24*' => 'P24')),
+            'a numeric module name' => array(array(123 => 'PRZ')),
+            'every payment code' => array($everyCode),
+            'the built-in default map' => array(IfirmaPaymentMethodResolver::defaultModuleMap()),
+        );
+    }
+
+    /**
+     * @dataProvider roundTripMaps
+     */
+    public function testParseMapOfFormatMapIsTheOriginalMap($map)
+    {
+        $this->assertSame($map, IfirmaPaymentMethodResolver::parseMap(IfirmaPaymentMethodResolver::formatMap($map)));
+    }
+
+    public function messyMapTexts()
+    {
+        return array(
+            'empty text' => array('', ''),
+            'whitespace only' => array("  \r\n\t \n", ''),
+            'comments only' => array("# one\n   # two\r\n", ''),
+            'padding, case and comments' => array(
+                "  PS_CheckPayment = prz \r\n\r\n# comment\r\nMyGateway* = ele",
+                "ps_checkpayment=PRZ\nmygateway*=ELE",
+            ),
+            'CR, LF and CRLF separators, blank lines, trailing newline' => array(
+                "a_one=PRZ\r\n\r\na_two=CZK\ra_three=GTK\n\n",
+                "a_one=PRZ\na_two=CZK\na_three=GTK",
+            ),
+            'a duplicate keeps its first position and last code' => array(
+                "a_one=PRZ\na_two=CZK\na_one=GTK",
+                "a_one=GTK\na_two=CZK",
+            ),
+        );
+    }
+
+    /**
+     * @dataProvider messyMapTexts
+     */
+    public function testFormatMapOfParseMapNormalisesTheTextAndIsStable($text, $canonical)
+    {
+        $map = IfirmaPaymentMethodResolver::parseMap($text);
+        $formatted = IfirmaPaymentMethodResolver::formatMap($map);
+
+        $this->assertSame($canonical, $formatted);
+        $this->assertSame($map, IfirmaPaymentMethodResolver::parseMap($formatted));
+        $this->assertSame($formatted, IfirmaPaymentMethodResolver::formatMap(IfirmaPaymentMethodResolver::parseMap($formatted)));
+    }
+
     public function testBuildReadsConfiguration()
     {
         Configuration::updateValue('IFIRMA_PAYMENT_METHOD_MODE', 'fixed');

@@ -401,11 +401,7 @@ class Ifirma extends Module
         $paymentMap = '';
         try {
             $parsedMap = IfirmaPaymentMethodResolver::parseMap((string) Tools::getValue('IFIRMA_PAYMENT_METHOD_MAP'));
-            $mapLines = array();
-            foreach ($parsedMap as $module => $code) {
-                $mapLines[] = $module . '=' . $code;
-            }
-            $paymentMap = implode("\n", $mapLines);
+            $paymentMap = IfirmaPaymentMethodResolver::formatMap($parsedMap);
         } catch (InvalidArgumentException $e) {
             $errors[] = $this->l('Payment method map') . ': ' . $e->getMessage();
         }
