@@ -220,11 +220,8 @@ class IfirmaReceiptService
         if ($response !== null && !empty($payload['IdentyfikatorKontrahenta'])
             && $this->contractorReferenceRejected($response, (string) $payload['IdentyfikatorKontrahenta'])) {
             $rejected = $this->extractInformacja($response);
-            $contractorInfo = new IfirmaContractorResolution(
-                null,
-                IfirmaContractorService::ACTION_FALLBACK,
+            $contractorInfo = IfirmaContractorResolution::fallback(
                 $rejected,
-                '',
                 array(
                     'code' => 'reference_rejected',
                     'params' => array('identifier' => (string) $payload['IdentyfikatorKontrahenta'], 'error' => $rejected),

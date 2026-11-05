@@ -29,6 +29,9 @@ if (!defined('_PS_VERSION_')) {
  */
 class IfirmaContractorResolution
 {
+    /** The action of an answer without a contractor identifier (IfirmaContractorService::ACTION_FALLBACK aliases it). */
+    const ACTION_FALLBACK = 'fallback';
+
     /** @var string|null */
     private $identifier;
 
@@ -73,6 +76,23 @@ class IfirmaContractorResolution
         $this->note = is_array($note) ? $note : null;
         $this->assignedIdentifier = ($this->identifier !== null && $assignedIdentifier !== null) ? (string) $assignedIdentifier : null;
         $this->readback = is_array($readback) ? $readback : array('tried' => array(), 'search' => 'none', 'search_error' => '');
+    }
+
+    /**
+     * The answer when the document has to go without a contractor identifier: no identifier, so no
+     * match, link or assigned identifier either.
+     *
+     * The value object owns the fallback action and IfirmaContractorService::ACTION_FALLBACK aliases
+     * it, so the string is defined once and the dependency runs from the service to its value object.
+     *
+     * @param string     $message  the failure text
+     * @param array|null $note
+     * @param array|null $readback null when no contractor was created, so nothing was read back
+     * @return IfirmaContractorResolution
+     */
+    public static function fallback($message, $note = null, $readback = null)
+    {
+        return new self(null, self::ACTION_FALLBACK, $message, '', $note, null, $readback);
     }
 
     /**

@@ -192,6 +192,33 @@ class IfirmaContractorResolutionTest extends TestCase
         $this->assertAFallback($r, $text, $note, $expectedReadback);
     }
 
+    /**
+     * @dataProvider fallbackProvider
+     */
+    public function testTheNamedFallbackIsTheFallbackBuiltTheLongWay($message, $note, $readback, $text, $expectedReadback)
+    {
+        $r = IfirmaContractorResolution::fallback($message, $note, $readback);
+
+        $this->assertAFallback($r, $text, $note, $expectedReadback);
+        $this->assertEquals(new IfirmaContractorResolution(null, 'fallback', $message, '', $note, null, $readback), $r);
+    }
+
+    public function testTheNamedFallbackNeedsNothingButItsMessage()
+    {
+        // a lookup or an update that failed has a note but no read-back; neither is passed on
+        $bare = IfirmaContractorResolution::fallback('iFirma said no');
+        $this->assertAFallback($bare, 'iFirma said no', null, $this->emptyReadback());
+
+        $noted = IfirmaContractorResolution::fallback('iFirma said no', $this->note());
+        $this->assertAFallback($noted, 'iFirma said no', $this->note(), $this->emptyReadback());
+    }
+
+    public function testTheNamedFallbackHasTheActionTheServiceNamesFallback()
+    {
+        // the resolution spells the action out; the service constant is what callers compare against
+        $this->assertSame(IfirmaContractorService::ACTION_FALLBACK, IfirmaContractorResolution::fallback('iFirma said no')->getAction());
+    }
+
     public function testWithoutAReadbackItAnswersTheEmptyOne()
     {
         $this->assertSame($this->emptyReadback(), (new IfirmaContractorResolution('PS-C7', 'kept', '', 'module'))->getReadback());
@@ -276,10 +303,11 @@ class IfirmaContractorResolutionTest extends TestCase
 
     public function testItOffersNoMutator()
     {
-        // immutable: the constructor, the eight readers and the array form are the whole public surface
+        // immutable: the constructor, its named form for a fallback, the eight readers and the array form
+        // are the whole public surface
         $this->assertSame(
             array(
-                '__construct', 'getIdentifier', 'getAction', 'getMessage', 'getMatchedBy', 'getLinkedIdentifier',
+                '__construct', 'fallback', 'getIdentifier', 'getAction', 'getMessage', 'getMatchedBy', 'getLinkedIdentifier',
                 'getNote', 'getAssignedId', 'getReadback', 'toArray',
             ),
             get_class_methods(IfirmaContractorResolution::class)

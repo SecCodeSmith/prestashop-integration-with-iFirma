@@ -26,7 +26,7 @@ class IfirmaContractorService
     const ACTION_KEPT = 'kept';
     const ACTION_CREATED = 'created';
     const ACTION_UPDATED = 'updated';
-    const ACTION_FALLBACK = 'fallback';
+    const ACTION_FALLBACK = IfirmaContractorResolution::ACTION_FALLBACK;
     const ACTION_DISABLED = 'disabled';
 
     /** Seconds to wait once before the second read-back pass after a confirmed create. */
@@ -171,7 +171,7 @@ class IfirmaContractorService
         if (!$this->isOk($response)) {
             $error = (string) $this->client->getLastError();
 
-            return new IfirmaContractorResolution(null, self::ACTION_FALLBACK, $error, '', $this->note('create_rejected', array('error' => $error)));
+            return IfirmaContractorResolution::fallback($error, $this->note('create_rejected', array('error' => $error)));
         }
         $sent = isset($contractor['Identyfikator']) ? trim((string) $contractor['Identyfikator']) : '';
         $node = isset($response['response']) && is_array($response['response']) ? $response['response'] : $response;
@@ -229,7 +229,7 @@ class IfirmaContractorService
             'search_error' => $readback['search_error'],
         ));
 
-        return new IfirmaContractorResolution(null, self::ACTION_FALLBACK, $message, '', $note, null, $readback);
+        return IfirmaContractorResolution::fallback($message, $note, $readback);
     }
 
     /**
@@ -364,7 +364,7 @@ class IfirmaContractorService
                     return $this->useExisting($mapped, $existing, $contractor, (string) $mapping->matched_by, 0);
                 }
                 if ($existing === false) {
-                    return new IfirmaContractorResolution(null, self::ACTION_FALLBACK, $this->client->getLastError(), '', $this->note('lookup_failed', array('identifier' => $mapped, 'error' => (string) $this->client->getLastError())));
+                    return IfirmaContractorResolution::fallback($this->client->getLastError(), $this->note('lookup_failed', array('identifier' => $mapped, 'error' => (string) $this->client->getLastError())));
                 }
                 $this->safeUnlink($idCustomer);
             }
@@ -373,7 +373,7 @@ class IfirmaContractorService
         // b. the module identifier
         $existing = $this->fetch($identifier);
         if ($existing === false) {
-            return new IfirmaContractorResolution(null, self::ACTION_FALLBACK, $this->client->getLastError(), '', $this->note('lookup_failed', array('identifier' => $identifier, 'error' => (string) $this->client->getLastError())));
+            return IfirmaContractorResolution::fallback($this->client->getLastError(), $this->note('lookup_failed', array('identifier' => $identifier, 'error' => (string) $this->client->getLastError())));
         }
         if (is_array($existing)) {
             return $this->useExisting($identifier, $existing, $contractor, IfirmaContractorMap::BY_MODULE, $idCustomer);
@@ -412,7 +412,7 @@ class IfirmaContractorService
             if (!$this->update($identifier, $existing, $contractor)) {
                 $error = (string) $this->client->getLastError();
 
-                return new IfirmaContractorResolution(null, self::ACTION_FALLBACK, $error, '', $this->note('update_failed', array('identifier' => (string) $identifier, 'error' => $error)));
+                return IfirmaContractorResolution::fallback($error, $this->note('update_failed', array('identifier' => (string) $identifier, 'error' => $error)));
             }
             $action = self::ACTION_UPDATED;
         } else {
