@@ -73,4 +73,204 @@ class IfirmaDataRequestTest extends TestCase
         $queries = $db->queries;
         $this->assertStringContainsString('ORDER BY id_ifirma_data_request DESC', end($queries));
     }
+
+    // ---- approve / reject / assertPending ------------------------------------------------
+
+    /** @return IfirmaDataRequest a saved request waiting for a decision */
+    private function pendingRequest()
+    {
+        $request = new IfirmaDataRequest();
+        $request->id_order = 7;
+        $request->id_customer = 3;
+        $request->setRequestedData(array('company' => 'ACME', 'vat_number' => '525-000-12-34'));
+        $request->save();
+
+        return $request;
+    }
+
+    /** @return array the saved row of the request */
+    private function savedRow(IfirmaDataRequest $request)
+    {
+        $rows = IfirmaTestState::objects('ifirma_data_request');
+
+        return $rows[$request->id];
+    }
+
+    /** The refusal the service throws today: same class, code, message and (empty) field errors. */
+    private function assertRefusal($code, $message, callable $call)
+    {
+        try {
+            $call();
+        } catch (IfirmaDataRequestException $e) {
+            $this->assertSame($code, $e->code_name);
+            $this->assertSame($message, $e->getMessage());
+            $this->assertSame(array(), $e->errors);
+
+            return;
+        }
+        $this->fail('expected IfirmaDataRequestException ' . $code);
+    }
+
+    /** @return array[] one case per status a request can be resolved into */
+    public function resolvedStatuses()
+    {
+        return array(
+            'approved' => array(IfirmaDataRequest::STATUS_APPROVED),
+            'rejected' => array(IfirmaDataRequest::STATUS_REJECTED),
+            'cancelled' => array(IfirmaDataRequest::STATUS_CANCELLED),
+        );
+    }
+
+    /** @return array[] notes that do not count as a reason */
+    public function blankReasons()
+    {
+        return array(
+            'empty' => array(''),
+            'spaces' => array('   '),
+            'whitespace' => array("\t\r\n "),
+            'null' => array(null),
+        );
+    }
+
+    public function testApproveSetsTheResolutionFieldsAndSavesNothing()
+    {
+        $request = $this->pendingRequest();
+        $final = array('company' => 'ACME Sp. z o.o.', 'vat_number' => '5250001234');
+
+        $request->approve('4', $final, '  looks fine ', '2026-11-01 10:00:00');
+
+        $this->assertSame(IfirmaDataRequest::STATUS_APPROVED, $request->status);
+        $this->assertSame($final, $request->getApprovedData());
+        $this->assertSame(4, $request->resolved_by);
+        $this->assertSame('looks fine', $request->admin_note);
+        $this->assertSame('2026-11-01 10:00:00', $request->date_resolved);
+        $this->assertSame(array('company' => 'ACME', 'vat_number' => '525-000-12-34'), $request->getRequestedData());
+
+        // persisting stays with the caller
+        $row = $this->savedRow($request);
+        $this->assertSame(IfirmaDataRequest::STATUS_PENDING, $row['status']);
+        $this->assertNull($row['approved_data']);
+        $this->assertNull($row['resolved_by']);
+        $this->assertNull($row['date_resolved']);
+        $request->save();
+        $row = $this->savedRow($request);
+        $this->assertSame(IfirmaDataRequest::STATUS_APPROVED, $row['status']);
+        $this->assertSame(json_encode($final), $row['approved_data']);
+    }
+
+    public function testApproveStoresAnEmptyNoteForNull()
+    {
+        $request = $this->pendingRequest();
+
+        $request->approve(4, array('company' => 'ACME'), null, '2026-11-01 10:00:00');
+
+        $this->assertSame('', $request->admin_note);
+    }
+
+    /** @dataProvider resolvedStatuses */
+    public function testApproveRefusesAResolvedRequestAndChangesNothing($status)
+    {
+        $request = $this->pendingRequest();
+        $request->status = $status;
+
+        $this->assertRefusal('not_pending', 'This request is no longer pending.', function () use ($request) {
+            $request->approve(4, array('company' => 'ACME'), 'late', '2026-11-01 10:00:00');
+        });
+
+        $this->assertSame($status, $request->status);
+        $this->assertNull($request->approved_data);
+        $this->assertNull($request->admin_note);
+        $this->assertNull($request->resolved_by);
+        $this->assertNull($request->date_resolved);
+    }
+
+    public function testRejectSetsTheResolutionFieldsAndSavesNothing()
+    {
+        $request = $this->pendingRequest();
+
+        $request->reject('4', '  NIP does not match ', '2026-11-01 11:30:00');
+
+        $this->assertSame(IfirmaDataRequest::STATUS_REJECTED, $request->status);
+        $this->assertSame('NIP does not match', $request->admin_note);
+        $this->assertSame(4, $request->resolved_by);
+        $this->assertSame('2026-11-01 11:30:00', $request->date_resolved);
+        $this->assertNull($request->approved_data);
+
+        // persisting stays with the caller
+        $row = $this->savedRow($request);
+        $this->assertSame(IfirmaDataRequest::STATUS_PENDING, $row['status']);
+        $this->assertNull($row['admin_note']);
+        $request->save();
+        $row = $this->savedRow($request);
+        $this->assertSame(IfirmaDataRequest::STATUS_REJECTED, $row['status']);
+        $this->assertSame('NIP does not match', $row['admin_note']);
+    }
+
+    /** @dataProvider resolvedStatuses */
+    public function testRejectRefusesAResolvedRequestAndChangesNothing($status)
+    {
+        $request = $this->pendingRequest();
+        $request->status = $status;
+
+        $this->assertRefusal('not_pending', 'This request is no longer pending.', function () use ($request) {
+            $request->reject(4, 'late', '2026-11-01 11:30:00');
+        });
+
+        $this->assertSame($status, $request->status);
+        $this->assertNull($request->admin_note);
+        $this->assertNull($request->resolved_by);
+        $this->assertNull($request->date_resolved);
+    }
+
+    /** @dataProvider blankReasons */
+    public function testRejectRequiresAReasonAndChangesNothing($note)
+    {
+        $request = $this->pendingRequest();
+
+        $this->assertRefusal('reason_required', 'A reason is required.', function () use ($request, $note) {
+            $request->reject(4, $note, '2026-11-01 11:30:00');
+        });
+
+        $this->assertSame(IfirmaDataRequest::STATUS_PENDING, $request->status);
+        $this->assertNull($request->admin_note);
+        $this->assertNull($request->resolved_by);
+        $this->assertNull($request->date_resolved);
+    }
+
+    public function testRejectAcceptsTheReasonZero()
+    {
+        // '0' is a real reason (trim('0') !== ''); an empty() check would wrongly refuse it.
+        $request = $this->pendingRequest();
+
+        $request->reject(4, '0', '2026-11-01 11:30:00');
+
+        $this->assertSame(IfirmaDataRequest::STATUS_REJECTED, $request->status);
+        $this->assertSame('0', $request->admin_note);
+    }
+
+    public function testRejectChecksTheStatusBeforeTheReason()
+    {
+        $request = $this->pendingRequest();
+        $request->status = IfirmaDataRequest::STATUS_CANCELLED;
+
+        $this->assertRefusal('not_pending', 'This request is no longer pending.', function () use ($request) {
+            $request->reject(4, '   ', '2026-11-01 11:30:00');
+        });
+    }
+
+    public function testAssertPendingPassesForAPendingRequest()
+    {
+        $this->assertNull($this->pendingRequest()->assertPending());
+    }
+
+    /** @dataProvider resolvedStatuses */
+    public function testAssertPendingRefusesAResolvedRequest($status)
+    {
+        $request = $this->pendingRequest();
+        $request->status = $status;
+
+        $this->assertRefusal('not_pending', 'This request is no longer pending.', function () use ($request) {
+            $request->assertPending();
+        });
+    }
 }

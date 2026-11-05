@@ -19,22 +19,6 @@ require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaDataRequest.php';
 
 /**
- * Raised when a data-change request action is refused.
- *
- * `code_name` is a machine readable reason (disabled, not_owner, document_exists,
- * pending_exists, not_pending, reason_required, invalid, invalid_token),
- * `errors` holds field => message for validation failures.
- */
-class IfirmaDataRequestException extends Exception
-{
-    /** @var array field => message */
-    public $errors = array();
-
-    /** @var string */
-    public $code_name = '';
-}
-
-/**
  * Business rules of the customer data-change request.
  *
  * Public contract:
@@ -343,8 +327,13 @@ class IfirmaDataRequestService
      */
     public function approve(IfirmaDataRequest $request, $idEmployee, ?array $editedData = null, $adminNote = '')
     {
-        if ($request->status !== IfirmaDataRequest::STATUS_PENDING) {
-            throw $this->fail('not_pending');
+        // A resolved request is refused before its edits are looked at. The entity has no
+        // translator, so its refusal is raised again here, worded by the module. approve() below
+        // repeats the check and cannot refuse after this one.
+        try {
+            $request->assertPending();
+        } catch (IfirmaDataRequestException $e) {
+            throw $this->fail($e->code_name, $e->errors);
         }
         if ($editedData !== null) {
             $errors = $this->validate($editedData);
@@ -356,11 +345,7 @@ class IfirmaDataRequestService
             $final = $this->normalizeData($request->getRequestedData());
         }
 
-        $request->setApprovedData($final);
-        $request->status = IfirmaDataRequest::STATUS_APPROVED;
-        $request->resolved_by = (int) $idEmployee;
-        $request->admin_note = trim((string) $adminNote);
-        $request->date_resolved = $this->now();
+        $request->approve((int) $idEmployee, $final, $adminNote, $this->now());
         $request->save();
 
         $this->notifyCustomer($request, 'approved');
@@ -377,17 +362,11 @@ class IfirmaDataRequestService
      */
     public function reject(IfirmaDataRequest $request, $idEmployee, $reason)
     {
-        if ($request->status !== IfirmaDataRequest::STATUS_PENDING) {
-            throw $this->fail('not_pending');
+        try {
+            $request->reject((int) $idEmployee, $reason, $this->now());
+        } catch (IfirmaDataRequestException $e) {
+            throw $this->fail($e->code_name, $e->errors);
         }
-        $reason = trim((string) $reason);
-        if ($reason === '') {
-            throw $this->fail('reason_required');
-        }
-        $request->status = IfirmaDataRequest::STATUS_REJECTED;
-        $request->admin_note = $reason;
-        $request->resolved_by = (int) $idEmployee;
-        $request->date_resolved = $this->now();
         $request->save();
 
         $this->notifyCustomer($request, 'rejected');

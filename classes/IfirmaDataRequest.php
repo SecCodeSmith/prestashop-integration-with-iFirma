@@ -14,6 +14,22 @@ if (!defined('_PS_VERSION_')) {
 }
 
 /**
+ * Raised when a data-change request action is refused.
+ *
+ * `code_name` is a machine readable reason (disabled, not_owner, document_exists,
+ * pending_exists, not_pending, reason_required, invalid, invalid_token),
+ * `errors` holds field => message for validation failures.
+ */
+class IfirmaDataRequestException extends Exception
+{
+    /** @var array field => message */
+    public $errors = array();
+
+    /** @var string */
+    public $code_name = '';
+}
+
+/**
  * Customer request to change the buyer data on a receipt/invoice.
  */
 class IfirmaDataRequest extends ObjectModel
@@ -125,6 +141,78 @@ class IfirmaDataRequest extends ObjectModel
     public function setApprovedData(array $data)
     {
         $this->approved_data = json_encode($data);
+    }
+
+    /**
+     * Refuses a request that is not waiting for a decision any more.
+     *
+     * @return void
+     * @throws IfirmaDataRequestException not_pending
+     */
+    public function assertPending()
+    {
+        if ($this->status !== self::STATUS_PENDING) {
+            throw self::refusal('not_pending', 'This request is no longer pending.');
+        }
+    }
+
+    /**
+     * Marks the request approved with the final buyer data. Only sets fields: saving it and
+     * telling the customer stay with the caller.
+     *
+     * @param int    $employeeId
+     * @param array  $final normalized buyer data the document is issued with
+     * @param string $note  admin note, stored trimmed
+     * @param string $now   "Y-m-d H:i:s"
+     * @return void
+     * @throws IfirmaDataRequestException not_pending
+     */
+    public function approve($employeeId, array $final, $note, $now)
+    {
+        $this->assertPending();
+        $this->setApprovedData($final);
+        $this->status = self::STATUS_APPROVED;
+        $this->resolved_by = (int) $employeeId;
+        $this->admin_note = trim((string) $note);
+        $this->date_resolved = $now;
+    }
+
+    /**
+     * Marks the request rejected. Only sets fields, like approve().
+     *
+     * @param int    $employeeId
+     * @param string $note  why the request was rejected: required, stored trimmed
+     * @param string $now   "Y-m-d H:i:s"
+     * @return void
+     * @throws IfirmaDataRequestException not_pending, reason_required
+     */
+    public function reject($employeeId, $note, $now)
+    {
+        $this->assertPending();
+        $reason = trim((string) $note);
+        if ($reason === '') {
+            throw self::refusal('reason_required', 'A reason is required.');
+        }
+        $this->status = self::STATUS_REJECTED;
+        $this->admin_note = $reason;
+        $this->resolved_by = (int) $employeeId;
+        $this->date_resolved = $now;
+    }
+
+    /**
+     * The entity has no translator, so the message is the untranslated default; the service
+     * raises the same refusal again, worded in the module language.
+     *
+     * @param string $code machine readable reason
+     * @param string $message
+     * @return IfirmaDataRequestException
+     */
+    private static function refusal($code, $message)
+    {
+        $e = new IfirmaDataRequestException($message);
+        $e->code_name = $code;
+
+        return $e;
     }
 
     /**
