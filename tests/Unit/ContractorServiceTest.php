@@ -979,4 +979,636 @@ class ContractorServiceTest extends TestCase
         $this->assertSame('kept', $r['action']);
         $this->assertSame('PS-C7', $r['identifier']);
     }
+
+    // ---- the exact ensure() answer of every outcome (refactor-clean-code-tda 13.1 + 13.2) -----------
+    // Each outcome is pinned in full: the object that replaces the array has to reproduce every key,
+    // in this order, with these types.
+
+    public function testEnsureAnswersTheExactArrayWhenTheSyncIsOff()
+    {
+        Configuration::updateValue('IFIRMA_CONTRACTOR_SYNC', 0);
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame(array('identifier' => null, 'action' => 'disabled', 'message' => '', 'matched_by' => '', 'linked_identifier' => null, 'note' => null, 'assigned_identifier' => null), $r);
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testEnsureWithoutAContractorIdentifierAnswersDisabledAndMakesNoCall()
+    {
+        $owned = $this->owned();
+        $owned['Identyfikator'] = '  ';
+
+        $r = $this->svc->ensure($owned, 7, $this->hints());
+
+        $this->assertSame(array('identifier' => null, 'action' => 'disabled', 'message' => '', 'matched_by' => '', 'linked_identifier' => null, 'note' => null, 'assigned_identifier' => null), $r);
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testEnsureAnswersTheExactArrayWhenTheModuleContractorIsKept()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->found());
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame(array('identifier' => 'PS-C7', 'action' => 'kept', 'message' => '', 'matched_by' => 'module', 'linked_identifier' => 'PS-C7', 'note' => null, 'assigned_identifier' => null), $r);
+    }
+
+    public function testEnsureWithoutACustomerStillNamesTheModuleAsTheMatchOfAKeptContractor()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->found());
+
+        $r = $this->svc->ensure($this->owned());
+
+        $this->assertSame(array('identifier' => 'PS-C7', 'action' => 'kept', 'message' => '', 'matched_by' => 'module', 'linked_identifier' => 'PS-C7', 'note' => null, 'assigned_identifier' => null), $r);
+        $this->assertNull($this->mapped());
+    }
+
+    public function testEnsureAnswersTheExactArrayWhenTheStoredMappingIsKept()
+    {
+        IfirmaContractorMap::link(7, 'KOWALSKI-01', 'import-nip', 'Jan Kowalski');
+        $this->t->queue('GET', '#kontrahenci/id/KOWALSKI-01\.json#', $this->rows(array($this->remote('KOWALSKI-01'))));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame(array('identifier' => 'KOWALSKI-01', 'action' => 'kept', 'message' => '', 'matched_by' => 'import-nip', 'linked_identifier' => 'KOWALSKI-01', 'note' => null, 'assigned_identifier' => null), $r);
+    }
+
+    public function testEnsureAnswersTheExactArrayWhenTheModuleContractorIsUpdated()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->found(array('Ulica' => 'Stara 2')));
+        $this->t->queue('PUT', '#kontrahenci/PS-C7\.json#', $this->ok('Zaktualizowano kontrahenta'));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame(array('identifier' => 'PS-C7', 'action' => 'updated', 'message' => '', 'matched_by' => 'module', 'linked_identifier' => 'PS-C7', 'note' => null, 'assigned_identifier' => null), $r);
+    }
+
+    public function testEnsureAnswersTheExactArrayWhenTheNipMatchIsUpdated()
+    {
+        $remote = $this->remote('ACME-02', array('Nazwa' => 'ACME Sp. z o.o.', 'NIP' => '525-224-84-81', 'OsobaFizyczna' => false));
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->rows(array($remote)));
+        $this->t->queue('PUT', '#kontrahenci/ACME-02\.json#', $this->ok('Zaktualizowano'));
+
+        $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
+
+        $this->assertSame(array('identifier' => 'ACME-02', 'action' => 'updated', 'message' => '', 'matched_by' => 'nip', 'linked_identifier' => 'ACME-02', 'note' => null, 'assigned_identifier' => null), $r);
+    }
+
+    public function testEnsureAnswersTheExactArrayWhenTheNameMatchIsUpdated()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->rows(array($this->remote('KOWALSKI-01', array('Email' => 'JAN@example.test', 'KodPocztowy' => '31-111')))));
+        $this->t->queue('PUT', '#kontrahenci/KOWALSKI-01\.json#', $this->ok('Zaktualizowano'));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame(array('identifier' => 'KOWALSKI-01', 'action' => 'updated', 'message' => '', 'matched_by' => 'name', 'linked_identifier' => 'KOWALSKI-01', 'note' => null, 'assigned_identifier' => null), $r);
+    }
+
+    public function testEnsureAnswersTheExactArrayWhenTheModuleContractorIsCreated()
+    {
+        $this->queueUntilCreate();
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame(array('identifier' => 'PS-C7', 'action' => 'created', 'message' => '', 'matched_by' => 'module', 'linked_identifier' => 'PS-C7', 'note' => null, 'assigned_identifier' => null), $r);
+    }
+
+    public function testEnsureAnswersTheExactArrayWhenTheContractorIsCreatedForNoCustomer()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
+
+        $r = $this->svc->ensure($this->owned());
+
+        $this->assertSame(array('identifier' => 'PS-C7', 'action' => 'created', 'message' => '', 'matched_by' => '', 'linked_identifier' => null, 'note' => null, 'assigned_identifier' => null), $r);
+    }
+
+    public function testEnsureAnswersTheExactArrayWhenTheContractorIsCreatedUnderAnAssignedIdentifier()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/id/124451232\.json#', $this->verifiedGet('124451232'));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame(array(
+            'identifier' => '124451232',
+            'action' => 'created',
+            'message' => '',
+            'matched_by' => 'module',
+            'linked_identifier' => '124451232',
+            'note' => array('code' => 'assigned', 'params' => array('identifier' => '124451232')),
+            'assigned_identifier' => '124451232',
+        ), $r);
+    }
+
+    public function testEnsureAnswersTheExactArrayWhenTheStoredMappingCannotBeLookedUp()
+    {
+        IfirmaContractorMap::link(7, 'KOWALSKI-01', 'nip');
+        $this->t->queue('GET', '#kontrahenci/id/KOWALSKI-01\.json#', array('status' => 0, 'error' => 'timeout'));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame(array(
+            'identifier' => null,
+            'action' => 'fallback',
+            'message' => 'cURL error: timeout',
+            'matched_by' => '',
+            'linked_identifier' => null,
+            'note' => array('code' => 'lookup_failed', 'params' => array('identifier' => 'KOWALSKI-01', 'error' => 'cURL error: timeout')),
+            'assigned_identifier' => null,
+        ), $r);
+    }
+
+    public function testEnsureAnswersTheExactArrayWhenTheModuleContractorCannotBeLookedUp()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', array('status' => 0, 'error' => 'timeout'));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame(array(
+            'identifier' => null,
+            'action' => 'fallback',
+            'message' => 'cURL error: timeout',
+            'matched_by' => '',
+            'linked_identifier' => null,
+            'note' => array('code' => 'lookup_failed', 'params' => array('identifier' => 'PS-C7', 'error' => 'cURL error: timeout')),
+            'assigned_identifier' => null,
+        ), $r);
+    }
+
+    public function testEnsureAnswersTheExactArrayWhenTheUpdateIsRejected()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->found(array('Ulica' => 'Stara 2')));
+        $this->t->queue('PUT', '#kontrahenci/#', array('body' => '{"response":{"Kod":201,"Informacja":"bad"}}'));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame(array(
+            'identifier' => null,
+            'action' => 'fallback',
+            'message' => 'Validation error in document data (Kod 201): bad',
+            'matched_by' => '',
+            'linked_identifier' => null,
+            'note' => array('code' => 'update_failed', 'params' => array('identifier' => 'PS-C7', 'error' => 'Validation error in document data (Kod 201): bad')),
+            'assigned_identifier' => null,
+        ), $r);
+    }
+
+    public function testEnsureAnswersTheExactArrayWhenTheCreateIsRejected()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"Zly kod pocztowy"}}'));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame(array(
+            'identifier' => null,
+            'action' => 'fallback',
+            'message' => 'Validation error in document data (Kod 201): Zly kod pocztowy',
+            'matched_by' => '',
+            'linked_identifier' => null,
+            'note' => array('code' => 'create_rejected', 'params' => array('error' => 'Validation error in document data (Kod 201): Zly kod pocztowy')),
+            'assigned_identifier' => null,
+        ), $r);
+        $this->assertSame(array('tried' => array(), 'search' => 'none', 'search_error' => ''), $this->svc->getLastReadback());
+    }
+
+    public function testEnsureAnswersTheExactArrayWhenTheCreateNeverReachesIFirma()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', array('status' => 0, 'error' => 'timeout'));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame(array(
+            'identifier' => null,
+            'action' => 'fallback',
+            'message' => 'cURL error: timeout',
+            'matched_by' => '',
+            'linked_identifier' => null,
+            'note' => array('code' => 'create_rejected', 'params' => array('error' => 'cURL error: timeout')),
+            'assigned_identifier' => null,
+        ), $r);
+        $this->assertSame(array('GET', 'GET', 'POST'), array_column($this->t->calls, 'method'));
+        $this->assertSame(array(), $this->waits);
+        $this->assertNull($this->mapped());
+    }
+
+    public function testEnsureAnswersTheExactArrayWhenTheCreatedContractorCannotBeReadBack()
+    {
+        $this->queueUntilCreate();
+        $this->queueReadbackMisses(4);
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->notFoundBody());
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $miss = 'Kod 208: Nie znaleziono kontrahenta';
+        $tried = array(
+            array('identifier' => 'PS-C7', 'answer' => $miss),
+            array('identifier' => '124451232', 'answer' => $miss),
+            array('identifier' => 'PS-C7', 'answer' => $miss),
+            array('identifier' => '124451232', 'answer' => $miss),
+        );
+        $this->assertSame(array(
+            'identifier' => null,
+            'action' => 'fallback',
+            'message' => 'iFirma created the contractor but it cannot be read back (PS-C7: ' . $miss . '; 124451232: ' . $miss . '); search: none.',
+            'matched_by' => '',
+            'linked_identifier' => null,
+            'note' => array('code' => 'readback_failed', 'params' => array('tried' => $tried, 'search' => 'none', 'search_error' => '')),
+            'assigned_identifier' => null,
+        ), $r);
+        $this->assertSame(array('tried' => $tried, 'search' => 'none', 'search_error' => ''), $this->svc->getLastReadback());
+        $this->assertNull($this->svc->getAssignedIdentifier());
+    }
+
+    public function testTheNipSearchAfterTheCreateFailingIsReportedWithItsMessage()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/ACME#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->queueReadbackMisses(4);
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', array('status' => 0, 'error' => 'nip search down'));
+        $this->t->queue('GET', '#kontrahenci/ACME#', $this->notFoundBody());
+
+        $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
+
+        $this->assertSame('fallback', $r['action']);
+        $this->assertSame('error', $r['note']['params']['search']);
+        $this->assertSame('cURL error: nip search down', $r['note']['params']['search_error']);
+        $miss = 'Kod 208: Nie znaleziono kontrahenta';
+        $this->assertSame(
+            'iFirma created the contractor but it cannot be read back (PS-C7: ' . $miss . '; 124451232: ' . $miss . '); search: error (cURL error: nip search down).',
+            $r['message']
+        );
+        $this->assertNull($this->mapped());
+    }
+
+    public function testTheFirstSearchErrorAfterTheCreateWinsOverTheNameSearchOne()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/ACME#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->queueReadbackMisses(4);
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', array('status' => 0, 'error' => 'nip search down'));
+        $this->t->queue('GET', '#kontrahenci/ACME#', array('status' => 0, 'error' => 'name search down'));
+
+        $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
+
+        $this->assertSame('error', $r['note']['params']['search']);
+        $this->assertSame('cURL error: nip search down', $r['note']['params']['search_error']);
+    }
+
+    public function testASecondEnsureOnTheSameInstanceCarriesNothingOverFromTheFirst()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/id/124451232\.json#', $this->verifiedGet('124451232'));
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->found());
+
+        $first = $this->svc->ensure($this->owned(), 7, $this->hints());
+        $this->assertSame('124451232', $first['assigned_identifier']);
+        $this->assertSame('124451232', $this->svc->getAssignedIdentifier());
+
+        $second = $this->svc->ensure($this->owned());
+
+        $this->assertSame(array('identifier' => 'PS-C7', 'action' => 'kept', 'message' => '', 'matched_by' => 'module', 'linked_identifier' => 'PS-C7', 'note' => null, 'assigned_identifier' => null), $second);
+        $this->assertNull($this->svc->getAssignedIdentifier());
+        $this->assertSame(array('tried' => array(), 'search' => 'none', 'search_error' => ''), $this->svc->getLastReadback());
+        $this->assertSame('', $this->svc->getLastSearchError());
+    }
+
+    public function testAKeptContractorHasNoReadback()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->found());
+
+        $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame(array('tried' => array(), 'search' => 'none', 'search_error' => ''), $this->svc->getLastReadback());
+        $this->assertNull($this->svc->getAssignedIdentifier());
+    }
+
+    public function testTheReadbackOfAConfirmedCreateListsTheAnswersUpToTheHit()
+    {
+        $miss = 'Kod 208: Nie znaleziono kontrahenta';
+
+        // found at once under the sent identifier
+        $this->queueUntilCreate();
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
+        $this->svc->ensure($this->owned(), 7, $this->hints());
+        $this->assertSame(
+            array('tried' => array(array('identifier' => 'PS-C7', 'answer' => 'found')), 'search' => 'none', 'search_error' => ''),
+            $this->svc->getLastReadback()
+        );
+
+        // found under the identifier iFirma reported, in the first pass
+        $this->queueUntilCreate();
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/id/124451232\.json#', $this->verifiedGet('124451232'));
+        $this->svc->ensure($this->owned(), 8, $this->hints());
+        $this->assertSame(
+            array(
+                'tried' => array(array('identifier' => 'PS-C7', 'answer' => $miss), array('identifier' => '124451232', 'answer' => 'found')),
+                'search' => 'none',
+                'search_error' => '',
+            ),
+            $this->svc->getLastReadback()
+        );
+
+        // found in the second pass, after the wait
+        $this->queueUntilCreate();
+        $this->queueReadbackMisses(2);
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
+        $this->svc->ensure($this->owned(), 9, $this->hints());
+        $this->assertSame(
+            array(
+                'tried' => array(
+                    array('identifier' => 'PS-C7', 'answer' => $miss),
+                    array('identifier' => '124451232', 'answer' => $miss),
+                    array('identifier' => 'PS-C7', 'answer' => 'found'),
+                ),
+                'search' => 'none',
+                'search_error' => '',
+            ),
+            $this->svc->getLastReadback()
+        );
+        $this->assertSame(array(2), $this->waits);
+    }
+
+    public function testTheReadbackOfAContractorFoundBySearchListsEveryAnswerAndTheSearch()
+    {
+        $miss = 'Kod 208: Nie znaleziono kontrahenta';
+        $this->queueUntilCreate();
+        $this->queueReadbackMisses(4);
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->rows(array(
+            $this->remote('IFI77', array('Email' => 'jan@example.test')),
+        )));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame('IFI77', $r['identifier']);
+        $this->assertSame(
+            array(
+                'tried' => array(
+                    array('identifier' => 'PS-C7', 'answer' => $miss),
+                    array('identifier' => '124451232', 'answer' => $miss),
+                    array('identifier' => 'PS-C7', 'answer' => $miss),
+                    array('identifier' => '124451232', 'answer' => $miss),
+                ),
+                'search' => 'found',
+                'search_error' => '',
+            ),
+            $this->svc->getLastReadback()
+        );
+        $this->assertSame('IFI77', $this->svc->getAssignedIdentifier());
+    }
+
+    public function testAmbiguousNipRowsAfterTheCreateStillLetTheNameSearchFindTheContractor()
+    {
+        $twoRows = $this->rows(array(
+            array_merge($this->remote('X-1'), array('Nazwa' => 'Inna Spolka A', 'NIP' => '5252248481', 'KodPocztowy' => '30-001')),
+            array_merge($this->remote('X-2'), array('Nazwa' => 'Inna Spolka B', 'NIP' => '5252248481', 'KodPocztowy' => '40-001')),
+        ));
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/ACME#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->queueReadbackMisses(4);
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $twoRows);
+        $this->t->queue('GET', '#kontrahenci/ACME#', $this->rows(array(
+            array_merge($this->remote('IFI-NAME'), array('Nazwa' => 'ACME Sp. z o.o.', 'NIP' => '5252248481', 'Email' => 'biuro@acme.test', 'OsobaFizyczna' => false)),
+        )));
+
+        $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
+
+        $this->assertSame('created', $r['action']);
+        $this->assertSame('IFI-NAME', $r['identifier']);
+        $this->assertSame('IFI-NAME', $r['assigned_identifier']);
+        $this->assertSame('found', $this->svc->getLastReadback()['search']);
+        $this->assertSame('', $this->svc->getLastReadback()['search_error']);
+    }
+
+    public function testANipRowWithoutAnIdentifierAfterTheCreateIsNotAMatch()
+    {
+        $noIdentifier = $this->remote('X-1', array('Nazwa' => 'ACME Sp. z o.o.', 'NIP' => '5252248481'));
+        unset($noIdentifier['Identyfikator']);
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/ACME#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->queueReadbackMisses(4);
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->rows(array($noIdentifier)));
+        $this->t->queue('GET', '#kontrahenci/ACME#', $this->notFoundBody());
+
+        $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
+
+        $this->assertSame('fallback', $r['action']);
+        $this->assertSame('readback_failed', $r['note']['code']);
+        $this->assertSame('none', $r['note']['params']['search']);
+        $this->assertSame('', $r['note']['params']['search_error']);
+        // the NIP and the name were searched before the create and again after it
+        $this->assertSame(
+            array('/iapi/kontrahenci/5252248481.json', '/iapi/kontrahenci/ACME%20Sp.%20z%20o.o..json', '/iapi/kontrahenci/5252248481.json', '/iapi/kontrahenci/ACME%20Sp.%20z%20o.o..json'),
+            $this->searchPaths()
+        );
+        $this->assertNull($this->mapped());
+    }
+
+    public function testANipMatchWithoutAnIdentifierIsNotUsedAndTheNameIsNotSearched()
+    {
+        $noIdentifier = $this->remote('X-1', array('Nazwa' => 'ACME Sp. z o.o.', 'NIP' => '5252248481'));
+        unset($noIdentifier['Identyfikator']);
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->rows(array($noIdentifier)));
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
+
+        $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
+
+        $this->assertSame('created', $r['action']);
+        $this->assertSame('PS-C7', $r['identifier']);
+        $this->assertSame('module', $r['matched_by']);
+        $this->assertSame(array('/iapi/kontrahenci/5252248481.json'), $this->searchPaths());
+        $this->assertSame(array(), $this->paths('PUT'));
+    }
+
+    public function testCreateSearchesNothingAndLinksNothing()
+    {
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
+
+        $this->assertTrue($this->svc->create($this->owned()));
+
+        $this->assertSame(array('POST', 'GET'), array_column($this->t->calls, 'method'));
+        $this->assertSame(array(), $this->searchPaths());
+        $this->assertNull($this->mapped());
+        $this->assertSame(array(), $this->waits);
+    }
+
+    // ---- matching rules not reached by the tests above ---------------------------------------------
+
+    public function testAContractorNameThatNormalisesToNothingIsNeverSearched()
+    {
+        $owned = array_merge($this->owned(), array('Nazwa' => '..'));
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
+
+        $r = $this->svc->ensure($owned, 7, $this->hints(array('name' => '..')));
+
+        $this->assertSame('created', $r['action']);
+        $this->assertSame(array(), $this->searchPaths());
+    }
+
+    public function testANameMatchWithAnotherNipIsNotTheBuyer()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/ACME#', $this->rows(array(
+            $this->remote('ACME-OTHER', array('Nazwa' => 'ACME Sp. z o.o.', 'NIP' => '1111111111', 'Email' => 'biuro@acme.test', 'OsobaFizyczna' => false)),
+        )));
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
+
+        $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
+
+        $this->assertSame('created', $r['action']);
+        $this->assertSame('PS-C7', $r['identifier']);
+        $this->assertSame(array(), $this->paths('PUT'));
+        $this->assertSame('PS-C7', $this->mapped()['ifirma_identifier']);
+    }
+
+    public function testANameMatchWithoutANipStillCountsWhenTheEmailConfirmsIt()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/ACME#', $this->rows(array(
+            $this->remote('ACME-NONIP', array('Nazwa' => 'ACME Sp. z o.o.', 'NIP' => '', 'Email' => 'biuro@acme.test', 'OsobaFizyczna' => false)),
+        )));
+        $this->t->queue('PUT', '#kontrahenci/ACME-NONIP\.json#', $this->ok('Zaktualizowano'));
+
+        $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
+
+        $this->assertSame('updated', $r['action']);
+        $this->assertSame('ACME-NONIP', $r['identifier']);
+        $this->assertSame('name', $r['matched_by']);
+    }
+
+    public function testSeveralNameAndEmailMatchesFallBackToThePostcode()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->rows(array(
+            $this->remote('KOWALSKI-01', array('KodPocztowy' => '30-001')),
+            $this->remote('KOWALSKI-02', array('KodPocztowy' => '00-001')),
+        )));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame('kept', $r['action']);
+        $this->assertSame('KOWALSKI-02', $r['identifier']);
+        $this->assertSame('name', $r['matched_by']);
+        $this->assertSame(array(), $this->paths('POST'));
+    }
+
+    public function testSeveralNameAndEmailMatchesWithTheSamePostcodeAreNoMatch()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->rows(array(
+            $this->remote('KOWALSKI-01', array('KodPocztowy' => '00-001')),
+            $this->remote('KOWALSKI-02', array('KodPocztowy' => '00001')),
+        )));
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame('created', $r['action']);
+        $this->assertSame('PS-C7', $r['identifier']);
+    }
+
+    // ---- search(): the rows and the message, per call ---------------------------------------------
+
+    public function testSearchAnswersTheRecordsAsAListAndSkipsWhatIsNotARecord()
+    {
+        $this->t->queue('GET', '#kontrahenci/ABC\.json#', $this->rows(array(
+            'first' => $this->remote('A-1'),
+            'junk' => 'text',
+            'second' => $this->remote('A-2'),
+        )));
+
+        $rows = $this->svc->search('ABC');
+
+        $this->assertSame(array($this->remote('A-1'), $this->remote('A-2')), $rows);
+        $this->assertSame('', $this->svc->getLastSearchError());
+    }
+
+    public function testSearchTheErrorsAreExactlyTheMessageOfTheFailure()
+    {
+        $this->t->queue('GET', '#kontrahenci/BOOM\.json#', array('status' => 0, 'error' => 'timeout'));
+        $this->assertSame(array(), $this->svc->search('BOOM'));
+        $this->assertSame('cURL error: timeout', $this->svc->getLastSearchError());
+
+        $this->t->queue('GET', '#kontrahenci/SIGN\.json#', array('body' => '{"response":{"Kod":403,"Informacja":"Bledny podpis"}}'));
+        $this->assertSame(array(), $this->svc->search('SIGN'));
+        $this->assertSame('Bledny podpis', $this->svc->getLastSearchError());
+    }
+
+    public function testSearchNamesTheKodWhenIFirmaGivesNoText()
+    {
+        $this->t->queue('GET', '#kontrahenci/NOTEXT\.json#', array('body' => '{"response":{"Kod":500,"Informacja":""}}'));
+        $this->t->queue('GET', '#kontrahenci/NOINFO\.json#', array('body' => '{"response":{"Kod":201}}'));
+
+        $this->assertSame(array(), $this->svc->search('NOTEXT'));
+        $this->assertSame('Kod 500', $this->svc->getLastSearchError());
+        $this->assertSame(array(), $this->svc->search('NOINFO'));
+        $this->assertSame('Kod 201', $this->svc->getLastSearchError());
+    }
+
+    public function testSearchWithoutAKodIsNoMatchAndNoError()
+    {
+        $this->t->queue('GET', '#kontrahenci/NOKOD\.json#', array('body' => '{"response":{"Informacja":"?"}}'));
+
+        $this->assertSame(array(), $this->svc->search('NOKOD'));
+        $this->assertSame('', $this->svc->getLastSearchError());
+    }
+
+    public function testSearchAnswerWithoutAListOfRecordsIsNoMatchAndNoError()
+    {
+        $this->t->queue('GET', '#kontrahenci/NOLIST\.json#', array('body' => '{"response":{"Kod":0,"Informacja":""}}'));
+        $this->t->queue('GET', '#kontrahenci/TEXT\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"","Wynik":"none"}}'));
+
+        $this->assertSame(array(), $this->svc->search('NOLIST'));
+        $this->assertSame('', $this->svc->getLastSearchError());
+        $this->assertSame(array(), $this->svc->search('TEXT'));
+        $this->assertSame('', $this->svc->getLastSearchError());
+    }
+
+    public function testASearchErrorBelongsToItsOwnCallOnly()
+    {
+        $this->t->queue('GET', '#kontrahenci/BOOM\.json#', array('status' => 0, 'error' => 'timeout'));
+        $this->t->queue('GET', '#kontrahenci/ABC\.json#', $this->rows(array($this->remote('A-1'))));
+
+        $this->svc->search('BOOM');
+        $this->assertSame('cURL error: timeout', $this->svc->getLastSearchError());
+
+        $this->assertCount(1, $this->svc->search('ABC'));
+        $this->assertSame('', $this->svc->getLastSearchError());
+
+        $this->assertSame(array(), $this->svc->search(''));
+        $this->assertSame('', $this->svc->getLastSearchError());
+    }
 }

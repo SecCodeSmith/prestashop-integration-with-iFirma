@@ -589,4 +589,193 @@ class AdminActionsTest extends TestCase
         $rows = IfirmaTestState::objects('ifirma_contractor_map');
         $this->assertSame('ACME-02', reset($rows)['ifirma_identifier']);
     }
+
+    // ---- contractor registration: the whole answer of every outcome (refactor-clean-code-tda 13.1 + 13.2) --
+
+    public function testRegisterContractorAnswersTheWholeEnvelopeOfACreatedRecord()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('body' => '{"response":{"Kod":208,"Informacja":"Nie znaleziono kontrahenta"}}'));
+        $this->t->queue('GET', '#kontrahenci/Jan%20K\.json#', array('body' => '{"response":{"Kod":208,"Informacja":"Nie znaleziono kontrahenta"}}'));
+        $this->t->queue('POST', '#kontrahenci\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"Dodano kontrahenta","Wynik":"124451232"}}'));
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"","Wynik":[{"Identyfikator":"PS-C5","Nazwa":"Jan K"}]}}'));
+
+        $r = $this->actions->registerContractor(15);
+
+        $this->assertSame(
+            array(
+                'success' => true,
+                'message' => 'Contractor PS-C5 created in iFirma.',
+                'data' => array(
+                    'identifier' => 'PS-C5',
+                    'action' => 'created',
+                    'message' => '',
+                    'matched_by' => 'module',
+                    'note' => null,
+                    'assigned_identifier' => null,
+                ),
+            ),
+            $r
+        );
+    }
+
+    public function testRegisterContractorAnswersTheWholeEnvelopeOfARecordCreatedUnderAnAssignedIdentifier()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('body' => '{"response":{"Kod":208,"Informacja":"Nie znaleziono kontrahenta"}}'));
+        $this->t->queue('GET', '#kontrahenci/Jan%20K\.json#', array('body' => '{"response":{"Kod":208,"Informacja":"Nie znaleziono kontrahenta"}}'));
+        $this->t->queue('POST', '#kontrahenci\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"Dodano kontrahenta","Wynik":"124451232"}}'));
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('body' => '{"response":{"Kod":208,"Informacja":"Nie znaleziono kontrahenta"}}'));
+        $this->t->queue('GET', '#kontrahenci/id/124451232\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"","Wynik":[{"Identyfikator":"124451232","Nazwa":"Jan K"}]}}'));
+
+        $r = $this->actions->registerContractor(15);
+
+        $this->assertSame(
+            array(
+                'success' => true,
+                'message' => 'Contractor 124451232 created in iFirma.',
+                'data' => array(
+                    'identifier' => '124451232',
+                    'action' => 'created',
+                    'message' => '',
+                    'matched_by' => 'module',
+                    'note' => array('code' => 'assigned', 'params' => array('identifier' => '124451232')),
+                    'assigned_identifier' => '124451232',
+                ),
+            ),
+            $r
+        );
+    }
+
+    public function testRegisterContractorAnswersTheWholeEnvelopeOfAnUpdatedRecord()
+    {
+        $outdated = array_merge(
+            IfirmaReceiptService::build($this->module)->buildContractor(Order::$instances[15]),
+            array('Miejscowosc' => 'Stare Miasto')
+        );
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('body' => json_encode(array(
+            'response' => array('Kod' => 0, 'Informacja' => '', 'Wynik' => array($outdated)),
+        ))));
+        $this->t->queue('PUT', '#kontrahenci/PS-C5\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"Zaktualizowano kontrahenta"}}'));
+
+        $r = $this->actions->registerContractor(15);
+
+        $this->assertSame(
+            array(
+                'success' => true,
+                'message' => 'Contractor PS-C5 updated in iFirma.',
+                'data' => array(
+                    'identifier' => 'PS-C5',
+                    'action' => 'updated',
+                    'message' => '',
+                    'matched_by' => 'module',
+                    'note' => null,
+                    'assigned_identifier' => null,
+                ),
+            ),
+            $r
+        );
+    }
+
+    public function testRegisterContractorAnswersTheWholeEnvelopeOfAKeptRecord()
+    {
+        $contractor = IfirmaReceiptService::build($this->module)->buildContractor(Order::$instances[15]);
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('body' => json_encode(array(
+            'response' => array('Kod' => 0, 'Informacja' => '', 'Wynik' => array($contractor)),
+        ))));
+
+        $r = $this->actions->registerContractor(15);
+
+        $this->assertSame(
+            array(
+                'success' => true,
+                'message' => 'Contractor PS-C5 already exists in iFirma and is up to date.',
+                'data' => array(
+                    'identifier' => 'PS-C5',
+                    'action' => 'kept',
+                    'message' => '',
+                    'matched_by' => 'module',
+                    'note' => null,
+                    'assigned_identifier' => null,
+                ),
+            ),
+            $r
+        );
+    }
+
+    public function testRegisterContractorAnswersTheWholeEnvelopeWhenIFirmaIsUnreachable()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('status' => 0, 'error' => 'timeout'));
+
+        $r = $this->actions->registerContractor(15);
+
+        $this->assertSame(
+            array(
+                'success' => false,
+                'message' => 'Contractor PS-C5 could not be registered: cURL error: timeout',
+                'data' => array(
+                    'identifier' => 'PS-C5',
+                    'action' => 'fallback',
+                    'message' => 'cURL error: timeout',
+                    'matched_by' => '',
+                    'note' => array('code' => 'lookup_failed', 'params' => array('identifier' => 'PS-C5', 'error' => 'cURL error: timeout')),
+                    'assigned_identifier' => null,
+                ),
+            ),
+            $r
+        );
+    }
+
+    public function testRegisterContractorAnswersTheWholeEnvelopeOfALinkToAnExistingContractor()
+    {
+        Address::$instances[7]->company = 'ACME Sp. z o.o.';
+        Address::$instances[7]->vat_number = '525-224-84-81';
+        $row = array_merge(
+            IfirmaReceiptService::build($this->module)->buildContractor(Order::$instances[15]),
+            array('Identyfikator' => 'ACME-02')
+        );
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('body' => '{"response":{"Kod":208,"Informacja":"Nie znaleziono kontrahenta"}}'));
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array($row))))));
+
+        $r = $this->actions->registerContractor(15);
+
+        $this->assertSame(
+            array(
+                'success' => true,
+                'message' => 'Linked to existing contractor ACME-02 (matched by NIP). Contractor ACME-02 already exists in iFirma and is up to date.',
+                'data' => array(
+                    'identifier' => 'ACME-02',
+                    'action' => 'kept',
+                    'message' => '',
+                    'matched_by' => 'nip',
+                    'note' => null,
+                    'assigned_identifier' => null,
+                ),
+            ),
+            $r
+        );
+    }
+
+    public function testRegisterContractorExplainsARejectedCreate()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('body' => '{"response":{"Kod":208,"Informacja":"Nie znaleziono kontrahenta"}}'));
+        $this->t->queue('GET', '#kontrahenci/Jan%20K\.json#', array('body' => '{"response":{"Kod":208,"Informacja":"Nie znaleziono kontrahenta"}}'));
+        $this->t->queue('POST', '#kontrahenci\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"Zly kod pocztowy"}}'));
+
+        $r = $this->actions->registerContractor(15);
+
+        $this->assertSame(
+            array(
+                'success' => false,
+                'message' => 'Contractor PS-C5 could not be registered: Validation error in document data (Kod 201): Zly kod pocztowy',
+                'data' => array(
+                    'identifier' => 'PS-C5',
+                    'action' => 'fallback',
+                    'message' => 'Validation error in document data (Kod 201): Zly kod pocztowy',
+                    'matched_by' => '',
+                    'note' => array('code' => 'create_rejected', 'params' => array('error' => 'Validation error in document data (Kod 201): Zly kod pocztowy')),
+                    'assigned_identifier' => null,
+                ),
+            ),
+            $r
+        );
+    }
 }

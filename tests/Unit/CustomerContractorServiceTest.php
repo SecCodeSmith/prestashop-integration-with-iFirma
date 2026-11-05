@@ -427,6 +427,47 @@ class CustomerContractorServiceTest extends TestCase
         $this->assertNotSame('', $result['errors']['ACME Sp. z o.o.']);
     }
 
+    /** Scenario: Search error - the message is the one of the failure, kept per phrase (refactor-clean-code-tda 13.1 + 13.2) */
+    public function testSearchErrorsCarryTheExactMessageOfEachFailingPhrase()
+    {
+        $this->t->queue('GET', '#kontrahenci/ACME%20Sp\.%20z%20o\.o\.\.json#', array('status' => 0, 'error' => 'timeout'));
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->body(array('Kod' => 403, 'Informacja' => 'Bledny podpis')));
+        $this->t->queue('GET', '#kontrahenci/Kowalski\.json#', $this->body(array('Kod' => 500, 'Informacja' => '')));
+
+        $result = $this->svc->searchCandidates($this->criteria(array('firstname' => 'Jan', 'lastname' => 'Kowalski', 'company' => 'ACME Sp. z o.o.')));
+
+        $this->assertSame(array('ACME Sp. z o.o.', 'Jan Kowalski', 'Kowalski'), $result['phrases']);
+        $this->assertSame(
+            array('ACME Sp. z o.o.' => 'cURL error: timeout', 'Jan Kowalski' => 'Bledny podpis', 'Kowalski' => 'Kod 500'),
+            $result['errors']
+        );
+        $this->assertSame(array(), $result['rows']);
+    }
+
+    public function testAPhraseThatFailedDoesNotMarkTheNextOneAndTheOthersKeepTheirRows()
+    {
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', array('status' => 0, 'error' => 'timeout'));
+        $this->t->queue('GET', '#kontrahenci/Kowalski\.json#', $this->results(array($this->contractor('KOWALSKI-01'))));
+
+        $result = $this->svc->searchCandidates($this->criteria(array('firstname' => 'Jan', 'lastname' => 'Kowalski')));
+
+        $this->assertSame(array('Jan Kowalski' => 'cURL error: timeout'), $result['errors']);
+        $this->assertSame(array('KOWALSKI-01'), array_column($result['rows'], 'identifier'));
+        $this->assertFalse($result['refused']);
+        $this->assertSame('', $result['reason']);
+    }
+
+    public function testAnAnswerWithoutRecordsAndWithoutAKodIsNoRowAndNoError()
+    {
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->body(array('Informacja' => '?')));
+        $this->t->queue('GET', '#kontrahenci/Kowalski\.json#', $this->body(array('Kod' => 0, 'Informacja' => '')));
+
+        $result = $this->svc->searchCandidates($this->criteria(array('firstname' => 'Jan', 'lastname' => 'Kowalski')));
+
+        $this->assertSame(array(), $result['rows']);
+        $this->assertSame(array(), $result['errors']);
+    }
+
     /** Scenario: Phone confirms a contractor */
     public function testPhoneConfirmsAContractor()
     {
