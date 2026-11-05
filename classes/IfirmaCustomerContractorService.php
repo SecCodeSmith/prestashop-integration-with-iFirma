@@ -18,6 +18,7 @@ require_once dirname(__FILE__) . '/IfirmaContractorMap.php';
 require_once dirname(__FILE__) . '/IfirmaContractorService.php';
 require_once dirname(__FILE__) . '/IfirmaCustomerInvoiceProfile.php';
 require_once dirname(__FILE__) . '/IfirmaReceipt.php';
+require_once dirname(__FILE__) . '/IfirmaRemoteDocumentCollector.php';
 require_once dirname(__FILE__) . '/IfirmaSchema.php';
 
 /**
@@ -32,14 +33,6 @@ class IfirmaCustomerContractorService
 {
     /** Search phrases sent per search at most. */
     const MAX_PHRASES = 4;
-    /** List calls one remote count may make. */
-    const REMOTE_CALL_BUDGET = 20;
-    /** iloscNaStronie of every list call. */
-    const REMOTE_PAGE_SIZE = 100;
-    /** How far back the remote count looks at most. */
-    const REMOTE_MAX_YEARS = 10;
-    /** Longest window of one list call, in days. */
-    const REMOTE_WINDOW_DAYS = 365;
     /** Longest contractor identifier the map stores. */
     const IDENTIFIER_MAX = IfirmaSchema::CONTRACTOR_IDENTIFIER_LENGTH;
     /** Identifier the module gives a contractor it registers (PS-C<id_customer>). */
@@ -478,6 +471,7 @@ class IfirmaCustomerContractorService
 
     /**
      * Counts the customer's documents in iFirma (yearly windows, newest first, call budget).
+     * IfirmaRemoteDocumentCollector makes the list calls and tally() counts what they returned.
      *
      * @param int $idCustomer
      * @return array ok, error, total, by_type, paid, period_from, period_to, calls, complete, identifier, nip
@@ -486,148 +480,61 @@ class IfirmaCustomerContractorService
     {
         $state = $this->linkState($idCustomer);
         $nip = $this->customerNip($idCustomer);
-        $result = array(
-            'ok' => true,
-            'error' => '',
-            'total' => 0,
-            'by_type' => array(self::TYPE_RECEIPT => 0, self::TYPE_INVOICE => 0, self::TYPE_OTHER => 0),
-            'paid' => 0,
-            'period_from' => '',
-            'period_to' => '',
-            'calls' => 0,
-            'complete' => true,
+        $now = $this->now();
+        $customer = new Customer((int) $idCustomer);
+        $collector = new IfirmaRemoteDocumentCollector($this->client);
+        $found = $collector->collect($state['identifier'], $nip, $now, $customer->date_add);
+        $counted = self::tally($found['docs']);
+
+        return array(
+            'ok' => $found['ok'],
+            'error' => $found['error'],
+            'total' => $counted['total'],
+            'by_type' => $counted['by_type'],
+            'paid' => $counted['paid'],
+            'period_from' => $found['period_from'],
+            'period_to' => $found['period_to'],
+            'calls' => $found['calls'],
+            'complete' => $found['complete'],
             'identifier' => $state['identifier'],
             'nip' => $nip,
         );
+    }
 
-        $today = new DateTime('@' . $this->now());
-        $today->setTime(0, 0, 0);
-        $earliest = clone $today;
-        $earliest->modify('-' . self::REMOTE_MAX_YEARS . ' years');
-        $customer = new Customer((int) $idCustomer);
-        if (preg_match('/^(\d{4}-\d{2}-\d{2})/', (string) $customer->date_add, $m)) {
-            $registered = DateTime::createFromFormat('Y-m-d H:i:s', $m[1] . ' 00:00:00', new DateTimeZone('UTC'));
-            if ($registered && $registered > $earliest) {
-                $earliest = $registered;
-            }
-        }
-        if ($earliest > $today) {
-            $earliest = clone $today;
-        }
-
-        $docs = array();
-        $kontrahentKnown = true;
-        $coveredFrom = '';
-        $to = clone $today;
-        $result['period_to'] = $today->format('Y-m-d');
-        $exhausted = false;
-
-        while ($to >= $earliest && !$exhausted) {
-            $from = clone $to;
-            $from->modify('-' . (self::REMOTE_WINDOW_DAYS - 1) . ' days');
-            if ($from < $earliest) {
-                $from = clone $earliest;
-            }
-            $base = array(
-                'dataOd' => $from->format('Y-m-d'),
-                'dataDo' => $to->format('Y-m-d'),
-                'iloscNaStronie' => self::REMOTE_PAGE_SIZE,
-            );
-
-            $queries = array();
-            if ($kontrahentKnown) {
-                $queries[] = array('kontrahent' => $state['identifier']);
-            }
-            if ($nip !== '') {
-                $queries[] = array('nipKontrahenta' => $nip);
-            }
-
-            foreach ($queries as $filter) {
-                $isKontrahent = isset($filter['kontrahent']);
-                for ($page = 1;; ++$page) {
-                    if ($result['calls'] >= self::REMOTE_CALL_BUDGET) {
-                        $exhausted = true;
-                        break 2;
-                    }
-                    $params = array_merge($base, $filter);
-                    if ($page > 1) {
-                        $params['strona'] = $page;
-                    }
-                    ++$result['calls'];
-                    $rows = $this->client->listInvoices($params, 'faktura');
-                    if ($rows === null) {
-                        if ($isKontrahent && $page === 1 && $this->contractorFilterUnknown()) {
-                            $kontrahentKnown = false;
-                            break;
-                        }
-                        $result['ok'] = false;
-                        $result['error'] = (string) $this->client->getLastError();
-
-                        return $this->failed($result);
-                    }
-                    foreach ($rows as $row) {
-                        if (is_array($row)) {
-                            $docs[self::docKey($row)] = $row;
-                        }
-                    }
-                    if (count($rows) < self::REMOTE_PAGE_SIZE) {
-                        break;
-                    }
-                }
-            }
-
-            if ($exhausted) {
-                break;
-            }
-            $coveredFrom = $from->format('Y-m-d');
-            $to = clone $from;
-            $to->modify('-1 day');
-        }
-
-        if ($exhausted) {
-            $result['complete'] = false;
-        }
-        $result['period_from'] = $coveredFrom;
-        if ($coveredFrom === '') {
-            $result['period_to'] = '';
-        }
-
+    /**
+     * Counts the documents in the rows of the list answers of a remote count. Pure: it reads nothing
+     * but $docs, so it needs no API client, Db, Configuration or clock.
+     *
+     * @param array $docs rows in any order; a document can come more than once (the last row of it
+     *                    counts) and a row that is no array is no document
+     * @return array total (distinct documents), by_type (receipt, invoice, other) and paid (the
+     *               documents paid in full, to a grosz)
+     */
+    public static function tally(array $docs)
+    {
+        $unique = array();
         foreach ($docs as $row) {
-            ++$result['total'];
-            $result['by_type'][self::remoteType(isset($row['Rodzaj']) ? $row['Rodzaj'] : '')]++;
+            if (is_array($row)) {
+                $unique[self::docKey($row)] = $row;
+            }
+        }
+
+        $out = array(
+            'total' => 0,
+            'by_type' => array(self::TYPE_RECEIPT => 0, self::TYPE_INVOICE => 0, self::TYPE_OTHER => 0),
+            'paid' => 0,
+        );
+        foreach ($unique as $row) {
+            ++$out['total'];
+            $out['by_type'][self::remoteType(isset($row['Rodzaj']) ? $row['Rodzaj'] : '')]++;
             $paid = self::amount(isset($row['Zaplacono']) ? $row['Zaplacono'] : 0);
             $gross = self::amount(isset($row['Brutto']) ? $row['Brutto'] : 0);
             if ($paid >= $gross - 0.01) {
-                ++$result['paid'];
+                ++$out['paid'];
             }
         }
 
-        return $result;
-    }
-
-    /**
-     * @param array $result
-     * @return array the result without any partial count
-     */
-    private function failed(array $result)
-    {
-        $result['total'] = 0;
-        $result['paid'] = 0;
-        $result['by_type'] = array(self::TYPE_RECEIPT => 0, self::TYPE_INVOICE => 0, self::TYPE_OTHER => 0);
-        $result['complete'] = false;
-        $result['period_from'] = '';
-        $result['period_to'] = '';
-
-        return $result;
-    }
-
-    /**
-     * @return bool true when iFirma answered Kod 201 about an unknown contractor
-     */
-    private function contractorFilterUnknown()
-    {
-        return (int) $this->client->getLastKod() === 201
-            && mb_stripos((string) $this->client->getLastError(), 'kontrahent') !== false;
+        return $out;
     }
 
     /**
