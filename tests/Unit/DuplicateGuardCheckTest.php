@@ -572,6 +572,44 @@ class DuplicateGuardCheckTest extends TestCase
         $this->assertStringContainsString('dataOd=2026-06-30&dataDo=2026-07-01&', $this->urls()[0]);
     }
 
+    public static function clockChanges()
+    {
+        // time zone, clock of the guard, date_add of the order, window_days, is the unfiltered query run (the window
+        // spans 4 calendar days; a clock change between its two midnights makes the span an hour short of, or an
+        // hour over, 4 whole days)
+        return array(
+            'clocks went forward inside the window: 4 calendar days count as 3' => array('Europe/Warsaw', '2026-03-30 12:00:00', '2026-03-27 11:00:00', 3, true),
+            'clocks went forward inside the window: 4 days do not fit in 2' => array('Europe/Warsaw', '2026-03-30 12:00:00', '2026-03-27 11:00:00', 2, false),
+            'clocks went back inside the window: 4 calendar days still count as 4' => array('Europe/Warsaw', '2026-10-27 12:00:00', '2026-10-24 11:00:00', 4, true),
+            'clocks went back inside the window: 4 days do not fit in 3' => array('Europe/Warsaw', '2026-10-27 12:00:00', '2026-10-24 11:00:00', 3, false),
+            'no clock change: 4 calendar days fit in 4' => array('Europe/Warsaw', '2026-07-01 12:00:00', '2026-06-28 11:00:00', 4, true),
+            'no clock change: 4 calendar days do not fit in 3' => array('Europe/Warsaw', '2026-07-01 12:00:00', '2026-06-28 11:00:00', 3, false),
+        );
+    }
+
+    /**
+     * @dataProvider clockChanges
+     */
+    public function testTheDaysOfTheWindowAreWholeDaysBetweenTheTwoMidnightsRoundedDown($zone, $clock, $dateAdd, $windowDays, $unfiltered)
+    {
+        $before = date_default_timezone_get();
+        date_default_timezone_set($zone);
+        try {
+            $now = strtotime($clock);
+            $order = $this->order(1, $now);
+            $order->date_add = $dateAdd;
+            $this->queueList(array());
+            $this->queueList(array());
+
+            $res = $this->guardAt($now)->check($order, array('window_days' => $windowDays));
+
+            $this->assertSame(IfirmaGuardResult::OUTCOME_PROCEED, $res->outcome);
+            $this->assertCount($unfiltered ? 2 : 1, $this->t->calls);
+        } finally {
+            date_default_timezone_set($before);
+        }
+    }
+
     // ---- the timeout option: every call to iFirma carries it ----------------------------------
 
     public static function timeouts()
