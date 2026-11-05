@@ -2071,12 +2071,15 @@ class ContractorServiceTest extends TestCase
         $this->assertSame(array(array('add', 7, 'ACME-NAME', 'name', 'ACME Sp. z o.o.')), $this->mapWrites());
     }
 
-    public function testACreatedContractorIsLinkedWithOneWriteAfterTheCreate()
+    /**
+     * @dataProvider customerIdProvider
+     */
+    public function testACreatedContractorIsLinkedWithOneWriteAfterTheCreate($idCustomer)
     {
         $this->queueUntilCreate();
         $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
 
-        $this->svc->ensure($this->owned(), 7, $this->hints());
+        $r = $this->svc->ensure($this->owned(), $idCustomer, $this->hints());
 
         $this->assertSame(array(
             'GET /iapi/kontrahenci/id/PS-C7.json',
@@ -2084,7 +2087,8 @@ class ContractorServiceTest extends TestCase
             'POST /iapi/kontrahenci.json',
             'GET /iapi/kontrahenci/id/PS-C7.json',
         ), $this->journal());
-        $this->assertSame(array(array('add', 7, 'PS-C7', 'module', 'Jan Kowalski')), $this->mapWrites());
+        $this->assertSame('module', $r->getMatchedBy());
+        $this->assertSame(array(array('add', $idCustomer, 'PS-C7', 'module', 'Jan Kowalski')), $this->mapWrites());
     }
 
     public function testARejectedUpdateOfAMatchedContractorLinksNothing()
