@@ -15,7 +15,7 @@ use PHPUnit\Framework\TestCase;
  * The words the module shows for a contractor link and for a contractor action:
  *
  * - the "matched by" label of every match code (IfirmaContractorMap::BY_*) on the order panel, on the
- *   customer panel and in the answer of the register action;
+ *   customer panel and in the answer of the register action, all three in the same words;
  * - the note of every contractor action (created, updated, kept, fallback) on the order panel.
  *
  * Every case goes through the real hook or action with a stored link, so the tests keep holding when
@@ -145,26 +145,21 @@ class ContractorLabelWordingTest extends TestCase
         ), json_decode($this->vars()['ifirma_customer_match_labels_json'], true));
     }
 
-    // ---- the register action: the note names the match in its own words ----------------------------
+    // ---- the register action: the note names the match in the words of the panels ---------------------
 
     /**
      * The codes the register action reports as a link to an existing contractor, with the words of
-     * its "(matched by %s)" note.
+     * its "(matched by %s)" note. They are the words of the panels; only the module's own code is
+     * not a link to an existing contractor.
      *
      * @return array[] code => array(code, label)
      */
     public function registerNoteWording()
     {
-        return array(
-            'nip' => array('nip', 'NIP'),
-            'name' => array('name', 'name'),
-            'email' => array('email', 'e-mail'),
-            'import-nip' => array('import-nip', 'NIP'),
-            'import-email' => array('import-email', 'e-mail'),
-            'import-name' => array('import-name', 'name'),
-            'document' => array('document', 'issued document'),
-            'manual' => array('manual', 'manual link'),
-        );
+        $cases = $this->panelWording();
+        unset($cases['module']);
+
+        return $cases;
     }
 
     /**
@@ -200,6 +195,20 @@ class ContractorLabelWordingTest extends TestCase
             $r['message']
         );
         $this->assertSame(array('GET'), array_column($this->t->calls, 'method'));
+    }
+
+    public function testRegisterNoteTranslatesTheMatchThroughTheModule()
+    {
+        $module = $this->getMockBuilder(get_class($this->module))->onlyMethods(array('l'))->getMock();
+        $module->method('l')->willReturnCallback(function ($string) {
+            return 'pl:' . $string;
+        });
+        $this->storedLinkThatIsUpToDate('ACME-02', 'import-nip');
+
+        $r = (new IfirmaAdminActions($module))->registerContractor(15);
+
+        $this->assertTrue($r['success'], $r['message']);
+        $this->assertStringContainsString('(matched by pl:import, NIP)', $r['message']);
     }
 
     public function testRegisterNoteSaysNothingOfAContractorTheModuleMadeItself()

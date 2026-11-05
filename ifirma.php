@@ -14,6 +14,7 @@ require_once __DIR__ . '/classes/IfirmaReceipt.php';
 require_once __DIR__ . '/classes/IfirmaPaymentMethodResolver.php';
 require_once __DIR__ . '/classes/IfirmaDataRequest.php';
 require_once __DIR__ . '/classes/IfirmaContractorMap.php';
+require_once __DIR__ . '/classes/IfirmaMatchLabels.php';
 require_once __DIR__ . '/classes/IfirmaContractorService.php';
 require_once __DIR__ . '/classes/IfirmaContractorImport.php';
 require_once __DIR__ . '/classes/IfirmaReceiptService.php';
@@ -272,39 +273,31 @@ class Ifirma extends Module
         return array(
             'identifier' => (string) $map->ifirma_identifier,
             'matched_by' => (string) $map->matched_by,
-            'matched_by_label' => $this->matchedByLabel((string) $map->matched_by),
+            'matched_by_label' => $this->matchLabels()->label((string) $map->matched_by),
             'name' => (string) $map->ifirma_name,
         );
     }
 
     /**
-     * @param string $matchedBy
-     * @return string
+     * The words for the codes that say how a customer came to be linked to an iFirma contractor, in
+     * the back-office language. The translation scanner only finds l() calls in this file, so the
+     * literals stay here and IfirmaMatchLabels receives them translated.
+     *
+     * @return IfirmaMatchLabels
      */
-    private function matchedByLabel($matchedBy)
+    public function matchLabels()
     {
-        switch ($matchedBy) {
-            case 'module':
-                return $this->l('module contractor');
-            case 'nip':
-                return $this->l('NIP');
-            case 'name':
-                return $this->l('name');
-            case 'email':
-                return $this->l('e-mail');
-            case 'import-nip':
-                return $this->l('import, NIP');
-            case 'import-email':
-                return $this->l('import, e-mail');
-            case 'import-name':
-                return $this->l('import, name and postcode');
-            case 'document':
-                return $this->l('attached by iFirma to an issued document');
-            case 'manual':
-                return $this->l('manual link');
-            default:
-                return $matchedBy;
-        }
+        return new IfirmaMatchLabels(array(
+            IfirmaContractorMap::BY_MODULE => $this->l('module contractor'),
+            IfirmaContractorMap::BY_NIP => $this->l('NIP'),
+            IfirmaContractorMap::BY_NAME => $this->l('name'),
+            IfirmaContractorMap::BY_EMAIL => $this->l('e-mail'),
+            IfirmaContractorMap::BY_IMPORT_NIP => $this->l('import, NIP'),
+            IfirmaContractorMap::BY_IMPORT_EMAIL => $this->l('import, e-mail'),
+            IfirmaContractorMap::BY_IMPORT_NAME => $this->l('import, name and postcode'),
+            IfirmaContractorMap::BY_DOCUMENT => $this->l('attached by iFirma to an issued document'),
+            IfirmaContractorMap::BY_MANUAL => $this->l('manual link'),
+        ));
     }
 
     /**
@@ -969,10 +962,7 @@ class Ifirma extends Module
 
         $service = IfirmaCustomerContractorService::build($this);
         $link = $service->linkState($idCustomer);
-        $labels = array();
-        foreach (array('module', 'nip', 'name', 'email', 'import-nip', 'import-email', 'import-name', 'document', 'manual') as $code) {
-            $labels[$code] = $this->matchedByLabel($code);
-        }
+        $matchLabels = $this->matchLabels();
 
         $canRegister = false;
         $registerReason = '';
@@ -989,9 +979,9 @@ class Ifirma extends Module
             'ifirma_customer_id' => $idCustomer,
             'ifirma_customer_configured' => $this->isConfigured(),
             'ifirma_customer_link' => $link,
-            'ifirma_customer_match_label' => $link['linked'] ? $this->matchedByLabel((string) $link['matched_by']) : '',
+            'ifirma_customer_match_label' => $link['linked'] ? $matchLabels->label((string) $link['matched_by']) : '',
             // JSON with <, >, & and quotes hex-escaped so it is safe inside the inline script
-            'ifirma_customer_match_labels_json' => json_encode($labels, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT),
+            'ifirma_customer_match_labels_json' => json_encode($matchLabels->labels(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT),
             'ifirma_customer_counts' => $service->localCounts($idCustomer),
             'ifirma_customer_criteria' => $service->defaultCriteria($idCustomer),
             'ifirma_customer_can_register' => $canRegister,

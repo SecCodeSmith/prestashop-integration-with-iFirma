@@ -16,6 +16,7 @@ if (!defined('_PS_VERSION_')) {
 require_once dirname(__FILE__) . '/IfirmaApiClient.php';
 require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaDataRequest.php';
+require_once dirname(__FILE__) . '/IfirmaMatchLabels.php';
 require_once dirname(__FILE__) . '/IfirmaContractorService.php';
 require_once dirname(__FILE__) . '/IfirmaCustomerContractorService.php';
 require_once dirname(__FILE__) . '/IfirmaReceiptService.php';
@@ -302,29 +303,6 @@ class IfirmaAdminActions
     }
 
     /**
-     * @param string $matchedBy
-     * @return string
-     */
-    private function matchedByLabel($matchedBy)
-    {
-        switch ($matchedBy) {
-            case 'nip':
-            case 'import-nip':
-                return $this->module->l('NIP', 'ifirmaadminactions');
-            case 'email':
-            case 'import-email':
-                return $this->module->l('e-mail', 'ifirmaadminactions');
-            case 'name':
-            case 'import-name':
-                return $this->module->l('name', 'ifirmaadminactions');
-            case 'document':
-                return $this->module->l('issued document', 'ifirmaadminactions');
-            default:
-                return $this->module->l('manual link', 'ifirmaadminactions');
-        }
-    }
-
-    /**
      * Registers the order customer as an iFirma contractor without issuing a document.
      *
      * @param int $idOrder
@@ -365,10 +343,11 @@ class IfirmaAdminActions
                 'note' => isset($result['note']) ? $result['note'] : null,
                 'assigned_identifier' => isset($result['assigned_identifier']) ? $result['assigned_identifier'] : null,
             );
-            $linked = in_array($matchedBy, array('nip', 'name', 'email', 'manual', 'document', 'import-nip', 'import-email', 'import-name'), true)
+            $matchLabels = $this->module->matchLabels();
+            $linked = in_array($matchedBy, $matchLabels->linkCodes(), true)
                 && $identifier !== (string) $contractor['Identyfikator'];
             if ($linked) {
-                $matchedLabel = $this->matchedByLabel($matchedBy);
+                $matchedLabel = $matchLabels->label($matchedBy);
                 $linkNote = sprintf(
                     $this->module->l('linked to existing contractor %s (matched by %s)', 'ifirmaadminactions'),
                     $identifier,
