@@ -27,11 +27,23 @@ if (!defined('_PS_VERSION_')) {
  */
 class IfirmaPipelineResult
 {
+    const OUTCOME_ISSUED = 'issued';
+    const OUTCOME_ALREADY_ISSUED = 'already_issued';
+    const OUTCOME_ADOPTED = 'adopted';
+    const OUTCOME_HELD = 'held';
+    const OUTCOME_SUSPECTED = 'suspected';
+    const OUTCOME_INCONCLUSIVE = 'inconclusive';
+    const OUTCOME_UNKNOWN = 'unknown';
+    const OUTCOME_RATE_LIMITED = 'rate_limited';
+    const OUTCOME_ERROR = 'error';
+    const OUTCOME_DISABLED = 'disabled';
+    const OUTCOME_NOT_CONFIGURED = 'not_configured';
+
     /** @var bool */
     public $ok = false;
 
-    /** @var string */
-    public $outcome = 'error';
+    /** @var string one of the OUTCOME_* constants */
+    public $outcome = self::OUTCOME_ERROR;
 
     /** @var string|null */
     public $stoppedAt = null;
@@ -53,4 +65,18 @@ class IfirmaPipelineResult
 
     /** @var string */
     public $trigger = 'manual';
+
+    /**
+     * The plain-data part of the result as the admin ajax payload reports it. The receipt is an
+     * entity, so the caller formats it and adds it.
+     *
+     * @return array array('outcome' => string, 'stopped_at' => string|null)
+     */
+    public function toArray()
+    {
+        return array(
+            'outcome' => $this->outcome,
+            'stopped_at' => $this->stoppedAt,
+        );
+    }
 }

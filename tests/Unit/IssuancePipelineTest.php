@@ -1007,6 +1007,39 @@ class IssuancePipelineTest extends TestCase
         $this->assertSame(array('add'), $this->receiptWriteOps());
     }
 
+    public function testAnErrorFromTheDeliveryFailsTheWholeRunAsAnError()
+    {
+        // Unlike an Exception, a PHP Error escapes the deliver step and reaches fail(),
+        // which turns the already issued run into outcome 'error'.
+        $module = new Module();
+        $service = new IfirmaReceiptService($this->client, $module);
+        $delivery = new class($this->client, $service, $module) extends IfirmaDeliveryService {
+            public function deliver(IfirmaReceipt $receipt, ?Order $order = null, array $options = array())
+            {
+                throw new Error('mail transport crashed');
+            }
+        };
+        $pipeline = new IfirmaIssuancePipeline(
+            $service,
+            new IfirmaDuplicateGuard($this->client),
+            $delivery,
+            new IfirmaDataRequestService($module),
+            $module,
+            null,
+            new IfirmaKsefService($this->client, $module)
+        );
+        $this->queueGuardNone();
+        $this->queueCreateOk();
+        $this->queueNumber();
+
+        $r = $pipeline->run($this->order());
+
+        $this->assertFalse($r->ok);
+        $this->assertSame(IfirmaPipelineResult::OUTCOME_ERROR, $r->outcome);
+        $this->assertSame('error', $r->outcome);
+        $this->assertSame('deliver', $r->stoppedAt);
+    }
+
     public function testRateLimitedGuardCreatesNoRow()
     {
         $fixed = 1700000000;

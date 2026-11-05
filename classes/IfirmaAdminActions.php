@@ -127,11 +127,8 @@ class IfirmaAdminActions
                 $options['bypass_guard'] = true;
             }
             $r = $pipeline->run($order, $options);
-            $data = array(
-                'outcome' => $r->outcome,
-                'stopped_at' => $r->stoppedAt,
-                'receipt' => $r->receipt instanceof IfirmaReceipt ? $this->receiptToArray($r->receipt) : array(),
-            );
+            $data = $r->toArray();
+            $data['receipt'] = $r->receipt instanceof IfirmaReceipt ? $this->receiptToArray($r->receipt) : array();
 
             return $this->result($r->ok, $pipeline->describe($r), $data);
         });

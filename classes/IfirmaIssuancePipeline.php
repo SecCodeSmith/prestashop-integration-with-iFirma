@@ -239,7 +239,7 @@ class IfirmaIssuancePipeline
     {
         if ($r->ok) {
             $number = $r->receipt instanceof IfirmaReceipt ? ($r->receipt->ifirma_number ?: $r->receipt->ifirma_id) : '';
-            $text = $r->outcome === 'adopted'
+            $text = $r->outcome === IfirmaPipelineResult::OUTCOME_ADOPTED
                 ? $this->module->l('Existing iFirma document adopted: %s', 'ifirmaissuancepipeline')
                 : $this->module->l('Document issued: %s', 'ifirmaissuancepipeline');
             $text = sprintf($text, $number);
@@ -290,7 +290,7 @@ class IfirmaIssuancePipeline
             $row->save();
 
             $result->receipt = $row;
-            $this->stop($result, 'held', self::STEP_HOLD, $reason);
+            $this->stop($result, IfirmaPipelineResult::OUTCOME_HELD, self::STEP_HOLD, $reason);
 
             return;
         } else {
@@ -308,7 +308,7 @@ class IfirmaIssuancePipeline
                     $this->step($result, $s, 'skipped', 'document already issued');
                 }
                 $result->ok = true;
-                $result->outcome = 'already_issued';
+                $result->outcome = IfirmaPipelineResult::OUTCOME_ALREADY_ISSUED;
                 $result->message = 'document already issued';
 
                 return;
@@ -318,7 +318,7 @@ class IfirmaIssuancePipeline
                 $this->step($result, self::STEP_GUARD, 'ok', 'existing document adopted');
                 $this->step($result, self::STEP_CREATE, 'skipped', 'adopted document');
                 $this->step($result, self::STEP_NUMBER, 'skipped', 'adopted document');
-                $result->outcome = 'adopted';
+                $result->outcome = IfirmaPipelineResult::OUTCOME_ADOPTED;
                 $result->ok = true;
                 $result->message = 'existing document adopted';
                 $adopted = true;
@@ -327,13 +327,13 @@ class IfirmaIssuancePipeline
             case IfirmaGuardResult::OUTCOME_SUSPECTED:
                 $result->receipt = $g->receipt;
                 $message = $g->receipt instanceof IfirmaReceipt ? (string) $g->receipt->last_error : 'suspected duplicate';
-                $this->stop($result, 'suspected', self::STEP_GUARD, $message);
+                $this->stop($result, IfirmaPipelineResult::OUTCOME_SUSPECTED, self::STEP_GUARD, $message);
 
                 return;
 
             case IfirmaGuardResult::OUTCOME_INCONCLUSIVE:
                 if ($g->rateLimited) {
-                    $this->stop($result, 'rate_limited', self::STEP_GUARD, (string) $g->error);
+                    $this->stop($result, IfirmaPipelineResult::OUTCOME_RATE_LIMITED, self::STEP_GUARD, (string) $g->error);
 
                     return;
                 }
@@ -345,7 +345,7 @@ class IfirmaIssuancePipeline
                 }
                 $row->save();
                 $result->receipt = $row;
-                $this->stop($result, 'inconclusive', self::STEP_GUARD, (string) $g->error);
+                $this->stop($result, IfirmaPipelineResult::OUTCOME_INCONCLUSIVE, self::STEP_GUARD, (string) $g->error);
 
                 return;
 
@@ -368,7 +368,8 @@ class IfirmaIssuancePipeline
                 $row = IfirmaReceipt::getByOrder($idOrder);
                 $result->receipt = $row;
                 $unknown = $row && $row->status === IfirmaReceipt::STATUS_UNKNOWN;
-                $this->stop($result, $unknown ? 'unknown' : 'error', self::STEP_CREATE, $e->getMessage());
+                $outcome = $unknown ? IfirmaPipelineResult::OUTCOME_UNKNOWN : IfirmaPipelineResult::OUTCOME_ERROR;
+                $this->stop($result, $outcome, self::STEP_CREATE, $e->getMessage());
 
                 return;
             }
@@ -382,7 +383,7 @@ class IfirmaIssuancePipeline
             // 4. NUMBER (createReceipt already looked it up; no further iFirma call)
             $this->step($result, self::STEP_NUMBER, 'ok', $receipt->ifirma_number ? '' : 'number not yet available');
 
-            $result->outcome = 'issued';
+            $result->outcome = IfirmaPipelineResult::OUTCOME_ISSUED;
             $result->ok = true;
             $result->message = 'document issued';
         }
@@ -478,7 +479,7 @@ class IfirmaIssuancePipeline
     {
         $this->log('iFirma pipeline: ' . $message);
         $result->ok = false;
-        $result->outcome = 'error';
+        $result->outcome = IfirmaPipelineResult::OUTCOME_ERROR;
         $result->message = (string) $message;
         if ($result->stoppedAt === null) {
             $result->stoppedAt = $this->runningStep($result);
