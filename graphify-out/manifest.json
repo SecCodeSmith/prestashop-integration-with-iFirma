@@ -6,21 +6,21 @@
     "semantic_hash": "ec1c122bc38fb5b9914ce1829f295ad3"
   },
   "classes/IfirmaApiClient.php": {
-    "mtime": 1793820105.438992,
-    "seen": 1793827967.7339222,
-    "ast_hash": "288ca4c6a281509ba3852a92d635c8a5",
+    "mtime": 1793862371.8009892,
+    "seen": 1793862691.5417988,
+    "ast_hash": "9d7d4be8fb603f44a4ac957e96e595fd",
     "semantic_hash": ""
   },
   "classes/IfirmaReceipt.php": {
-    "mtime": 1793820105.5289428,
-    "seen": 1793827967.7339559,
-    "ast_hash": "3e919c71fdde4608d66ed026cb98db80",
+    "mtime": 1793862534.33201,
+    "seen": 1793862691.5418177,
+    "ast_hash": "8173cc6d3c38d6405b80620a281cffbd",
     "semantic_hash": ""
   },
   "classes/IfirmaReceiptService.php": {
-    "mtime": 1793820105.5595942,
-    "seen": 1793827967.7339575,
-    "ast_hash": "26ca3a882a7f2e98b725fd1939bb4175",
+    "mtime": 1793862371.8056328,
+    "seen": 1793862691.5418184,
+    "ast_hash": "472850a2510f458c80a316793a2e9e25",
     "semantic_hash": ""
   },
   "classes/index.php": {
@@ -60,9 +60,9 @@
     "semantic_hash": ""
   },
   "ifirma.php": {
-    "mtime": 1793822676.3773913,
-    "seen": 1793827967.7339764,
-    "ast_hash": "79ac8596115ddb4f418d8c8d187e4790",
+    "mtime": 1793862471.7035074,
+    "seen": 1793862691.5418286,
+    "ast_hash": "eff90a8e70c8a8ac4603c474f66feccb",
     "semantic_hash": ""
   },
   "index.php": {
@@ -240,9 +240,9 @@
     "semantic_hash": "7a4fbeca10021f32441941bac76d3e4f"
   },
   ".github/workflows/ci.yml": {
-    "mtime": 1793830395.9747007,
-    "seen": 1793830500.5441535,
-    "ast_hash": "6dde7358d00a8f9afe672f70518a0a34",
+    "mtime": 1793830754.1638973,
+    "seen": 1793862691.5419285,
+    "ast_hash": "c03368e5d062d04443bab3bb8e065824",
     "semantic_hash": ""
   },
   ".github/workflows/release.yml": {
@@ -312,33 +312,33 @@
     "semantic_hash": ""
   },
   "classes/IfirmaCustomerView.php": {
-    "mtime": 1793647449.9800768,
-    "seen": 1793647720.107529,
-    "ast_hash": "e8a320ac14e93b88ad8169a4ea2990af",
+    "mtime": 1793862398.7790093,
+    "seen": 1793862691.5418055,
+    "ast_hash": "b5a517c6fd63a7f527fa638d48f67681",
     "semantic_hash": ""
   },
   "classes/IfirmaDataRequest.php": {
-    "mtime": 1793558917.9234574,
-    "seen": 1793561917.316282,
-    "ast_hash": "817cf8e65e34351b31b57c2e14cc1320",
+    "mtime": 1793862576.473468,
+    "seen": 1793862691.541806,
+    "ast_hash": "76d71a2a077d5c1b0b17f5dc2401989f",
     "semantic_hash": ""
   },
   "classes/IfirmaDataRequestService.php": {
-    "mtime": 1793566178.4729018,
-    "seen": 1793566367.38326,
-    "ast_hash": "9c36b5c8d53e61ab9bdaa0e0ce9afd7f",
+    "mtime": 1793862542.109968,
+    "seen": 1793862691.5418072,
+    "ast_hash": "6a51df36d4e90685984ca2d22d02d34a",
     "semantic_hash": ""
   },
   "classes/IfirmaDeliveryService.php": {
-    "mtime": 1793810355.7516782,
-    "seen": 1793811073.2133398,
-    "ast_hash": "2518e6b32a3bc1e357924728ea209991",
+    "mtime": 1793862371.8040216,
+    "seen": 1793862691.541808,
+    "ast_hash": "8687f17b116f5256981748de29a16f3e",
     "semantic_hash": ""
   },
   "classes/IfirmaDuplicateGuard.php": {
-    "mtime": 1793724891.2324262,
-    "seen": 1793725254.029871,
-    "ast_hash": "8ca3a790b92e474d4207b3e634186c86",
+    "mtime": 1793862371.8040216,
+    "seen": 1793862691.5418086,
+    "ast_hash": "b4121e717cf7ed2dcd5e5a5209c6130e",
     "semantic_hash": ""
   },
   "classes/IfirmaDuplicateMatcher.php": {
@@ -360,9 +360,9 @@
     "semantic_hash": ""
   },
   "classes/IfirmaIssuancePipeline.php": {
-    "mtime": 1793647420.432101,
-    "seen": 1793647720.1075356,
-    "ast_hash": "6cabd4daed89e8f5302f8e13fb53e87e",
+    "mtime": 1793862371.8056328,
+    "seen": 1793862691.5418139,
+    "ast_hash": "dd38c074762e70d6f26dd0ae0a8c4431",
     "semantic_hash": ""
   },
   "classes/IfirmaPipelineResult.php": {
@@ -372,15 +372,15 @@
     "semantic_hash": ""
   },
   "classes/IfirmaSchema.php": {
-    "mtime": 1793810514.4562552,
-    "seen": 1793811073.2133498,
-    "ast_hash": "ecd4e8c674da6742d32de4bb4ddafa4f",
+    "mtime": 1793862446.917733,
+    "seen": 1793862691.541819,
+    "ast_hash": "d1533f526a924e3ec45f780d4647383f",
     "semantic_hash": ""
   },
   "classes/IfirmaStatusSyncService.php": {
-    "mtime": 1793647449.9800768,
-    "seen": 1793647720.1075425,
-    "ast_hash": "793a3d6f597614887509420a1b2e50f2",
+    "mtime": 1793862371.8056328,
+    "seen": 1793862691.5418198,
+    "ast_hash": "472c681ec7aea82ca5ab7fe175d08dae",
     "semantic_hash": ""
   },
   "composer.json": {
@@ -390,9 +390,9 @@
     "semantic_hash": ""
   },
   "controllers/front/cron.php": {
-    "mtime": 1793559777.90069,
-    "seen": 1793561917.316296,
-    "ast_hash": "c398dab78a48a4c2e0a0dc23b6820c3e",
+    "mtime": 1793862417.8250449,
+    "seen": 1793862691.541824,
+    "ast_hash": "fe1685ffc217fe312c3325ec5686e0ba",
     "semantic_hash": ""
   },
   "controllers/front/datarequest.php": {
@@ -672,15 +672,15 @@
     "semantic_hash": ""
   },
   "tests/Unit/CustomerViewTest.php": {
-    "mtime": 1793647677.4955225,
-    "seen": 1793647720.1076114,
-    "ast_hash": "99ad0d6d0701a55e95b8d7d47e98fdbd",
+    "mtime": 1793862398.2748451,
+    "seen": 1793862691.541893,
+    "ast_hash": "5b78c49633e44098bf74843cab4ab69b",
     "semantic_hash": ""
   },
   "tests/Unit/DataRequestServiceTest.php": {
-    "mtime": 1793564146.8286996,
-    "seen": 1793564549.2124915,
-    "ast_hash": "a3073d681ca68969a90f21c139446a4b",
+    "mtime": 1793862541.826029,
+    "seen": 1793862691.5418937,
+    "ast_hash": "2ce58f5cab2b63af4245c5bc9ec24fd1",
     "semantic_hash": ""
   },
   "tests/Unit/DeliveryServiceTest.php": {
@@ -708,9 +708,9 @@
     "semantic_hash": ""
   },
   "tests/Unit/IfirmaDataRequestTest.php": {
-    "mtime": 1793558924.4606872,
-    "seen": 1793561917.316351,
-    "ast_hash": "449729c664436659c527e2ac04288b73",
+    "mtime": 1793862550.9827862,
+    "seen": 1793862691.5418983,
+    "ast_hash": "6b81089878bd3af339fb356c7c77117e",
     "semantic_hash": ""
   },
   "tests/Unit/IssuancePipelineTest.php": {
@@ -720,9 +720,9 @@
     "semantic_hash": ""
   },
   "tests/Unit/ModuleHooksTest.php": {
-    "mtime": 1793817719.098659,
-    "seen": 1793817988.15841,
-    "ast_hash": "7f8c91d750e6f7baf371a12ea208d485",
+    "mtime": 1793862471.4182086,
+    "seen": 1793862691.5419014,
+    "ast_hash": "6a7af12212abd799eeaa1a633976bf99",
     "semantic_hash": ""
   },
   "tests/Unit/PayloadBuilderTest.php": {
@@ -732,9 +732,9 @@
     "semantic_hash": ""
   },
   "tests/Unit/SchemaTest.php": {
-    "mtime": 1793810541.538154,
-    "seen": 1793811073.2134356,
-    "ast_hash": "b55c8306fb13959516526c71d2052f42",
+    "mtime": 1793862446.6827939,
+    "seen": 1793862691.5419037,
+    "ast_hash": "5d7b4d6a8f253f91578d9818c6224965",
     "semantic_hash": ""
   },
   "tests/Unit/ScriptedTransportTest.php": {
@@ -756,9 +756,9 @@
     "semantic_hash": ""
   },
   "tests/Unit/UpgradeTest.php": {
-    "mtime": 1793817728.9117374,
-    "seen": 1793817988.1584163,
-    "ast_hash": "afbcb04c5cdf4e2297b97894bf146f1c",
+    "mtime": 1793862446.3836963,
+    "seen": 1793862691.5419064,
+    "ast_hash": "d690f9e7be43c5de137c3c2af85d3c6a",
     "semantic_hash": ""
   },
   "tests/bootstrap.php": {
@@ -804,9 +804,9 @@
     "semantic_hash": ""
   },
   "upgrade/upgrade-1.1.0.php": {
-    "mtime": 1793647309.887553,
-    "seen": 1793647720.1076398,
-    "ast_hash": "2d8b9921f1787dc06a464699fe47b666",
+    "mtime": 1793862446.6827939,
+    "seen": 1793862691.5419173,
+    "ast_hash": "e1311f65e74cba512e2eed5935317dff",
     "semantic_hash": ""
   },
   "views/templates/front/index.php": {
@@ -942,15 +942,15 @@
     "semantic_hash": ""
   },
   "classes/IfirmaPaymentMethodResolver.php": {
-    "mtime": 1793635357.5641415,
-    "seen": 1793635995.0428636,
-    "ast_hash": "13b495128c32bc2e029f6f745dc2cefd",
+    "mtime": 1793862471.7035074,
+    "seen": 1793862691.5418158,
+    "ast_hash": "1846bc660c0e7ad46bf240ddb43b836e",
     "semantic_hash": ""
   },
   "tests/Unit/PaymentMethodResolverTest.php": {
-    "mtime": 1793635462.2636025,
-    "seen": 1793635995.0429397,
-    "ast_hash": "5a8deed996da6e7697c202d92fe6deff",
+    "mtime": 1793862471.7035074,
+    "seen": 1793862691.5419028,
+    "ast_hash": "9d7f4bcda4abb1195f0999b782bd0d78",
     "semantic_hash": ""
   },
   "openspec/specs/customer-receipt-visibility/spec.md": {
@@ -996,9 +996,9 @@
     "semantic_hash": ""
   },
   "classes/IfirmaContractorService.php": {
-    "mtime": 1793820105.4667704,
-    "seen": 1793827967.7339315,
-    "ast_hash": "0847f61618809ab70210bb761f4d8b05",
+    "mtime": 1793862371.8009892,
+    "seen": 1793862691.5418036,
+    "ast_hash": "fbdef7e329090c7d6f23aaf57bea1f26",
     "semantic_hash": ""
   },
   "test-stack/ifirma-mock/tests/test_mock_contractors.py": {
@@ -1074,9 +1074,9 @@
     "semantic_hash": ""
   },
   "classes/IfirmaKsefService.php": {
-    "mtime": 1793647394.0204923,
-    "seen": 1793647720.1075368,
-    "ast_hash": "48a8aa6f1c3aa8b4b34a7dcaf646a812",
+    "mtime": 1793862371.8056328,
+    "seen": 1793862691.5418146,
+    "ast_hash": "0dc2d82b3451021c12f57f51167cff02",
     "semantic_hash": ""
   },
   "test-stack/ifirma-mock/tests/test_mock_ksef.py": {
@@ -1152,9 +1152,9 @@
     "semantic_hash": ""
   },
   "classes/IfirmaCustomerContractorService.php": {
-    "mtime": 1793811914.7159946,
-    "seen": 1793812916.0657868,
-    "ast_hash": "5b612aed9c6da520deb5bcf8ebcd1cec",
+    "mtime": 1793862398.776342,
+    "seen": 1793862691.5418046,
+    "ast_hash": "e91424c4af374cd94a45e37d5eaf347d",
     "semantic_hash": ""
   },
   "tests/Stubs/Access.php": {
@@ -1170,9 +1170,9 @@
     "semantic_hash": ""
   },
   "tests/Unit/CustomerContractorServiceTest.php": {
-    "mtime": 1793811914.7169962,
-    "seen": 1793812916.0658762,
-    "ast_hash": "7d70b620e18256961115f389605409dc",
+    "mtime": 1793862398.3565247,
+    "seen": 1793862691.541892,
+    "ast_hash": "f933d7eb5940023c50c82706a6b31007",
     "semantic_hash": ""
   },
   "upgrade/upgrade-1.2.0.php": {
@@ -1332,9 +1332,9 @@
     "semantic_hash": ""
   },
   "openspec/changes/refactor-clean-code-tda/design.md": {
-    "mtime": 1793830439.459306,
-    "seen": 1793830500.544265,
-    "ast_hash": "0b5edbefb4dcc1d7284ccc7faf911474",
+    "mtime": 1793830755.1001186,
+    "seen": 1793862691.5419755,
+    "ast_hash": "4263bfcf52b9ea84fe66ab52965477fa",
     "semantic_hash": ""
   },
   "openspec/changes/refactor-clean-code-tda/proposal.md": {
@@ -1344,9 +1344,9 @@
     "semantic_hash": ""
   },
   "openspec/changes/refactor-clean-code-tda/tasks.md": {
-    "mtime": 1793830470.7156074,
-    "seen": 1793830500.5442688,
-    "ast_hash": "6d6c554e2bafef4967496aa4f627ede2",
+    "mtime": 1793862675.8189495,
+    "seen": 1793862691.5419772,
+    "ast_hash": "556ea0f906dffb2733828c79e60817e0",
     "semantic_hash": ""
   },
   "openspec/changes/refactor-srp-splits/.openspec.yaml": {
@@ -1407,6 +1407,30 @@
     "mtime": 1793829629.4881363,
     "seen": 1793829667.9154243,
     "ast_hash": "99384d545a2d113a6cddc061ca6c204f",
+    "semantic_hash": ""
+  },
+  "classes/IfirmaHttpStatus.php": {
+    "mtime": 1793862417.8208768,
+    "seen": 1793862691.5418117,
+    "ast_hash": "37748c83e83c6e559ec5d4250fa141e8",
+    "semantic_hash": ""
+  },
+  "tests/Unit/ApiClientFactoryTest.php": {
+    "mtime": 1793862371.4918466,
+    "seen": 1793862691.541885,
+    "ast_hash": "ddf9db878ad90fabce40322bfbf43a31",
+    "semantic_hash": ""
+  },
+  "tests/Unit/HttpStatusTest.php": {
+    "mtime": 1793862417.8250449,
+    "seen": 1793862691.5418975,
+    "ast_hash": "b01dcc592f9ccc77dac363c5b47143c8",
+    "semantic_hash": ""
+  },
+  "tests/Unit/IfirmaReceiptTest.php": {
+    "mtime": 1793862504.6462462,
+    "seen": 1793862691.541899,
+    "ast_hash": "0f1fb7caaf8790f162412e30f36bc680",
     "semantic_hash": ""
   }
 }

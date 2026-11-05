@@ -32,8 +32,15 @@ No task starts on a red tree. Each task is one commit straight on master, with n
 
 ## 2. API-client factory (Tier 1)
 
-- [ ] 2.1 Add a characterisation test for `IfirmaApiClient::fromConfiguration()`, written against the intended behaviour: it reads the user and three keys, uses the explicit base URL when given, and falls back to `IFIRMA_BASE_URL`. Then implement it. Verify that the new test and the full suite pass.
-- [ ] 2.2 Replace the inline client construction in the 8 `build()` methods (ReceiptService, IssuancePipeline, DeliveryService, StatusSyncService, KsefService, DuplicateGuard, ContractorService, CustomerContractorService) with the factory. Characterise first: add a `build()` smoke test per class asserting that the built client is configured from `Configuration`. Verify that `git grep -n "new IfirmaApiClient(" classes` shows only the factory, the suite is green, and diff-cover is at 100%.
+- [x] 2.1 Add a characterisation test for `IfirmaApiClient::fromConfiguration()`, written against the intended behaviour: it reads the user and three keys, uses the explicit base URL when given, and falls back to `IFIRMA_BASE_URL`. Then implement it. Verify that the new test and the full suite pass. Evidence (commit `e7c3992`, test and factory squashed so the history bisects cleanly):
+  - `ApiClientFactoryTest` (5 tests) was written first and failed on the missing method.
+  - Its user differs from the stub's `PS_SHOP_EMAIL`, so a factory reading the wrong key fails it; checked: that mutant fails 4 of 5 tests.
+  - Gate against `6c841c1`: `OK (1085 tests)`, 9 changed lines, 100%.
+- [x] 2.2 Replace the inline client construction in the 8 `build()` methods (ReceiptService, IssuancePipeline, DeliveryService, StatusSyncService, KsefService, DuplicateGuard, ContractorService, CustomerContractorService) with the factory. Characterise first: add a `build()` smoke test per class asserting that the built client is configured from `Configuration`. Verify that `git grep -n "new IfirmaApiClient(" classes` shows only the factory, the suite is green, and diff-cover is at 100%. Evidence:
+  - Characterisation `81d8fea` adds 22 tests, green on the unchanged inline code. Each `build()` client signs with the configured user and the right key (three distinct keys, so a swap shows) and falls back to the production URL. The Pipeline, Delivery and CustomerContractor builds share one client with their collaborators.
+  - Refactor `27be949` also converts the module's own `buildApiClient()` (`ifirma.php`), a ninth site with identical semantics.
+  - `git grep -n "new IfirmaApiClient(" classes ifirma.php controllers` prints only `classes/IfirmaApiClient.php:83`, the factory.
+  - Gate against `e7c3992`: `OK (1107 tests)`, 10 changed lines, 100%.
 
 ## 3. AdminActions error guard (Tier 1)
 
@@ -49,28 +56,59 @@ No task starts on a red tree. Each task is one commit straight on master, with n
 ## 5. Outcome and status constants (Tier 1)
 
 - [ ] 5.1 Add `IfirmaPipelineResult::OUTCOME_*` constants and `toArray()`. Replace the outcome literals in the Pipeline and the branches in AdminActions (`~111-120`, `~773`), and the result re-assembly. Verify that IssuancePipelineTest and AdminActionsTest are green and diff-cover is at 100%.
-- [ ] 5.2 Replace the raw status literals in IfirmaCustomerView and IfirmaCustomerContractorService with `IfirmaReceipt::STATUS_*` / `IfirmaDataRequest::STATUS_*` constants. Verify that `git grep -nE "'(held|pending|duplicate_suspected)'" classes/IfirmaCustomerView.php classes/IfirmaCustomerContractorService.php` is empty, the suite is green, and diff-cover is at 100%.
+- [x] 5.2 Replace the raw status literals in IfirmaCustomerView and IfirmaCustomerContractorService with `IfirmaReceipt::STATUS_*` / `IfirmaDataRequest::STATUS_*` constants. Verify that no status value is compared or listed as a literal in those two files, the suite is green, and diff-cover is at 100%. The check is `git grep -nE "(===|!==|==|!=) '(created|paid|held|error|unknown|duplicate_suspected|pending|approved|rejected|cancelled)'|array\([^)]*'(created|paid|held|error|unknown|duplicate_suspected|pending|approved|rejected|cancelled)'" -- classes/IfirmaCustomerView.php classes/IfirmaCustomerContractorService.php`, which must be empty.
+
+  It replaced the first check, ``git grep -nE "'(held|pending|duplicate_suspected)'" …``, which cannot pass as written. Three of its hits are not statuses:
+  - `IfirmaCustomerView::STATE_HELD`, the view state for a pending data request;
+  - the `'held'` key of `localCounts()` (two hits);
+  - both are consumed by templates and CSS, and tying them to `IfirmaReceipt::STATUS_HELD` would misstate them.
+
+  Evidence:
+  - Characterisation `28f27bf` passes on base: the view-state and `localCounts()` branches.
+  - Refactor `8e565fb`.
+  - The status-aware grep finds 0 hits, against 11 on `6c841c1`.
+  - Gate against `27be949`: `OK (1112 tests)`, 8 changed lines, 100%.
 
 ## 6. HTTP status line (Tier 1)
 
-- [ ] 6.1 Extract the status-line construction from `controllers/front/cron.php::respond` into a small pure helper that maps the status code to its reason phrase, and test it with 200, 403, 404, 429 and 500. Use it in `cron.php`. Verify that a 403 still yields `HTTP/1.1 403 Forbidden`, the suite is green, and diff-cover is at 100% on the helper. `cron.php` itself is exempt from the gate (design D2), so change only the one status-line line there.
+- [x] 6.1 Extract the status-line construction from `controllers/front/cron.php::respond` into a small pure helper that maps the status code to its reason phrase, and test it with 200, 403, 404, 429 and 500. Use it in `cron.php`. Verify that a 403 still yields `HTTP/1.1 403 Forbidden`, the suite is green, and diff-cover is at 100% on the helper. `cron.php` itself is exempt from the gate (design D2), so change only the one status-line line there. Evidence (commit `685a213`):
+  - The new `IfirmaHttpStatus::statusLine()` maps 200, 403, 404, 429 and 500 to their standard reason phrases. Any other code from 100 to 599 gets `Unknown Status`, and anything else becomes 500.
+  - `HttpStatusTest` pins all of this; `HTTP/1.1 200 OK` and `HTTP/1.1 403 Forbidden` are unchanged.
+  - The `cron.php` diff is exactly the new `require_once` and the `header()` line.
+  - Gate against `8e565fb`: `OK (1129 tests)`, 5 changed lines, 100%.
 
 ## 7. Schema helper (Tier 1)
 
-- [ ] 7.1 Characterise `widenContractorMapIdentifier` and `ensureReceiptKsefColumns` against the Db stub (the column-present and column-absent paths). Then extract `columnExists($table, $column)` and a `CONTRACTOR_IDENTIFIER_LENGTH = 64` constant. Verify that SchemaTest and UpgradeTest are green and diff-cover is at 100%.
+- [x] 7.1 Characterise `widenContractorMapIdentifier` and `ensureReceiptKsefColumns` against the Db stub (the column-present and column-absent paths). Then extract `columnExists($table, $column)` and a `CONTRACTOR_IDENTIFIER_LENGTH = 64` constant. Verify that SchemaTest and UpgradeTest are green and diff-cover is at 100%. Evidence:
+  - Characterisation `708ff3f` passes on base. It covers the column-present and column-absent paths of both methods and of `upgrade-1.1.0.php`'s probe.
+  - Refactor `fbdfcdb`. `columnExists()` serves `ensureReceiptKsefColumns()` and `upgrade-1.1.0.php`. Its SQL is byte-identical, and both replaced `$db` locals were `Db::getInstance()`. It returns `(int) … !== 0`, so it keeps the old truthiness even for a negative answer, as the review asked.
+  - Gate against `685a213`: `OK (1159 tests)`, 8 changed lines, 100%.
+  - Left for later: 64 is still written out in `IfirmaContractorMap` (`link()` and the ObjectModel size), `IfirmaContractorImport::MAX_IDENTIFIER` and `IfirmaCustomerContractorService::IDENTIFIER_MAX`.
 
 ## 8. Payment map serialiser (Tier 1)
 
-- [ ] 8.1 Add `IfirmaPaymentMethodResolver::formatMap(array)` with a round-trip test (`parseMap(formatMap(x)) == x` for representative maps, including empty and whitespace cases). Replace the hand-built `module=CODE` lines in `ifirma.php::postProcessConfiguration`. Verify that the ModuleHooksTest `getContent` tests are green and diff-cover is at 100%.
+- [x] 8.1 Add `IfirmaPaymentMethodResolver::formatMap(array)` with a round-trip test (`parseMap(formatMap(x)) == x` for representative maps, including empty and whitespace cases). Replace the hand-built `module=CODE` lines in `ifirma.php::postProcessConfiguration`. Verify that the ModuleHooksTest `getContent` tests are green and diff-cover is at 100%. Evidence:
+  - Characterisation `11771d3` pins the settings POST's stored payment-map value and its validation, and passes on base.
+  - Refactor `0d2a0ca`: `formatMap()` has round-trip tests, and the five hand-built lines in `ifirma.php` become one call.
+  - Gate against `fbdfcdb`: `OK (1182 tests)`, 5 changed lines, 100%.
+  - One older line of the method, `$tolerance = '0';`, is unreachable and untouched.
 
 ## 9. IfirmaReceipt intent methods (Tier 2)
 
-- [ ] 9.1 Add `tests/Unit/IfirmaReceiptTest.php` covering `markError`, `markUnknown`, `markHeld` and `recordDelivery` (fields set; no save inside). Implement the methods. Verify that the new tests pass.
+- [x] 9.1 Add `tests/Unit/IfirmaReceiptTest.php` covering `markError`, `markUnknown`, `markHeld` and `recordDelivery` (fields set; no save inside). Implement the methods. Verify that the new tests pass. Evidence (commit `1dfd935`):
+  - The methods only set fields and never save. They were derived from today's callers, which task 9.2 will switch over.
+  - Messages are stored as given: null and an integer were added at integration, because ReceiptService stores iFirma's `Informacja` raw. A `(string)` cast mutant now fails.
+  - Gate against `0d2a0ca`: `OK (1207 tests)`, 9 changed lines, 100%.
 - [ ] 9.2 Replace the field-by-field status mutations in ReceiptService (`~253-265`), Pipeline (`ensureRow`/`fail`), DeliveryService and StatusSyncService (`applyRow`) with the intent methods, keeping the existing `save()` calls. Verify that the suite is green, the number of `save()` calls per path is unchanged (asserted in the existing Db stub tests where available), and diff-cover is at 100%.
 
 ## 10. IfirmaDataRequest approve/reject (Tier 2)
 
-- [ ] 10.1 Add `approve()` and `reject()` to `IfirmaDataRequest`, with tests in IfirmaDataRequestTest (pending guard, fields set, same exception as today). Make the service delegate to them. Verify that DataRequestServiceTest and IfirmaDataRequestTest are green and diff-cover is at 100%.
+- [x] 10.1 Add `approve()` and `reject()` to `IfirmaDataRequest`, with tests in IfirmaDataRequestTest (pending guard, fields set, same exception as today). Make the service delegate to them. Verify that DataRequestServiceTest and IfirmaDataRequestTest are green and diff-cover is at 100%. Evidence:
+  - Characterisation `3db1313` covers the service's approve and reject paths and passes on base.
+  - Refactor `6f25518`: the entity holds the pending guard and the reason check, and throws the same refusals as before. The service keeps `save()`, the side effects and the mail calls.
+  - A reason of `'0'` stays valid, pinned at integration; an `empty()` mutant now fails.
+  - Gate against `1dfd935`: `OK (1234 tests)`, 26 changed lines, 100%.
+  - Accepted: on a refused reject, the service now reads its injected clock once, because the time is passed as an argument. The default clock is a plain `date()`, so production behaviour is unchanged.
 
 ## 11. Data-request notifier (Tier 2)
 
