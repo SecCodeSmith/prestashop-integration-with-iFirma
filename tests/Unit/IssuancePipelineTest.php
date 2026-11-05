@@ -231,6 +231,24 @@ class IssuancePipelineTest extends TestCase
         return $names;
     }
 
+    /**
+     * The four values of the delivery result the pipeline kept, keyed as deliver() reported them before it
+     * returned an object.
+     *
+     * @return array array('ok' => bool, 'status' => string, 'channel' => string, 'message' => string)
+     */
+    private function deliveryFields(IfirmaPipelineResult $r)
+    {
+        $this->assertInstanceOf(IfirmaDeliveryResult::class, $r->delivery);
+
+        return array(
+            'ok' => $r->delivery->isSent(),
+            'status' => $r->delivery->getStatus(),
+            'channel' => $r->delivery->getChannel(),
+            'message' => $r->delivery->getMessage(),
+        );
+    }
+
     private function pendingRequest()
     {
         $req = new IfirmaDataRequest();
@@ -300,7 +318,7 @@ class IssuancePipelineTest extends TestCase
         $this->assertSame('sent', $row['delivery_status']);
         $this->assertSame('shop_mail', $row['delivery_channel']);
         $this->assertCount(1, Mail::$sent);
-        $this->assertSame('sent', $r->delivery['status']);
+        $this->assertSame('sent', $r->delivery->getStatus());
         $this->assertStringContainsString('7/2026', $this->pipeline->describe($r));
     }
 
@@ -440,7 +458,7 @@ class IssuancePipelineTest extends TestCase
         $this->assertSame('issued', $r->outcome);
         $this->assertSame('deliver', $r->stoppedAt);
         $this->assertSame('deliver:stopped', $this->stepNames($r)[5]);
-        $this->assertSame('failed', $r->delivery['status']);
+        $this->assertSame('failed', $r->delivery->getStatus());
         $this->assertSame('failed', $this->dbRow()['delivery_status']);
         $this->assertStringContainsString('Delivery step failed', $this->pipeline->describe($r));
     }
@@ -485,7 +503,7 @@ class IssuancePipelineTest extends TestCase
         $this->assertNull($r->stoppedAt);
         $this->assertSame(
             array('ok' => true, 'status' => 'sent', 'channel' => 'shop_mail', 'message' => ''),
-            $r->delivery
+            $this->deliveryFields($r)
         );
     }
 
@@ -503,7 +521,7 @@ class IssuancePipelineTest extends TestCase
         $this->assertSame(array('step' => 'deliver', 'status' => 'ok', 'message' => 'skipped'), $r->steps[5]);
         $this->assertSame(
             array('ok' => true, 'status' => 'skipped', 'channel' => 'none', 'message' => ''),
-            $r->delivery
+            $this->deliveryFields($r)
         );
         $this->assertCount(0, Mail::$sent);
     }
@@ -526,7 +544,7 @@ class IssuancePipelineTest extends TestCase
         );
         $this->assertSame(
             array('ok' => true, 'status' => 'skipped', 'channel' => 'shop_mail', 'message' => 'external document - not auto-delivered'),
-            $r->delivery
+            $this->deliveryFields($r)
         );
     }
 
@@ -549,7 +567,7 @@ class IssuancePipelineTest extends TestCase
         $this->assertSame('deliver', $r->stoppedAt);
         $this->assertSame(
             array('ok' => false, 'status' => 'failed', 'channel' => 'shop_mail', 'message' => $message),
-            $r->delivery
+            $this->deliveryFields($r)
         );
         $this->assertSame('Document issued: 7/2026 Delivery step failed: ' . $message, $this->pipeline->describe($r));
     }
@@ -1080,7 +1098,7 @@ class IssuancePipelineTest extends TestCase
         $this->assertSame('mail server down', $r->steps[5]['message']);
         $this->assertSame(
             array('ok' => false, 'status' => 'failed', 'channel' => '', 'message' => 'mail server down'),
-            $r->delivery
+            $this->deliveryFields($r)
         );
         $this->assertStringContainsString('Delivery step failed: mail server down', $pipeline->describe($r));
         // the delivery never ran, so it recorded nothing

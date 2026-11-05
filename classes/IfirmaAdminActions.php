@@ -227,14 +227,14 @@ class IfirmaAdminActions
             $delivery = IfirmaDeliveryService::build($this->module);
             $d = $delivery->resend($receipt, $order);
             $receipt = new IfirmaReceipt((int) $receipt->id);
-            $message = isset($d['message']) ? (string) $d['message'] : '';
-            if (!empty($d['ok'])) {
+            $message = $d->getMessage();
+            if ($d->isSent()) {
                 $message = $this->module->l('Document sent.', 'ifirmaadminactions') . ($message !== '' ? ' ' . $message : '');
             } elseif ($message === '') {
                 $message = $this->module->l('The document could not be sent.', 'ifirmaadminactions');
             }
 
-            return $this->result(!empty($d['ok']), $message, array(
+            return $this->result($d->isSent(), $message, array(
                 'receipt' => $this->receiptToArray($receipt),
                 'delivery' => $delivery->describeDelivery($receipt),
             ));

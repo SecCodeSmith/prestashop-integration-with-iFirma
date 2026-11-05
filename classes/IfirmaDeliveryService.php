@@ -17,8 +17,9 @@
  * automatic fallback to shop mail recorded as shop_mail_fallback) and none.
  *
  * Contract:
- *  - deliver(receipt, order, options) -> array(ok, status sent|failed|skipped|disabled, channel, message);
- *    options: manual (bool), channel (override). Never throws; records the outcome on the receipt.
+ *  - deliver(receipt, order, options) -> IfirmaDeliveryResult (isSent(), getStatus() sent|failed|skipped|
+ *    disabled, getChannel(), getMessage()); options: manual (bool), channel (override).
+ *    Never throws; records the outcome on the receipt.
  *  - resend(receipt, order) = deliver() with manual => true.
  *  - sendViaIfirma() / sendViaShopMail() -> array(ok, message).
  *  - describeDelivery(receipt) -> short human string for the admin panel.
@@ -31,6 +32,7 @@ if (!defined('_PS_VERSION_')) {
 require_once dirname(__FILE__) . '/IfirmaApiClient.php';
 require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaReceiptService.php';
+require_once dirname(__FILE__) . '/IfirmaDeliveryResult.php';
 
 class IfirmaDeliveryService
 {
@@ -140,7 +142,7 @@ class IfirmaDeliveryService
      * @param IfirmaReceipt $receipt
      * @param Order|null    $order
      * @param array         $options manual (bool), channel (override)
-     * @return array array('ok', 'status', 'channel', 'message')
+     * @return IfirmaDeliveryResult
      */
     public function deliver(IfirmaReceipt $receipt, ?Order $order = null, array $options = array())
     {
@@ -210,7 +212,7 @@ class IfirmaDeliveryService
      *
      * @param IfirmaReceipt $receipt
      * @param Order|null    $order
-     * @return array
+     * @return IfirmaDeliveryResult
      */
     public function resend(IfirmaReceipt $receipt, ?Order $order = null)
     {
@@ -524,10 +526,10 @@ class IfirmaDeliveryService
      * @param string $status
      * @param string $channel
      * @param string $message
-     * @return array
+     * @return IfirmaDeliveryResult
      */
     private function result($ok, $status, $channel, $message)
     {
-        return array('ok' => $ok, 'status' => $status, 'channel' => $channel, 'message' => $message);
+        return new IfirmaDeliveryResult($ok, $status, $channel, $message);
     }
 }

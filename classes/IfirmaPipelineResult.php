@@ -21,7 +21,7 @@ if (!defined('_PS_VERSION_')) {
  *             rate_limited | error | disabled | not_configured
  * stoppedAt   step constant (hold, guard, create, number, deliver) that stopped the run, or null
  * message     text of the stopping condition (empty on success)
- * receipt     IfirmaReceipt|null, guard IfirmaGuardResult|null, delivery array|null (deliver() result)
+ * receipt     IfirmaReceipt|null, guard IfirmaGuardResult|null, delivery IfirmaDeliveryResult|null (deliver() result)
  * steps       list of array('step', 'status' => ok|skipped|stopped|failed, 'message')
  * trigger     status | manual | resume | issue_anyway
  */
@@ -57,7 +57,7 @@ class IfirmaPipelineResult
     /** @var IfirmaGuardResult|null */
     public $guard = null;
 
-    /** @var array|null */
+    /** @var IfirmaDeliveryResult|null */
     public $delivery = null;
 
     /** @var array */

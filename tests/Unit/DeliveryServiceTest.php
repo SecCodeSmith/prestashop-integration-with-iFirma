@@ -128,14 +128,29 @@ class DeliveryServiceTest extends TestCase
         return array_column(IfirmaTestState::writes('ifirma_receipt'), 'op');
     }
 
+    /**
+     * The four values of a delivery result, keyed as deliver() reported them before it returned an object.
+     *
+     * @return array array('ok' => bool, 'status' => string, 'channel' => string, 'message' => string)
+     */
+    private function fieldsOf(IfirmaDeliveryResult $res)
+    {
+        return array(
+            'ok' => $res->isSent(),
+            'status' => $res->getStatus(),
+            'channel' => $res->getChannel(),
+            'message' => $res->getMessage(),
+        );
+    }
+
     public function testShopMailSuccess()
     {
         $this->pdfOk();
         $r = $this->receipt();
         $res = $this->svc->deliver($r);
 
-        $this->assertTrue($res['ok']);
-        $this->assertSame('sent', $res['status']);
+        $this->assertTrue($res->isSent());
+        $this->assertSame('sent', $res->getStatus());
         $this->assertCount(1, Mail::$sent);
         $m = Mail::$sent[0];
         $this->assertSame('receipt_issued', $m['template']);
@@ -179,8 +194,8 @@ class DeliveryServiceTest extends TestCase
         $r = $this->receipt();
         $res = $this->svc->deliver($r);
 
-        $this->assertFalse($res['ok']);
-        $this->assertSame('failed', $res['status']);
+        $this->assertFalse($res->isSent());
+        $this->assertSame('failed', $res->getStatus());
         $this->assertCount(0, Mail::$sent);
         $this->assertSame(array(3, 7), $this->waits);
         $row = $this->row();
@@ -212,8 +227,8 @@ class DeliveryServiceTest extends TestCase
         $this->pdfOk();
         $res = $this->svc->deliver($this->receipt());
 
-        $this->assertTrue($res['ok']);
-        $this->assertSame('sent', $res['status']);
+        $this->assertTrue($res->isSent());
+        $this->assertSame('sent', $res->getStatus());
         $this->assertCount(1, Mail::$sent);
         $this->assertSame(self::PDF, Mail::$sent[0]['fileAttachment']['content']);
         $this->assertSame(array(3), $this->waits);
@@ -228,7 +243,7 @@ class DeliveryServiceTest extends TestCase
         }
         $res = $this->svc->deliver($this->receipt());
 
-        $this->assertFalse($res['ok']);
+        $this->assertFalse($res->isSent());
         $this->assertCount(0, Mail::$sent);
         $this->assertSame(array(3, 7), $this->waits);
         $this->assertSame(3, $this->pdfCalls());
@@ -243,7 +258,7 @@ class DeliveryServiceTest extends TestCase
         $this->t->queue('GET', '#\.pdf#', $this->kod(403, 'Brak uprawnien'));
         $res = $this->svc->deliver($this->receipt());
 
-        $this->assertFalse($res['ok']);
+        $this->assertFalse($res->isSent());
         $this->assertSame(1, $this->pdfCalls());
         $this->assertSame(array(), $this->waits);
         $row = $this->row();
@@ -262,7 +277,7 @@ class DeliveryServiceTest extends TestCase
         Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi', $now) . ':3');
         $res = $this->svc->deliver($this->receipt());
 
-        $this->assertFalse($res['ok']);
+        $this->assertFalse($res->isSent());
         $this->assertSame(0, $this->pdfCalls());
         $this->assertSame(array(), $this->waits);
         $this->assertCount(0, Mail::$sent);
@@ -277,7 +292,7 @@ class DeliveryServiceTest extends TestCase
         $this->pdfOk();
         $res = $this->svc->resend($this->receipt());
 
-        $this->assertTrue($res['ok']);
+        $this->assertTrue($res->isSent());
         $this->assertSame(array(3), $this->waits);
         $this->assertSame(2, $this->pdfCalls());
         $this->assertCount(1, Mail::$sent);
@@ -304,7 +319,7 @@ class DeliveryServiceTest extends TestCase
         $this->pdfOk();
         $res = $this->svc->deliver($this->receipt());
 
-        $this->assertTrue($res['ok']);
+        $this->assertTrue($res->isSent());
         $this->assertCount(1, Mail::$sent);
         $this->assertSame('shop@example.test', Mail::$sent[0]['bcc']);
         $this->assertSame('jan@example.test', Mail::$sent[0]['to']);
@@ -334,7 +349,7 @@ class DeliveryServiceTest extends TestCase
         $this->pdfOk();
         $res = $this->svc->deliver($this->receipt());
 
-        $this->assertTrue($res['ok']);
+        $this->assertTrue($res->isSent());
         $this->assertSame('anna@example.test', Mail::$sent[0]['bcc']);
         $this->assertCount(0, PrestaShopLogger::$logs);
     }
@@ -361,7 +376,7 @@ class DeliveryServiceTest extends TestCase
         $this->pdfOk();
         $res = $this->svc->deliver($this->receipt());
 
-        $this->assertTrue($res['ok']);
+        $this->assertTrue($res->isSent());
         $this->assertSame('sent', $this->row()['delivery_status']);
         $this->assertCount(1, Mail::$sent);
         $this->assertNull(Mail::$sent[0]['bcc']);
@@ -378,7 +393,7 @@ class DeliveryServiceTest extends TestCase
         $this->pdfOk();
         $res = $this->svc->deliver($this->receipt());
 
-        $this->assertTrue($res['ok']);
+        $this->assertTrue($res->isSent());
         $this->assertCount(1, Mail::$sent);
         $this->assertNull(Mail::$sent[0]['bcc']);
         $this->assertCount(1, PrestaShopLogger::$logs);
@@ -404,7 +419,7 @@ class DeliveryServiceTest extends TestCase
         $this->pdfOk();
         $res = $this->svc->resend($this->receipt());
 
-        $this->assertTrue($res['ok']);
+        $this->assertTrue($res->isSent());
         $this->assertSame('shop@example.test', Mail::$sent[0]['bcc']);
     }
 
@@ -415,7 +430,7 @@ class DeliveryServiceTest extends TestCase
         $this->t->queue('POST', '#fakturakraj/send/77\.json#', $this->kod(0, 'ok'));
         $res = $this->svc->deliver($this->receipt('fakturakraj'));
 
-        $this->assertTrue($res['ok']);
+        $this->assertTrue($res->isSent());
         $this->assertCount(0, Mail::$sent);
         $this->assertSame('POST', $this->t->calls[0]['method']);
         $this->assertStringContainsString('"SkrzynkaEmailOdbiorcy":"jan@example.test"', $this->t->calls[0]['body']);
@@ -429,8 +444,8 @@ class DeliveryServiceTest extends TestCase
         $this->t->queue('POST', '#fakturakraj/send/77\.json#', $this->kod(0, 'ok'));
         $res = $this->svc->deliver($this->receipt('fakturakraj'));
 
-        $this->assertTrue($res['ok']);
-        $this->assertSame('ifirma_mail', $res['channel']);
+        $this->assertTrue($res->isSent());
+        $this->assertSame('ifirma_mail', $res->getChannel());
         $this->assertCount(0, Mail::$sent);
         $body = $this->t->calls[0]['body'];
         $this->assertStringContainsString('"SkrzynkaEmailOdbiorcy":"jan@example.test"', $body);
@@ -446,13 +461,13 @@ class DeliveryServiceTest extends TestCase
         $this->t->queue('POST', '#send/77\.json#', $this->kod(201, 'Niepoprawny adres'));
         $res = $this->svc->deliver($this->receipt('fakturakraj'));
 
-        $this->assertFalse($res['ok']);
-        $this->assertSame('failed', $res['status']);
-        $this->assertNotSame('', $res['message']);
+        $this->assertFalse($res->isSent());
+        $this->assertSame('failed', $res->getStatus());
+        $this->assertNotSame('', $res->getMessage());
         $row = $this->row();
         $this->assertSame('failed', $row['delivery_status']);
         $this->assertSame('ifirma_mail', $row['delivery_channel']);
-        $this->assertSame($res['message'], $row['delivery_error']);
+        $this->assertSame($res->getMessage(), $row['delivery_error']);
     }
 
     public function testIfirmaMailUnparseableResponseFails()
@@ -461,9 +476,9 @@ class DeliveryServiceTest extends TestCase
         $this->t->queue('POST', '#send/77\.json#', array('body' => 'not json'));
         $res = $this->svc->deliver($this->receipt('fakturakraj'));
 
-        $this->assertFalse($res['ok']);
-        $this->assertSame('failed', $res['status']);
-        $this->assertNotSame('', $res['message']);
+        $this->assertFalse($res->isSent());
+        $this->assertSame('failed', $res->getStatus());
+        $this->assertNotSame('', $res->getMessage());
     }
 
     public function testLongTekstIsTruncated()
@@ -483,8 +498,8 @@ class DeliveryServiceTest extends TestCase
         $this->pdfOk();
         $res = $this->svc->deliver($this->receipt('fakturaparagon'));
 
-        $this->assertTrue($res['ok']);
-        $this->assertSame('shop_mail_fallback', $res['channel']);
+        $this->assertTrue($res->isSent());
+        $this->assertSame('shop_mail_fallback', $res->getChannel());
         $this->assertCount(1, Mail::$sent);
         $this->assertSame('shop_mail_fallback', $this->row()['delivery_channel']);
         $this->assertCount(1, $this->t->calls);
@@ -498,8 +513,8 @@ class DeliveryServiceTest extends TestCase
         $r = $this->receipt();
         $res = $this->svc->deliver($r);
 
-        $this->assertFalse($res['ok']);
-        $this->assertSame('failed', $res['status']);
+        $this->assertFalse($res->isSent());
+        $this->assertSame('failed', $res->getStatus());
         $this->assertTrue($r->isIssued());
         $row = $this->row();
         $this->assertSame('failed', $row['delivery_status']);
@@ -515,7 +530,7 @@ class DeliveryServiceTest extends TestCase
         $order->id_customer = 999;
         $res = $this->svc->deliver($r, $order);
 
-        $this->assertFalse($res['ok']);
+        $this->assertFalse($res->isSent());
         $this->assertCount(0, Mail::$sent);
         $this->assertSame('failed', $this->row()['delivery_status']);
     }
@@ -533,7 +548,7 @@ class DeliveryServiceTest extends TestCase
         $this->pdfOk();
         $res = $this->svc->resend($r);
 
-        $this->assertTrue($res['ok']);
+        $this->assertTrue($res->isSent());
         $row = $this->row();
         $this->assertSame('sent', $row['delivery_status']);
         $this->assertSame('', $row['delivery_error']);
@@ -546,7 +561,7 @@ class DeliveryServiceTest extends TestCase
         $r = $this->receipt('fakturakraj', 'external');
         $res = $this->svc->resend($r);
 
-        $this->assertTrue($res['ok']);
+        $this->assertTrue($res->isSent());
         $this->assertCount(1, Mail::$sent);
         $this->assertSame('sent', $this->row()['delivery_status']);
         $this->assertStringStartsWith('Test Shop: Invoice ', Mail::$sent[0]['subject']);
@@ -557,8 +572,8 @@ class DeliveryServiceTest extends TestCase
         $r = $this->receipt('fakturakraj', 'external');
         $res = $this->svc->deliver($r);
 
-        $this->assertTrue($res['ok']);
-        $this->assertSame('skipped', $res['status']);
+        $this->assertTrue($res->isSent());
+        $this->assertSame('skipped', $res->getStatus());
         $this->assertCount(0, Mail::$sent);
         $this->assertCount(0, $this->t->calls);
         $row = $this->row();
@@ -571,7 +586,7 @@ class DeliveryServiceTest extends TestCase
         Configuration::updateValue('IFIRMA_SEND_CHANNEL', 'none');
         $res = $this->svc->deliver($this->receipt());
 
-        $this->assertSame('skipped', $res['status']);
+        $this->assertSame('skipped', $res->getStatus());
         $this->assertCount(0, Mail::$sent);
         $this->assertCount(0, $this->t->calls);
         $row = $this->row();
@@ -588,9 +603,9 @@ class DeliveryServiceTest extends TestCase
         $before = $this->row();
         $res = $this->svc->resend($r);
 
-        $this->assertFalse($res['ok']);
-        $this->assertSame('disabled', $res['status']);
-        $this->assertSame('Delivery is disabled (channel none)', $res['message']);
+        $this->assertFalse($res->isSent());
+        $this->assertSame('disabled', $res->getStatus());
+        $this->assertSame('Delivery is disabled (channel none)', $res->getMessage());
         $this->assertCount(0, Mail::$sent);
         $this->assertSame($before, $this->row());
     }
@@ -609,7 +624,7 @@ class DeliveryServiceTest extends TestCase
 
         $res = $this->svc->deliver($r);
 
-        $this->assertSame(array('ok' => true, 'status' => 'skipped', 'channel' => 'none', 'message' => ''), $res);
+        $this->assertSame(array('ok' => true, 'status' => 'skipped', 'channel' => 'none', 'message' => ''), $this->fieldsOf($res));
         $this->assertSame(array('update'), $this->receiptWriteOps());
         $row = $this->row();
         $this->assertSame('skipped', $row['delivery_status']);
@@ -632,7 +647,7 @@ class DeliveryServiceTest extends TestCase
 
         $this->assertSame(
             array('ok' => true, 'status' => 'skipped', 'channel' => 'shop_mail', 'message' => 'external document - not auto-delivered'),
-            $res
+            $this->fieldsOf($res)
         );
         $this->assertSame(array('update'), $this->receiptWriteOps());
         $row = $this->row();
@@ -655,7 +670,7 @@ class DeliveryServiceTest extends TestCase
 
         $res = $this->svc->resend($r);
 
-        $this->assertSame(array('ok' => true, 'status' => 'sent', 'channel' => 'shop_mail', 'message' => ''), $res);
+        $this->assertSame(array('ok' => true, 'status' => 'sent', 'channel' => 'shop_mail', 'message' => ''), $this->fieldsOf($res));
         $this->assertSame(array('update'), $this->receiptWriteOps());
         $row = $this->row();
         $this->assertSame('sent', $row['delivery_status']);
@@ -679,7 +694,7 @@ class DeliveryServiceTest extends TestCase
 
         $this->assertSame(
             array('ok' => false, 'status' => 'failed', 'channel' => 'shop_mail', 'message' => 'The shop mail system refused to send the e-mail.'),
-            $res
+            $this->fieldsOf($res)
         );
         $this->assertSame(array('update'), $this->receiptWriteOps());
         $row = $this->row();
@@ -700,7 +715,7 @@ class DeliveryServiceTest extends TestCase
 
         $this->assertSame(
             array('ok' => false, 'status' => 'failed', 'channel' => 'shop_mail_fallback', 'message' => 'The shop mail system refused to send the e-mail.'),
-            $res
+            $this->fieldsOf($res)
         );
         $this->assertSame(array('update'), $this->receiptWriteOps());
         $row = $this->row();
@@ -715,7 +730,7 @@ class DeliveryServiceTest extends TestCase
 
         $res = $this->svc->deliver($r, null, array('channel' => 'ifirma_mail'));
 
-        $this->assertSame(array('ok' => true, 'status' => 'sent', 'channel' => 'ifirma_mail', 'message' => ''), $res);
+        $this->assertSame(array('ok' => true, 'status' => 'sent', 'channel' => 'ifirma_mail', 'message' => ''), $this->fieldsOf($res));
         $this->assertCount(0, Mail::$sent);
         $this->assertSame(array('update'), $this->receiptWriteOps());
         $this->assertSame('ifirma_mail', $this->row()['delivery_channel']);
@@ -728,7 +743,7 @@ class DeliveryServiceTest extends TestCase
 
         $res = $this->svc->deliver($r, null, array('channel' => 'carrier_pigeon'));
 
-        $this->assertSame('shop_mail', $res['channel']);
+        $this->assertSame('shop_mail', $res->getChannel());
         $this->assertCount(1, Mail::$sent);
         $this->assertSame('shop_mail', $this->row()['delivery_channel']);
     }
@@ -750,7 +765,7 @@ class DeliveryServiceTest extends TestCase
 
         $this->assertSame(
             array('ok' => false, 'status' => 'failed', 'channel' => 'shop_mail', 'message' => 'customer lookup failed'),
-            $res
+            $this->fieldsOf($res)
         );
         $this->assertCount(0, Mail::$sent);
         $this->assertSame(array('update'), $this->receiptWriteOps());
@@ -767,7 +782,7 @@ class DeliveryServiceTest extends TestCase
 
         $res = $this->svc->deliver($r);
 
-        $this->assertSame('failed', $res['status']);
+        $this->assertSame('failed', $res->getStatus());
         $this->assertSame(array(), $this->receiptWriteOps());
         $this->assertSame('none', $this->row()['delivery_status']);
     }
@@ -778,7 +793,7 @@ class DeliveryServiceTest extends TestCase
         $r->ifirma_id = '';
         $res = $this->svc->deliver($r);
 
-        $this->assertSame('failed', $res['status']);
+        $this->assertSame('failed', $res->getStatus());
         $this->assertCount(0, Mail::$sent);
         $this->assertCount(0, $this->t->calls);
     }

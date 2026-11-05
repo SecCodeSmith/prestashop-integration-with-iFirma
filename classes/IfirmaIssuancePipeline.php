@@ -401,12 +401,12 @@ class IfirmaIssuancePipeline
         try {
             $d = $this->delivery->deliver($result->receipt, $order);
         } catch (Exception $e) {
-            $d = array('ok' => false, 'status' => 'failed', 'channel' => '', 'message' => $e->getMessage());
+            $d = new IfirmaDeliveryResult(false, 'failed', '', $e->getMessage());
         }
         $result->delivery = $d;
-        $message = isset($d['message']) ? (string) $d['message'] : '';
-        if (!empty($d['ok'])) {
-            $this->step($result, self::STEP_DELIVER, 'ok', $message !== '' ? $message : (isset($d['status']) ? (string) $d['status'] : ''));
+        $message = $d->getMessage();
+        if ($d->isSent()) {
+            $this->step($result, self::STEP_DELIVER, 'ok', $message !== '' ? $message : $d->getStatus());
         } else {
             $this->step($result, self::STEP_DELIVER, 'stopped', $message);
             $result->stoppedAt = self::STEP_DELIVER;

@@ -75,7 +75,7 @@ class PipelineResultTest extends TestCase
         $r->message = 'document issued';
         $r->receipt = new IfirmaReceipt();
         $r->guard = new IfirmaGuardResult();
-        $r->delivery = array('ok' => false, 'status' => 'failed', 'channel' => '', 'message' => 'boom');
+        $r->delivery = new IfirmaDeliveryResult(false, 'failed', '', 'boom');
         $r->steps = array(array('step' => 'deliver', 'status' => 'stopped', 'message' => 'boom'));
         $r->trigger = IfirmaIssuancePipeline::TRIGGER_RESUME;
 
