@@ -151,6 +151,8 @@ class HttpOutputTest extends TestCase
 
         // Exactly the level of the call is closed, and its content is dropped, not flushed.
         $this->assertSame($this->baseLevel, ob_get_level());
+        // the four headers went out with nothing pending: the discard came before them
+        $this->assertSame(array(0, 0, 0, 0), $this->pendingAtHeader);
         $this->expectOutputString(self::PDF);
     }
 
