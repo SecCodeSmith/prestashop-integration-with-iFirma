@@ -164,6 +164,31 @@ class ContractorImportTest extends TestCase
         $this->assertStringContainsString('line 5', $parsed['errors'][0]);
     }
 
+    public function identifierLengthProvider()
+    {
+        $atTheLimit = str_repeat('A', 63) . 'B';
+        $polish = str_repeat("\xC5\xBB", 64);
+        $skipped = array('line 2: identifier longer than 64 characters skipped');
+
+        return array(
+            'ascii, exactly 64 characters is kept' => array($atTheLimit, array($atTheLimit), array()),
+            'ascii, 65 characters is skipped' => array($atTheLimit . 'C', array(), $skipped),
+            'multibyte, exactly 64 characters is kept' => array($polish, array($polish), array()),
+            'multibyte, 65 characters is skipped (characters, not bytes)' => array($polish . "\xC5\xBB", array(), $skipped),
+        );
+    }
+
+    /**
+     * @dataProvider identifierLengthProvider
+     */
+    public function testParseKeepsIdentifiersUpTo64CharactersAndSkipsLongerOnes($identifier, $keptIdentifiers, $errors)
+    {
+        $parsed = $this->import->parse("Identyfikator;Nazwa\n" . $identifier . ";Jan\n");
+
+        $this->assertSame($keptIdentifiers, array_column($parsed['rows'], 'identifier'));
+        $this->assertSame($errors, $parsed['errors']);
+    }
+
     // ---- match ------------------------------------------------------------------------------
 
     public function testMatchesByNipThenEmail()

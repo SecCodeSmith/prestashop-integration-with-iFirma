@@ -59,6 +59,41 @@ class ContractorMapTest extends TestCase
         $this->assertSame(64, IfirmaContractorMap::$definition['fields']['ifirma_identifier']['size']);
     }
 
+    public function testIdentifierFieldIsDefinedKeyForKeyAsDeclared()
+    {
+        $this->assertSame(
+            array('type' => ObjectModel::TYPE_STRING, 'validate' => 'isGenericName', 'required' => true, 'size' => 64),
+            IfirmaContractorMap::$definition['fields']['ifirma_identifier']
+        );
+    }
+
+    public function identifierLengthProvider()
+    {
+        $atTheLimit = str_repeat('A', 63) . 'B';
+        $polish = str_repeat("\xC5\xBB", 64);
+
+        return array(
+            'ascii, exactly 64 characters is kept whole' => array($atTheLimit, $atTheLimit),
+            'ascii, 65 characters lose the 65th' => array($atTheLimit . 'C', $atTheLimit),
+            'multibyte, exactly 64 characters is kept whole' => array($polish, $polish),
+            'multibyte, 65 characters are cut by characters, not bytes' => array($polish . "\xC5\xBB", $polish),
+        );
+    }
+
+    /**
+     * @dataProvider identifierLengthProvider
+     */
+    public function testLinkStoresAtMostTheFirst64CharactersOfTheIdentifier($given, $stored)
+    {
+        $map = IfirmaContractorMap::link(7, $given, 'nip', 'Jan Kowalski');
+
+        $this->assertSame($stored, $map->ifirma_identifier);
+        $rows = array_values($this->mapRows());
+        $this->assertCount(1, $rows);
+        $this->assertSame($stored, $rows[0]['ifirma_identifier']);
+        $this->assertSame($stored, IfirmaContractorMap::getByCustomer(7)->ifirma_identifier);
+    }
+
     public function testSecondLinkForTheSameCustomerReplacesTheFirst()
     {
         IfirmaContractorMap::link(7, 'OLD-1', 'module', 'Old');

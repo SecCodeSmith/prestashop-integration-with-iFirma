@@ -892,6 +892,31 @@ class CustomerContractorServiceTest extends TestCase
         $this->assertTrue($this->svc->link(7, $id)['success']);
     }
 
+    public function testIdentifierOfExactlyTheLimitIsStoredWholeByTheMap()
+    {
+        $id = str_repeat('A', 63) . 'B';
+        $this->t->queue('GET', '#kontrahenci/id/#', $this->found($id));
+
+        $result = $this->svc->link(7, $id);
+
+        $this->assertSame(array('success' => true, 'code' => 'linked', 'identifier' => $id, 'name' => 'Jan Kowalski', 'message' => ''), $result);
+        $this->assertSame(array($id), array_column($this->mapRows(), 'ifirma_identifier'));
+        $this->assertSame($id, $this->svc->linkState(7)['identifier']);
+    }
+
+    public function testTheIdentifierLimitCountsCharactersNotBytes()
+    {
+        $polish = str_repeat("\xC5\xBB", 64);
+        $this->t->queue('GET', '#kontrahenci/id/#', $this->found($polish));
+
+        $this->assertTrue($this->svc->link(7, $polish)['success']);
+        $this->assertSame($polish, $this->svc->linkState(7)['identifier']);
+
+        $this->assertSame('invalid', $this->svc->link(8, $polish . "\xC5\xBB")['code']);
+        $this->assertCount(1, $this->t->calls, 'the 65-character identifier made no request');
+        $this->assertSame(array($polish), array_column($this->mapRows(), 'ifirma_identifier'));
+    }
+
     // ---- unlink -------------------------------------------------------------------------------
 
     /** Scenario: Unlink a customer */

@@ -211,6 +211,18 @@ class SchemaTest extends TestCase
         $this->assertSame(64, IfirmaSchema::CONTRACTOR_IDENTIFIER_LENGTH);
     }
 
+    public function testEveryContractorIdentifierLimitIsTheSchemaLength()
+    {
+        require_once dirname(__DIR__, 2) . '/classes/IfirmaContractorImport.php';
+        require_once dirname(__DIR__, 2) . '/classes/IfirmaCustomerContractorService.php';
+
+        $length = IfirmaSchema::CONTRACTOR_IDENTIFIER_LENGTH;
+
+        $this->assertSame($length, IfirmaContractorMap::$definition['fields']['ifirma_identifier']['size']);
+        $this->assertSame($length, IfirmaContractorImport::MAX_IDENTIFIER);
+        $this->assertSame($length, IfirmaCustomerContractorService::IDENTIFIER_MAX);
+    }
+
     public function columnProbeResultProvider()
     {
         return array(
