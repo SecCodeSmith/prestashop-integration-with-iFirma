@@ -55,6 +55,31 @@ No task starts on a red tree. Each task is one commit straight on master, with n
   - Both remaining dual pairs in `ifirma.php` are now a single `Throwable` catch: the order-status hook, as the task names, and the limit box in `renderLimitBox()`, the same duplication, added at integration.
   - `grep -c "catch (Exception" classes/IfirmaAdminActions.php` returns 0, and `ifirma.php` has no dual pair left.
   - Gate against `bb9fc16`: `OK (1280 tests)`, 47 changed lines, 100%.
+- [x] 3.3 Added with the user's approval on 2026-11-05. Collapse the seven remaining duplicated `catch (Exception $e) {…} catch (Throwable $e) {…}` pairs into a single `catch (Throwable $e)` with the same body. Each pair's two branches have identical bodies, so behaviour is unchanged. The sites:
+  - `IfirmaIssuancePipeline`: the run log, the resume log, the run's `fail()`, the KSeF step's result and `fail()`'s best-effort recording;
+  - `IfirmaKsefService`: the submit error;
+  - `IfirmaStatusSyncService`: a `return false`.
+
+  Single catches stay as they are. For example, the deliver step deliberately catches only `Exception`, so an `Error` fails the whole run.
+
+  Characterise first: at each site, an `Exception` and an `Error` must each reach the catch, with the observable effect asserted: the log line, the failure outcome, the KSeF step message or the returned `false`.
+
+  Verify that `git grep -n -A2 "catch (Exception" -- classes ifirma.php controllers | grep "catch (Throwable"` prints nothing, the suite is green, and diff-cover is at 100%.
+
+  Evidence:
+  - Characterisation `d1f4ac9` adds 13 tests and passes on base. They cover:
+    - the status hook and the resume, which log and swallow;
+    - an `Error` from a step, which is logged, recorded and not thrown;
+    - the KSeF step, which fails only itself;
+    - a failure while recording a failure, which keeps the original;
+    - `KsefService::submit()`, which records a throwable as the error;
+    - `opportunisticSync()`, which returns `false`.
+
+    Every catch line had 0 hits at base for sites 1, 2, 4, 6 and 7, and is now reached by both kinds.
+  - Refactor `b192e51` only deletes 14 lines. All seven pairs were byte-identical, so diff-cover has nothing to measure.
+  - The real safety net: a mutation run narrowing each site to `Exception` or to `Error` killed 14 of 14. I re-checked the KSeF and status-sync sites myself; both mutants fail.
+  - The task grep prints nothing. Gate against `f566c86`: `OK (1462 tests)`.
+  - Found while doing this, already present before the change and unchanged by it: `IfirmaKsefService::submit()` treats a throwable with an empty message as success (`ok` true, `ksef_status` `WYSLANA`). It needs its own behaviour-changing fix.
 
 ## 4. Match labels (Tier 1)
 
@@ -209,8 +234,39 @@ No task starts on a red tree. Each task is one commit straight on master, with n
 
 ## 13. Contractor resolution object (Tier 2)
 
-- [ ] 13.1 Add `IfirmaContractorResolution` with unit tests. Make `IfirmaContractorService::ensure()` return it, and migrate all callers (ReceiptService, Pipeline, AdminActions, CustomerContractorService) in the same commit. Verify that `git grep -n "getLastAction\|getLastReadback\|getAssignedIdentifier\|getLastSearchError"` returns no callers outside tests that are being retargeted, and the suite is green.
-- [ ] 13.2 Remove the `getLast*()` accessors and their mutable fields. Verify that the grep from 13.1 returns nothing, ContractorServiceTest and AdminActionsTest are green, and diff-cover is at 100%.
+- [x] 13.1 Add `IfirmaContractorResolution` with unit tests. Make `IfirmaContractorService::ensure()` return it, and migrate all callers (ReceiptService, Pipeline, AdminActions, CustomerContractorService) in the same commit. Verify that `git grep -n "getLastAction\|getLastReadback\|getAssignedIdentifier\|getLastSearchError"` returns no callers outside tests that are being retargeted, and the suite is green. Evidence:
+  - Characterisation `2636d5f` passes on base. It pins:
+    - the whole seven-key array of every `ensure()` outcome: disabled, kept, updated, created with and without an assigned identifier, and every fallback;
+    - the stored `_contractor` record of the receipt payload, key for key and in order;
+    - the `registerContractor` envelope and the exact customer-search messages;
+    - a guest order's contractor;
+    - every previously unreached line of the touched methods.
+  - Refactor `6ff1ac0`:
+    - `ensure()` returns the immutable `IfirmaContractorResolution`, which derives `matched_by`, `linked_identifier` and `assigned_identifier` exactly as the old `remember()` did, and offers `toArray()`;
+    - `ReceiptService` keeps the resolution, and its Kod 201 `reference_rejected` fallback is a resolution too;
+    - AdminActions reads the getters;
+    - `CustomerContractorService` reads `search()->getError()`.
+  - The pipeline never reads a contractor result, so it needed no change.
+  - Gate against `b192e51`: `OK (1551 tests)`, 72 changed lines, 100%.
+- [x] 13.2 Remove the `getLast*()` accessors and their mutable fields. Verify that the grep from 13.1 returns nothing, ContractorServiceTest and AdminActionsTest are green, and diff-cover is at 100%. Evidence:
+  - Characterisation `3b17b06` pins the searches after an unreadable create, and is green on the 13.1 code.
+  - Refactor `2daac57`:
+    - `getLastAction()`, `getLastReadback()`, `getAssignedIdentifier()` and `getLastSearchError()` are gone, with their fields;
+    - `search()` returns the immutable `IfirmaContractorSearchResult` (`getRows()`, `getError()`), as the lead decided;
+    - the private `findByNip()` and `findByName()` hand back their row and error;
+    - the stored record and every message and note stay byte-identical.
+  - Accepted public-surface change: `createAndGetIdentifier()` (string or false), which depended on the removed state, became `createAndResolve()`, returning the resolution. Nothing outside the service called it.
+  - The resolution's getter is `getAssignedId()`, so that the task's substring grep can come back empty.
+  - The grep returns nothing outside the generated graph and the OpenSpec texts.
+  - Gate against `6ff1ac0`: `OK (1555 tests)`, 42 changed lines, 100%.
+  - The adversarial review compared about 65,000 differential receipts and found identical stored payloads. Its surviving mutants are pinned in `b35d81a` (tests only):
+    - a stored mapping with an empty match code. `registerContractor` answers the mapped identifier and `learnDocumentContractor` makes no extra detail call; reading the linked identifier instead now fails both.
+    - several exact-NIP rows carrying the buyer's name, narrowed by postcode. A `count >= 1` mutant now fails.
+    - a 9-digit NIP, which is never searched. A `< 9` guard mutant now fails.
+    - the stored `_contractor` record of the `update_failed` and `create_rejected` fallbacks, key for key.
+
+    I re-checked two of the kills myself.
+  - End-to-end smoke on `2daac57`: 90 passed, the same verdicts as the baseline. That includes scenario H (the contractor renamed by iFirma, with its `assigned_identifier`) and scenario I (customer search, link, issue and unlink).
 
 ## 14. Integration check
 
