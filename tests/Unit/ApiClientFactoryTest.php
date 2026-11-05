@@ -13,7 +13,9 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * IfirmaApiClient::fromConfiguration(): the one place that turns the module Configuration
- * (IFIRMA_USER, the three IFIRMA_KEY_* keys, IFIRMA_BASE_URL) into an API client.
+ * (IFIRMA_USER, the three IFIRMA_KEY_* keys, IFIRMA_BASE_URL) into an API client, and the
+ * build() methods of the services (plus the module's limit box) that construct their client
+ * from that Configuration.
  *
  * The client keeps its settings private, so the tests check what reaches the transport: the
  * request URL (the base URL) and the Authentication header (the user, and the HMAC made with the
@@ -127,5 +129,149 @@ class ApiClientFactoryTest extends TestCase
         $this->t->queue('GET', '#/probe\.json$#', array('body' => '{"response":{"Kod":0}}'));
         $this->assertSame(array('response' => array('Kod' => 0)), $client->get('probe.json', 'faktura'));
         $this->assertCount(1, $this->t->calls);
+    }
+
+    // ---- build() of the services ----------------------------------------------------------------
+
+    /**
+     * @return array class => array(class, properties leading from the built object to its client)
+     */
+    public function builtServices()
+    {
+        return array(
+            'IfirmaReceiptService' => array('IfirmaReceiptService', array('client')),
+            'IfirmaIssuancePipeline' => array('IfirmaIssuancePipeline', array('service', 'client')),
+            'IfirmaDeliveryService' => array('IfirmaDeliveryService', array('client')),
+            'IfirmaStatusSyncService' => array('IfirmaStatusSyncService', array('client')),
+            'IfirmaKsefService' => array('IfirmaKsefService', array('client')),
+            'IfirmaDuplicateGuard' => array('IfirmaDuplicateGuard', array('client')),
+            'IfirmaContractorService' => array('IfirmaContractorService', array('client')),
+            'IfirmaCustomerContractorService' => array('IfirmaCustomerContractorService', array('client')),
+        );
+    }
+
+    /**
+     * Follows private properties from a built object down to the IfirmaApiClient it holds (the
+     * services keep their collaborators private, and have no getter for them).
+     *
+     * @param object   $object
+     * @param string[] $path   property names, outermost first
+     * @return IfirmaApiClient
+     */
+    private function clientOf($object, array $path)
+    {
+        foreach ($path as $property) {
+            $reflection = new ReflectionProperty(get_class($object), $property);
+            $reflection->setAccessible(true);
+            $object = $reflection->getValue($object);
+        }
+        $this->assertInstanceOf('IfirmaApiClient', $object, implode('->', $path));
+
+        return $object;
+    }
+
+    /**
+     * @param string   $class service class whose static build(Module) is called
+     * @param string[] $path  see clientOf()
+     * @return IfirmaApiClient
+     */
+    private function builtClient($class, array $path)
+    {
+        $built = call_user_func(array($class, 'build'), new Module());
+        $this->assertInstanceOf($class, $built);
+
+        return $this->clientOf($built, $path);
+    }
+
+    /**
+     * @dataProvider builtServices
+     */
+    public function testBuildCreatesItsClientFromConfiguration($class, array $path)
+    {
+        $this->assertClientConfigured($this->builtClient($class, $path), self::CONFIGURED_BASE);
+    }
+
+    /**
+     * @dataProvider builtServices
+     */
+    public function testBuildTalksToIfirmaWhenNoBaseUrlIsConfigured($class, array $path)
+    {
+        Configuration::deleteByName('IFIRMA_BASE_URL');
+        $this->assertClientConfigured($this->builtClient($class, $path), IfirmaApiClient::BASE_URL);
+
+        Configuration::updateValue('IFIRMA_BASE_URL', '');
+        $this->assertClientConfigured($this->builtClient($class, $path), IfirmaApiClient::BASE_URL);
+    }
+
+    public function testPipelineBuildSharesOneClientAcrossItsCollaborators()
+    {
+        $pipeline = IfirmaIssuancePipeline::build(new Module());
+        $client = $this->clientOf($pipeline, array('service', 'client'));
+
+        $this->assertSame($client, $this->clientOf($pipeline, array('guard', 'client')));
+        $this->assertSame($client, $this->clientOf($pipeline, array('delivery', 'client')));
+        $this->assertSame($client, $this->clientOf($pipeline, array('delivery', 'service', 'client')));
+        $this->assertSame($client, $this->clientOf($pipeline, array('ksef', 'client')));
+    }
+
+    public function testDeliveryServiceBuildSharesItsClientWithItsReceiptService()
+    {
+        $delivery = IfirmaDeliveryService::build(new Module());
+
+        $this->assertSame(
+            $this->clientOf($delivery, array('client')),
+            $this->clientOf($delivery, array('service', 'client'))
+        );
+    }
+
+    public function testCustomerContractorServiceBuildSharesItsClientWithItsContractorService()
+    {
+        $service = IfirmaCustomerContractorService::build(new Module());
+
+        $this->assertSame(
+            $this->clientOf($service, array('client')),
+            $this->clientOf($service, array('contractors', 'client'))
+        );
+    }
+
+    // ---- the module's own client (API limit box) ------------------------------------------------
+
+    public function testTheModuleBuildsItsClientFromConfiguration()
+    {
+        // The limit box only uses the abonent key; this probes all three through the private builder.
+        $module = IfirmaTestModuleLoader::loadModule();
+        $buildApiClient = new ReflectionMethod($module, 'buildApiClient');
+        $buildApiClient->setAccessible(true);
+
+        $this->assertClientConfigured($buildApiClient->invoke($module), self::CONFIGURED_BASE);
+    }
+
+    public function testTheModuleLimitBoxAsksIfirmaThroughAClientConfiguredFromConfiguration()
+    {
+        $module = IfirmaTestModuleLoader::loadModule();
+        $this->t->queue('GET', '#abonent/limit\.json$#', array('body' => '{"response":{"Kod":0,"LimitWykorzystany":12,"LimitPrzyznany":15000}}'));
+
+        $module->getContent();
+
+        $url = self::CONFIGURED_BASE . 'abonent/limit.json';
+        $keys = $this->keys();
+        $this->assertCount(1, $this->t->calls);
+        $this->assertSame($url, $this->t->lastCall()['url']);
+        $this->assertSame(
+            'IAPIS user=' . self::USER . ', hmac-sha1=' . hash_hmac('sha1', $url . self::USER . 'abonent', hex2bin($keys['abonent'])),
+            $this->t->lastAuthHeader()
+        );
+    }
+
+    public function testTheModuleLimitBoxFallsBackToIfirmaWithoutAConfiguredBaseUrl()
+    {
+        Configuration::deleteByName('IFIRMA_BASE_URL');
+        $module = IfirmaTestModuleLoader::loadModule();
+        $this->t->queue('GET', '#abonent/limit\.json$#', array('body' => '{"response":{"Kod":0,"LimitWykorzystany":1,"LimitPrzyznany":2}}'));
+
+        $module->getContent();
+
+        $this->assertCount(1, $this->t->calls);
+        $this->assertSame(IfirmaApiClient::BASE_URL . 'abonent/limit.json', $this->t->lastCall()['url']);
     }
 }
