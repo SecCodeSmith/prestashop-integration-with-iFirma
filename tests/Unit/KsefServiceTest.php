@@ -228,6 +228,67 @@ class KsefServiceTest extends TestCase
         $this->assertEmpty($row['ksef_sent_at']);
     }
 
+    /**
+     * @return array name => array(Throwable)
+     */
+    public function throwablesWithoutAMessage()
+    {
+        return array(
+            'Exception with an empty message' => array(new RuntimeException('')),
+            'Exception with a whitespace-only message' => array(new RuntimeException('   ')),
+            'Error with an empty message' => array(new TypeError('')),
+            'Error with a whitespace-only message' => array(new TypeError('   ')),
+        );
+    }
+
+    /** @dataProvider throwablesWithoutAMessage */
+    public function testSubmitRecordsAThrowableWithoutAMessageAsAFailureWithTheFallbackText(Throwable $failure)
+    {
+        $this->t->queue('POST', '#ksef/send#', function () use ($failure) {
+            throw $failure;
+        });
+        $r = $this->receipt('1234567890');
+
+        $res = $this->svc->submit($r, $this->order());
+
+        $this->assertSame(array('ok' => false, 'message' => 'iFirma did not confirm the KSeF submission'), $res);
+        $this->assertCount(1, $this->t->calls);
+        $row = $this->row();
+        $this->assertSame('BLAD', $row['ksef_status']);
+        $this->assertSame('iFirma did not confirm the KSeF submission', $row['ksef_error']);
+        $this->assertEmpty($row['ksef_sent_at']);
+    }
+
+    /**
+     * @return array name => array(Throwable)
+     */
+    public function paddedThrowables()
+    {
+        $message = " \t connection reset \r\n";
+
+        return array(
+            'Exception' => array(new RuntimeException($message)),
+            'Error' => array(new TypeError($message)),
+        );
+    }
+
+    /** @dataProvider paddedThrowables */
+    public function testSubmitRecordsTheTrimmedMessageOfAThrowableAsTheError(Throwable $failure)
+    {
+        $this->t->queue('POST', '#ksef/send#', function () use ($failure) {
+            throw $failure;
+        });
+        $r = $this->receipt('1234567890');
+
+        $res = $this->svc->submit($r, $this->order());
+
+        $this->assertSame(array('ok' => false, 'message' => 'connection reset'), $res);
+        $row = $this->row();
+        $this->assertSame('BLAD', $row['ksef_status']);
+        $this->assertSame('connection reset', $row['ksef_error']);
+        $this->assertEmpty($row['ksef_sent_at']);
+    }
+
     public function testSubmitOfADocumentThatIsNotIssuedIsRefusedWithoutCallingIfirma()
     {
         $notIssued = new IfirmaReceipt();

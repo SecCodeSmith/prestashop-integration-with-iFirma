@@ -20,6 +20,9 @@
  *  - shouldSubmit(receipt, order) -> bool (skipReason() === '').
  *  - submit(receipt, order, force) -> array(ok, message); records ksef_status / ksef_sent_at / ksef_error
  *    on the receipt. Never throws. force bypasses the mode and eligibility but never "already accepted".
+ *    A submission is recorded as sent (WYSLANA) only when iFirma answers Kod 0. Every other outcome, an
+ *    error raised during the call included, is BLAD with a non-empty ksef_error, which is "iFirma did not
+ *    confirm the KSeF submission" when the failure carries no text of its own.
  *  - describe(receipt, order) -> human text for the admin panel.
  */
 
@@ -190,6 +193,7 @@ class IfirmaKsefService
             }
         }
 
+        $failed = false;
         $error = '';
         $info = '';
         try {
@@ -200,16 +204,18 @@ class IfirmaKsefService
             }
             $info = isset($node['Informacja']) ? trim((string) $node['Informacja']) : '';
             if (!isset($node['Kod']) || (int) $node['Kod'] !== 0) {
+                $failed = true;
                 $error = trim((string) $this->client->getLastError());
                 if ($error === '') {
-                    $error = $info !== '' ? $info : $this->module->l('iFirma did not confirm the KSeF submission', 'ifirmaksefservice');
+                    $error = $info;
                 }
             }
         } catch (Throwable $e) {
-            $error = $e->getMessage();
+            $failed = true;
+            $error = trim($e->getMessage());
         }
 
-        if ($error === '') {
+        if (!$failed) {
             $receipt->ksef_status = self::STATUS_SENT;
             $receipt->ksef_sent_at = date('Y-m-d H:i:s');
             $receipt->ksef_error = '';
@@ -218,6 +224,9 @@ class IfirmaKsefService
             return array('ok' => true, 'message' => $info);
         }
 
+        if ($error === '') {
+            $error = $this->module->l('iFirma did not confirm the KSeF submission', 'ifirmaksefservice');
+        }
         $receipt->ksef_status = self::STATUS_ERROR;
         $receipt->ksef_error = $error;
         $this->persist($receipt);

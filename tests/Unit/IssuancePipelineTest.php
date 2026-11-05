@@ -674,6 +674,52 @@ class IssuancePipelineTest extends TestCase
         $this->assertStringContainsString('KSeF submission failed', $this->pipeline->describe($r));
     }
 
+    /**
+     * @return array name => array(Throwable)
+     */
+    public function throwablesWithoutAMessage()
+    {
+        return array(
+            'Exception' => array(new RuntimeException('')),
+            'Error' => array(new TypeError('')),
+        );
+    }
+
+    /** @dataProvider throwablesWithoutAMessage */
+    public function testAKsefFailureWithoutAMessageFailsTheStepAndIsRecordedAsAnError(Throwable $failure)
+    {
+        $this->businessAddress();
+        $this->queueGuardNone();
+        $this->queueCreateOk();
+        $this->queueNumber();
+        // only the KSeF send request raises; the real IfirmaKsefService turns that into the step's outcome
+        $this->t->queue('POST', '#ksef/send#', function () use ($failure) {
+            throw $failure;
+        });
+        $this->queuePdf();
+
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertTrue($r->ok);
+        $this->assertSame(IfirmaPipelineResult::OUTCOME_ISSUED, $r->outcome);
+        $this->assertNull($r->stoppedAt);
+        $this->assertSame(
+            array('hold:ok', 'guard:ok', 'create:ok', 'number:ok', 'ksef:failed', 'deliver:ok'),
+            $this->stepNames($r)
+        );
+        $this->assertSame('iFirma did not confirm the KSeF submission', $r->steps[4]['message']);
+        $this->assertSame('document issued KSeF: iFirma did not confirm the KSeF submission', $r->message);
+        $this->assertStringContainsString(
+            'KSeF submission failed: iFirma did not confirm the KSeF submission',
+            $this->pipeline->describe($r)
+        );
+        $row = $this->dbRow();
+        $this->assertSame('sent', $row['delivery_status']);
+        $this->assertSame('BLAD', $row['ksef_status']);
+        $this->assertSame('iFirma did not confirm the KSeF submission', $row['ksef_error']);
+        $this->assertEmpty($row['ksef_sent_at']);
+    }
+
     public function testNumberNotYetAvailableStaysIssued()
     {
         $this->queueGuardNone();
