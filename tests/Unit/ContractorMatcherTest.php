@@ -289,6 +289,33 @@ class ContractorMatcherTest extends TestCase
         $this->assertSame($this->report(array('skipped_existing' => 1)), $report);
     }
 
+    public function identifierPairs()
+    {
+        return array(
+            'leading zeros' => array('007', '7'),
+            'exponent' => array('1e3', '1000'),
+            'trailing zero' => array('1.0', '1'),
+        );
+    }
+
+    /**
+     * Identifiers are compared as text: a stored '007' and an incoming '7' (Excel strips the zeros) are
+     * two identifiers, so the stored link is kept as it is, not confirmed.
+     *
+     * @dataProvider identifierPairs
+     */
+    public function testAStoredIdentifierIsComparedAsTextNotAsANumber($stored, $incoming)
+    {
+        $index = $this->index(array(
+            'email' => array('a@example.test' => array(1 => true)),
+            'existing' => array(1 => array('identifier' => $stored, 'type' => 'import-email')),
+        ));
+
+        $report = $this->match(array($this->row($incoming, array('email' => 'a@example.test'))), $index);
+
+        $this->assertSame($this->report(array('skipped_existing' => 1)), $report);
+    }
+
     public function testRowsAfterAnUnchangedLinkAreIgnoredUnlessTheyAreStronger()
     {
         $index = $this->index(array(
