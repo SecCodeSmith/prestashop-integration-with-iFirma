@@ -20,10 +20,15 @@ if (!defined('_PS_VERSION_')) {
  * outcome     issued | already_issued | adopted | held | suspected | inconclusive | unknown |
  *             rate_limited | error | disabled | not_configured
  * stoppedAt   step constant (hold, guard, create, number, deliver) that stopped the run, or null
- * message     text of the stopping condition (empty on success)
+ * message     text of the stopping condition, or what the run did (document issued, existing document
+ *             adopted, document already issued)
  * receipt     IfirmaReceipt|null, guard IfirmaGuardResult|null, delivery IfirmaDeliveryResult|null (deliver() result)
  * steps       list of array('step', 'status' => ok|skipped|stopped|failed, 'message')
  * trigger     status | manual | resume | issue_anyway
+ *
+ * The pipeline records a step with addStep() and what happened to the run with the intent methods
+ * markIssued(), markAdopted(), alreadyIssued(), stopAt() and stopStep(); they set ok, outcome,
+ * stoppedAt and message together, so no caller has to know which fields belong to an outcome.
  */
 class IfirmaPipelineResult
 {
@@ -65,6 +70,77 @@ class IfirmaPipelineResult
 
     /** @var string */
     public $trigger = 'manual';
+
+    /**
+     * Appends one entry to the step log.
+     *
+     * @param string $step    step constant (hold, guard, create, number, ksef, deliver)
+     * @param string $status  ok|skipped|stopped|failed
+     * @param string $message kept as a string
+     */
+    public function addStep($step, $status, $message)
+    {
+        $this->steps[] = array('step' => $step, 'status' => $status, 'message' => (string) $message);
+    }
+
+    /**
+     * The run issued a new document.
+     */
+    public function markIssued()
+    {
+        $this->ok = true;
+        $this->outcome = self::OUTCOME_ISSUED;
+        $this->message = 'document issued';
+    }
+
+    /**
+     * The run found the document of the order at iFirma and adopted it.
+     */
+    public function markAdopted()
+    {
+        $this->ok = true;
+        $this->outcome = self::OUTCOME_ADOPTED;
+        $this->message = 'existing document adopted';
+    }
+
+    /**
+     * The order already had an issued document, so the run did nothing.
+     */
+    public function alreadyIssued()
+    {
+        $this->ok = true;
+        $this->outcome = self::OUTCOME_ALREADY_ISSUED;
+        $this->message = 'document already issued';
+    }
+
+    /**
+     * Ends the run without a document: logs the step as stopped, names it in stoppedAt, and sets ok
+     * to false and the outcome and message that say why.
+     *
+     * @param string $outcome one of the OUTCOME_* constants
+     * @param string $step    step constant that stopped the run
+     * @param string $message kept as a string, on the step and on the result
+     */
+    public function stopAt($outcome, $step, $message)
+    {
+        $this->stopStep($step, $message);
+        $this->ok = false;
+        $this->outcome = $outcome;
+        $this->message = (string) $message;
+    }
+
+    /**
+     * Stops a step while the run keeps its document: logs the step as stopped and names it in
+     * stoppedAt. ok, outcome and message stay (a delivery that failed after the document was issued).
+     *
+     * @param string $step    step constant that stopped
+     * @param string $message kept as a string
+     */
+    public function stopStep($step, $message)
+    {
+        $this->addStep($step, 'stopped', $message);
+        $this->stoppedAt = $step;
+    }
 
     /**
      * The plain-data part of the result as the admin ajax payload reports it. The receipt is an
