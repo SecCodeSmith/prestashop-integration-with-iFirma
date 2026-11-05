@@ -1646,4 +1646,98 @@ class ContractorServiceTest extends TestCase
         $this->assertSame('', $blank->getError());
         $this->assertSame('', $this->svc->getLastSearchError());
     }
+    // ---- the search after a create that could not be read back: what it records ------------------------
+
+    public function testAReadbackWithNothingToSearchForRecordsNoSearchAndNoError()
+    {
+        // a name of punctuation only and no NIP: both post-create searches have nothing to ask
+        $owned = array_merge($this->owned(), array('Nazwa' => '..'));
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->queueReadbackMisses(4);
+
+        $r = $this->svc->ensure($owned, 7, $this->hints(array('name' => '..')));
+
+        $this->assertSame('fallback', $r->getAction());
+        $this->assertSame('readback_failed', $r->getNote()['code']);
+        $this->assertSame('none', $r->getNote()['params']['search']);
+        $this->assertSame('', $r->getNote()['params']['search_error']);
+        $this->assertSame(array(), $this->searchPaths());
+        $this->assertNull($this->mapped());
+    }
+
+    public function testTheNipRowCountOfAnEarlierCallNeverMakesALaterReadbackAmbiguous()
+    {
+        // the first call meets two contractors with the buyer's NIP and creates a new one
+        $twoRows = $this->rows(array(
+            array_merge($this->remote('X-1'), array('Nazwa' => 'Inna Spolka A', 'NIP' => '5252248481', 'KodPocztowy' => '30-001')),
+            array_merge($this->remote('X-2'), array('Nazwa' => 'Inna Spolka B', 'NIP' => '5252248481', 'KodPocztowy' => '40-001')),
+        ));
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $twoRows);
+        $this->t->queue('GET', '#kontrahenci/ACME#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
+        $first = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
+        $this->assertSame('created', $first->getAction());
+
+        // the second call, on the same instance, is a private person without NIP whose read-back fails
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->queueReadbackMisses(4);
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->notFoundBody());
+        $second = $this->svc->ensure($this->owned(), 8, $this->hints());
+
+        $this->assertSame('fallback', $second->getAction());
+        $this->assertSame('none', $second->getNote()['params']['search']);
+        $this->assertSame('', $second->getNote()['params']['search_error']);
+    }
+
+    public function testANipSearchFailureDoesNotHideAContractorTheNameSearchFinds()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/ACME#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->queueReadbackMisses(4);
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', array('status' => 0, 'error' => 'nip search down'));
+        $this->t->queue('GET', '#kontrahenci/ACME#', $this->rows(array(
+            array_merge($this->remote('IFI-NAME'), array('Nazwa' => 'ACME Sp. z o.o.', 'NIP' => '5252248481', 'Email' => 'biuro@acme.test', 'OsobaFizyczna' => false)),
+        )));
+
+        $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
+
+        $this->assertSame('created', $r->getAction());
+        $this->assertSame('IFI-NAME', $r->getIdentifier());
+        $this->assertSame('IFI-NAME', $r->getAssignedId());
+        $this->assertSame('found', $r->getReadback()['search']);
+        $this->assertSame('', $r->getReadback()['search_error']);
+    }
+
+    public function testAnAmbiguousNipAndAFailingNameSearchAreReportedAsTheError()
+    {
+        $twoRows = $this->rows(array(
+            array_merge($this->remote('X-1'), array('Nazwa' => 'Inna Spolka A', 'NIP' => '5252248481', 'KodPocztowy' => '30-001')),
+            array_merge($this->remote('X-2'), array('Nazwa' => 'Inna Spolka B', 'NIP' => '5252248481', 'KodPocztowy' => '40-001')),
+        ));
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/ACME#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->queueReadbackMisses(4);
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $twoRows);
+        $this->t->queue('GET', '#kontrahenci/ACME#', array('status' => 0, 'error' => 'name search down'));
+
+        $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
+
+        $this->assertSame('fallback', $r->getAction());
+        $this->assertSame('error', $r->getNote()['params']['search']);
+        $this->assertSame('cURL error: name search down', $r->getNote()['params']['search_error']);
+        $miss = 'Kod 208: Nie znaleziono kontrahenta';
+        $this->assertSame(
+            'iFirma created the contractor but it cannot be read back (PS-C7: ' . $miss . '; 124451232: ' . $miss . '); search: error (cURL error: name search down).',
+            $r->getMessage()
+        );
+    }
 }
