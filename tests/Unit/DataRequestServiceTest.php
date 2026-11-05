@@ -1505,6 +1505,10 @@ class DataRequestServiceTest extends TestCase
                 array('company' => ' ', 'vat_number' => '5250001234'),
                 $this->formValues(array('want_invoice_for_company' => true, 'company' => ' ', 'vat_number' => '5250001234')),
             ),
+            'a company named 0 is a company' => array(
+                array('company' => '0', 'vat_number' => '5250001234'),
+                $this->formValues(array('want_invoice_for_company' => true, 'company' => '0', 'vat_number' => '5250001234')),
+            ),
             'no company name is no company' => array(
                 array('company' => null, 'vat_number' => '5250001234'),
                 $this->formValues(array('vat_number' => '5250001234')),
@@ -1689,7 +1693,7 @@ class DataRequestServiceTest extends TestCase
     {
         Tools::$values = array(
             'stray' => 'ignored', 'token' => 'front-token', 'id_order' => 15,
-            'customer_note' => 'Call me', 'city' => 'Gdansk', 'company' => array('Not', 'text'),
+            'customer_note' => 'Call me', 'city' => ' Gdansk ', 'company' => array('Not', 'text'),
             'want_invoice_for_company' => '1', 'id_country' => 14, 'address2' => '0', 'vat_number' => '',
         );
 
@@ -1704,7 +1708,7 @@ class DataRequestServiceTest extends TestCase
             'address1' => false,
             'address2' => '0',
             'postcode' => false,
-            'city' => 'Gdansk',
+            'city' => ' Gdansk ',
             'id_country' => 14,
             'customer_note' => 'Call me',
         ), $input);
