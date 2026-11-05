@@ -273,4 +273,49 @@ class IfirmaDataRequestTest extends TestCase
             $request->assertPending();
         });
     }
+
+    // ---- countOrdersOnHold() -------------------------------------------------------------
+
+    /**
+     * @return string[] every SQL string sent so far, in order, with the CRLF line endings of a Windows
+     *                  checkout turned into "\n", so that the text is the same on every checkout
+     */
+    private function sentQueries()
+    {
+        return array_map(function ($sql) {
+            return str_replace("\r\n", "\n", (string) $sql);
+        }, Db::getInstance()->queries);
+    }
+
+    public function testCountOrdersOnHoldCountsTheOrdersOfThePendingRequestsInOneQuery()
+    {
+        Db::getInstance()->whenGetValue('/COUNT\(DISTINCT id_order\)/', '4');
+
+        $this->assertSame(4, IfirmaDataRequest::countOrdersOnHold());
+
+        $this->assertSame(array(
+            "SELECT COUNT(DISTINCT id_order) FROM `ps_ifirma_data_request`\n             WHERE status = 'pending'",
+        ), $this->sentQueries());
+    }
+
+    public static function heldOrderCounts()
+    {
+        return array(
+            'a count as text' => array('4', 4),
+            'a count as a number' => array(7, 7),
+            'a count of zero as text' => array('0', 0),
+            'no row at all' => array(false, 0),
+            'a null' => array(null, 0),
+        );
+    }
+
+    /**
+     * @dataProvider heldOrderCounts
+     */
+    public function testCountOrdersOnHoldIsAWholeNumber($answer, $expected)
+    {
+        Db::getInstance()->whenGetValue('/COUNT\(DISTINCT id_order\)/', $answer);
+
+        $this->assertSame($expected, IfirmaDataRequest::countOrdersOnHold());
+    }
 }

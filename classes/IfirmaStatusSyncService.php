@@ -29,6 +29,7 @@ if (!defined('_PS_VERSION_')) {
 
 require_once dirname(__FILE__) . '/IfirmaApiClient.php';
 require_once dirname(__FILE__) . '/IfirmaReceipt.php';
+require_once dirname(__FILE__) . '/IfirmaDataRequest.php';
 
 class IfirmaStatusSyncService
 {
@@ -307,24 +308,8 @@ class IfirmaStatusSyncService
     public function selectForCron($limit = 500)
     {
         $staleBefore = date('Y-m-d H:i:s', $this->now() - self::STALE_HOURS * 3600);
-        $rows = Db::getInstance()->executeS(
-            'SELECT id_ifirma_receipt FROM `' . _DB_PREFIX_ . 'ifirma_receipt`
-             WHERE ifirma_id != \'\' AND status != \'error\'
-             AND (status != \'paid\' OR remote_sent = 0 OR last_sync_at IS NULL
-                  OR last_sync_at < \'' . pSQL($staleBefore) . '\')
-             ORDER BY last_sync_at ASC, id_ifirma_receipt ASC
-             LIMIT ' . max(1, (int) $limit)
-        );
 
-        $receipts = array();
-        foreach ((array) $rows as $row) {
-            $receipt = new IfirmaReceipt((int) $row['id_ifirma_receipt']);
-            if (!empty($receipt->id)) {
-                $receipts[] = $receipt;
-            }
-        }
-
-        return $receipts;
+        return IfirmaReceipt::findDueForSync($staleBefore, $limit);
     }
 
     /**
@@ -332,10 +317,7 @@ class IfirmaStatusSyncService
      */
     public function countHeldOrders()
     {
-        return (int) Db::getInstance()->getValue(
-            'SELECT COUNT(DISTINCT id_order) FROM `' . _DB_PREFIX_ . 'ifirma_data_request`
-             WHERE status = \'pending\''
-        );
+        return IfirmaDataRequest::countOrdersOnHold();
     }
 
     /**

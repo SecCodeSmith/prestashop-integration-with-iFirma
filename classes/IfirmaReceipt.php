@@ -257,6 +257,37 @@ class IfirmaReceipt extends ObjectModel
     }
 
     /**
+     * The issued documents the status cron has to look at, least recently synchronised first: not
+     * paid yet, not seen as sent, never synchronised, or last synchronised before $staleBefore. A row
+     * whose receipt does not load is left out.
+     *
+     * @param string $staleBefore YYYY-MM-DD HH:MM:SS; a last_sync_at before it counts as stale
+     * @param int    $limit       at most this many receipts, and at least one
+     * @return IfirmaReceipt[]
+     */
+    public static function findDueForSync($staleBefore, $limit)
+    {
+        $rows = Db::getInstance()->executeS(
+            'SELECT id_ifirma_receipt FROM `' . _DB_PREFIX_ . 'ifirma_receipt`
+             WHERE ifirma_id != \'\' AND status != \'error\'
+             AND (status != \'paid\' OR remote_sent = 0 OR last_sync_at IS NULL
+                  OR last_sync_at < \'' . pSQL($staleBefore) . '\')
+             ORDER BY last_sync_at ASC, id_ifirma_receipt ASC
+             LIMIT ' . max(1, (int) $limit)
+        );
+
+        $receipts = array();
+        foreach ((array) $rows as $row) {
+            $receipt = new self((int) $row['id_ifirma_receipt']);
+            if (!empty($receipt->id)) {
+                $receipts[] = $receipt;
+            }
+        }
+
+        return $receipts;
+    }
+
+    /**
      * @return bool
      */
     public function isIssued()

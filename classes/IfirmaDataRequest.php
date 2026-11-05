@@ -292,4 +292,15 @@ class IfirmaDataRequest extends ObjectModel
              AND status = "' . pSQL(self::STATUS_PENDING) . '"'
         );
     }
+
+    /**
+     * @return int orders held by pending data requests
+     */
+    public static function countOrdersOnHold()
+    {
+        return (int) Db::getInstance()->getValue(
+            'SELECT COUNT(DISTINCT id_order) FROM `' . _DB_PREFIX_ . 'ifirma_data_request`
+             WHERE status = \'pending\''
+        );
+    }
 }

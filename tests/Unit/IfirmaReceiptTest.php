@@ -46,6 +46,8 @@ class IfirmaReceiptWriteSpy extends IfirmaReceipt
  * The status intents of the receipt entity: markError, markUnknown, markHeld, markSuspected,
  * markPaid and recordDelivery. Each one sets its fields in memory only; the caller keeps its own
  * save(), so the number of database writes on a path stays what it was.
+ *
+ * It also pins findDueForSync(), the finder of the receipts the status cron has to look at.
  */
 class IfirmaReceiptTest extends TestCase
 {
@@ -398,5 +400,140 @@ class IfirmaReceiptTest extends TestCase
         foreach ($set as $field => $value) {
             $this->assertSame($value, $reloaded->$field, $field);
         }
+    }
+
+    // ---- findDueForSync(): the receipts the status cron has to look at -----------------------
+
+    /**
+     * The query findDueForSync() sends, line by line. The indentation inside the string is part of
+     * the text; the line endings are not (see sentQueries()).
+     *
+     * @param string $staleBefore the text of the cut-off, as it stands in the SQL
+     * @param int    $limit
+     * @return string
+     */
+    private function dueReceiptsSql($staleBefore, $limit)
+    {
+        return implode("\n", array(
+            'SELECT id_ifirma_receipt FROM `ps_ifirma_receipt`',
+            "             WHERE ifirma_id != '' AND status != 'error'",
+            "             AND (status != 'paid' OR remote_sent = 0 OR last_sync_at IS NULL",
+            "                  OR last_sync_at < '" . $staleBefore . "')",
+            '             ORDER BY last_sync_at ASC, id_ifirma_receipt ASC',
+            '             LIMIT ' . $limit,
+        ));
+    }
+
+    /**
+     * @return string[] every SQL string sent so far, in order, with the CRLF line endings of a Windows
+     *                  checkout turned into "\n", so that the text is the same on every checkout
+     */
+    private function sentQueries()
+    {
+        return array_map(function ($sql) {
+            return str_replace("\r\n", "\n", (string) $sql);
+        }, Db::getInstance()->queries);
+    }
+
+    /**
+     * @param int $idOrder tells the stored receipts apart
+     * @return IfirmaReceipt a saved receipt
+     */
+    private function storedReceipt($idOrder)
+    {
+        $receipt = $this->receipt();
+        $receipt->id_order = $idOrder;
+        $receipt->save();
+
+        return $receipt;
+    }
+
+    /**
+     * Scripts the query to answer with these receipts' ids, in this order.
+     *
+     * @param array $ids ids as the database gives them: the values of id_ifirma_receipt
+     */
+    private function dueRowsAre(array $ids)
+    {
+        $rows = array();
+        foreach ($ids as $id) {
+            $rows[] = array('id_ifirma_receipt' => (string) $id);
+        }
+        Db::getInstance()->whenExecuteS('/FROM `ps_ifirma_receipt`/', $rows);
+    }
+
+    public function testFindDueForSyncSendsOneQueryWithTheGivenCutOffAndLimit()
+    {
+        IfirmaReceipt::findDueForSync('2026-10-31 12:00:00', 50);
+
+        $this->assertSame(array($this->dueReceiptsSql('2026-10-31 12:00:00', 50)), $this->sentQueries());
+    }
+
+    public function testFindDueForSyncEscapesTheCutOff()
+    {
+        IfirmaReceipt::findDueForSync("2026-10-31 12:00:00' OR '1'='1", 5);
+
+        $this->assertSame(
+            array($this->dueReceiptsSql("2026-10-31 12:00:00\\' OR \\'1\\'=\\'1", 5)),
+            $this->sentQueries()
+        );
+    }
+
+    public static function dueLimits()
+    {
+        return array(
+            'a limit of 1 is sent as it is' => array(1, 1),
+            'a limit of 0 is raised to 1' => array(0, 1),
+            'a negative limit is raised to 1' => array(-5, 1),
+            'a numeric string is sent as a whole number' => array('25', 25),
+            'a fraction is cut down to a whole number' => array(7.9, 7),
+        );
+    }
+
+    /**
+     * @dataProvider dueLimits
+     */
+    public function testFindDueForSyncSendsAWholeLimitOfAtLeastOne($given, $sent)
+    {
+        IfirmaReceipt::findDueForSync('2026-10-31 12:00:00', $given);
+
+        $this->assertSame(array($this->dueReceiptsSql('2026-10-31 12:00:00', $sent)), $this->sentQueries());
+    }
+
+    public function testFindDueForSyncReturnsTheStoredReceiptsInTheOrderOfTheRows()
+    {
+        $first = $this->storedReceipt(31);
+        $second = $this->storedReceipt(32);
+        $third = $this->storedReceipt(33);
+        $this->dueRowsAre(array($third->id, $first->id, $second->id));
+
+        $receipts = IfirmaReceipt::findDueForSync('2026-10-31 12:00:00', 500);
+
+        // the keys are 0, 1, 2, and the order is the database's, not the id order
+        $this->assertSame(array(0, 1, 2), array_keys($receipts));
+        $this->assertSame(array(33, 31, 32), array_map(function ($receipt) {
+            return $receipt->id_order;
+        }, $receipts));
+        $this->assertContainsOnlyInstancesOf('IfirmaReceipt', $receipts);
+        $this->assertEquals(new IfirmaReceipt((int) $third->id), $receipts[0]);
+    }
+
+    public function testFindDueForSyncSkipsARowWhoseReceiptDoesNotLoad()
+    {
+        $first = $this->storedReceipt(34);
+        $second = $this->storedReceipt(35);
+        $this->dueRowsAre(array($first->id, 9999, 0, $second->id));
+
+        $receipts = IfirmaReceipt::findDueForSync('2026-10-31 12:00:00', 500);
+
+        $this->assertSame(array(0, 1), array_keys($receipts));
+        $this->assertSame(array(34, 35), array_map(function ($receipt) {
+            return $receipt->id_order;
+        }, $receipts));
+    }
+
+    public function testFindDueForSyncReturnsAnEmptyListWhenNoRowIsDue()
+    {
+        $this->assertSame(array(), IfirmaReceipt::findDueForSync('2026-10-31 12:00:00', 500));
     }
 }
