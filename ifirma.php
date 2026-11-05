@@ -551,8 +551,6 @@ class Ifirma extends Module
         $limit = null;
         try {
             $limit = $this->buildApiClient()->getLimit();
-        } catch (Exception $e) {
-            $limit = null;
         } catch (Throwable $e) {
             $limit = null;
         }
@@ -1437,8 +1435,6 @@ class Ifirma extends Module
                 (int) $params['id_order'],
                 (int) $params['newOrderStatus']->id
             );
-        } catch (Exception $e) {
-            PrestaShopLogger::addLog('iFirma status hook failed for order ' . (int) $params['id_order'] . ': ' . $e->getMessage(), 2);
         } catch (Throwable $e) {
             PrestaShopLogger::addLog('iFirma status hook failed for order ' . (int) $params['id_order'] . ': ' . $e->getMessage(), 2);
         }

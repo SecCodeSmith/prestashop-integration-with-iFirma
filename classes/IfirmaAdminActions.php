@@ -74,6 +74,22 @@ class IfirmaAdminActions
     }
 
     /**
+     * Runs the body of an action. Whatever it throws, an Exception or an Error, becomes the failure
+     * envelope instead of escaping to the controller.
+     *
+     * @param callable $action
+     * @return array
+     */
+    private function guard(callable $action)
+    {
+        try {
+            return $action();
+        } catch (Throwable $e) {
+            return $this->failure($e);
+        }
+    }
+
+    /**
      * @param int $idOrder
      * @return Order|null
      */
@@ -100,7 +116,7 @@ class IfirmaAdminActions
             return $this->result(false, $this->module->l('The iFirma module is not configured yet.', 'ifirmaadminactions'));
         }
 
-        try {
+        return $this->guard(function () use ($order, $idEmployee, $bypass) {
             $pipeline = IfirmaIssuancePipeline::build($this->module);
             $options = array(
                 'trigger' => $bypass ? IfirmaIssuancePipeline::TRIGGER_BYPASS : IfirmaIssuancePipeline::TRIGGER_MANUAL,
@@ -117,11 +133,7 @@ class IfirmaAdminActions
             );
 
             return $this->result($r->ok, $pipeline->describe($r), $data);
-        } catch (Exception $e) {
-            return $this->failure($e);
-        } catch (Throwable $e) {
-            return $this->failure($e);
-        }
+        });
     }
 
     /**
@@ -156,7 +168,7 @@ class IfirmaAdminActions
      */
     public function linkCandidate($idOrder, $fakturaId, $idEmployee)
     {
-        try {
+        return $this->guard(function () use ($idOrder, $fakturaId, $idEmployee) {
             $order = $this->loadOrder($idOrder);
             if (!$order) {
                 return $this->result(false, $this->module->l('Invalid order.', 'ifirmaadminactions'));
@@ -176,11 +188,7 @@ class IfirmaAdminActions
                 ),
                 array('receipt' => $this->receiptToArray($linked))
             );
-        } catch (Exception $e) {
-            return $this->failure($e);
-        } catch (Throwable $e) {
-            return $this->failure($e);
-        }
+        });
     }
 
     /**
@@ -190,7 +198,7 @@ class IfirmaAdminActions
      */
     public function updateStatus($idOrder, $amount = null)
     {
-        try {
+        return $this->guard(function () use ($idOrder, $amount) {
             $receipt = IfirmaReceipt::getByOrder((int) $idOrder);
             if (!$receipt || !$receipt->isIssued()) {
                 return $this->result(false, $this->module->l('No issued iFirma document for this order.', 'ifirmaadminactions'));
@@ -203,11 +211,7 @@ class IfirmaAdminActions
                 $this->module->l('Payment registered in iFirma.', 'ifirmaadminactions'),
                 array('receipt' => $this->receiptToArray($receipt))
             );
-        } catch (Exception $e) {
-            return $this->failure($e);
-        } catch (Throwable $e) {
-            return $this->failure($e);
-        }
+        });
     }
 
     /**
@@ -216,7 +220,7 @@ class IfirmaAdminActions
      */
     public function resend($idOrder)
     {
-        try {
+        return $this->guard(function () use ($idOrder) {
             $receipt = IfirmaReceipt::getByOrder((int) $idOrder);
             $order = $this->loadOrder($idOrder);
             if (!$receipt || !$receipt->isIssued() || !$order) {
@@ -236,11 +240,7 @@ class IfirmaAdminActions
                 'receipt' => $this->receiptToArray($receipt),
                 'delivery' => $delivery->describeDelivery($receipt),
             ));
-        } catch (Exception $e) {
-            return $this->failure($e);
-        } catch (Throwable $e) {
-            return $this->failure($e);
-        }
+        });
     }
 
     /**
@@ -251,7 +251,7 @@ class IfirmaAdminActions
      */
     public function sendToKsef($idOrder)
     {
-        try {
+        return $this->guard(function () use ($idOrder) {
             $receipt = IfirmaReceipt::getByOrder((int) $idOrder);
             $order = $this->loadOrder($idOrder);
             if (!$receipt || !$receipt->isIssued() || !$order) {
@@ -271,11 +271,7 @@ class IfirmaAdminActions
                 'receipt' => $this->receiptToArray($receipt),
                 'ksef' => $ksef->describe($receipt, $order),
             ));
-        } catch (Exception $e) {
-            return $this->failure($e);
-        } catch (Throwable $e) {
-            return $this->failure($e);
-        }
+        });
     }
 
     /**
@@ -284,7 +280,7 @@ class IfirmaAdminActions
      */
     public function refreshStatus($idOrder)
     {
-        try {
+        return $this->guard(function () use ($idOrder) {
             $receipt = IfirmaReceipt::getByOrder((int) $idOrder);
             if (!$receipt || !$receipt->isIssued()) {
                 return $this->result(false, $this->module->l('No issued iFirma document for this order.', 'ifirmaadminactions'));
@@ -302,11 +298,7 @@ class IfirmaAdminActions
             }
 
             return $this->result(true, $this->module->l('Status refreshed from iFirma.', 'ifirmaadminactions'), $data);
-        } catch (Exception $e) {
-            return $this->failure($e);
-        } catch (Throwable $e) {
-            return $this->failure($e);
-        }
+        });
     }
 
     /**
@@ -340,7 +332,7 @@ class IfirmaAdminActions
      */
     public function registerContractor($idOrder)
     {
-        try {
+        return $this->guard(function () use ($idOrder) {
             $order = $this->loadOrder($idOrder);
             if (!$order) {
                 return $this->result(false, $this->module->l('Invalid order.', 'ifirmaadminactions'));
@@ -414,11 +406,7 @@ class IfirmaAdminActions
             }
 
             return $this->result(true, $message, $data);
-        } catch (Exception $e) {
-            return $this->failure($e);
-        } catch (Throwable $e) {
-            return $this->failure($e);
-        }
+        });
     }
 
     // ---- customer page (customer-contractor-panel) -----------------------------------------
@@ -475,7 +463,7 @@ class IfirmaAdminActions
      */
     public function customerCheck($idCustomer)
     {
-        try {
+        return $this->guard(function () use ($idCustomer) {
             if (!$this->loadCustomer($idCustomer)) {
                 return $this->invalidCustomer();
             }
@@ -496,11 +484,7 @@ class IfirmaAdminActions
                 $check['label'],
                 array('check' => $check)
             );
-        } catch (Exception $e) {
-            return $this->failure($e);
-        } catch (Throwable $e) {
-            return $this->failure($e);
-        }
+        });
     }
 
     /**
@@ -509,7 +493,7 @@ class IfirmaAdminActions
      */
     public function customerSearch(array $criteria)
     {
-        try {
+        return $this->guard(function () use ($criteria) {
             $search = $this->customerService()->searchCandidates($criteria);
             if (!empty($search['refused'])) {
                 return $this->result(
@@ -532,11 +516,7 @@ class IfirmaAdminActions
             }
 
             return $this->result(true, $message, array('search' => $search));
-        } catch (Exception $e) {
-            return $this->failure($e);
-        } catch (Throwable $e) {
-            return $this->failure($e);
-        }
+        });
     }
 
     /**
@@ -546,7 +526,7 @@ class IfirmaAdminActions
      */
     public function customerLink($idCustomer, $identifier)
     {
-        try {
+        return $this->guard(function () use ($idCustomer, $identifier) {
             if (!$this->loadCustomer($idCustomer)) {
                 return $this->invalidCustomer();
             }
@@ -573,11 +553,7 @@ class IfirmaAdminActions
                 default:
                     return $this->result(false, $this->module->l('Invalid contractor identifier.', 'ifirmaadminactions'), $data);
             }
-        } catch (Exception $e) {
-            return $this->failure($e);
-        } catch (Throwable $e) {
-            return $this->failure($e);
-        }
+        });
     }
 
     /**
@@ -586,7 +562,7 @@ class IfirmaAdminActions
      */
     public function customerUnlink($idCustomer)
     {
-        try {
+        return $this->guard(function () use ($idCustomer) {
             if (!$this->loadCustomer($idCustomer)) {
                 return $this->invalidCustomer();
             }
@@ -599,11 +575,7 @@ class IfirmaAdminActions
             }
 
             return $this->result(false, $this->module->l('The customer was not linked.', 'ifirmaadminactions'), $data);
-        } catch (Exception $e) {
-            return $this->failure($e);
-        } catch (Throwable $e) {
-            return $this->failure($e);
-        }
+        });
     }
 
     /**
@@ -614,7 +586,7 @@ class IfirmaAdminActions
      */
     public function registerCustomer($idCustomer)
     {
-        try {
+        return $this->guard(function () use ($idCustomer) {
             if (!$this->loadCustomer($idCustomer)) {
                 return $this->invalidCustomer();
             }
@@ -631,11 +603,7 @@ class IfirmaAdminActions
             );
 
             return $result;
-        } catch (Exception $e) {
-            return $this->failure($e);
-        } catch (Throwable $e) {
-            return $this->failure($e);
-        }
+        });
     }
 
     /**
@@ -655,7 +623,7 @@ class IfirmaAdminActions
      */
     public function customerCountRemote($idCustomer)
     {
-        try {
+        return $this->guard(function () use ($idCustomer) {
             if (!$this->loadCustomer($idCustomer)) {
                 return $this->invalidCustomer();
             }
@@ -690,11 +658,7 @@ class IfirmaAdminActions
                 sprintf($format, (int) $count['total'], (int) $count['paid'], $count['period_from'], $count['period_to']),
                 array('count' => $count)
             );
-        } catch (Exception $e) {
-            return $this->failure($e);
-        } catch (Throwable $e) {
-            return $this->failure($e);
-        }
+        });
     }
 
     /**
@@ -706,7 +670,7 @@ class IfirmaAdminActions
      */
     public function approveRequest($idRequest, $idEmployee, ?array $edited = null, $note = '')
     {
-        try {
+        return $this->guard(function () use ($idRequest, $idEmployee, $edited, $note) {
             $request = IfirmaDataRequest::getById((int) $idRequest);
             if (!$request) {
                 return $this->result(false, $this->module->l('The request was not found.', 'ifirmaadminactions'));
@@ -715,11 +679,7 @@ class IfirmaAdminActions
             $service->approve($request, (int) $idEmployee, $edited, $note);
 
             return $this->resolved($request, $this->module->l('Request approved.', 'ifirmaadminactions'));
-        } catch (Exception $e) {
-            return $this->failure($e);
-        } catch (Throwable $e) {
-            return $this->failure($e);
-        }
+        });
     }
 
     /**
@@ -730,30 +690,29 @@ class IfirmaAdminActions
      */
     public function rejectRequest($idRequest, $idEmployee, $reason)
     {
-        try {
-            $request = IfirmaDataRequest::getById((int) $idRequest);
-            if (!$request) {
-                return $this->result(false, $this->module->l('The request was not found.', 'ifirmaadminactions'));
-            }
-            $service = IfirmaDataRequestService::build($this->module);
-            $service->reject($request, (int) $idEmployee, $reason);
+        return $this->guard(function () use ($idRequest, $idEmployee, $reason) {
+            try {
+                $request = IfirmaDataRequest::getById((int) $idRequest);
+                if (!$request) {
+                    return $this->result(false, $this->module->l('The request was not found.', 'ifirmaadminactions'));
+                }
+                $service = IfirmaDataRequestService::build($this->module);
+                $service->reject($request, (int) $idEmployee, $reason);
 
-            return $this->resolved($request, $this->module->l('Request rejected.', 'ifirmaadminactions'));
-        } catch (IfirmaDataRequestException $e) {
-            if ($e->code_name === 'reason_required') {
-                return $this->result(
-                    false,
-                    $this->module->l('A reason is required to reject the request.', 'ifirmaadminactions'),
-                    array('code' => 'reason_required')
-                );
-            }
+                return $this->resolved($request, $this->module->l('Request rejected.', 'ifirmaadminactions'));
+            } catch (IfirmaDataRequestException $e) {
+                if ($e->code_name === 'reason_required') {
+                    return $this->result(
+                        false,
+                        $this->module->l('A reason is required to reject the request.', 'ifirmaadminactions'),
+                        array('code' => 'reason_required')
+                    );
+                }
 
-            return $this->failure($e);
-        } catch (Exception $e) {
-            return $this->failure($e);
-        } catch (Throwable $e) {
-            return $this->failure($e);
-        }
+                // every other refusal is the guard's to report
+                throw $e;
+            }
+        });
     }
 
     /**
