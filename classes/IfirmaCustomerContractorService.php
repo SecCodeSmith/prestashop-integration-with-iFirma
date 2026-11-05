@@ -43,10 +43,12 @@ class IfirmaCustomerContractorService
     const IDENTIFIER_PREFIX = 'PS-C';
 
     /** Receipt statuses counted as issued (the paid ones are a subset). */
-    const STATES_ISSUED = array('created', 'paid');
-    const STATES_PAID = array('paid');
-    const STATES_HELD = array('held');
-    const STATES_ATTENTION = array('error', 'unknown', 'duplicate_suspected');
+    const STATES_ISSUED = array(IfirmaReceipt::STATUS_CREATED, IfirmaReceipt::STATUS_PAID);
+    const STATES_PAID = array(IfirmaReceipt::STATUS_PAID);
+    const STATES_HELD = array(IfirmaReceipt::STATUS_HELD);
+    const STATES_ATTENTION = array(
+        IfirmaReceipt::STATUS_ERROR, IfirmaReceipt::STATUS_UNKNOWN, IfirmaReceipt::STATUS_DUPLICATE_SUSPECTED,
+    );
 
     const TYPE_RECEIPT = 'receipt';
     const TYPE_INVOICE = 'invoice';

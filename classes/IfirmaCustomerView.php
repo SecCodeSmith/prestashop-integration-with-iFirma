@@ -64,20 +64,20 @@ class IfirmaCustomerView
      */
     public function resolveState($receipt, $pendingRequest)
     {
-        if ($pendingRequest && $this->prop($pendingRequest, 'status') === 'pending') {
+        if ($pendingRequest && $this->prop($pendingRequest, 'status') === IfirmaDataRequest::STATUS_PENDING) {
             return self::STATE_HELD;
         }
         if (!$receipt) {
             return self::STATE_NOT_ISSUED;
         }
         $status = (string) $this->prop($receipt, 'status');
-        if ($status === 'held') {
+        if ($status === IfirmaReceipt::STATUS_HELD) {
             return self::STATE_NOT_ISSUED;
         }
-        if ($this->prop($receipt, 'ifirma_id') && $status !== 'error') {
+        if ($this->prop($receipt, 'ifirma_id') && $status !== IfirmaReceipt::STATUS_ERROR) {
             return $this->prop($receipt, 'remote_missing') ? self::STATE_MISSING : self::STATE_ISSUED;
         }
-        if ($status === 'unknown' || $status === 'duplicate_suspected') {
+        if ($status === IfirmaReceipt::STATUS_UNKNOWN || $status === IfirmaReceipt::STATUS_DUPLICATE_SUSPECTED) {
             return self::STATE_VERIFYING;
         }
 
@@ -138,7 +138,8 @@ class IfirmaCustomerView
     {
         $receipts = array();
         foreach ($receiptRows as $row) {
-            if (empty($row['ifirma_id']) || (isset($row['status']) && $row['status'] === 'error') || !empty($row['remote_missing'])) {
+            if (empty($row['ifirma_id']) || (isset($row['status']) && $row['status'] === IfirmaReceipt::STATUS_ERROR)
+                || !empty($row['remote_missing'])) {
                 continue;
             }
             $status = isset($row['status']) ? (string) $row['status'] : '';
@@ -186,7 +187,7 @@ class IfirmaCustomerView
      */
     protected function statusLabel($status)
     {
-        if ($status === 'paid') {
+        if ($status === IfirmaReceipt::STATUS_PAID) {
             return $this->module->l('Paid', 'ifirmacustomerview');
         }
 
@@ -213,7 +214,7 @@ class IfirmaCustomerView
             $tolerance = isset($context['tolerance']) ? (float) $context['tolerance'] : 0.01;
             $paid = (float) $remotePaid >= (float) $this->prop($order, 'total_paid_tax_incl') - $tolerance;
         } else {
-            $paid = $this->prop($receipt, 'status') === 'paid';
+            $paid = $this->prop($receipt, 'status') === IfirmaReceipt::STATUS_PAID;
         }
         $sent = $this->prop($receipt, 'delivery_status') === 'sent' || (bool) $this->prop($receipt, 'remote_sent');
 
