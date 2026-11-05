@@ -16,6 +16,7 @@ if (!defined('_PS_VERSION_')) {
 require_once dirname(__FILE__) . '/IfirmaApiClient.php';
 require_once dirname(__FILE__) . '/IfirmaContractorMap.php';
 require_once dirname(__FILE__) . '/IfirmaContractorService.php';
+require_once dirname(__FILE__) . '/IfirmaCustomerInvoiceProfile.php';
 require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaSchema.php';
 
@@ -205,34 +206,15 @@ class IfirmaCustomerContractorService
      */
     public function defaultCriteria($idCustomer)
     {
-        $customer = new Customer((int) $idCustomer);
-        $addresses = $this->invoiceAddresses($idCustomer);
-        $address = $addresses ? $addresses[0] : null;
-
-        $company = trim((string) ($address ? $address->company : ''));
-        if ($company === '') {
-            $company = trim((string) $customer->company);
-        }
-        $phone = '';
-        $nip = '';
-        if ($address) {
-            $phone = trim((string) $address->phone);
-            if ($phone === '') {
-                $phone = trim((string) $address->phone_mobile);
-            }
-            $nip = preg_replace('/\D+/', '', (string) $address->vat_number);
-        }
-        if ($nip === '') {
-            $nip = $this->customerNip($idCustomer);
-        }
+        $profile = IfirmaCustomerInvoiceProfile::load($idCustomer);
 
         return array(
-            'firstname' => trim((string) $customer->firstname),
-            'lastname' => trim((string) $customer->lastname),
-            'company' => $company,
-            'nip' => (string) $nip,
-            'email' => trim((string) $customer->email),
-            'phone' => $phone,
+            'firstname' => $profile->firstname(),
+            'lastname' => $profile->lastname(),
+            'company' => $profile->company(),
+            'nip' => $profile->nip(),
+            'email' => $profile->email(),
+            'phone' => $profile->phone(),
         );
     }
 
@@ -244,14 +226,7 @@ class IfirmaCustomerContractorService
      */
     public function customerNip($idCustomer)
     {
-        foreach ($this->invoiceAddresses($idCustomer) as $address) {
-            $digits = preg_replace('/\D+/', '', (string) $address->vat_number);
-            if (strlen($digits) === 10) {
-                return $digits;
-            }
-        }
-
-        return '';
+        return IfirmaCustomerInvoiceProfile::load($idCustomer)->tenDigitNip();
     }
 
     // ---- live registration check ----------------------------------------------------------
@@ -735,49 +710,5 @@ class IfirmaCustomerContractorService
     private function now()
     {
         return $this->clock ? (int) call_user_func($this->clock) : time();
-    }
-
-    /**
-     * Invoice addresses, newest first: the invoice addresses of the orders (newest order first),
-     * then the customer's own addresses (newest first). Each address once.
-     *
-     * @param int $idCustomer
-     * @return Address[]
-     */
-    private function invoiceAddresses($idCustomer)
-    {
-        $ids = array();
-        try {
-            $orders = Order::getCustomerOrders((int) $idCustomer);
-        } catch (Exception $e) {
-            $orders = array();
-        }
-        if (is_array($orders)) {
-            foreach ($orders as $order) {
-                if (!empty($order['id_address_invoice'])) {
-                    $ids[] = (int) $order['id_address_invoice'];
-                }
-            }
-        }
-        $customer = new Customer((int) $idCustomer);
-        $idLang = (int) Context::getContext()->language->id;
-        $own = array();
-        foreach ((array) $customer->getAddresses($idLang) as $row) {
-            if (isset($row['id_address'])) {
-                $own[] = (int) $row['id_address'];
-            }
-        }
-        rsort($own);
-        $ids = array_merge($ids, $own);
-
-        $out = array();
-        foreach (array_unique($ids) as $id) {
-            $address = new Address($id);
-            if (Validate::isLoadedObject($address)) {
-                $out[] = $address;
-            }
-        }
-
-        return $out;
     }
 }

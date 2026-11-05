@@ -757,6 +757,54 @@ class CustomerContractorServiceTest extends TestCase
         $this->assertArrayNotHasKey('nipKontrahenta', $queries[0]);
     }
 
+    /** The latest address has no NIP to offer, so the form takes the one of an older address: still one read. */
+    public function testDefaultCriteriaReadsTheCustomerAndTheAddressesOnceWhenTheLatestAddressHasNoNip()
+    {
+        $this->address(1, array('vat_number' => '525-224-84-81'));
+        $this->address(2, array('company' => 'New Co', 'vat_number' => ''));
+        $this->order(10, '2026-05-01 10:00:00', 2);
+        $reads = $this->recordReads();
+
+        $criteria = $this->svc->defaultCriteria(7);
+
+        $this->assertSame('New Co', $criteria['company']);
+        $this->assertSame('5252248481', $criteria['nip']);
+        $this->assertSame(1, $reads->orders);
+        $this->assertSame(array(1), $reads->languages);
+        $this->assertSame(array(2, 1), Address::$loads);
+        $this->assertSame(array(7), Customer::$loads);
+    }
+
+    public function testDefaultCriteriaReadsOnceForACustomerWithoutAddresses()
+    {
+        $reads = $this->recordReads();
+
+        $this->assertSame('', $this->svc->defaultCriteria(7)['nip']);
+
+        $this->assertSame(1, $reads->orders);
+        $this->assertSame(array(1), $reads->languages);
+        $this->assertSame(array(), Address::$loads);
+        $this->assertSame(array(7), Customer::$loads);
+    }
+
+    /** Nothing is kept between calls: the second call reads again and sees what changed. */
+    public function testEachCallReadsTheCustomersDataAgain()
+    {
+        $this->address(1, array('company' => 'Old Co', 'vat_number' => ''));
+        $reads = $this->recordReads();
+
+        $this->assertSame('Old Co', $this->svc->defaultCriteria(7)['company']);
+        Address::$instances[1]->company = 'New Co';
+        Address::$instances[1]->vat_number = '525-224-84-81';
+
+        $criteria = $this->svc->defaultCriteria(7);
+        $this->assertSame('New Co', $criteria['company']);
+        $this->assertSame('5252248481', $criteria['nip']);
+        $this->assertSame('5252248481', $this->svc->customerNip(7));
+        $this->assertSame(3, $reads->orders);
+        $this->assertSame(array(1, 1, 1), $reads->languages);
+    }
+
     // ---- registration check -------------------------------------------------------------------
 
     /** Scenario: Contractor exists */
