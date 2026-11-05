@@ -443,6 +443,7 @@ class CustomerContractorServiceTest extends TestCase
             'five digits are kept as typed, whatever the length' => array('12-345', '12345', '5252248481'),
             'nine digits are kept too' => array('123456789', '123456789', '5252248481'),
             'eleven digits are kept too' => array('12345678901', '12345678901', '5252248481'),
+            'a lone 0 is kept' => array('0', '0', '5252248481'),
             'no digits: the NIP of an older address' => array('n/a', '5252248481', '5252248481'),
             'empty: the NIP of an older address' => array('', '5252248481', '5252248481'),
             'unset: the NIP of an older address' => array(null, '5252248481', '5252248481'),
@@ -691,6 +692,7 @@ class CustomerContractorServiceTest extends TestCase
         $this->assertSame(1, $reads->orders);
         $this->assertSame(array(1), $reads->languages);
         $this->assertSame(array(1), Address::$loads);
+        $this->assertSame(array(7), Customer::$loads);
     }
 
     public function testDefaultCriteriaReadsTheAddressesOnceWhenTheLatestAddressHasANip()
