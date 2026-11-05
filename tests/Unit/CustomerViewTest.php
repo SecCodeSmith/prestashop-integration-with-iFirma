@@ -100,6 +100,19 @@ class CustomerViewTest extends TestCase
         $this->assertSame('held', $this->view->forOrder($this->order(), $held, $this->pending(), array())['state']);
     }
 
+    /**
+     * A held record never reads as issued, even when it already carries an iFirma id.
+     */
+    public function testHeldReceiptThatAlreadyHasADocumentIdIsNotIssued()
+    {
+        $held = $this->receipt(array('status' => 'held', 'ifirma_id' => 555));
+
+        $this->assertSame('not_issued', $this->view->resolveState($held, null));
+        $v = $this->view->forOrder($this->order(), $held, null);
+        $this->assertSame('not_issued', $v['state']);
+        $this->assertArrayNotHasKey('document', $v);
+    }
+
     public function testHeldShowsRequestDateAndCancelUrl()
     {
         $v = $this->view->forOrder($this->order(), $this->receipt(), $this->pending(), array('data_request_enabled' => true));
@@ -138,6 +151,19 @@ class CustomerViewTest extends TestCase
         $v = $this->view->forOrder($this->order(), $r, null);
         $this->assertSame('not_issued', $v['state']);
         $this->assertStringNotContainsString('SECRET-ERR-TEXT', json_encode($v));
+    }
+
+    /**
+     * An error record is not shown as issued, even when it already carries an iFirma id.
+     */
+    public function testErrorReceiptThatAlreadyHasADocumentIdIsNotIssued()
+    {
+        $r = $this->receipt(array('status' => 'error', 'ifirma_id' => 555, 'last_error' => 'boom'));
+
+        $this->assertSame('not_issued', $this->view->resolveState($r, null));
+        $v = $this->view->forOrder($this->order(), $r, null);
+        $this->assertSame('not_issued', $v['state']);
+        $this->assertArrayNotHasKey('document', $v);
     }
 
     public function testExactlyOneStateForAllCombinations()
@@ -277,6 +303,34 @@ class CustomerViewTest extends TestCase
         $this->assertStringContainsString('token=t1', $a['receipts'][0]['download_url']);
         $this->assertStringNotContainsString('GONE', json_encode($a));
         $this->assertStringNotContainsString('t3', json_encode($a['receipts']));
+    }
+
+    public function testForAccountSkipsErrorRowsThatCarryADocumentId()
+    {
+        $rows = array(
+            array('ifirma_id' => 9, 'ifirma_number' => 'ERR/9', 'status' => 'error', 'security_token' => 'tok-err', 'source' => 'module', 'issue_date' => '2026-10-03', 'remote_missing' => 0),
+            array('ifirma_id' => 1, 'ifirma_number' => 'A/1', 'status' => 'created', 'security_token' => 't1', 'source' => 'module', 'issue_date' => '2026-10-01', 'remote_missing' => 0),
+        );
+
+        $a = $this->view->forAccount($rows, 0);
+
+        $this->assertCount(1, $a['receipts']);
+        $this->assertSame('A/1', $a['receipts'][0]['number']);
+        $this->assertStringNotContainsString('ERR/9', json_encode($a));
+        $this->assertStringNotContainsString('tok-err', json_encode($a));
+    }
+
+    public function testForAccountLabelsPaidAndIssuedRows()
+    {
+        $rows = array(
+            array('ifirma_id' => 1, 'ifirma_number' => 'A/1', 'status' => 'paid', 'security_token' => 't1', 'source' => 'module', 'issue_date' => '2026-10-01', 'remote_missing' => 0),
+            array('ifirma_id' => 2, 'ifirma_number' => 'A/2', 'status' => 'created', 'security_token' => 't2', 'source' => 'module', 'issue_date' => '2026-10-02', 'remote_missing' => 0),
+        );
+
+        $receipts = $this->view->forAccount($rows, 0)['receipts'];
+
+        $this->assertSame(array('paid', 'created'), array_column($receipts, 'status'));
+        $this->assertSame(array('Paid', 'Issued'), array_column($receipts, 'status_label'));
     }
 
     public function testForAccountNothingIsInvisible()

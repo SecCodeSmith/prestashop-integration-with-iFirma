@@ -232,6 +232,28 @@ class CustomerContractorServiceTest extends TestCase
         $this->assertSame(array('receipt' => 0, 'invoice' => 0, 'other' => 1), $counts['by_type']);
     }
 
+    /**
+     * Each receipt status is counted in exactly its own buckets. The multiplicities are distinct powers of two,
+     * so a status that lands in a wrong bucket (or is missing from one) changes a sum.
+     */
+    public function testEveryReceiptStatusIsCountedInExactlyItsOwnBuckets()
+    {
+        $multiplicity = array('created' => 1, 'paid' => 2, 'error' => 4, 'unknown' => 8, 'duplicate_suspected' => 16, 'held' => 32);
+        foreach ($multiplicity as $status => $n) {
+            for ($i = 0; $i < $n; ++$i) {
+                $this->addReceipt('fakturakraj', $status);
+            }
+        }
+
+        $counts = $this->svc->localCounts(7);
+
+        $this->assertSame(3, $counts['issued']);
+        $this->assertSame(2, $counts['paid']);
+        $this->assertSame(32, $counts['held']);
+        $this->assertSame(28, $counts['attention']);
+        $this->assertSame(array('receipt' => 0, 'invoice' => 3, 'other' => 0), $counts['by_type']);
+    }
+
     /** Scenario: No documents */
     public function testNoDocuments()
     {
