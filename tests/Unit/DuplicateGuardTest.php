@@ -342,6 +342,56 @@ class DuplicateGuardTest extends TestCase
         $this->assertSame('keep-me', $row['security_token']);
     }
 
+    public function testAdoptWritesTheNewRecordOnceAsSkippedExternalDelivery()
+    {
+        $this->queueList(array($this->row(array('Zaplacono' => 123.00))));
+        $this->queueDetail('fakturaparagon', 77, $this->detailWithRef());
+
+        $res = $this->guard->check($this->order());
+
+        $this->assertSame(IfirmaGuardResult::OUTCOME_ADOPT, $res->outcome);
+        $writes = IfirmaTestState::writes('ifirma_receipt');
+        $this->assertSame(array('add'), array_column($writes, 'op'));
+        $row = $writes[0]['row'];
+        $this->assertSame('skipped', $row['delivery_status']);
+        $this->assertSame('', $row['delivery_channel']);
+        $this->assertSame('external document - not auto-delivered', $row['delivery_error']);
+        $this->assertNull($row['delivered_at']);
+        $this->assertSame('', $row['last_error']);
+    }
+
+    public function testAdoptOverwritesAnEarlierDeliveryAndErrorInOneWrite()
+    {
+        $old = new IfirmaReceipt();
+        $old->id_order = 15;
+        $old->ifirma_id = '';
+        $old->status = IfirmaReceipt::STATUS_UNKNOWN;
+        $old->last_error = 'cURL error: timeout';
+        $old->delivery_status = IfirmaReceipt::DELIVERY_FAILED;
+        $old->delivery_channel = 'shop_mail';
+        $old->delivery_error = 'earlier delivery error';
+        $old->save();
+        IfirmaTestState::clearWrites();
+
+        $this->queueList(array($this->row(array('Zaplacono' => 123.00))));
+        $this->queueDetail('fakturaparagon', 77, $this->detailWithRef());
+
+        $res = $this->guard->check($this->order());
+
+        $this->assertSame(IfirmaGuardResult::OUTCOME_ADOPT, $res->outcome);
+        $writes = IfirmaTestState::writes('ifirma_receipt');
+        $this->assertSame(array('update'), array_column($writes, 'op'));
+        $this->assertSame((int) $old->id, $writes[0]['id']);
+        $row = $writes[0]['row'];
+        $this->assertSame('paid', $row['status']);
+        $this->assertSame('external', $row['source']);
+        $this->assertSame('skipped', $row['delivery_status']);
+        $this->assertSame('', $row['delivery_channel']);
+        $this->assertSame('external document - not auto-delivered', $row['delivery_error']);
+        $this->assertSame('', $row['last_error']);
+        $this->assertCount(1, IfirmaTestState::objects('ifirma_receipt'));
+    }
+
     public function testSuspectedWhenReferenceMissing()
     {
         $this->queueList(array($this->row()));

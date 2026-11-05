@@ -106,6 +106,127 @@ class CreateReceiptTest extends TestCase
         $this->assertSame('error', $row['status']);
     }
 
+    // ---- recorded failures: the fields set and the number of writes ------------------------
+
+    /**
+     * @param string $op the one write the path must make: add or update
+     * @return array that write: op, table, id, row
+     */
+    private function onlyReceiptWrite($op)
+    {
+        $writes = IfirmaTestState::writes('ifirma_receipt');
+        $this->assertSame(array($op), array_column($writes, 'op'));
+
+        return $writes[0];
+    }
+
+    public function testRejectionRecordsTheInformacjaInOneWrite()
+    {
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"bad"}}'));
+        try {
+            $this->service->createReceipt($this->order());
+            $this->fail('expected exception');
+        } catch (Exception $e) {
+            $this->assertSame('iFirma rejected the document: bad', $e->getMessage());
+        }
+
+        $write = $this->onlyReceiptWrite('add');
+        $this->assertSame('error', $write['row']['status']);
+        $this->assertSame('bad', $write['row']['last_error']);
+        $this->assertStringContainsString('"Kod": 201', $write['row']['response_payload']);
+        $this->assertSame('', (string) $write['row']['ifirma_id']);
+    }
+
+    public function testRejectionWithoutInformacjaRecordsTheGenericMessage()
+    {
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":201}}'));
+        try {
+            $this->service->createReceipt($this->order());
+            $this->fail('expected exception');
+        } catch (Exception $e) {
+            $this->assertSame('iFirma rejected the document: Unknown iFirma error.', $e->getMessage());
+        }
+
+        $write = $this->onlyReceiptWrite('add');
+        $this->assertSame('error', $write['row']['status']);
+        $this->assertSame('Unknown iFirma error.', $write['row']['last_error']);
+    }
+
+    public function testRejectionUpdatesAnExistingUnissuedRecordInOneWrite()
+    {
+        $old = new IfirmaReceipt();
+        $old->id_order = 15;
+        $old->status = IfirmaReceipt::STATUS_HELD;
+        $old->last_error = 'held: data request #4 pending';
+        $old->security_token = 'keep-me';
+        $old->save();
+        Db::getInstance()->whenGetValue('/ifirma_receipt/', (int) $old->id);
+        IfirmaTestState::clearWrites();
+
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"bad"}}'));
+        try {
+            $this->service->createReceipt($this->order());
+            $this->fail('expected exception');
+        } catch (Exception $e) {
+            $this->assertSame('iFirma rejected the document: bad', $e->getMessage());
+        }
+
+        $write = $this->onlyReceiptWrite('update');
+        $this->assertSame((int) $old->id, $write['id']);
+        $this->assertSame('error', $write['row']['status']);
+        $this->assertSame('bad', $write['row']['last_error']);
+        $this->assertSame('keep-me', $write['row']['security_token']);
+        $this->assertCount(1, IfirmaTestState::objects('ifirma_receipt'));
+    }
+
+    public function testNoAnswerAfterTheRequestWasSentIsUnknown()
+    {
+        $this->t->queue('POST', '#fakturakraj\.json#', array('status' => 0, 'error' => 'timeout'));
+        try {
+            $this->service->createReceipt($this->order());
+            $this->fail('expected exception');
+        } catch (Exception $e) {
+            $this->assertSame('Could not reach iFirma: cURL error: timeout', $e->getMessage());
+        }
+
+        $write = $this->onlyReceiptWrite('add');
+        $this->assertSame('unknown', $write['row']['status']);
+        $this->assertSame('cURL error: timeout', $write['row']['last_error']);
+        $this->assertCount(1, $this->t->calls);
+    }
+
+    public function testRequestRefusedLocallyIsAnErrorAndNotUnknown()
+    {
+        $client = new IfirmaApiClient('u@example.com', array('faktura' => ''), 'http://ifirma-mock:8001/iapi/', 30, $this->t);
+        $service = new IfirmaReceiptService($client, new Module());
+        try {
+            $service->createReceipt($this->order());
+            $this->fail('expected exception');
+        } catch (Exception $e) {
+            $this->assertSame('Could not reach iFirma: Missing iFirma API key "faktura".', $e->getMessage());
+        }
+
+        $this->assertFalse($client->lastRequestWasSent());
+        $write = $this->onlyReceiptWrite('add');
+        $this->assertSame('error', $write['row']['status']);
+        $this->assertSame('Missing iFirma API key "faktura".', $write['row']['last_error']);
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testNumerNamesTheDocumentWhenPelnyNumerIsMissing()
+    {
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"ok","Identyfikator":"77","Numer":"12"}}'));
+
+        $receipt = $this->service->createReceipt($this->order());
+
+        $this->assertSame('12', $receipt->ifirma_number);
+        $this->assertCount(1, $this->t->calls);
+        $write = $this->onlyReceiptWrite('add');
+        $this->assertSame('created', $write['row']['status']);
+        $this->assertSame('12', $write['row']['ifirma_number']);
+        $this->assertSame('', $write['row']['last_error']);
+    }
+
     public function testKod200WithDodatkoweUwagiRetriesOnceWithoutIt()
     {
         $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":200,"Informacja":"Niepoprawna zawartość żądania - nie można utworzyć obiektu na podstawie zawartości żądania."}}'));

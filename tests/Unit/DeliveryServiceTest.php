@@ -101,6 +101,33 @@ class DeliveryServiceTest extends TestCase
         return reset($rows);
     }
 
+    /**
+     * A saved receipt that already carries $fields; the seeding writes are cleared, so the write log
+     * that follows holds only what the delivery does.
+     *
+     * @param array  $fields field => value
+     * @param string $type
+     * @param string $source
+     * @return IfirmaReceipt
+     */
+    private function seeded(array $fields, $type = 'fakturaparagon', $source = 'module')
+    {
+        $r = $this->receipt($type, $source);
+        foreach ($fields as $name => $value) {
+            $r->$name = $value;
+        }
+        $r->save();
+        IfirmaTestState::clearWrites();
+
+        return $r;
+    }
+
+    /** @return string[] op (add|update) of each receipt write since the last reset, oldest first */
+    private function receiptWriteOps()
+    {
+        return array_column(IfirmaTestState::writes('ifirma_receipt'), 'op');
+    }
+
     public function testShopMailSuccess()
     {
         $this->pdfOk();
@@ -566,6 +593,183 @@ class DeliveryServiceTest extends TestCase
         $this->assertSame('Delivery is disabled (channel none)', $res['message']);
         $this->assertCount(0, Mail::$sent);
         $this->assertSame($before, $this->row());
+    }
+
+    // ---- recorded outcomes: the fields set and the number of writes ------------------------
+
+    public function testChannelNoneClearsTheStampOfAnEarlierSendInOneWrite()
+    {
+        Configuration::updateValue('IFIRMA_SEND_CHANNEL', 'none');
+        $r = $this->seeded(array(
+            'delivery_status' => 'sent',
+            'delivery_channel' => 'shop_mail',
+            'delivered_at' => '2026-01-03 10:00:00',
+            'delivery_error' => 'earlier error',
+        ));
+
+        $res = $this->svc->deliver($r);
+
+        $this->assertSame(array('ok' => true, 'status' => 'skipped', 'channel' => 'none', 'message' => ''), $res);
+        $this->assertSame(array('update'), $this->receiptWriteOps());
+        $row = $this->row();
+        $this->assertSame('skipped', $row['delivery_status']);
+        $this->assertSame('none', $row['delivery_channel']);
+        $this->assertNull($row['delivered_at']);
+        $this->assertSame('', $row['delivery_error']);
+        $this->assertSame('created', $row['status']);
+    }
+
+    public function testExternalSkipRecordsTheConfiguredChannelAndKeepsTheStamp()
+    {
+        $r = $this->seeded(array(
+            'delivery_status' => 'failed',
+            'delivery_channel' => 'ifirma_mail',
+            'delivered_at' => '2026-01-03 10:00:00',
+            'delivery_error' => 'earlier error',
+        ), 'fakturakraj', 'external');
+
+        $res = $this->svc->deliver($r);
+
+        $this->assertSame(
+            array('ok' => true, 'status' => 'skipped', 'channel' => 'shop_mail', 'message' => 'external document - not auto-delivered'),
+            $res
+        );
+        $this->assertSame(array('update'), $this->receiptWriteOps());
+        $row = $this->row();
+        $this->assertSame('skipped', $row['delivery_status']);
+        $this->assertSame('shop_mail', $row['delivery_channel']);
+        $this->assertSame('external document - not auto-delivered', $row['delivery_error']);
+        $this->assertSame('2026-01-03 10:00:00', $row['delivered_at']);
+        $this->assertCount(0, $this->t->calls);
+    }
+
+    public function testSendReplacesAnEarlierOutcomeAndStampsTheClockInOneWrite()
+    {
+        $this->pdfOk();
+        $r = $this->seeded(array(
+            'delivery_status' => 'failed',
+            'delivery_channel' => 'ifirma_mail',
+            'delivered_at' => '2026-01-03 10:00:00',
+            'delivery_error' => 'earlier error',
+        ));
+
+        $res = $this->svc->resend($r);
+
+        $this->assertSame(array('ok' => true, 'status' => 'sent', 'channel' => 'shop_mail', 'message' => ''), $res);
+        $this->assertSame(array('update'), $this->receiptWriteOps());
+        $row = $this->row();
+        $this->assertSame('sent', $row['delivery_status']);
+        $this->assertSame('shop_mail', $row['delivery_channel']);
+        $this->assertSame(date('Y-m-d H:i:s', 1800000000), $row['delivered_at']);
+        $this->assertSame('', $row['delivery_error']);
+    }
+
+    public function testFailureKeepsTheStampOfAnEarlierSendInOneWrite()
+    {
+        Mail::$result = false;
+        $this->pdfOk();
+        $r = $this->seeded(array(
+            'delivery_status' => 'sent',
+            'delivery_channel' => 'shop_mail',
+            'delivered_at' => '2026-01-03 10:00:00',
+            'delivery_error' => '',
+        ));
+
+        $res = $this->svc->resend($r);
+
+        $this->assertSame(
+            array('ok' => false, 'status' => 'failed', 'channel' => 'shop_mail', 'message' => 'The shop mail system refused to send the e-mail.'),
+            $res
+        );
+        $this->assertSame(array('update'), $this->receiptWriteOps());
+        $row = $this->row();
+        $this->assertSame('failed', $row['delivery_status']);
+        $this->assertSame('shop_mail', $row['delivery_channel']);
+        $this->assertSame('The shop mail system refused to send the e-mail.', $row['delivery_error']);
+        $this->assertSame('2026-01-03 10:00:00', $row['delivered_at']);
+    }
+
+    public function testAFailedShopMailFallbackRecordsTheFallbackChannel()
+    {
+        Configuration::updateValue('IFIRMA_SEND_CHANNEL', 'ifirma_mail');
+        Mail::$result = false;
+        $this->pdfOk();
+        $r = $this->seeded(array());
+
+        $res = $this->svc->deliver($r);
+
+        $this->assertSame(
+            array('ok' => false, 'status' => 'failed', 'channel' => 'shop_mail_fallback', 'message' => 'The shop mail system refused to send the e-mail.'),
+            $res
+        );
+        $this->assertSame(array('update'), $this->receiptWriteOps());
+        $row = $this->row();
+        $this->assertSame('failed', $row['delivery_status']);
+        $this->assertSame('shop_mail_fallback', $row['delivery_channel']);
+    }
+
+    public function testChannelOptionOverridesTheConfiguredChannel()
+    {
+        $this->t->queue('POST', '#fakturakraj/send/77\.json#', $this->kod(0, 'ok'));
+        $r = $this->seeded(array(), 'fakturakraj');
+
+        $res = $this->svc->deliver($r, null, array('channel' => 'ifirma_mail'));
+
+        $this->assertSame(array('ok' => true, 'status' => 'sent', 'channel' => 'ifirma_mail', 'message' => ''), $res);
+        $this->assertCount(0, Mail::$sent);
+        $this->assertSame(array('update'), $this->receiptWriteOps());
+        $this->assertSame('ifirma_mail', $this->row()['delivery_channel']);
+    }
+
+    public function testUnknownChannelOptionIsIgnored()
+    {
+        $this->pdfOk();
+        $r = $this->seeded(array());
+
+        $res = $this->svc->deliver($r, null, array('channel' => 'carrier_pigeon'));
+
+        $this->assertSame('shop_mail', $res['channel']);
+        $this->assertCount(1, Mail::$sent);
+        $this->assertSame('shop_mail', $this->row()['delivery_channel']);
+    }
+
+    public function testAnExceptionWhileSendingIsRecordedAsAFailureInOneWrite()
+    {
+        $this->pdfOk();
+        $r = $this->seeded(array());
+        $order = new class extends Order {
+            public function getCustomer()
+            {
+                throw new RuntimeException('customer lookup failed');
+            }
+        };
+        $order->id = 15;
+        $order->id_lang = 2;
+
+        $res = $this->svc->deliver($r, $order);
+
+        $this->assertSame(
+            array('ok' => false, 'status' => 'failed', 'channel' => 'shop_mail', 'message' => 'customer lookup failed'),
+            $res
+        );
+        $this->assertCount(0, Mail::$sent);
+        $this->assertSame(array('update'), $this->receiptWriteOps());
+        $row = $this->row();
+        $this->assertSame('failed', $row['delivery_status']);
+        $this->assertSame('shop_mail', $row['delivery_channel']);
+        $this->assertSame('customer lookup failed', $row['delivery_error']);
+        $this->assertNull($row['delivered_at']);
+    }
+
+    public function testUnissuedReceiptRecordsNothing()
+    {
+        $r = $this->seeded(array('ifirma_id' => ''));
+
+        $res = $this->svc->deliver($r);
+
+        $this->assertSame('failed', $res['status']);
+        $this->assertSame(array(), $this->receiptWriteOps());
+        $this->assertSame('none', $this->row()['delivery_status']);
     }
 
     public function testUnissuedReceiptFails()

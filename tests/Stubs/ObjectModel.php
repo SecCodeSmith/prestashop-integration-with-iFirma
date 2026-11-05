@@ -25,9 +25,16 @@ class ObjectModel
     /** @var array table => id => field array */
     public static $registry = [];
 
+    /**
+     * @var array[] every persisted write, oldest first: ['op' => 'add'|'update', 'table', 'id',
+     *              'row' => the stored field array]; one entry per save()
+     */
+    public static $writeLog = [];
+
     public static function reset()
     {
         self::$registry = [];
+        self::$writeLog = [];
     }
 
     public function __construct($id = null, $idLang = null, $idShop = null)
@@ -69,7 +76,7 @@ class ObjectModel
                 }
             }
         }
-        $this->store();
+        $this->store('add');
 
         return true;
     }
@@ -80,7 +87,7 @@ class ObjectModel
         if (isset($def['fields']['date_upd']) && property_exists($this, 'date_upd')) {
             $this->date_upd = date('Y-m-d H:i:s');
         }
-        $this->store();
+        $this->store('update');
 
         return true;
     }
@@ -93,7 +100,7 @@ class ObjectModel
         return true;
     }
 
-    protected function store()
+    protected function store($op)
     {
         $def = static::$definition;
         $row = [];
@@ -101,5 +108,6 @@ class ObjectModel
             $row[$field] = property_exists($this, $field) ? $this->$field : null;
         }
         self::$registry[$def['table']][$this->id] = $row;
+        self::$writeLog[] = ['op' => $op, 'table' => $def['table'], 'id' => $this->id, 'row' => $row];
     }
 }

@@ -191,6 +191,36 @@ class IssuancePipelineTest extends TestCase
         return reset($rows);
     }
 
+    /** @return string[] op (add|update) of each receipt write since the last reset, oldest first */
+    private function receiptWriteOps()
+    {
+        return array_column(IfirmaTestState::writes('ifirma_receipt'), 'op');
+    }
+
+    /** A pipeline whose first data-request lookup (the hold step) throws. */
+    private function brokenHoldPipeline()
+    {
+        $module = new Module();
+        $broken = new class($module) extends IfirmaDataRequestService {
+            public function hasPendingForOrder($idOrder)
+            {
+                throw new RuntimeException('db exploded');
+            }
+        };
+
+        return $this->buildPipeline($this->client, $broken, $module);
+    }
+
+    /** Leaves an unknown-outcome row for the order (the create request timed out), then clears the write log. */
+    private function leaveUnknownRow()
+    {
+        $this->queueGuardNone();
+        $this->t->queue('POST', '#fakturakraj\.json#', array('status' => 0, 'error' => 'timeout'));
+        $this->pipeline->run($this->order());
+        $this->assertSame('unknown', $this->dbRow()['status']);
+        IfirmaTestState::clearWrites();
+    }
+
     private function stepNames(IfirmaPipelineResult $r)
     {
         $names = array();
@@ -562,6 +592,43 @@ class IssuancePipelineTest extends TestCase
         $this->assertStringContainsString('hold', $this->pipeline->describe($r));
     }
 
+    public function testHoldWritesTheNewRowOnce()
+    {
+        $req = $this->pendingRequest();
+
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertSame('held', $r->outcome);
+        $writes = IfirmaTestState::writes('ifirma_receipt');
+        $this->assertSame(array('add'), array_column($writes, 'op'));
+        $this->assertSame($r->receipt->id, $writes[0]['id']);
+        $this->assertSame('held', $writes[0]['row']['status']);
+        $this->assertSame('held: data request #' . $req->id . ' pending', $writes[0]['row']['last_error']);
+        $this->assertSame(15, (int) $writes[0]['row']['id_order']);
+        $this->assertSame('PS-ORDER-15-ABCDEFGHI', $writes[0]['row']['order_reference']);
+    }
+
+    public function testHoldUpdatesTheExistingUnissuedRowOnce()
+    {
+        $old = new IfirmaReceipt();
+        $old->id_order = 15;
+        $old->status = IfirmaReceipt::STATUS_ERROR;
+        $old->last_error = 'earlier failure';
+        $old->save();
+        $req = $this->pendingRequest();
+        IfirmaTestState::clearWrites();
+
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertSame('held', $r->outcome);
+        $writes = IfirmaTestState::writes('ifirma_receipt');
+        $this->assertSame(array('update'), array_column($writes, 'op'));
+        $this->assertSame((int) $old->id, $writes[0]['id']);
+        $this->assertSame('held', $writes[0]['row']['status']);
+        $this->assertSame('held: data request #' . $req->id . ' pending', $writes[0]['row']['last_error']);
+        $this->assertCount(1, IfirmaTestState::objects('ifirma_receipt'));
+    }
+
     public function testResumeWithTriggerInHistoryRuns()
     {
         $req = $this->pendingRequest();
@@ -754,6 +821,73 @@ class IssuancePipelineTest extends TestCase
         $this->assertCount(0, $this->t->calls);
     }
 
+    public function testExceptionOnANewOrderWritesTheErrorRowOnce()
+    {
+        $r = $this->brokenHoldPipeline()->run($this->order());
+
+        $this->assertSame('error', $r->outcome);
+        $writes = IfirmaTestState::writes('ifirma_receipt');
+        $this->assertSame(array('add'), array_column($writes, 'op'));
+        $this->assertSame($r->receipt->id, $writes[0]['id']);
+        $this->assertSame('error', $writes[0]['row']['status']);
+        $this->assertSame('db exploded', $writes[0]['row']['last_error']);
+    }
+
+    public function testExceptionOnAnExistingRowKeepsItsStatusAndRecordsTheMessage()
+    {
+        $this->leaveUnknownRow();
+        $rows = IfirmaTestState::objects('ifirma_receipt');
+        $id = (int) key($rows);
+
+        $r = $this->brokenHoldPipeline()->run($this->order());
+
+        $this->assertSame('error', $r->outcome);
+        $this->assertSame('db exploded', $r->message);
+        $writes = IfirmaTestState::writes('ifirma_receipt');
+        $this->assertSame(array('update'), array_column($writes, 'op'));
+        $this->assertSame($id, $writes[0]['id']);
+        $this->assertSame($id, $r->receipt->id);
+        // the document may exist at iFirma: an error that is not about the create keeps the unknown status
+        $this->assertSame('unknown', $writes[0]['row']['status']);
+        $this->assertSame('db exploded', $writes[0]['row']['last_error']);
+        $this->assertCount(1, IfirmaTestState::objects('ifirma_receipt'));
+    }
+
+    public function testAFailureWhileRecordingTheErrorIsSwallowed()
+    {
+        Db::getInstance()->whenGetValue('/FROM `ps_ifirma_receipt`\s+WHERE id_order = (\d+)/', function () {
+            throw new RuntimeException('receipt table unavailable');
+        });
+
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertFalse($r->ok);
+        $this->assertSame('error', $r->outcome);
+        $this->assertSame('receipt table unavailable', $r->message);
+        $this->assertSame('hold', $r->stoppedAt);
+        $this->assertNull($r->receipt);
+        $this->assertSame(array(), IfirmaTestState::writes('ifirma_receipt'));
+        $this->assertCount(0, $this->t->calls);
+        $this->assertStringContainsString('receipt table unavailable', PrestaShopLogger::$logs[0]['message']);
+    }
+
+    public function testAnErrorWhileRecordingTheErrorIsSwallowed()
+    {
+        Db::getInstance()->whenGetValue('/FROM `ps_ifirma_receipt`\s+WHERE id_order = (\d+)/', function () {
+            throw new Error('storage gone');
+        });
+
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertFalse($r->ok);
+        $this->assertSame('error', $r->outcome);
+        $this->assertSame('storage gone', $r->message);
+        $this->assertSame('hold', $r->stoppedAt);
+        $this->assertNull($r->receipt);
+        $this->assertSame(array(), IfirmaTestState::writes('ifirma_receipt'));
+        $this->assertCount(0, $this->t->calls);
+    }
+
     public function testOrderLookupFailureInStatusHookIsSwallowed()
     {
         // no order registered under this id: the hook still must not throw
@@ -773,6 +907,104 @@ class IssuancePipelineTest extends TestCase
         $row = $this->dbRow();
         $this->assertSame('error', $row['status']);
         $this->assertStringContainsString('connection refused', $row['last_error']);
+    }
+
+    public function testInconclusiveGuardWritesTheNewErrorRowOnce()
+    {
+        $this->t->queue('GET', '#faktury\.json#', array('status' => 0, 'error' => 'connection refused'));
+
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertSame('inconclusive', $r->outcome);
+        $writes = IfirmaTestState::writes('ifirma_receipt');
+        $this->assertSame(array('add'), array_column($writes, 'op'));
+        $this->assertSame($r->receipt->id, $writes[0]['id']);
+        $this->assertSame('error', $writes[0]['row']['status']);
+        $this->assertStringContainsString('connection refused', $writes[0]['row']['last_error']);
+        $this->assertSame($r->message, $writes[0]['row']['last_error']);
+        $this->assertSame(15, (int) $writes[0]['row']['id_order']);
+    }
+
+    public function testInconclusiveGuardKeepsTheStatusOfAnExistingRow()
+    {
+        $this->leaveUnknownRow();
+        $rows = IfirmaTestState::objects('ifirma_receipt');
+        $id = (int) key($rows);
+
+        $this->t->queue('GET', '#faktury\.json#', array('status' => 0, 'error' => 'connection refused'));
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertSame('inconclusive', $r->outcome);
+        $writes = IfirmaTestState::writes('ifirma_receipt');
+        $this->assertSame(array('update'), array_column($writes, 'op'));
+        $this->assertSame($id, $writes[0]['id']);
+        $this->assertSame($id, $r->receipt->id);
+        // the earlier create may have reached iFirma: a failed lookup must not turn unknown into error
+        $this->assertSame('unknown', $writes[0]['row']['status']);
+        $this->assertStringContainsString('connection refused', $writes[0]['row']['last_error']);
+        $this->assertSame($r->message, $writes[0]['row']['last_error']);
+        $this->assertCount(1, IfirmaTestState::objects('ifirma_receipt'));
+    }
+
+    public function testDisabledDuplicateCheckSkipsTheGuardStep()
+    {
+        Configuration::updateValue('IFIRMA_DUPLICATE_CHECK', 0);
+        $this->queueCreateOk();
+        $this->queueNumber();
+        $this->queuePdf();
+
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertTrue($r->ok);
+        $this->assertSame('issued', $r->outcome);
+        $this->assertSame(
+            array('hold:ok', 'guard:skipped', 'create:ok', 'number:ok', 'ksef:skipped', 'deliver:ok'),
+            $this->stepNames($r)
+        );
+        $this->assertSame('duplicate check disabled', $r->steps[1]['message']);
+        // no document list before the create
+        $this->assertSame('POST', $this->t->calls[0]['method']);
+        $this->assertCount(1, $this->posts());
+    }
+
+    public function testExceptionFromTheDeliveryStopsOnlyTheDeliverStep()
+    {
+        $module = new Module();
+        $service = new IfirmaReceiptService($this->client, $module);
+        $delivery = new class($this->client, $service, $module) extends IfirmaDeliveryService {
+            public function deliver(IfirmaReceipt $receipt, ?Order $order = null, array $options = array())
+            {
+                throw new RuntimeException('mail server down');
+            }
+        };
+        $pipeline = new IfirmaIssuancePipeline(
+            $service,
+            new IfirmaDuplicateGuard($this->client),
+            $delivery,
+            new IfirmaDataRequestService($module),
+            $module,
+            null,
+            new IfirmaKsefService($this->client, $module)
+        );
+        $this->queueGuardNone();
+        $this->queueCreateOk();
+        $this->queueNumber();
+
+        $r = $pipeline->run($this->order());
+
+        $this->assertTrue($r->ok);
+        $this->assertSame('issued', $r->outcome);
+        $this->assertSame('deliver', $r->stoppedAt);
+        $this->assertSame('deliver:stopped', $this->stepNames($r)[5]);
+        $this->assertSame('mail server down', $r->steps[5]['message']);
+        $this->assertSame(
+            array('ok' => false, 'status' => 'failed', 'channel' => '', 'message' => 'mail server down'),
+            $r->delivery
+        );
+        $this->assertStringContainsString('Delivery step failed: mail server down', $pipeline->describe($r));
+        // the delivery never ran, so it recorded nothing
+        $this->assertSame('none', $this->dbRow()['delivery_status']);
+        $this->assertSame(array('add'), $this->receiptWriteOps());
     }
 
     public function testRateLimitedGuardCreatesNoRow()

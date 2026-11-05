@@ -53,4 +53,22 @@ class IfirmaTestState
     {
         return isset(ObjectModel::$registry[$table]) ? ObjectModel::$registry[$table] : [];
     }
+
+    /**
+     * Persisted writes (one per save()) to a table since the last reset, oldest first: op
+     * (add|update), table, id and row (the stored field array). The number of entries is the
+     * number of database writes of a code path.
+     */
+    public static function writes($table)
+    {
+        return array_values(array_filter(ObjectModel::$writeLog, function ($write) use ($table) {
+            return $write['table'] === $table;
+        }));
+    }
+
+    /** Forgets the writes so far, e.g. those of seeding a row, so that writes() counts one code path. */
+    public static function clearWrites()
+    {
+        ObjectModel::$writeLog = [];
+    }
 }
