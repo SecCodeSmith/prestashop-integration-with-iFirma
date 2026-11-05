@@ -176,6 +176,16 @@ class DuplicateGuardDecisionTest extends TestCase
         $this->assertDecision($decision, IfirmaGuardResult::OUTCOME_SUSPECTED, null, array($this->withSaleDate($row, '')), 'cURL error: timeout');
     }
 
+    public function testADetailWhoseBodyIsNotJsonStaysSuspectedUnverifiedWithoutAnError()
+    {
+        $row = $this->candidate(77);
+        $read = array('detail' => array('raw' => '<html>not json</html>', 'data' => null), 'error' => '');
+
+        $decision = IfirmaDuplicateGuard::classify($this->settings(), $this->scan(array($row), array($read)));
+
+        $this->assertDecision($decision, IfirmaGuardResult::OUTCOME_SUSPECTED, null, array($this->withSaleDate($row, '')), '');
+    }
+
     public static function errorsOfTwoReads()
     {
         // newer candidate, older candidate, error of the decision
@@ -397,6 +407,21 @@ class DuplicateGuardDecisionTest extends TestCase
         $this->assertSame(array(3, null, 5), array_map(function ($row) {
             return isset($row['FakturaId']) ? $row['FakturaId'] : null;
         }, $candidates));
+    }
+
+    public function testAnUndatedRowComesLastEvenWhenADatedRowIsListedBeforeIt()
+    {
+        $undated = $this->listed(5);
+        unset($undated['DataWystawienia']);
+        $rows = array(
+            $this->listed(90, array('DataWystawienia' => '2026-01-03')),
+            $undated,
+            $this->listed(70, array('DataWystawienia' => '2026-01-02')),
+        );
+
+        $candidates = IfirmaDuplicateGuard::candidatesFrom($this->settings(), $rows, $this->buyer(), 123.0, 'PLN');
+
+        $this->assertSame(array(90, 70, 5), array_column($candidates, 'FakturaId'));
     }
 
     public function testNothingListedIsNoCandidate()
