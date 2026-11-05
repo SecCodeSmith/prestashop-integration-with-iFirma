@@ -92,4 +92,4 @@ If any path cannot be proven, the runtime check stays, but it is cached once per
 
 ## Migration Plan
 
-The tasks are applied in order, each as its own commit or PR with green CI. There is no data migration. The D7 step is the only one that touches install and upgrade behaviour, and it lands last. Rollback is a revert of the task commit.
+The tasks are applied in order, each as its own commit straight on master with green CI (no branch and no pull request, the user's choice on 2026-11-05). There is no data migration. The D7 step is the only one that touches install and upgrade behaviour, and it lands last. Rollback is a revert of the task commit.

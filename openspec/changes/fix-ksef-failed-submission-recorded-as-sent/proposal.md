@@ -27,5 +27,7 @@ The `ksef-submission` spec already requires a failed submission to record `BLAD`
 
 - `classes/IfirmaKsefService.php`: `submit()`.
 - Tests: `tests/Unit/KsefServiceTest.php`, plus a pin through the pipeline's `ksef` step in `tests/Unit/IssuancePipelineTest.php`.
-- Behaviour changes only in the broken edge case. As a side effect, a whitespace-only exception message now stores the readable fallback text instead of the whitespace.
+- Behaviour changes only in the broken edge case, with two side effects:
+  - A whitespace-only exception message now stores the readable fallback text instead of the whitespace.
+  - An exception message with surrounding whitespace is stored trimmed, as iFirma's own error text already is.
 - The change lands straight on master behind the same local gate as the refactor (PHPUnit with pcov, then diff-cover at 100% of changed lines), and CI repeats the gate after the push.

@@ -7,7 +7,9 @@ Every task follows design D1:
 4. The full PHPUnit suite passes.
 5. `diff-cover` reports 100% on changed lines.
 
-No task starts on a red tree. Prerequisite: `refactor-clean-code-tda` is applied and its CI gates exist.
+No task starts on a red tree. Prerequisites: `refactor-clean-code-tda` is applied and its CI gates exist, and `refactor-tda-followups` has landed, because it touches several of the same classes.
+
+Like `refactor-clean-code-tda`, the change lands straight on master: one commit per task (a characterisation commit may come first), no branch and no pull request (the user's choice, 2026-11-05). The local gate runs before each commit: the whole suite with pcov, then diff-cover against the task's base commit. CI repeats it after the push.
 
 ## 1. Small seams
 
@@ -19,7 +21,7 @@ No task starts on a red tree. Prerequisite: `refactor-clean-code-tda` is applied
 
 ## 2. Contractor resolution steps
 
-- [ ] 2.1 Split `IfirmaContractorService::ensure` into per-strategy resolvers (design D6) plus a `lookupFailed()` helper. Verify that all 57 ContractorServiceTest cases are green, unchanged, `ensure` is 40 lines or fewer, and diff-cover is at 100%.
+- [ ] 2.1 Split `IfirmaContractorService::ensure` into per-strategy resolvers (design D6) plus a `lookupFailed()` helper. Verify that every ContractorServiceTest case is green and unchanged (the class grew well beyond 57 cases during `refactor-clean-code-tda`), `ensure` is 40 lines or fewer, and diff-cover is at 100%.
 
 ## 3. Pure cores for counting and import
 
@@ -56,11 +58,11 @@ No task starts on a red tree. Prerequisite: `refactor-clean-code-tda` is applied
 ## 9. Runtime schema checks (gated)
 
 - [ ] 9.1 Extend UpgradeTest to prove that fresh install, upgrade 1.1.0 to 1.2.0, and an install that predates the contractor map table all end with the contractor map table (identifier length 64) and the KSeF receipt columns. Verify that it is green.
-- [ ] 9.2 If 9.1 proves every path, remove the runtime `ensure*()` calls from IfirmaContractorMap, IfirmaIssuancePipeline and IfirmaKsefService. Otherwise replace them with one cached check per request at the entry points, and record which path failed in the PR. Verify that the suite is green and diff-cover is at 100%.
+- [ ] 9.2 If 9.1 proves every path, remove the runtime `ensure*()` calls from IfirmaContractorMap, IfirmaIssuancePipeline and IfirmaKsefService. Otherwise replace them with one cached check per request at the entry points, and record which path failed in this task's notes. Verify that the suite is green and diff-cover is at 100%.
 
 ## 10. Integration check
 
-- [ ] 10.1 Run the full CI on the branch, install the build on the test-stack shop, and run `php tests/smoke/run.php` plus the upgrade smoke (`upgrade-phase1.php` then `upgrade-phase2.php`) in the container. Exercise issue, adopt, deliver, KSeF submit, data-request approve, and the contractor import. Verify that the behaviour matches the pre-change build and that the mock API reports no signature or payload errors.
+- [ ] 10.1 Run the full CI on master after the last task, install the build on the test-stack shop, and run `php tests/smoke/run.php` plus the upgrade smoke (`upgrade-phase1.php` then `upgrade-phase2.php`) in the container. Exercise issue, adopt, deliver, KSeF submit, data-request approve, and the contractor import. Verify that the behaviour matches the pre-change build and that the mock API reports no signature or payload errors.
 - [ ] 10.2 Run `graphify update .` and `openspec validate refactor-srp-splits`. Verify that both succeed.
 
 ## Workflow follow-up
