@@ -1,17 +1,17 @@
 # Graph Report - ifirma  (2026-11-05)
 
 ## Corpus Check
-- 221 files · ~233,730 words
+- 221 files · ~234,201 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 20 file(s) not represented in the graph (top: (none) 9, .tpl 6, .xml 1)
 
 ## Summary
-- 4126 nodes · 9991 edges · 260 communities (169 shown, 91 thin omitted)
-- Extraction: 85% EXTRACTED · 15% INFERRED · 0% AMBIGUOUS · INFERRED: 1489 edges (avg confidence: 0.89)
+- 4126 nodes · 9996 edges · 260 communities (169 shown, 91 thin omitted)
+- Extraction: 85% EXTRACTED · 15% INFERRED · 0% AMBIGUOUS · INFERRED: 1494 edges (avg confidence: 0.89)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `b35d81af`
+- Built from commit: `6fba43fb`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -163,7 +163,7 @@
 - Requirement: List calls always bounded
 - Requirement: Request timeouts
 - build-zip.mjs
-- Context
+- .postProcessConfiguration
 - Requirement: Non-PDF body on PDF endpoint
 - Spec Delta
 - Requirement: Pending request holds issuance
@@ -300,7 +300,7 @@ Nodes (7): AdminIfirmaController, IfirmaDatarequestModuleFrontController, Ifirma
 
 ### Community 6 - "Ifirma"
 Cohesion: 0.07
-Nodes (5): Ifirma, 2. API-client factory (Tier 1), 8. Payment map serialiser (Tier 1), 7. Module class extractions, HelperForm
+Nodes (3): Ifirma, 2. API-client factory (Tier 1), HelperForm
 
 ### Community 7 - "openspec-archive-change skill"
 Cohesion: 0.18
@@ -715,8 +715,8 @@ Cohesion: 0.50
 Nodes (4): Requirement: Documented enumerations only, Scenario: Default signature type, Scenario: Invalid value never reaches iFirma, Scenario: Merchant choice
 
 ### Community 156 - "Tasks"
-Cohesion: 0.22
-Nodes (6): IfirmaHttpTransport, 10. IfirmaDataRequest approve/reject (Tier 2), 14. Integration check, 1. Safety net, Tasks, Workflow follow-up
+Cohesion: 0.25
+Nodes (5): IfirmaHttpTransport, 10. IfirmaDataRequest approve/reject (Tier 2), 14. Integration check, 1. Safety net, Tasks
 
 ### Community 160 - "HttpStatusTest"
 Cohesion: 0.14
@@ -762,9 +762,9 @@ Nodes (3): Requirement: Request timeouts, Scenario: Customer page sync, Scenario
 Cohesion: 0.15
 Nodes (11): archive, buildInfo(), CHANNELS, DIRS, FILES, gitCommit(), info, missing (+3 more)
 
-### Community 175 - "Context"
-Cohesion: 0.18
-Nodes (10): Context, D1. Same test-first protocol as `refactor-clean-code-tda` D1, D2. Steps return explicit continue or stop, not shared flags, D5. Module-class extractions keep `l()` in `ifirma.php`, D6. Pure cores, thin I/O shells, D7. Removing runtime schema checks is a gated, last step, Decisions, Design (+2 more)
+### Community 175 - ".postProcessConfiguration"
+Cohesion: 0.14
+Nodes (12): 8. Payment map serialiser (Tier 1), Context, D1. Same test-first protocol as `refactor-clean-code-tda` D1, D2. Steps return explicit continue or stop, not shared flags, D5. Module-class extractions keep `l()` in `ifirma.php`, D6. Pure cores, thin I/O shells, D7. Removing runtime schema checks is a gated, last step, Decisions (+4 more)
 
 ### Community 176 - "Requirement: Non-PDF body on PDF endpoint"
 Cohesion: 0.67
@@ -871,8 +871,8 @@ Cohesion: 0.10
 Nodes (16): 10. Status sync (spec: receipt-status-sync), 11. Customer visibility (spec: customer-receipt-visibility), 12. Integration verification and release readiness, 13. Payment method follows the order, 14. Contractor registration before issuance, 15. Existing contractor linking, 16. Contractor reference on documents, 17. Guard contractor filter (+8 more)
 
 ### Community 209 - ".getInstance"
-Cohesion: 0.11
-Nodes (5): IfirmaContractorMap, 2. Data model, configuration and upgrade, 7. Schema helper (Tier 1), discoverFixtures(), pSQL()
+Cohesion: 0.12
+Nodes (6): IfirmaContractorMap, 2. Data model, configuration and upgrade, 7. Schema helper (Tier 1), Workflow follow-up, discoverFixtures(), pSQL()
 
 ### Community 210 - "Requirement: Releases are atomic"
 Cohesion: 0.14
@@ -952,14 +952,14 @@ Nodes (4): Requirement: Submission mode, Scenario: All invoices mode, Scenario: 
 
 ## Knowledge Gaps
 - **18 isolated node(s):** `ifirma-mock`, `Glowing Green Hammer Icon`, `Matrix-style Binary Code Rain Background`, `PrestaShop Module Icon Usage`, `graphify knowledge graph workflow` (+13 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1300 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1299 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 - **91 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `ContractorServiceTest` connect `ContractorServiceTest` to `.resetAll`, `ContractorReferenceTest`, `IfirmaContractorService`, `ContractorServiceTest.php`, `.updateValue`, `PHPUnit\Framework\TestCase`?**
-  _High betweenness centrality (0.045) - this node is a cross-community bridge._
+  _High betweenness centrality (0.044) - this node is a cross-community bridge._
 - **Are the 54 inferred relationships involving `IfirmaReceipt` (e.g. with `.ensureRow()` and `.hookDisplayOrderDetail()`) actually correct?**
   _`IfirmaReceipt` has 54 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `ifirma-mock`, `Glowing Green Hammer Icon`, `Matrix-style Binary Code Rain Background` to the rest of the system?**

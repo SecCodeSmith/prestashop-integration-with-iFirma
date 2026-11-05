@@ -270,9 +270,31 @@ No task starts on a red tree. Each task is one commit straight on master, with n
 
 ## 14. Integration check
 
-- [ ] 14.1 Run the full CI pipeline on master after the last task (lint, lint-php72, phpunit, coverage, mock, build). Install the build on the local test-stack shop, then issue a receipt, run a delivery and approve a data request. Verify that the behaviour matches master, and that `php tests/smoke/run.php` passes in the container.
-- [ ] 14.2 Run `graphify update .` and `openspec validate refactor-clean-code-tda`. Verify that both succeed.
+- [x] 14.1 Run the full CI pipeline on master after the last task (lint, lint-php72, phpunit, coverage, mock, build). Install the build on the local test-stack shop, then issue a receipt, run a delivery and approve a data request. Verify that the behaviour matches master, and that `php tests/smoke/run.php` passes in the container. Evidence:
+  - **CI.** Run #19 (42022011283) on `6fba43f`, the push after the last task, passed all six jobs:
+    - PHP lint and licence headers;
+    - PHP 7.2 syntax on 55 shipped files;
+    - PHPUnit;
+    - changed-line coverage: 107 lines against `f566c86`, 100%;
+    - mock tests: 130 passed;
+    - test build `ifirma-1.3.0+build.19`, with `BUILD` commit `6fba43f`.
+  - **The build is the tested code.** The local shop runs the module from a bind mount of the checkout, so uploading the zip would overwrite the checkout. Instead I compared the CI zip with the commit:
+    - it holds exactly the 82 tracked runtime files of `6fba43f` plus `BUILD`, each byte-identical to its blob;
+    - the smoke ran that same commit from the checkout, which differs only by CRLF line endings (`core.autocrlf`).
+  - **Behaviour matches master.** `tests/smoke/run.php` ran in the PrestaShop 8.1 container against the mock, on the pre-refactor master `6c841c1` and on the final `6fba43f`. It covers issuing receipts, delivery with PDF retries, approving a data request, status sync and cron, KSeF, customer visibility, the renamed contractor and the customer-panel actions.
+    - Both runs: `passed 90, failed 0, skipped 1`. The skip is the in-container cron HTTP check, checked from the host under task 6.1.
+    - The 91 check lines, with order numbers, references and dates normalised, are identical between the two runs, and identical in the runs after waves 1 to 4.
+    - Correction: an earlier comparison script matched only the `[SKIP]` line, so the per-wave "same verdicts" notes above were confirmed only by this later, corrected comparison.
+  - **The whole change.** Gate against `6c841c1`: the suite grew from 1080 to 1561 tests, and all 357 changed shipped lines are covered.
+- [x] 14.2 Run `graphify update .` and `openspec validate refactor-clean-code-tda`. Verify that both succeed. Evidence: `graphify update .` re-extracted code only and rebuilt 4126 nodes and 9991 edges with no LLM. `cost.json` is unchanged and all 18 `cache/semantic` files are still tracked. `openspec validate refactor-clean-code-tda --strict` is valid.
 
 ## Workflow follow-up
 
 - Archive the change after review. `refactor-srp-splits` can then start.
+- Found during this change, not fixed, because each needs its own decision or changes behaviour:
+  - **Bug, present before this change:** `IfirmaKsefService::submit()` treats a throwable with an empty message as success, so the KSeF status is recorded as `WYSLANA` with `ok` true. It needs a behaviour-changing fix with its own spec scenario.
+  - **Tell-Don't-Ask:** design D8 has no intent method for the paid status (`StatusSyncService::applyRow`, `updateStatusPaid`) or for the duplicate guard's suspected state. A `markPaid()` and a `markSuspected()` would finish that move.
+  - The contractor identifier length 64 is still written out in `IfirmaContractorMap` (`link()` and the ObjectModel size), `IfirmaContractorImport::MAX_IDENTIFIER` and `IfirmaCustomerContractorService::IDENTIFIER_MAX`. It could reference `IfirmaSchema::CONTRACTOR_IDENTIFIER_LENGTH`.
+  - The customer-panel JSON's `JSON_HEX_*` flags are not pinned by a test.
+  - `IfirmaReceiptService` builds its `reference_rejected` fallback with a positional five-argument constructor; a named constructor would read better.
+  - The `throwables()` data provider is repeated in three test classes, and `ErrorGuardTest::failures()` is a fourth near-copy. They could become a shared test trait.
