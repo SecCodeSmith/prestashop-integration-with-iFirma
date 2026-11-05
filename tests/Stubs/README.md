@@ -29,7 +29,7 @@ Note: controllers use `exit`/`die`/`header()`; those paths cannot be unit-tested
 | `Customer` | id, email, firstname, lastname, id_lang, is_guest, company, `date_add`, `$logged` (-> `isLogged()`), `isGuest()`, `getAddresses($idLang)` (rows from the Address registry whose `id_customer` matches, lowest id first; all Address props plus `id_address`); registry |
 | `Country` | id, iso_code, name; registry; `getNameById($lang,$id)`, `getByIso($iso)` |
 | `Currency` | id, iso_code; registry; `getDefaultCurrency()` (registry id 1 or PLN) |
-| `Language` | `static $languages` (default en id 1, pl id 2); `getLanguages()`, `getIsoById()` |
+| `Language` | `static $languages` (default en id 1, pl id 2; a row may carry `'active' => 0`); `getLanguages($active = true)` (leaves out rows with `'active' => 0` when `$active`), `getIsoById()` |
 | `Shop` | `getContextShopID()` = 1; `static $name` |
 | `Employee` | id, firstname, lastname, email, `$active` (default 1), `$id_profile` (default 1); registry; static `getEmployees($activeOnly = true)` returns rows with `id_employee`, `firstname`, `lastname` only (like core), ordered by lastname |
 | `Module` | props as PrestaShop (`name`, `version`, `context`, `_path`, ...); ctor sets `context=Context::getContext()`, `_path='/modules/ifirma/'`; `l()` echoes; `display()` records `[template, smartyVars]` in `static $displayed`, returns `<rendered:TEMPLATE>`; `registerHook()` -> `static $hooks`; `isRegisteredInHook`; `install/uninstall` true; `displayError()` -> `<error>..</error>`, `displayConfirmation()` -> `<confirmation>..</confirmation>`; `getInstanceByName($n)` -> `Module::$instances[$n]` or false |

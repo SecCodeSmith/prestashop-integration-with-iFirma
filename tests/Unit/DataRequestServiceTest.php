@@ -645,6 +645,622 @@ class DataRequestServiceTest extends TestCase
         $this->assertSame('[pl] This field is required.', $e->errors['postcode']);
     }
 
+    // ---- mails: what goes out (notifyMerchant, notifyCustomer) ---------------------------------
+    // Pinned through the Mail stub: template, recipient, language, subject, variables, and the value
+    // returned when the mail fails.
+
+    /** @return string the folder the mail templates are read from */
+    private function mailDir()
+    {
+        return _PS_MODULE_DIR_ . 'ifirma/mails/';
+    }
+
+    /** @return IfirmaDataRequest an unsaved request of customer 7 for order 15, as submitted */
+    private function submittedRequest()
+    {
+        $request = new IfirmaDataRequest();
+        $request->id_order = 15;
+        $request->id_customer = 7;
+        $request->setRequestedData($this->requestedData());
+        $request->customer_note = 'Please use company data';
+
+        return $request;
+    }
+
+    /** @return IfirmaDataRequest the same request once decided; the approved data differ in the postcode */
+    private function decidedRequest()
+    {
+        $request = $this->submittedRequest();
+        $request->setApprovedData(array_merge($this->requestedData(), array('postcode' => '00-951')));
+        $request->admin_note = 'Checked with the NIP register';
+
+        return $request;
+    }
+
+    /** @return array the variables of the merchant mail for submittedRequest() and the fixture address */
+    private function merchantVars()
+    {
+        return array(
+            '{order_reference}' => 'ABCDEFGHI',
+            '{order_id}' => 15,
+            '{customer_name}' => 'Anna Nowak',
+            '{customer_email}' => 'buyer@example.test',
+            '{requested_data}' => "want_invoice_for_company: 1\ncompany: ACME Sp. z o.o.\nvat_number: 5250001234\n"
+                . "address1: Nowa 5\npostcode: 00-950\ncity: Warszawa\nid_country: 14",
+            '{diff}' => "company: - -&gt; ACME Sp. z o.o.\nvat_number: - -&gt; 5250001234\nfirstname: Anna -&gt; -\n"
+                . "lastname: Nowak -&gt; -\naddress1: Stara 1 -&gt; Nowa 5\npostcode: 00-001 -&gt; 00-950",
+            '{note}' => 'Please use company data',
+            '{admin_link}' => 'https://shop.test/admin/index.php?controller=AdminOrders&token=admin-token-AdminOrders',
+        );
+    }
+
+    /** @return array the variables of the approval mail for decidedRequest() */
+    private function approvalVars()
+    {
+        return array(
+            '{firstname}' => 'Anna',
+            '{order_reference}' => 'ABCDEFGHI',
+            '{reason}' => 'Checked with the NIP register',
+            '{approved_data}' => "want_invoice_for_company: 1\ncompany: ACME Sp. z o.o.\nvat_number: 5250001234\n"
+                . "address1: Nowa 5\npostcode: 00-951\ncity: Warszawa\nid_country: 14",
+        );
+    }
+
+    /** @return array a recorded Mail::Send() call with its keys in a fixed order */
+    private static function sortedMail(array $record)
+    {
+        ksort($record);
+        ksort($record['templateVars']);
+
+        return $record;
+    }
+
+    /**
+     * Asserts a recorded Mail::Send() call, argument for argument and type for type. The arguments
+     * that never change (sender, attachment, SMTP mode, template folder, die flag, bcc, reply-to)
+     * are filled in here.
+     *
+     * @param array $expected
+     * @param int $index
+     */
+    private function assertMailSent(array $expected, $index = 0)
+    {
+        $this->assertArrayHasKey($index, Mail::$sent, 'the mail was not sent');
+        $expected += array(
+            'from' => null,
+            'fromName' => null,
+            'fileAttachment' => null,
+            'modeSmtp' => null,
+            'templatePath' => $this->mailDir(),
+            'die' => false,
+            'bcc' => null,
+            'replyTo' => null,
+            'replyToName' => null,
+        );
+        $this->assertSame(self::sortedMail($expected), self::sortedMail(Mail::$sent[$index]));
+    }
+
+    /** @return Module a translator that tags every text and remembers which texts it was asked for */
+    private function recordingTranslator()
+    {
+        return new class extends Module {
+            /** @var array[] one [text, source] per l() call */
+            public $asked = array();
+
+            public function l($string, $specific = null, $locale = null)
+            {
+                $this->asked[] = array($string, $specific);
+
+                return '[pl] ' . $string;
+            }
+        };
+    }
+
+    /** @return Link a link builder that remembers its calls and answers with a fixed URL */
+    private function recordingLink()
+    {
+        $link = new class extends Link {
+            /** @var array[] the arguments of every getAdminLink() call */
+            public $calls = array();
+
+            public function getAdminLink($controller, $withToken = true, $sfRouteParams = [], $params = [])
+            {
+                $this->calls[] = func_get_args();
+
+                return 'https://admin.test/order?a=1&b=2';
+            }
+        };
+        Context::getContext()->link = $link;
+
+        return $link;
+    }
+
+    /** @return array[] id_shop of the order => shop id handed to the mailer */
+    public function shopIds()
+    {
+        return array(
+            'shop 3' => array(3, 3),
+            'shop 1' => array(1, 1),
+            'no shop' => array(0, null),
+            'shop not set' => array(null, null),
+        );
+    }
+
+    public function testMerchantMailIsSentWithEverythingTheTemplateNeeds()
+    {
+        Configuration::updateValue('IFIRMA_NOTIFY_EMAIL', 'merchant@example.test');
+        // the invoice address is the one compared, never the delivery address
+        $delivery = new Address();
+        $delivery->id = 4;
+        $delivery->id_customer = 7;
+        $delivery->postcode = '99-999';
+        $delivery->city = 'Gdansk';
+        Address::register($delivery);
+        $this->order->id_address_delivery = 4;
+
+        $this->assertTrue($this->service->notifyMerchant($this->submittedRequest(), $this->order));
+
+        $this->assertCount(1, Mail::$sent);
+        $this->assertMailSent(array(
+            'idLang' => 1,
+            'template' => 'data_request_received',
+            'subject' => 'Invoice data change request ABCDEFGHI',
+            'templateVars' => $this->merchantVars(),
+            'to' => 'merchant@example.test',
+            'toName' => null,
+            'idShop' => 1,
+        ));
+    }
+
+    public function testMerchantMailGoesOutInTheLanguageOfTheContext()
+    {
+        Context::getContext()->language->id = 9;
+
+        $this->service->notifyMerchant($this->submittedRequest(), $this->order);
+
+        // not the language of the order, which is 2
+        $this->assertSame(9, Mail::$sent[0]['idLang']);
+    }
+
+    /** @return array[] configured address, shop address => address the mail goes to */
+    public function merchantAddresses()
+    {
+        return array(
+            'configured address' => array('merchant@example.test', 'shop@example.test', 'merchant@example.test'),
+            'configured address is trimmed' => array("  merchant@example.test\t", 'shop@example.test', 'merchant@example.test'),
+            'blank configured address falls back to the shop address' => array('   ', 'shop@example.test', 'shop@example.test'),
+            'no configured address' => array(null, 'shop@example.test', 'shop@example.test'),
+            'shop address is trimmed' => array('', ' shop@example.test ', 'shop@example.test'),
+        );
+    }
+
+    /**
+     * @dataProvider merchantAddresses
+     */
+    public function testMerchantMailGoesToTheNotifyAddressOrElseTheShopAddress($configured, $shop, $expected)
+    {
+        if ($configured === null) {
+            Configuration::deleteByName('IFIRMA_NOTIFY_EMAIL');
+        } else {
+            Configuration::updateValue('IFIRMA_NOTIFY_EMAIL', $configured);
+        }
+        Configuration::updateValue('PS_SHOP_EMAIL', $shop);
+
+        $this->assertTrue($this->service->notifyMerchant($this->submittedRequest(), $this->order));
+
+        $this->assertCount(1, Mail::$sent);
+        $this->assertSame($expected, Mail::$sent[0]['to']);
+    }
+
+    public function testNoMerchantAddressMeansNoMail()
+    {
+        Configuration::updateValue('IFIRMA_NOTIFY_EMAIL', '  ');
+        Configuration::updateValue('PS_SHOP_EMAIL', ' ');
+
+        $this->assertFalse($this->service->notifyMerchant($this->submittedRequest(), $this->order));
+
+        $this->assertSame(array(), Mail::$sent);
+    }
+
+    public function testSubmitStillStoresTheRequestWhenThereIsNoMerchantAddress()
+    {
+        Configuration::updateValue('IFIRMA_NOTIFY_EMAIL', '');
+        Configuration::updateValue('PS_SHOP_EMAIL', '');
+
+        $request = $this->submitPending();
+
+        $this->assertSame(IfirmaDataRequest::STATUS_PENDING, $request->status);
+        $this->assertCount(1, IfirmaTestState::objects('ifirma_data_request'));
+        $this->assertSame(array(), Mail::$sent);
+    }
+
+    public function testMerchantMailReportsWhetherTheMailWentOut()
+    {
+        Mail::$result = false;
+        $this->assertFalse($this->service->notifyMerchant($this->submittedRequest(), $this->order));
+        $this->assertCount(1, Mail::$sent);
+
+        // core may answer with something that is not a boolean
+        Mail::$result = 0;
+        $this->assertFalse($this->service->notifyMerchant($this->submittedRequest(), $this->order));
+        Mail::$result = 1;
+        $this->assertTrue($this->service->notifyMerchant($this->submittedRequest(), $this->order));
+        $this->assertCount(3, Mail::$sent);
+    }
+
+    /**
+     * @dataProvider shopIds
+     */
+    public function testMerchantMailIsSentForTheShopOfTheOrder($idShop, $expected)
+    {
+        $this->order->id_shop = $idShop;
+
+        $this->service->notifyMerchant($this->submittedRequest(), $this->order);
+
+        $this->assertSame($expected, Mail::$sent[0]['idShop']);
+    }
+
+    public function testMerchantMailLinksToTheOrderInTheAdmin()
+    {
+        $link = $this->recordingLink();
+
+        $this->service->notifyMerchant($this->submittedRequest(), $this->order);
+
+        $this->assertSame(array(array('AdminOrders', true, array(), array('id_order' => 15, 'vieworder' => 1))), $link->calls);
+        // the link is handed over as it is: the template puts it in an href and in the text
+        $this->assertSame('https://admin.test/order?a=1&b=2', Mail::$sent[0]['templateVars']['{admin_link}']);
+    }
+
+    public function testMerchantMailIsSentWithoutALinkWhenTheLinkCannotBeBuilt()
+    {
+        Context::getContext()->link = new class extends Link {
+            public function getAdminLink($controller, $withToken = true, $sfRouteParams = [], $params = [])
+            {
+                throw new RuntimeException('no admin url');
+            }
+        };
+
+        $this->assertTrue($this->service->notifyMerchant($this->submittedRequest(), $this->order));
+
+        $this->assertSame('', Mail::$sent[0]['templateVars']['{admin_link}']);
+    }
+
+    public function testMerchantMailIsSentWithoutALinkWhenThereIsNoLinkBuilder()
+    {
+        foreach (array(null, new stdClass()) as $link) {
+            Mail::$sent = array();
+            Context::getContext()->link = $link;
+
+            $this->assertTrue($this->service->notifyMerchant($this->submittedRequest(), $this->order));
+
+            $this->assertSame('', Mail::$sent[0]['templateVars']['{admin_link}']);
+        }
+    }
+
+    public function testMerchantMailSaysSoWhenNothingDiffers()
+    {
+        $request = $this->submittedRequest();
+        $request->setRequestedData(array(
+            'want_invoice_for_company' => false,
+            'firstname' => 'Anna',
+            'lastname' => 'Nowak',
+            'address1' => 'Stara 1',
+            'postcode' => '00-001',
+            'city' => 'Warszawa',
+            'id_country' => 14,
+        ));
+
+        $this->service->notifyMerchant($request, $this->order);
+
+        $vars = Mail::$sent[0]['templateVars'];
+        $this->assertSame('No differences.', $vars['{diff}']);
+        $this->assertSame(
+            "want_invoice_for_company: 0\nfirstname: Anna\nlastname: Nowak\naddress1: Stara 1\npostcode: 00-001\ncity: Warszawa\nid_country: 14",
+            $vars['{requested_data}']
+        );
+    }
+
+    public function testMerchantMailEscapesWhatTheCustomerControlsButNotTheSubject()
+    {
+        $this->order->reference = '<b>"O\'1"&';
+        $this->customer->firstname = '<i>Ann</i>';
+        $this->customer->lastname = "O'Neil";
+        $this->customer->email = 'a&b@example.test';
+        $request = $this->submittedRequest();
+        $request->customer_note = '<script>alert("x")</script>';
+        $request->setRequestedData(array_merge($this->requestedData(), array('company' => 'A & B <Sp.>')));
+
+        $this->service->notifyMerchant($request, $this->order);
+
+        $mail = Mail::$sent[0];
+        $this->assertSame('Invoice data change request <b>"O\'1"&', $mail['subject']);
+        $vars = $mail['templateVars'];
+        $this->assertSame('&lt;b&gt;&quot;O&#039;1&quot;&amp;', $vars['{order_reference}']);
+        $this->assertSame('&lt;i&gt;Ann&lt;/i&gt; O&#039;Neil', $vars['{customer_name}']);
+        $this->assertSame('a&amp;b@example.test', $vars['{customer_email}']);
+        $this->assertSame('&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;', $vars['{note}']);
+        $this->assertStringContainsString("company: A &amp; B &lt;Sp.&gt;\n", $vars['{requested_data}']);
+        $this->assertStringContainsString("company: - -&gt; A &amp; B &lt;Sp.&gt;\n", $vars['{diff}']);
+    }
+
+    public function testApprovalMailIsSentWithEverythingTheTemplateNeeds()
+    {
+        $this->assertTrue($this->service->notifyCustomer($this->decidedRequest(), 'approved'));
+
+        $this->assertCount(1, Mail::$sent);
+        $this->assertMailSent(array(
+            'idLang' => 2,
+            'template' => 'data_request_approved',
+            'subject' => 'Your invoice data change was approved',
+            'templateVars' => $this->approvalVars(),
+            'to' => 'buyer@example.test',
+            'toName' => 'Anna Nowak',
+            'idShop' => 1,
+        ));
+    }
+
+    public function testRejectionMailIsSentWithEverythingTheTemplateNeeds()
+    {
+        $this->assertTrue($this->service->notifyCustomer($this->decidedRequest(), 'rejected'));
+
+        $this->assertCount(1, Mail::$sent);
+        // a rejection quotes the reason and no data, even when the request carries approved data
+        $this->assertMailSent(array(
+            'idLang' => 2,
+            'template' => 'data_request_rejected',
+            'subject' => 'Your invoice data change was rejected',
+            'templateVars' => array('{approved_data}' => '') + $this->approvalVars(),
+            'to' => 'buyer@example.test',
+            'toName' => 'Anna Nowak',
+            'idShop' => 1,
+        ));
+    }
+
+    public function testAnyDecisionButApprovedIsMailedAsRejected()
+    {
+        foreach (array('cancelled', '', null, 'APPROVED', 1) as $decision) {
+            Mail::$sent = array();
+
+            $this->assertTrue($this->service->notifyCustomer($this->decidedRequest(), $decision));
+
+            $this->assertSame('data_request_rejected', Mail::$sent[0]['template']);
+            $this->assertSame('Your invoice data change was rejected', Mail::$sent[0]['subject']);
+            $this->assertSame('', Mail::$sent[0]['templateVars']['{approved_data}']);
+        }
+    }
+
+    public function testCustomerWithoutAnAddressIsNotMailed()
+    {
+        foreach (array('', null) as $email) {
+            $this->customer->email = $email;
+
+            $this->assertFalse($this->service->notifyCustomer($this->decidedRequest(), 'approved'));
+        }
+
+        $this->assertSame(array(), Mail::$sent);
+    }
+
+    public function testCustomerMailIsAddressedToTheTrimmedFullName()
+    {
+        $this->customer->lastname = '';
+        $this->service->notifyCustomer($this->decidedRequest(), 'approved');
+        $this->customer->firstname = '';
+        $this->service->notifyCustomer($this->decidedRequest(), 'approved');
+
+        $this->assertSame('Anna', Mail::$sent[0]['toName']);
+        $this->assertSame('', Mail::$sent[1]['toName']);
+        $this->assertSame('buyer@example.test', Mail::$sent[1]['to']);
+    }
+
+    /**
+     * @return array[] label => [languages installed, id_lang of the order, language the mail goes out in]
+     */
+    public function customerMailLanguages()
+    {
+        $en = array('id_lang' => 1, 'iso_code' => 'en', 'name' => 'English');
+        $pl = array('id_lang' => 2, 'iso_code' => 'pl', 'name' => 'Polski');
+        $de = array('id_lang' => 3, 'iso_code' => 'de', 'name' => 'Deutsch');
+
+        return array(
+            'language of the order, which has templates' => array(array($en, $pl), 2, 2),
+            'english order' => array(array($en, $pl), 1, 1),
+            'language of the order has no template folder' => array(array($en, $pl, $de), 3, 1),
+            'language of the order is not installed' => array(array($en, $pl), 5, 1),
+            'order without a language' => array(array($en, $pl), 0, 1),
+            'english is installed under another id' => array(array($pl, array('id_lang' => 7, 'iso_code' => 'en', 'name' => 'English')), 5, 7),
+            // every installed language is searched, not just the active ones
+            'english is installed but switched off' => array(array($pl, array('id_lang' => 8, 'iso_code' => 'en', 'name' => 'English', 'active' => 0)), 5, 8),
+            'the first english wins' => array(array($pl, array('id_lang' => 4, 'iso_code' => 'en', 'name' => 'English'), array('id_lang' => 5, 'iso_code' => 'en', 'name' => 'English (UK)')), 6, 4),
+            'no english: the language of the context' => array(array($pl, $de), 5, 9),
+        );
+    }
+
+    /**
+     * @dataProvider customerMailLanguages
+     */
+    public function testCustomerMailFallsBackToEnglishThenToTheContextLanguage(array $languages, $orderLang, $expected)
+    {
+        Language::$languages = $languages;
+        Context::getContext()->language->id = 9;
+        $this->order->id_lang = $orderLang;
+
+        foreach (array('approved', 'rejected') as $n => $decision) {
+            $this->assertTrue($this->service->notifyCustomer($this->decidedRequest(), $decision));
+
+            $this->assertSame($expected, Mail::$sent[$n]['idLang'], $decision);
+        }
+    }
+
+    public function testCustomerMailReportsWhetherTheMailWentOut()
+    {
+        Mail::$result = false;
+        $this->assertFalse($this->service->notifyCustomer($this->decidedRequest(), 'approved'));
+        $this->assertCount(1, Mail::$sent);
+
+        // core may answer with something that is not a boolean
+        Mail::$result = 0;
+        $this->assertFalse($this->service->notifyCustomer($this->decidedRequest(), 'rejected'));
+        Mail::$result = 1;
+        $this->assertTrue($this->service->notifyCustomer($this->decidedRequest(), 'approved'));
+        $this->assertCount(3, Mail::$sent);
+    }
+
+    /**
+     * @dataProvider shopIds
+     */
+    public function testCustomerMailIsSentForTheShopOfTheOrder($idShop, $expected)
+    {
+        $this->order->id_shop = $idShop;
+
+        $this->service->notifyCustomer($this->decidedRequest(), 'approved');
+
+        $this->assertSame($expected, Mail::$sent[0]['idShop']);
+    }
+
+    public function testCustomerMailEscapesWhatIsPutInTheBody()
+    {
+        $this->order->reference = '<b>"O\'1"&';
+        $this->customer->firstname = '<i>Ann</i>';
+        $this->customer->lastname = "O'Neil";
+        $request = $this->decidedRequest();
+        $request->admin_note = '<script>alert("x")</script>';
+        $request->setApprovedData(array_merge($this->requestedData(), array('company' => 'A & B <Sp.>')));
+
+        $this->service->notifyCustomer($request, 'approved');
+
+        $mail = Mail::$sent[0];
+        $vars = $mail['templateVars'];
+        $this->assertSame('&lt;i&gt;Ann&lt;/i&gt;', $vars['{firstname}']);
+        $this->assertSame('&lt;b&gt;&quot;O&#039;1&quot;&amp;', $vars['{order_reference}']);
+        $this->assertSame('&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;', $vars['{reason}']);
+        $this->assertStringContainsString("company: A &amp; B &lt;Sp.&gt;\n", $vars['{approved_data}']);
+        // the name of the recipient is not part of the body
+        $this->assertSame("<i>Ann</i> O'Neil", $mail['toName']);
+    }
+
+    public function testTheMailTextsComeFromTheModuleTranslatorInTheSourceOfTheService()
+    {
+        $module = $this->recordingTranslator();
+        $service = new IfirmaDataRequestService($module);
+        $nothingDiffers = $this->submittedRequest();
+        $nothingDiffers->setRequestedData(array('firstname' => 'Anna', 'lastname' => 'Nowak', 'address1' => 'Stara 1',
+            'postcode' => '00-001', 'city' => 'Warszawa', 'id_country' => 14));
+
+        $service->notifyMerchant($nothingDiffers, $this->order);
+        $service->notifyCustomer($this->decidedRequest(), 'approved');
+        $service->notifyCustomer($this->decidedRequest(), 'rejected');
+
+        $this->assertSame('[pl] Invoice data change request ABCDEFGHI', Mail::$sent[0]['subject']);
+        $this->assertSame('[pl] No differences.', Mail::$sent[0]['templateVars']['{diff}']);
+        $this->assertSame('[pl] Your invoice data change was approved', Mail::$sent[1]['subject']);
+        $this->assertSame('[pl] Your invoice data change was rejected', Mail::$sent[2]['subject']);
+        // the keys of translations/pl.php are <source>_<md5 of the text>: the source stays this file's
+        $this->assertEqualsCanonicalizing(array(
+            array('Invoice data change request', 'ifirmadatarequestservice'),
+            array('No differences.', 'ifirmadatarequestservice'),
+            array('Your invoice data change was approved', 'ifirmadatarequestservice'),
+            array('Your invoice data change was rejected', 'ifirmadatarequestservice'),
+        ), $module->asked);
+    }
+
+    public function testEveryMailTemplateIsShippedInEnglishAndPolish()
+    {
+        // English is the fallback of the customer mails, so it has to exist for every template
+        foreach (array('en', 'pl') as $iso) {
+            foreach (array('data_request_received', 'data_request_approved', 'data_request_rejected') as $template) {
+                $this->assertFileExists($this->mailDir() . $iso . '/' . $template . '.html');
+                $this->assertFileExists($this->mailDir() . $iso . '/' . $template . '.txt');
+            }
+        }
+    }
+
+    // ---- mails: which actions send them --------------------------------------------------------
+
+    public function testSubmitTellsTheMerchantAboutTheStoredRequest()
+    {
+        $service = new class(new Module()) extends IfirmaDataRequestService {
+            /** @var array[] one entry per notifyMerchant() call */
+            public $told = array();
+
+            public function notifyMerchant(IfirmaDataRequest $request, Order $order)
+            {
+                $this->told[] = array(
+                    'request' => $request,
+                    'order' => $order,
+                    'rows' => IfirmaTestState::objects('ifirma_data_request'),
+                );
+
+                return true;
+            }
+        };
+
+        $request = $service->submit($this->order, $this->customer, $this->companyInput());
+
+        $this->assertCount(1, $service->told);
+        $this->assertSame($request, $service->told[0]['request']);
+        $this->assertSame($this->order, $service->told[0]['order']);
+        // the request was stored, still pending, before the merchant was told
+        $this->assertNotEmpty($request->id);
+        $this->assertSame(array($request->id), array_keys($service->told[0]['rows']));
+        $this->assertSame('pending', $service->told[0]['rows'][$request->id]['status']);
+    }
+
+    public function testAFailedMailNeverUndoesTheOutcome()
+    {
+        Mail::$result = false;
+
+        $submitted = $this->submitPending();
+        $this->assertSame(IfirmaDataRequest::STATUS_PENDING, $submitted->status);
+        $this->assertSame('pending', $this->storedRow($submitted)['status']);
+
+        $approved = $this->service->approve($submitted, 4);
+        $this->assertSame($submitted, $approved);
+        $this->assertSame(IfirmaDataRequest::STATUS_APPROVED, $approved->status);
+        $this->assertSame('approved', $this->storedRow($approved)['status']);
+
+        $other = $this->storedRequest();
+        $rejected = $this->service->reject($other, 4, 'No');
+        $this->assertSame($other, $rejected);
+        $this->assertSame(IfirmaDataRequest::STATUS_REJECTED, $rejected->status);
+        $this->assertSame('rejected', $this->storedRow($rejected)['status']);
+
+        // all three mails were tried
+        $this->assertCount(3, Mail::$sent);
+    }
+
+    public function testCancelAndRefusedSubmissionsSendNothing()
+    {
+        $request = $this->submitPending();
+        $this->assertCount(1, Mail::$sent);
+
+        $this->service->cancel($request, $this->customer);
+
+        Configuration::updateValue('IFIRMA_ALLOW_DATA_REQUEST', 0);
+        $this->assertRefused('disabled', function () {
+            $this->submitPending();
+        });
+        Configuration::updateValue('IFIRMA_ALLOW_DATA_REQUEST', 1);
+        $this->assertRefused('invalid', function () {
+            $this->submitPending($this->companyInput(array('vat_number' => '')));
+        });
+
+        $this->assertCount(1, Mail::$sent);
+    }
+
+    public function testTheApprovalMailCarriesTheDataThatWasApproved()
+    {
+        $request = $this->submitPending();
+        Mail::$sent = array();
+
+        $this->service->approve($request, 4, $this->companyInput(array('postcode' => '00-951')), 'fixed postcode');
+
+        $this->assertCount(1, Mail::$sent);
+        $vars = Mail::$sent[0]['templateVars'];
+        $this->assertStringContainsString('postcode: 00-951', $vars['{approved_data}']);
+        $this->assertStringNotContainsString('00-950', $vars['{approved_data}']);
+        $this->assertSame('fixed postcode', $vars['{reason}']);
+    }
+
     // ---- override --------------------------------------------------------
 
     private function approvedRequest(array $edited = null)

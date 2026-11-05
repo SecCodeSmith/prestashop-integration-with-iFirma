@@ -22,9 +22,19 @@ class Language
         ];
     }
 
+    /**
+     * Like core, $active = true leaves out the languages that are switched off (rows with
+     * 'active' => 0); a row without an 'active' key counts as active.
+     */
     public static function getLanguages($active = true, $idShop = false, $idsOnly = false)
     {
-        return self::$languages;
+        if (!$active) {
+            return self::$languages;
+        }
+
+        return array_values(array_filter(self::$languages, function ($l) {
+            return !isset($l['active']) || $l['active'];
+        }));
     }
 
     public static function getIsoById($idLang)
