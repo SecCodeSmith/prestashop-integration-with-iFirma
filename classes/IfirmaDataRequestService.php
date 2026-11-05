@@ -25,6 +25,8 @@ require_once dirname(__FILE__) . '/IfirmaDataRequestNotifier.php';
  * Public contract:
  *  - canRequest(Order, Customer): array('allowed' => bool, 'reason' => disabled|not_owner|document_exists|pending_exists|ok)
  *  - validate(array): field => message (empty when valid)
+ *  - collectInput(): array, the posted form (every field of fields(), in that order)
+ *  - defaultsFromAddress(Address): array, the form values to start from (the invoice address)
  *  - submit / cancel / approve / reject: state machine pending -> approved|rejected|cancelled,
  *    refused transitions throw IfirmaDataRequestException (see code_name)
  *  - getOverrideForOrder(idOrder): array|null in the IfirmaReceiptService::buildContractor override format
@@ -161,6 +163,49 @@ class IfirmaDataRequestService
         return array(
             'want_invoice_for_company', 'company', 'vat_number', 'firstname', 'lastname',
             'address1', 'address2', 'postcode', 'city', 'id_country', 'customer_note',
+        );
+    }
+
+    /**
+     * Reads the posted form: every field of fields(), in that order, through Tools::getValue()
+     * (so a field that was not posted is false). Nothing else of the request is read.
+     *
+     * @return array field => value as the request holds it
+     */
+    public function collectInput()
+    {
+        $input = array();
+        foreach ($this->fields() as $field) {
+            $input[$field] = Tools::getValue($field);
+        }
+
+        return $input;
+    }
+
+    /**
+     * The values the form starts from when nothing was submitted: those of the invoice address.
+     * The VAT number falls back to the dni; a company is only ticked when the address has both a
+     * company name and a number. The values are shown as the address holds them.
+     *
+     * @param Address $address
+     * @return array the keys of fields(), in that order; customer_note is empty
+     */
+    public function defaultsFromAddress(Address $address)
+    {
+        $vat = trim((string) $address->vat_number) !== '' ? $address->vat_number : $address->dni;
+
+        return array(
+            'want_invoice_for_company' => $address->company !== '' && $address->company !== null && $vat,
+            'company' => $address->company,
+            'vat_number' => $vat,
+            'firstname' => $address->firstname,
+            'lastname' => $address->lastname,
+            'address1' => $address->address1,
+            'address2' => $address->address2,
+            'postcode' => $address->postcode,
+            'city' => $address->city,
+            'id_country' => $address->id_country,
+            'customer_note' => '',
         );
     }
 

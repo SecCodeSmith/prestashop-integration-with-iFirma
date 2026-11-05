@@ -99,10 +99,7 @@ class IfirmaDatarequestModuleFrontController extends ModuleFrontController
 
         try {
             if ($submit) {
-                $input = array();
-                foreach ($this->service()->fields() as $field) {
-                    $input[$field] = Tools::getValue($field);
-                }
+                $input = $this->service()->collectInput();
                 $this->submitted = $input;
                 $this->service()->submit($order, $this->context->customer, $input);
             } else {
@@ -139,20 +136,7 @@ class IfirmaDatarequestModuleFrontController extends ModuleFrontController
 
         $values = $this->submitted;
         if (empty($values)) {
-            $vat = trim((string) $address->vat_number) !== '' ? $address->vat_number : $address->dni;
-            $values = array(
-                'want_invoice_for_company' => $address->company !== '' && $address->company !== null && $vat,
-                'company' => $address->company,
-                'vat_number' => $vat,
-                'firstname' => $address->firstname,
-                'lastname' => $address->lastname,
-                'address1' => $address->address1,
-                'address2' => $address->address2,
-                'postcode' => $address->postcode,
-                'city' => $address->city,
-                'id_country' => $address->id_country,
-                'customer_note' => '',
-            );
+            $values = $this->service()->defaultsFromAddress($address);
         }
 
         $this->context->smarty->assign(array(

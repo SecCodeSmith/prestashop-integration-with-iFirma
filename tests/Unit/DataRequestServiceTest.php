@@ -1682,4 +1682,62 @@ class DataRequestServiceTest extends TestCase
         $this->assertInstanceOf('IfirmaDataRequestService', $first);
         $this->assertSame($first, $service->invoke($controller));
     }
+
+    // ---- the form in the service: the request read, the address as defaults ----
+
+    public function testCollectInputReadsEveryFieldInTheOrderOfFields()
+    {
+        Tools::$values = array(
+            'stray' => 'ignored', 'token' => 'front-token', 'id_order' => 15,
+            'customer_note' => 'Call me', 'city' => 'Gdansk', 'company' => array('Not', 'text'),
+            'want_invoice_for_company' => '1', 'id_country' => 14, 'address2' => '0', 'vat_number' => '',
+        );
+
+        $input = $this->service->collectInput();
+
+        $this->assertSame(array(
+            'want_invoice_for_company' => '1',
+            'company' => array('Not', 'text'),
+            'vat_number' => '',
+            'firstname' => false,
+            'lastname' => false,
+            'address1' => false,
+            'address2' => '0',
+            'postcode' => false,
+            'city' => 'Gdansk',
+            'id_country' => 14,
+            'customer_note' => 'Call me',
+        ), $input);
+        $this->assertSame($this->service->fields(), array_keys($input));
+    }
+
+    public function testCollectInputReturnsAFullFormAsPosted()
+    {
+        Tools::$values = array('id_order' => 15, 'token' => 'front-token') + $this->companyInput();
+
+        $this->assertSame($this->companyInput(), $this->service->collectInput());
+    }
+
+    public function testCollectInputOfAnEmptyRequestHasEveryFieldAsFalse()
+    {
+        Tools::$values = array();
+
+        $this->assertSame(array_fill_keys($this->service->fields(), false), $this->service->collectInput());
+    }
+
+    /**
+     * @dataProvider invoiceAddresses
+     */
+    public function testDefaultsFromAddressShowsTheInvoiceAddress(array $fields, array $expected)
+    {
+        $this->changeInvoiceAddress($fields);
+
+        $this->assertSame($expected, $this->service->defaultsFromAddress(new Address(3)));
+        $this->assertSame(array(), Address::$saved);
+    }
+
+    public function testDefaultsFromAddressHasTheKeysOfFieldsInOrder()
+    {
+        $this->assertSame($this->service->fields(), array_keys($this->service->defaultsFromAddress(new Address(3))));
+    }
 }
