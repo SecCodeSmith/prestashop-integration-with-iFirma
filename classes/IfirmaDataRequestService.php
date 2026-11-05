@@ -192,7 +192,7 @@ class IfirmaDataRequestService
      */
     public function defaultsFromAddress(Address $address)
     {
-        $vat = trim((string) $address->vat_number) !== '' ? $address->vat_number : $address->dni;
+        $vat = $this->invoiceVat($address);
 
         return array(
             'want_invoice_for_company' => $address->company !== '' && $address->company !== null && $vat,
@@ -207,6 +207,18 @@ class IfirmaDataRequestService
             'id_country' => $address->id_country,
             'customer_note' => '',
         );
+    }
+
+    /**
+     * The VAT number an address is invoiced under: its vat_number, or its dni when that is blank.
+     *
+     * @param Address $address
+     * @return string|null the vat_number as the address holds it (not trimmed), else its dni as it
+     *                     holds it (null when it holds none)
+     */
+    private function invoiceVat(Address $address)
+    {
+        return trim((string) $address->vat_number) !== '' ? $address->vat_number : $address->dni;
     }
 
     /**
@@ -471,7 +483,7 @@ class IfirmaDataRequestService
      */
     public function buildDiff(array $requested, Address $current)
     {
-        $currentVat = trim((string) $current->vat_number) !== '' ? $current->vat_number : $current->dni;
+        $currentVat = $this->invoiceVat($current);
         $currentValues = array(
             'company' => (string) $current->company,
             'vat_number' => $this->normalizeNip($currentVat),
