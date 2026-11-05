@@ -11,8 +11,6 @@
 
 use PHPUnit\Framework\TestCase;
 
-require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaCustomerInvoiceProfile.php';
-
 /**
  * IfirmaCustomerInvoiceProfile: the names and e-mail of a customer, and the company, phone and NIP of the
  * latest invoice address, with the fallbacks the contractor search form starts from. CustomerContractorServiceTest

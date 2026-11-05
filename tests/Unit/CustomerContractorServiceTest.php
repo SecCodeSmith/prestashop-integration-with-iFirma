@@ -352,11 +352,15 @@ class CustomerContractorServiceTest extends TestCase
 
     public function testDefaultCriteriaOfAnUnknownCustomerIsEmpty()
     {
+        // customer 7 has a ten-digit NIP on an invoice address: customer 99 must not take it
+        $this->address(1, array('vat_number' => '525-224-84-81'));
+
         $this->assertSame(
             array('firstname' => '', 'lastname' => '', 'company' => '', 'nip' => '', 'email' => '', 'phone' => ''),
             $this->svc->defaultCriteria(99)
         );
         $this->assertSame('', $this->svc->customerNip(99));
+        $this->assertSame('', $this->svc->defaultCriteria(99)['nip']);
     }
 
     public function testDefaultCriteriaOfACustomerWithoutAddressesTakesTheCompanyFromTheCustomer()
