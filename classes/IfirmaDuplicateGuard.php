@@ -18,6 +18,7 @@ require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaReceiptService.php';
 require_once dirname(__FILE__) . '/IfirmaDuplicateMatcher.php';
 require_once dirname(__FILE__) . '/IfirmaGuardResult.php';
+require_once dirname(__FILE__) . '/IfirmaGuardSettings.php';
 require_once dirname(__FILE__) . '/IfirmaContractorMap.php';
 
 /**
@@ -29,7 +30,7 @@ require_once dirname(__FILE__) . '/IfirmaContractorMap.php';
  * (IFIRMA_DUPLICATE_CHECK=0) -> DISABLED; one-time 'bypass' option -> BYPASSED.
  * Otherwise lists faktury.json over [order date - 1 day, today] (page size 100, paged
  * until a short page): by contractor identifier (PS-C{id_customer}), then by NIP when
- * empty, then unfiltered when the window is within IFIRMA_DUPLICATE_WINDOW_DAYS (60).
+ * empty, then unfiltered when the window is within IFIRMA_DUPLICATE_WINDOW_DAYS.
  * Candidates are the rows of the order's buyer (IfirmaDuplicateMatcher::filterByBuyer():
  * contractor identifier, NIP or buyer name) that pass selectCandidates() (type, draft,
  * currency, gross). Each candidate's detail (newest first, max_detail_calls) is read: the
@@ -40,8 +41,15 @@ require_once dirname(__FILE__) . '/IfirmaContractorMap.php';
  * created); none -> PROCEED.
  * A failed list call -> INCONCLUSIVE (error + rateLimited). Admin resolution:
  * linkCandidate() or recordResolution($receipt, 'issue_anyway').
- * Options: bypass, enabled, tolerance (IFIRMA_DUPLICATE_AMOUNT_TOLERANCE, 0.01),
- * window_days, timeout, max_detail_calls (10).
+ * Options: bypass, enabled, tolerance, window_days, timeout, max_detail_calls. Each falls back to its
+ * configuration key (IFIRMA_DUPLICATE_CHECK, IFIRMA_DUPLICATE_AMOUNT_TOLERANCE,
+ * IFIRMA_DUPLICATE_WINDOW_DAYS) and then to a default: see IfirmaGuardSettings.
+ *
+ * After the early answers check() is three steps: resolveSettings() resolves the options and the
+ * configuration once into an IfirmaGuardSettings; scanRemote() makes every call to iFirma (the list
+ * queries, the narrowing of their rows to candidates, the details of the candidates); classify()
+ * decides on what was scanned and is pure (no Db, iFirma call, configuration or clock). adopt() and
+ * markSuspected() are the only writes.
  */
 class IfirmaDuplicateGuard
 {
@@ -90,83 +98,75 @@ class IfirmaDuplicateGuard
             return $r;
         }
 
-        if (array_key_exists('enabled', $options)) {
-            $enabled = (bool) $options['enabled'];
-        } else {
-            $cfg = Configuration::get('IFIRMA_DUPLICATE_CHECK');
-            $enabled = !($cfg !== false && $cfg !== null && $cfg !== '' && !(int) $cfg);
-        }
-        if (!$enabled) {
+        $settings = $this->resolveSettings($options);
+        if (!$settings->isEnabled()) {
             return new IfirmaGuardResult(IfirmaGuardResult::OUTCOME_DISABLED);
         }
-        if (!empty($options['bypass'])) {
+        if ($settings->isBypassed()) {
             return new IfirmaGuardResult(IfirmaGuardResult::OUTCOME_BYPASSED);
         }
 
-        $tolerance = isset($options['tolerance']) ? (float) $options['tolerance'] : $this->configFloat('IFIRMA_DUPLICATE_AMOUNT_TOLERANCE', 0.01);
-        $windowDays = isset($options['window_days']) ? (int) $options['window_days'] : (int) $this->configFloat('IFIRMA_DUPLICATE_WINDOW_DAYS', 60);
-        $timeout = isset($options['timeout']) ? (int) $options['timeout'] : null;
-        $maxDetail = isset($options['max_detail_calls']) ? (int) $options['max_detail_calls'] : 10;
-
-        $now = (int) call_user_func($this->clock);
-        $orderTs = strtotime((string) $order->date_add);
-        if (!$orderTs) {
-            $orderTs = $now;
-        }
-        $dataOd = date('Y-m-d', $orderTs - 86400);
-        $dataDo = date('Y-m-d', $now);
-        $days = (int) floor((strtotime($dataDo) - strtotime($dataOd)) / 86400);
-
         $result = new IfirmaGuardResult();
-        $base = array('dataOd' => $dataOd, 'dataDo' => $dataDo, 'iloscNaStronie' => self::PAGE_SIZE);
-
-        $buyer = array(
-            'identifier' => $this->contractorFilter($order),
-            'nip' => $this->orderNip($order),
-            'names' => IfirmaReceiptService::buyerNames($order),
-        );
-
-        $queries = array();
-        $queries[] = array('kontrahent' => $buyer['identifier']);
-        if ($buyer['nip'] !== '') {
-            $queries[] = array('nipKontrahenta' => $buyer['nip']);
-        }
-        if ($days <= $windowDays) {
-            $queries[] = array();
-        }
-
-        $rows = array();
-        foreach ($queries as $filter) {
-            $rows = $this->listAll(array_merge($base, $filter), $timeout, $result);
-            if ($rows === null && $filter && $this->filterValueUnknown()) {
-                // iFirma answers Kod 201 "Nie znaleziono kontrahenta..." when the filter names a
-                // contractor it does not have. No document of that contractor can exist, so this
-                // query is conclusively empty; the next query still runs.
-                $rows = array();
-                continue;
-            }
-            if ($rows === null) {
-                $result->outcome = IfirmaGuardResult::OUTCOME_INCONCLUSIVE;
-                $result->error = (string) $this->client->getLastError();
-                $result->rateLimited = (bool) $this->client->isRateLimited();
-
-                return $result;
-            }
-            if (!empty($rows)) {
-                break;
-            }
-        }
-
-        $currency = new Currency((int) $order->id_currency);
-        $iso = !empty($currency->iso_code) ? $currency->iso_code : 'PLN';
-        $rows = IfirmaDuplicateMatcher::filterByBuyer($rows, $buyer);
-        $candidates = IfirmaDuplicateMatcher::selectCandidates($rows, round((float) $order->total_paid_tax_incl, 2), $iso, $tolerance);
-        if (empty($candidates)) {
-            $result->outcome = IfirmaGuardResult::OUTCOME_PROCEED;
-
+        $scan = $this->scanRemote($order, $settings, $result);
+        if ($scan === null) {
             return $result;
         }
 
+        $decision = self::classify($settings, $scan);
+        $result->outcome = $decision['outcome'];
+        $result->candidate = $decision['candidate'];
+        $result->candidates = $decision['candidates'];
+        $result->error = $decision['error'];
+        if ($result->outcome === IfirmaGuardResult::OUTCOME_ADOPT) {
+            $result->receipt = $this->adopt($order, $result->candidate);
+        } elseif ($result->outcome === IfirmaGuardResult::OUTCOME_SUSPECTED) {
+            $result->receipt = $this->markSuspected($order, $result->candidates);
+        }
+
+        return $result;
+    }
+
+    /**
+     * The options of a check() call and the configuration they fall back to, resolved once: an
+     * option wins, then the configuration (a key that is not set, or empty, counts as unset), then
+     * the default of IfirmaGuardSettings. The settings take the values as they are and cast them.
+     *
+     * @param array $options bypass, enabled, tolerance, window_days, timeout, max_detail_calls
+     * @return IfirmaGuardSettings
+     */
+    public function resolveSettings(array $options)
+    {
+        if (array_key_exists('enabled', $options)) {
+            $enabled = $options['enabled'];
+        } else {
+            $cfg = Configuration::get('IFIRMA_DUPLICATE_CHECK');
+            $enabled = ($cfg === false || $cfg === null || $cfg === '') ? IfirmaGuardSettings::DEFAULT_ENABLED : (int) $cfg;
+        }
+        $tolerance = isset($options['tolerance']) ? $options['tolerance'] : $this->configFloat('IFIRMA_DUPLICATE_AMOUNT_TOLERANCE', IfirmaGuardSettings::DEFAULT_AMOUNT_TOLERANCE);
+        $windowDays = isset($options['window_days']) ? $options['window_days'] : $this->configFloat('IFIRMA_DUPLICATE_WINDOW_DAYS', IfirmaGuardSettings::DEFAULT_WINDOW_DAYS);
+        $timeout = isset($options['timeout']) ? $options['timeout'] : null;
+        $maxDetail = isset($options['max_detail_calls']) ? $options['max_detail_calls'] : IfirmaGuardSettings::DEFAULT_MAX_DETAIL_CALLS;
+
+        return new IfirmaGuardSettings($enabled, !empty($options['bypass']), $tolerance, $windowDays, $timeout, $maxDetail);
+    }
+
+    /**
+     * The candidates among the rows a list query returned: the rows of the order's buyer that are
+     * a document the module can produce, not a draft, in the currency of the order and within the
+     * tolerance of its gross (IfirmaDuplicateMatcher::filterByBuyer() and selectCandidates()),
+     * newest issue date first and the higher document id first among the same day. Pure.
+     *
+     * @param IfirmaGuardSettings $settings only the tolerance matters
+     * @param array               $rows list rows
+     * @param array               $buyer identifier (string), nip (string), names (string[])
+     * @param float               $orderGross gross of the order, rounded to groszy
+     * @param string              $currencyIso ISO code of the currency of the order
+     * @return array list rows, each with `_matched_by`
+     */
+    public static function candidatesFrom(IfirmaGuardSettings $settings, array $rows, array $buyer, $orderGross, $currencyIso)
+    {
+        $rows = IfirmaDuplicateMatcher::filterByBuyer($rows, $buyer);
+        $candidates = IfirmaDuplicateMatcher::selectCandidates($rows, $orderGross, $currencyIso, $settings->getTolerance());
         usort($candidates, function ($a, $b) {
             $da = isset($a['DataWystawienia']) ? (string) $a['DataWystawienia'] : '';
             $db = isset($b['DataWystawienia']) ? (string) $b['DataWystawienia'] : '';
@@ -177,35 +177,52 @@ class IfirmaDuplicateGuard
             return (int) (isset($b['FakturaId']) ? $b['FakturaId'] : 0) - (int) (isset($a['FakturaId']) ? $a['FakturaId'] : 0);
         });
 
-        $reference = IfirmaReceiptService::buildOrderReference($order);
-        $saleDate = IfirmaReceiptService::orderSaleDate($order);
-        $lines = IfirmaReceiptService::orderProductLines($order);
-        $limit = max(0, $maxDetail);
+        return $candidates;
+    }
+
+    /**
+     * The decision on a scan: which candidate is the order's document (ADOPT), which stay suspected
+     * (SUSPECTED), or that none does (PROCEED). Pure: it needs no database, no call to iFirma, no
+     * configuration and no clock, only the scan and the settings.
+     *
+     * The candidates are taken in order. One the settings do not read the detail of stays suspected,
+     * unverified; so does one whose detail could not be read, and the error is kept. The first detail
+     * that carries the order reference decides: ADOPT. Any other detail is verified against the sale
+     * date and the product lines of the order (IfirmaDuplicateMatcher::verifyDetail()): a mismatch
+     * drops the candidate, a match or an incomplete detail keeps it with the sale date it records.
+     *
+     * @param IfirmaGuardSettings $settings only the cap on the details read matters
+     * @param array               $scan candidates (list rows, newest first), reads (readDetails(): an
+     *                                  entry per candidate within the cap, up to the first confirmed
+     *                                  one), reference of the order, its sale_date (Y-m-d) and its
+     *                                  lines (name, quantity)
+     * @return array outcome (OUTCOME_ADOPT, OUTCOME_SUSPECTED or OUTCOME_PROCEED), candidate (the adopted
+     *               row as listed, else null), candidates (the rows that stay suspected, each with its
+     *               `_sale_date`, '' when unverified; else empty), error (what the client said about the
+     *               last detail that could not be read; empty after an adoption and for PROCEED)
+     */
+    public static function classify(IfirmaGuardSettings $settings, array $scan)
+    {
         $kept = array();
-        foreach ($candidates as $index => $row) {
-            if ($index >= $limit) {
+        $error = '';
+        foreach ($scan['candidates'] as $index => $row) {
+            if (!$settings->readsDetailOf($index)) {
                 // Beyond the per-run detail cap: cannot be verified, so it stays suspected.
                 $row['_sale_date'] = '';
                 $kept[] = $row;
                 continue;
             }
-            $type = IfirmaDuplicateMatcher::rodzajToDocumentType(isset($row['Rodzaj']) ? $row['Rodzaj'] : '');
-            $detail = $type ? $this->client->getDetail($type, (string) $row['FakturaId'], $timeout) : null;
-            if ($detail === null) {
-                $result->error = (string) $this->client->getLastError();
+            $read = $scan['reads'][$index];
+            if ($read['detail'] === null) {
+                $error = $read['error'];
                 $row['_sale_date'] = '';
                 $kept[] = $row;
                 continue;
             }
-            if (IfirmaDuplicateMatcher::confirm($detail['raw'], $reference)) {
-                $result->outcome = IfirmaGuardResult::OUTCOME_ADOPT;
-                $result->candidate = $row;
-                $result->error = '';
-                $result->receipt = $this->adopt($order, $row);
-
-                return $result;
+            if (IfirmaDuplicateMatcher::confirm($read['detail']['raw'], $scan['reference'])) {
+                return self::decision(IfirmaGuardResult::OUTCOME_ADOPT, $row, array(), '');
             }
-            $verdict = IfirmaDuplicateMatcher::verifyDetail($this->detailNode($detail), $saleDate, $lines);
+            $verdict = IfirmaDuplicateMatcher::verifyDetail(self::detailNode($read['detail']), $scan['sale_date'], $scan['lines']);
             if ($verdict['matched'] === false) {
                 // Same buyer and amount, but another sale date or other products: not this order's document.
                 continue;
@@ -215,16 +232,10 @@ class IfirmaDuplicateGuard
         }
 
         if (empty($kept)) {
-            $result->outcome = IfirmaGuardResult::OUTCOME_PROCEED;
-
-            return $result;
+            return self::decision(IfirmaGuardResult::OUTCOME_PROCEED, null, array(), '');
         }
 
-        $result->outcome = IfirmaGuardResult::OUTCOME_SUSPECTED;
-        $result->candidates = $kept;
-        $result->receipt = $this->markSuspected($order, $kept);
-
-        return $result;
+        return self::decision(IfirmaGuardResult::OUTCOME_SUSPECTED, null, $kept, $error);
     }
 
     /**
@@ -240,7 +251,7 @@ class IfirmaDuplicateGuard
         $r = $this->reuseOrCreate($order);
         $gross = isset($row['Brutto']) ? (float) $row['Brutto'] : 0.0;
         $paid = isset($row['Zaplacono']) ? (float) $row['Zaplacono'] : 0.0;
-        $tolerance = $this->configFloat('IFIRMA_DUPLICATE_AMOUNT_TOLERANCE', 0.01);
+        $tolerance = $this->configFloat('IFIRMA_DUPLICATE_AMOUNT_TOLERANCE', IfirmaGuardSettings::DEFAULT_AMOUNT_TOLERANCE);
         $type = IfirmaDuplicateMatcher::rodzajToDocumentType(isset($row['Rodzaj']) ? $row['Rodzaj'] : '');
 
         $r->ifirma_id = (string) $row['FakturaId'];
@@ -370,6 +381,161 @@ class IfirmaDuplicateGuard
     }
 
     /**
+     * Everything check() has to ask iFirma, in the order it asks it: the list queries of the search
+     * window, then the detail of the candidates among their rows (newest first, as many as the
+     * settings allow, none after one that carries the order reference). It decides nothing but whom
+     * to ask; classify() judges the answers.
+     *
+     * @param Order               $order
+     * @param IfirmaGuardSettings $settings
+     * @param IfirmaGuardResult   $result counts the list calls; takes the INCONCLUSIVE outcome when one fails
+     * @return array|null the scan classify() takes: candidates, reads, reference, sale_date and lines
+     *                    (reference, sale_date and lines stay empty without candidates); null when a
+     *                    list call failed
+     */
+    private function scanRemote(Order $order, IfirmaGuardSettings $settings, IfirmaGuardResult $result)
+    {
+        $window = self::searchWindow($order->date_add, (int) call_user_func($this->clock));
+        $buyer = array(
+            'identifier' => $this->contractorFilter($order),
+            'nip' => $this->orderNip($order),
+            'names' => IfirmaReceiptService::buyerNames($order),
+        );
+        $rows = $this->listWindow($window, $buyer, $settings, $result);
+        if ($rows === null) {
+            return null;
+        }
+
+        $currency = new Currency((int) $order->id_currency);
+        $iso = !empty($currency->iso_code) ? $currency->iso_code : 'PLN';
+        $gross = round((float) $order->total_paid_tax_incl, 2);
+        $scan = array(
+            'candidates' => self::candidatesFrom($settings, $rows, $buyer, $gross, $iso),
+            'reads' => array(),
+            'reference' => '',
+            'sale_date' => '',
+            'lines' => array(),
+        );
+        if (!empty($scan['candidates'])) {
+            $scan['reference'] = IfirmaReceiptService::buildOrderReference($order);
+            $scan['sale_date'] = IfirmaReceiptService::orderSaleDate($order);
+            $scan['lines'] = IfirmaReceiptService::orderProductLines($order);
+            $scan['reads'] = $this->readDetails($scan, $settings);
+        }
+
+        return $scan;
+    }
+
+    /**
+     * @param mixed $orderDate date_add of the order (any strtotime() text); empty or unreadable counts as $now
+     * @param int   $now       unix timestamp
+     * @return array dataOd (the day before the order) and dataDo (the day of $now) as Y-m-d, and the
+     *               days between the two
+     */
+    private static function searchWindow($orderDate, $now)
+    {
+        $orderTs = strtotime((string) $orderDate);
+        if (!$orderTs) {
+            $orderTs = $now;
+        }
+        $dataOd = date('Y-m-d', $orderTs - 86400);
+        $dataDo = date('Y-m-d', $now);
+
+        return array(
+            'dataOd' => $dataOd,
+            'dataDo' => $dataDo,
+            'days' => (int) floor((strtotime($dataDo) - strtotime($dataOd)) / 86400),
+        );
+    }
+
+    /**
+     * Lists the documents of the window by contractor identifier, then by NIP when that finds none,
+     * then unfiltered when the window is within the window_days of the settings: the rows of the
+     * first query that returns any.
+     *
+     * @param array               $window dataOd, dataDo and days (searchWindow())
+     * @param array               $buyer identifier, nip
+     * @param IfirmaGuardSettings $settings
+     * @param IfirmaGuardResult   $result counts the list calls; takes the INCONCLUSIVE outcome when one fails
+     * @return array|null rows (empty when no query found any); null when a list call failed
+     */
+    private function listWindow(array $window, array $buyer, IfirmaGuardSettings $settings, IfirmaGuardResult $result)
+    {
+        $base = array('dataOd' => $window['dataOd'], 'dataDo' => $window['dataDo'], 'iloscNaStronie' => self::PAGE_SIZE);
+        $queries = array();
+        $queries[] = array('kontrahent' => $buyer['identifier']);
+        if ($buyer['nip'] !== '') {
+            $queries[] = array('nipKontrahenta' => $buyer['nip']);
+        }
+        if ($window['days'] <= $settings->getWindowDays()) {
+            $queries[] = array();
+        }
+
+        $rows = array();
+        foreach ($queries as $filter) {
+            $rows = $this->listAll(array_merge($base, $filter), $settings->getTimeout(), $result);
+            if ($rows === null && $filter && $this->filterValueUnknown()) {
+                // iFirma answers Kod 201 "Nie znaleziono kontrahenta..." when the filter names a
+                // contractor it does not have. No document of that contractor can exist, so this
+                // query is conclusively empty; the next query still runs.
+                $rows = array();
+                continue;
+            }
+            if ($rows === null) {
+                $result->outcome = IfirmaGuardResult::OUTCOME_INCONCLUSIVE;
+                $result->error = (string) $this->client->getLastError();
+                $result->rateLimited = (bool) $this->client->isRateLimited();
+
+                return null;
+            }
+            if (!empty($rows)) {
+                break;
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Reads, newest first, the detail of each candidate the settings allow, and stops after the first
+     * detail that carries the order reference: a confirmed document needs no further proof.
+     *
+     * @param array               $scan candidates and reference
+     * @param IfirmaGuardSettings $settings
+     * @return array per candidate read, keyed like the candidates: detail (getDetail() result, null
+     *               when it could not be read) and error (what the client said then, else empty)
+     */
+    private function readDetails(array $scan, IfirmaGuardSettings $settings)
+    {
+        $reads = array();
+        foreach ($scan['candidates'] as $index => $row) {
+            if (!$settings->readsDetailOf($index)) {
+                break;
+            }
+            $type = IfirmaDuplicateMatcher::rodzajToDocumentType(isset($row['Rodzaj']) ? $row['Rodzaj'] : '');
+            $detail = $type ? $this->client->getDetail($type, (string) $row['FakturaId'], $settings->getTimeout()) : null;
+            $reads[$index] = array('detail' => $detail, 'error' => $detail === null ? (string) $this->client->getLastError() : '');
+            if ($detail !== null && IfirmaDuplicateMatcher::confirm($detail['raw'], $scan['reference'])) {
+                break;
+            }
+        }
+
+        return $reads;
+    }
+
+    /**
+     * @param string     $outcome
+     * @param array|null $candidate
+     * @param array      $candidates
+     * @param string     $error
+     * @return array the decision classify() returns
+     */
+    private static function decision($outcome, $candidate, array $candidates, $error)
+    {
+        return array('outcome' => $outcome, 'candidate' => $candidate, 'candidates' => $candidates, 'error' => $error);
+    }
+
+    /**
      * @param array             $params
      * @param int|null          $timeout
      * @param IfirmaGuardResult $result counts the list calls
@@ -401,7 +567,7 @@ class IfirmaDuplicateGuard
      * @param array $detail getDetail() result (raw + data)
      * @return array the document node of the decoded detail (empty when undecodable)
      */
-    private function detailNode(array $detail)
+    private static function detailNode(array $detail)
     {
         $data = (isset($detail['data']) && is_array($detail['data'])) ? $detail['data'] : array();
 
