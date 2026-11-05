@@ -254,9 +254,7 @@ class IfirmaDuplicateGuard
         $r->remote_sent = !empty($row['CzyWyslano']) ? 1 : 0;
         $r->remote_draft = !empty($row['CzySzkic']) ? 1 : 0;
         $r->status = ($paid >= $gross - $tolerance) ? IfirmaReceipt::STATUS_PAID : IfirmaReceipt::STATUS_CREATED;
-        $r->delivery_status = IfirmaReceipt::DELIVERY_SKIPPED;
-        $r->delivery_channel = '';
-        $r->delivery_error = 'external document - not auto-delivered';
+        $r->recordDelivery(IfirmaReceipt::DELIVERY_SKIPPED, '', 'external document - not auto-delivered');
         $r->last_error = '';
         if (empty($r->security_token)) {
             $r->security_token = IfirmaReceiptService::generateSecurityToken();

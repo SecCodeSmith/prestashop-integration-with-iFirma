@@ -158,19 +158,15 @@ class IfirmaDeliveryService
             if ($manual) {
                 return $this->result(false, 'disabled', $channel, $this->module->l('Delivery is disabled (channel none)', 'ifirmadeliveryservice'));
             }
-            $receipt->delivery_status = IfirmaReceipt::DELIVERY_SKIPPED;
-            $receipt->delivery_channel = self::CHANNEL_NONE;
+            $receipt->recordDelivery(IfirmaReceipt::DELIVERY_SKIPPED, self::CHANNEL_NONE, '');
             $receipt->delivered_at = null;
-            $receipt->delivery_error = '';
             $this->persist($receipt);
 
             return $this->result(true, 'skipped', self::CHANNEL_NONE, '');
         }
 
         if (!$manual && $receipt->source === IfirmaReceipt::SOURCE_EXTERNAL) {
-            $receipt->delivery_status = IfirmaReceipt::DELIVERY_SKIPPED;
-            $receipt->delivery_channel = $channel;
-            $receipt->delivery_error = self::EXTERNAL_REASON;
+            $receipt->recordDelivery(IfirmaReceipt::DELIVERY_SKIPPED, $channel, self::EXTERNAL_REASON);
             $this->persist($receipt);
 
             return $this->result(true, 'skipped', $channel, self::EXTERNAL_REASON);
@@ -195,19 +191,15 @@ class IfirmaDeliveryService
         }
 
         if (!empty($res['ok'])) {
-            $receipt->delivery_status = IfirmaReceipt::DELIVERY_SENT;
-            $receipt->delivery_channel = $effective;
+            $receipt->recordDelivery(IfirmaReceipt::DELIVERY_SENT, $effective, '');
             $receipt->delivered_at = date('Y-m-d H:i:s', $this->now());
-            $receipt->delivery_error = '';
             $this->persist($receipt);
 
             return $this->result(true, 'sent', $effective, '');
         }
 
         $message = isset($res['message']) ? (string) $res['message'] : '';
-        $receipt->delivery_status = IfirmaReceipt::DELIVERY_FAILED;
-        $receipt->delivery_channel = $effective;
-        $receipt->delivery_error = $message;
+        $receipt->recordDelivery(IfirmaReceipt::DELIVERY_FAILED, $effective, $message);
         $this->persist($receipt);
 
         return $this->result(false, 'failed', $effective, $message);

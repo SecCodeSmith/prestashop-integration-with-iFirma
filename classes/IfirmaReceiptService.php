@@ -237,8 +237,11 @@ class IfirmaReceiptService
 
         if ($response === null) {
             // Unknown outcome when the request reached the transport: the document may exist.
-            $receipt->status = $this->client->lastRequestWasSent() ? IfirmaReceipt::STATUS_UNKNOWN : IfirmaReceipt::STATUS_ERROR;
-            $receipt->last_error = $this->client->getLastError();
+            if ($this->client->lastRequestWasSent()) {
+                $receipt->markUnknown($this->client->getLastError());
+            } else {
+                $receipt->markError($this->client->getLastError());
+            }
             $receipt->save();
             throw new Exception($this->l('Could not reach iFirma: %s', $this->client->getLastError()));
         }
@@ -250,8 +253,7 @@ class IfirmaReceiptService
 
         if ($code !== 0) {
             $message = isset($node['Informacja']) ? $node['Informacja'] : $this->l('Unknown iFirma error.');
-            $receipt->status = IfirmaReceipt::STATUS_ERROR;
-            $receipt->last_error = $message;
+            $receipt->markError($message);
             $receipt->save();
             throw new Exception($this->l('iFirma rejected the document: %s', $message));
         }

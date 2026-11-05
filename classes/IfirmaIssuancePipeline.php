@@ -286,8 +286,7 @@ class IfirmaIssuancePipeline
             $pending = $this->requests->getPendingForOrder($idOrder);
             $reason = 'held: data request #' . ($pending ? (int) $pending->id : 0) . ' pending';
             $row = $this->ensureRow($order, $isNew);
-            $row->status = IfirmaReceipt::STATUS_HELD;
-            $row->last_error = $reason;
+            $row->markHeld($reason);
             $row->save();
 
             $result->receipt = $row;
@@ -339,9 +338,10 @@ class IfirmaIssuancePipeline
                     return;
                 }
                 $row = $this->ensureRow($order, $isNew);
-                $row->last_error = (string) $g->error;
                 if ($isNew) {
-                    $row->status = IfirmaReceipt::STATUS_ERROR;
+                    $row->markError((string) $g->error);
+                } else {
+                    $row->last_error = (string) $g->error;
                 }
                 $row->save();
                 $result->receipt = $row;
@@ -486,9 +486,10 @@ class IfirmaIssuancePipeline
 
         try {
             $row = $this->ensureRow($order, $isNew);
-            $row->last_error = (string) $message;
             if ($isNew) {
-                $row->status = IfirmaReceipt::STATUS_ERROR;
+                $row->markError((string) $message);
+            } else {
+                $row->last_error = (string) $message;
             }
             $row->save();
             $result->receipt = $row;
