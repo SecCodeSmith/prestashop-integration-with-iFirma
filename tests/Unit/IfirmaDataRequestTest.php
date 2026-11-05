@@ -13,6 +13,8 @@ use PHPUnit\Framework\TestCase;
 
 class IfirmaDataRequestTest extends TestCase
 {
+    use IfirmaSentQueries;
+
     protected function setUp(): void
     {
         IfirmaTestState::resetAll();
@@ -275,17 +277,6 @@ class IfirmaDataRequestTest extends TestCase
     }
 
     // ---- countOrdersOnHold() -------------------------------------------------------------
-
-    /**
-     * @return string[] every SQL string sent so far, in order, with the CRLF line endings of a Windows
-     *                  checkout turned into "\n", so that the text is the same on every checkout
-     */
-    private function sentQueries()
-    {
-        return array_map(function ($sql) {
-            return str_replace("\r\n", "\n", (string) $sql);
-        }, Db::getInstance()->queries);
-    }
 
     public function testCountOrdersOnHoldCountsTheOrdersOfThePendingRequestsInOneQuery()
     {

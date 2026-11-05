@@ -51,6 +51,8 @@ class IfirmaReceiptWriteSpy extends IfirmaReceipt
  */
 class IfirmaReceiptTest extends TestCase
 {
+    use IfirmaSentQueries;
+
     protected function setUp(): void
     {
         IfirmaTestState::resetAll();
@@ -422,17 +424,6 @@ class IfirmaReceiptTest extends TestCase
             '             ORDER BY last_sync_at ASC, id_ifirma_receipt ASC',
             '             LIMIT ' . $limit,
         ));
-    }
-
-    /**
-     * @return string[] every SQL string sent so far, in order, with the CRLF line endings of a Windows
-     *                  checkout turned into "\n", so that the text is the same on every checkout
-     */
-    private function sentQueries()
-    {
-        return array_map(function ($sql) {
-            return str_replace("\r\n", "\n", (string) $sql);
-        }, Db::getInstance()->queries);
     }
 
     /**

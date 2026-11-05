@@ -14,6 +14,7 @@ use PHPUnit\Framework\TestCase;
 class StatusSyncServiceTest extends TestCase
 {
     use IfirmaThrowableProviders;
+    use IfirmaSentQueries;
 
     /** @var ScriptedTransport */
     private $t;
@@ -633,17 +634,6 @@ class StatusSyncServiceTest extends TestCase
             'SELECT COUNT(DISTINCT id_order) FROM `ps_ifirma_data_request`',
             "             WHERE status = 'pending'",
         ));
-    }
-
-    /**
-     * @return string[] every SQL string sent so far, in order, with the CRLF line endings of a Windows
-     *                  checkout turned into "\n", so that the text is the same on every checkout
-     */
-    private function sentQueries()
-    {
-        return array_map(function ($sql) {
-            return str_replace("\r\n", "\n", (string) $sql);
-        }, Db::getInstance()->queries);
     }
 
     /**
