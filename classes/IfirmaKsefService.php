@@ -205,8 +205,6 @@ class IfirmaKsefService
                     $error = $info !== '' ? $info : $this->module->l('iFirma did not confirm the KSeF submission', 'ifirmaksefservice');
                 }
             }
-        } catch (Exception $e) {
-            $error = $e->getMessage();
         } catch (Throwable $e) {
             $error = $e->getMessage();
         }

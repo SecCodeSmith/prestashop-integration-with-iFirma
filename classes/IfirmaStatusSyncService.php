@@ -295,8 +295,6 @@ class IfirmaStatusSyncService
             $summary = $this->syncReceipt($receipt, self::OPPORTUNISTIC_TIMEOUT);
 
             return $summary['calls'] > 0;
-        } catch (Exception $e) {
-            return false;
         } catch (Throwable $e) {
             return false;
         }

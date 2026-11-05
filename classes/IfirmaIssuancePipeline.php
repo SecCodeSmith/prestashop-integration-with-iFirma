@@ -145,8 +145,6 @@ class IfirmaIssuancePipeline
             }
 
             return $this->run(new Order((int) $idOrder), array('trigger' => self::TRIGGER_STATUS));
-        } catch (Exception $e) {
-            $this->log('iFirma pipeline: ' . $e->getMessage());
         } catch (Throwable $e) {
             $this->log('iFirma pipeline: ' . $e->getMessage());
         }
@@ -201,8 +199,6 @@ class IfirmaIssuancePipeline
             }
 
             return $this->run($order, array('trigger' => self::TRIGGER_RESUME));
-        } catch (Exception $e) {
-            $this->log('iFirma pipeline resume: ' . $e->getMessage());
         } catch (Throwable $e) {
             $this->log('iFirma pipeline resume: ' . $e->getMessage());
         }
@@ -222,8 +218,6 @@ class IfirmaIssuancePipeline
 
         try {
             $this->execute($order, $options, $result);
-        } catch (Exception $e) {
-            $this->fail($order, $result, $e->getMessage());
         } catch (Throwable $e) {
             $this->fail($order, $result, $e->getMessage());
         }
@@ -443,8 +437,6 @@ class IfirmaIssuancePipeline
                 return '';
             }
             $k = $this->ksef->submit($receipt, $order);
-        } catch (Exception $e) {
-            $k = array('ok' => false, 'message' => $e->getMessage());
         } catch (Throwable $e) {
             $k = array('ok' => false, 'message' => $e->getMessage());
         }
@@ -494,8 +486,6 @@ class IfirmaIssuancePipeline
             }
             $row->save();
             $result->receipt = $row;
-        } catch (Exception $e) {
-            // recording is best effort
         } catch (Throwable $e) {
             // recording is best effort
         }
