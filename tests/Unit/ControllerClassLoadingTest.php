@@ -21,70 +21,86 @@ use PHPUnit\Framework\TestCase;
  * (PHPUnit includes every test file before the first test runs), and a controller file loaded
  * early in a process supplies the helper to the controllers loaded after it.
  *
- * So each test here runs in a process of its own, with the global state not preserved: the
- * child would otherwise include the parent's files again, the two helper tests among them. The
- * child starts from tests/bootstrap.php, which loads neither helper, loads ONE controller file
- * and checks that the helper is there. Keep it so: this file must not require the helpers,
- * directly or through anything else it uses, and a test must not load a second controller.
+ * So each test starts a PHP process of its own (PHP_BINARY, the script on its standard input).
+ * The child starts from tests/bootstrap.php, which loads neither helper, loads ONE controller file
+ * through IfirmaTestModuleLoader and reports whether the helper class was there before and after.
+ * Keep it so: this file must not require the helpers, directly or through anything else it uses,
+ * and a test must not load a second controller.
+ *
+ * PHPUnit's own isolation (@runInSeparateProcess with @preserveGlobalState disabled) does the same
+ * but starts a whole PHPUnit child per test, and under pcov each child collects coverage again.
  */
 class ControllerClassLoadingTest extends TestCase
 {
     /**
-     * Fails when the helper is already loaded: the test is then not isolated (or a support file
-     * loads the helper), and it could no longer see a controller that forgets to.
+     * @param string $load PHP statement that loads the controller, run after the bootstrap
+     * @param string $class the helper class the controller must load
+     * @return bool[] array(whether $class existed before $load, whether it exists after)
      */
-    private function assertNotLoadedYet($class)
+    private function inFreshProcess($load, $class)
     {
-        $this->assertFalse(
-            class_exists($class, false),
-            $class . ' was loaded before the controller: this test can no longer see a lost require_once'
-        );
-    }
+        $exists = 'class_exists(' . var_export($class, true) . ', false)';
+        $script = '<?php require ' . var_export(dirname(__DIR__) . '/bootstrap.php', true) . ';'
+            . ' $before = ' . $exists . ';'
+            . ' ' . $load
+            . ' echo json_encode(array($before, ' . $exists . '));';
 
-    private function assertLoadedBy($file, $class)
-    {
-        $this->assertTrue(
-            class_exists($class, false),
-            $file . ' does not load ' . $class . ': its require_once is missing'
+        $process = proc_open(
+            escapeshellarg(PHP_BINARY) . ' -d display_errors=stderr -d error_reporting=-1',
+            array(0 => array('pipe', 'r'), 1 => array('pipe', 'w'), 2 => array('pipe', 'w')),
+            $pipes
         );
+        $this->assertIsResource($process, 'cannot start ' . PHP_BINARY);
+        fwrite($pipes[0], $script);
+        fclose($pipes[0]);
+        $stdout = stream_get_contents($pipes[1]);
+        $stderr = stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        $status = proc_close($process);
+
+        $this->assertSame(0, $status, 'the child process failed: ' . $stderr . $stdout);
+        $state = json_decode($stdout, true);
+        $this->assertIsArray($state, 'the child process said: ' . $stdout . $stderr);
+
+        return $state;
     }
 
     /**
-     * @runInSeparateProcess
-     * @preserveGlobalState disabled
+     * Fails when the helper is already loaded: the bootstrap (or a support file) loads it, and the
+     * test could no longer see a controller that forgets to.
      */
+    private function assertNotLoadedYet($class, $before)
+    {
+        $this->assertFalse($before, $class . ' was loaded before the controller: this test can no longer see a lost require_once');
+    }
+
+    private function assertLoadedBy($file, $class, $after)
+    {
+        $this->assertTrue($after, $file . ' does not load ' . $class . ': its require_once is missing');
+    }
+
     public function testTheFrontReceiptControllerLoadsIfirmaHttpOutput()
     {
-        $this->assertNotLoadedYet('IfirmaHttpOutput');
+        list($before, $after) = $this->inFreshProcess("IfirmaTestModuleLoader::loadFrontController('receipt');", 'IfirmaHttpOutput');
 
-        IfirmaTestModuleLoader::loadFrontController('receipt');
-
-        $this->assertLoadedBy('controllers/front/receipt.php', 'IfirmaHttpOutput');
+        $this->assertNotLoadedYet('IfirmaHttpOutput', $before);
+        $this->assertLoadedBy('controllers/front/receipt.php', 'IfirmaHttpOutput', $after);
     }
 
-    /**
-     * @runInSeparateProcess
-     * @preserveGlobalState disabled
-     */
     public function testTheFrontCronControllerLoadsIfirmaHttpStatus()
     {
-        $this->assertNotLoadedYet('IfirmaHttpStatus');
+        list($before, $after) = $this->inFreshProcess("IfirmaTestModuleLoader::loadFrontController('cron');", 'IfirmaHttpStatus');
 
-        IfirmaTestModuleLoader::loadFrontController('cron');
-
-        $this->assertLoadedBy('controllers/front/cron.php', 'IfirmaHttpStatus');
+        $this->assertNotLoadedYet('IfirmaHttpStatus', $before);
+        $this->assertLoadedBy('controllers/front/cron.php', 'IfirmaHttpStatus', $after);
     }
 
-    /**
-     * @runInSeparateProcess
-     * @preserveGlobalState disabled
-     */
     public function testTheAdminControllerLoadsIfirmaHttpOutput()
     {
-        $this->assertNotLoadedYet('IfirmaHttpOutput');
+        list($before, $after) = $this->inFreshProcess('IfirmaTestModuleLoader::loadAdminController();', 'IfirmaHttpOutput');
 
-        IfirmaTestModuleLoader::loadAdminController();
-
-        $this->assertLoadedBy('controllers/admin/AdminIfirmaController.php', 'IfirmaHttpOutput');
+        $this->assertNotLoadedYet('IfirmaHttpOutput', $before);
+        $this->assertLoadedBy('controllers/admin/AdminIfirmaController.php', 'IfirmaHttpOutput', $after);
     }
 }
