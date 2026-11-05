@@ -538,15 +538,7 @@ class Ifirma extends Module
      */
     private function buildApiClient()
     {
-        return new IfirmaApiClient(
-            Configuration::get('IFIRMA_USER'),
-            array(
-                'faktura' => Configuration::get('IFIRMA_KEY_FAKTURA'),
-                'abonent' => Configuration::get('IFIRMA_KEY_ABONENT'),
-                'rachunek' => Configuration::get('IFIRMA_KEY_RACHUNEK'),
-            ),
-            Configuration::get('IFIRMA_BASE_URL') ?: IfirmaApiClient::BASE_URL
-        );
+        return IfirmaApiClient::fromConfiguration();
     }
 
     /**

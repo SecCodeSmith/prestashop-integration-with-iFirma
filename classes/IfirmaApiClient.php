@@ -80,7 +80,7 @@ class IfirmaApiClient
      */
     public static function fromConfiguration($baseUrl = null)
     {
-        return new self(
+        return new IfirmaApiClient(
             Configuration::get('IFIRMA_USER'),
             array(
                 'faktura' => Configuration::get('IFIRMA_KEY_FAKTURA'),

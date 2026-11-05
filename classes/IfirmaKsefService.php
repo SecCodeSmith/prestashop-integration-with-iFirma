@@ -72,15 +72,7 @@ class IfirmaKsefService
     public static function build(Module $module)
     {
         IfirmaSchema::ensureReceiptKsefColumns();
-        $client = new IfirmaApiClient(
-            Configuration::get('IFIRMA_USER'),
-            array(
-                'faktura' => Configuration::get('IFIRMA_KEY_FAKTURA'),
-                'abonent' => Configuration::get('IFIRMA_KEY_ABONENT'),
-                'rachunek' => Configuration::get('IFIRMA_KEY_RACHUNEK'),
-            ),
-            Configuration::get('IFIRMA_BASE_URL') ?: IfirmaApiClient::BASE_URL
-        );
+        $client = IfirmaApiClient::fromConfiguration();
 
         return new self($client, $module);
     }

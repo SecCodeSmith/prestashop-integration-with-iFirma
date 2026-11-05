@@ -110,16 +110,7 @@ class IfirmaIssuancePipeline
      */
     public static function build(Module $module)
     {
-        $baseUrl = Configuration::get('IFIRMA_BASE_URL');
-        $client = new IfirmaApiClient(
-            Configuration::get('IFIRMA_USER'),
-            array(
-                'faktura' => Configuration::get('IFIRMA_KEY_FAKTURA'),
-                'abonent' => Configuration::get('IFIRMA_KEY_ABONENT'),
-                'rachunek' => Configuration::get('IFIRMA_KEY_RACHUNEK'),
-            ),
-            $baseUrl ?: IfirmaApiClient::BASE_URL
-        );
+        $client = IfirmaApiClient::fromConfiguration();
 
         $service = new IfirmaReceiptService($client, $module);
         IfirmaSchema::ensureReceiptKsefColumns();
