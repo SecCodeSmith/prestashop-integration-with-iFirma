@@ -72,6 +72,26 @@ class IfirmaApiClient
     }
 
     /**
+     * Named constructor used by the services' build() methods: a client configured from the module
+     * Configuration (IFIRMA_USER and the IFIRMA_KEY_FAKTURA / _ABONENT / _RACHUNEK keys).
+     *
+     * @param string|null $baseUrl explicit base URL; when empty, IFIRMA_BASE_URL, then BASE_URL
+     * @return IfirmaApiClient
+     */
+    public static function fromConfiguration($baseUrl = null)
+    {
+        return new self(
+            Configuration::get('IFIRMA_USER'),
+            array(
+                'faktura' => Configuration::get('IFIRMA_KEY_FAKTURA'),
+                'abonent' => Configuration::get('IFIRMA_KEY_ABONENT'),
+                'rachunek' => Configuration::get('IFIRMA_KEY_RACHUNEK'),
+            ),
+            $baseUrl ?: (Configuration::get('IFIRMA_BASE_URL') ?: self::BASE_URL)
+        );
+    }
+
+    /**
      * Testability seam: transport used by every client built without an explicit one.
      *
      * @param object|null $transport
