@@ -81,6 +81,20 @@ class SchemaTest extends TestCase
         }));
     }
 
+    private function addColumnStatements()
+    {
+        return array_values(array_filter(Db::getInstance()->executed, function ($q) {
+            return strpos($q, 'ALTER TABLE') === 0 && strpos($q, 'ADD COLUMN') !== false;
+        }));
+    }
+
+    private function columnProbes()
+    {
+        return array_values(array_filter(Db::getInstance()->queries, function ($q) {
+            return strpos($q, 'information_schema.COLUMNS') !== false;
+        }));
+    }
+
     public function testWidenAltersAContractorMapIdentifierNarrowerThan64()
     {
         Db::getInstance()->whenGetValue('/CHARACTER_MAXIMUM_LENGTH/', 15);
@@ -111,6 +125,85 @@ class SchemaTest extends TestCase
         $this->assertTrue(IfirmaSchema::widenContractorMapIdentifier());
 
         $this->assertSame(array(), $this->modifyStatements());
+    }
+
+    public function testWidenReadsTheIdentifierLengthFromTheCurrentDatabase()
+    {
+        Db::getInstance()->whenGetValue('/CHARACTER_MAXIMUM_LENGTH/', 64);
+
+        $this->assertTrue(IfirmaSchema::widenContractorMapIdentifier());
+
+        $this->assertSame(array(
+            "SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()"
+            . " AND TABLE_NAME = 'ps_ifirma_contractor_map' AND COLUMN_NAME = 'ifirma_identifier'",
+        ), $this->columnProbes());
+    }
+
+    public function identifierLengthProvider()
+    {
+        return array(
+            'the documented 15 characters' => array(15, true),
+            'a string from the driver, one short' => array('63', true),
+            'exactly the target length' => array('64', false),
+            'one wider than the target' => array('65', false),
+            'much wider, never narrowed' => array(255, false),
+        );
+    }
+
+    /**
+     * @dataProvider identifierLengthProvider
+     */
+    public function testWidenAltersOnlyAColumnNarrowerThanTheTargetLength($length, $altered)
+    {
+        Db::getInstance()->whenGetValue('/CHARACTER_MAXIMUM_LENGTH/', $length);
+
+        $this->assertTrue(IfirmaSchema::widenContractorMapIdentifier());
+
+        $this->assertCount($altered ? 1 : 0, $this->modifyStatements());
+    }
+
+    public function untrustedLengthProvider()
+    {
+        return array(
+            'no row' => array(null),
+            'empty string' => array(''),
+            'not a number' => array('n/a'),
+            'zero as text' => array('0'),
+            'negative' => array(-1),
+        );
+    }
+
+    /**
+     * @dataProvider untrustedLengthProvider
+     */
+    public function testWidenSkipsEveryLengthItCannotTrust($length)
+    {
+        Db::getInstance()->whenGetValue('/CHARACTER_MAXIMUM_LENGTH/', $length);
+
+        $this->assertTrue(IfirmaSchema::widenContractorMapIdentifier());
+
+        $this->assertSame(array(), $this->modifyStatements());
+    }
+
+    public function testWidenReportsAFailedAlter()
+    {
+        Db::getInstance()->whenGetValue('/CHARACTER_MAXIMUM_LENGTH/', 15);
+        Db::getInstance()->whenExecute('/MODIFY `ifirma_identifier`/', false);
+
+        $this->assertFalse(IfirmaSchema::widenContractorMapIdentifier());
+
+        $this->assertCount(1, $this->modifyStatements());
+    }
+
+    public function testContractorMapDeclaresTheIdentifierColumnAsVarchar64()
+    {
+        $columns = IfirmaSchema::contractorMapColumns();
+
+        $this->assertSame('VARCHAR(64) NOT NULL', $columns['ifirma_identifier']);
+        $this->assertStringContainsString(
+            '`ifirma_identifier` VARCHAR(64) NOT NULL',
+            IfirmaSchema::contractorMapCreateSql()
+        );
     }
 
     public function testKsefColumnsAreDefinedAndDefaultModeIsB2b()
@@ -148,6 +241,85 @@ class SchemaTest extends TestCase
             return strpos($q, 'ALTER TABLE') === 0;
         });
         $this->assertSame(array(), array_values($alters));
+    }
+
+    public function testEnsureReceiptKsefColumnsProbesEachColumnOfTheReceiptTable()
+    {
+        $this->assertTrue(IfirmaSchema::ensureReceiptKsefColumns());
+
+        $this->assertSame(array(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()"
+            . " AND TABLE_NAME = 'ps_ifirma_receipt' AND COLUMN_NAME = 'ksef_sent_at'",
+            "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()"
+            . " AND TABLE_NAME = 'ps_ifirma_receipt' AND COLUMN_NAME = 'ksef_error'",
+        ), $this->columnProbes());
+    }
+
+    public function oneKsefColumnPresentProvider()
+    {
+        return array(
+            'ksef_sent_at is there, ksef_error is missing' => array(
+                'ksef_sent_at',
+                'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `ksef_error` TEXT NULL',
+            ),
+            'ksef_error is there, ksef_sent_at is missing' => array(
+                'ksef_error',
+                'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `ksef_sent_at` DATETIME NULL',
+            ),
+        );
+    }
+
+    /**
+     * @dataProvider oneKsefColumnPresentProvider
+     */
+    public function testEnsureReceiptKsefColumnsAddsOnlyTheMissingColumn($present, $expectedAlter)
+    {
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = '" . $present . "'/", '1');
+
+        $this->assertTrue(IfirmaSchema::ensureReceiptKsefColumns());
+
+        $this->assertSame(array($expectedAlter), $this->addColumnStatements());
+    }
+
+    public function failingKsefColumnProvider()
+    {
+        return array(
+            'ksef_sent_at fails' => array('ksef_sent_at'),
+            'ksef_error fails' => array('ksef_error'),
+        );
+    }
+
+    /**
+     * @dataProvider failingKsefColumnProvider
+     */
+    public function testEnsureReceiptKsefColumnsReportsAFailedAlterAndStillTriesTheOtherColumn($failing)
+    {
+        Db::getInstance()->whenExecute('/ADD COLUMN `' . $failing . '`/', false);
+
+        $this->assertFalse(IfirmaSchema::ensureReceiptKsefColumns());
+
+        $this->assertSame(array(
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `ksef_sent_at` DATETIME NULL',
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `ksef_error` TEXT NULL',
+        ), $this->addColumnStatements());
+    }
+
+    public function testEnsureReceiptKsefColumnsDoesNotRememberAFailure()
+    {
+        $db = Db::getInstance();
+        $db->whenExecute('/ADD COLUMN `ksef_sent_at`/', false);
+        $this->assertFalse(IfirmaSchema::ensureReceiptKsefColumns());
+        $this->assertCount(2, $this->addColumnStatements());
+
+        // ksef_error went in on the first run, so the retry adds only the column that failed
+        $db->whenGetValue("/COLUMN_NAME = 'ksef_error'/", 1);
+        $db->whenExecute('/ADD COLUMN `ksef_sent_at`/', true);
+        $this->assertTrue(IfirmaSchema::ensureReceiptKsefColumns());
+        $this->assertCount(3, $this->addColumnStatements());
+
+        // only a success is remembered for the rest of the request
+        $this->assertTrue(IfirmaSchema::ensureReceiptKsefColumns());
+        $this->assertCount(3, $this->addColumnStatements());
     }
 
     public function testSignatureTypeDefaultIsBpo()

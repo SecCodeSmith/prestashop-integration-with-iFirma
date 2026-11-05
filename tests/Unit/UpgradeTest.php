@@ -62,6 +62,46 @@ class UpgradeTest extends TestCase
         $this->assertCount(20, $this->alters());
     }
 
+    public function testUpgradeProbesEveryReceiptColumnWithOneInformationSchemaQuery()
+    {
+        $this->scriptColumnProbe();
+
+        $this->assertTrue(upgrade_module_1_1_0(new Module()));
+
+        // the 1.1.0 columns first, then the two KSeF columns again through ensureReceiptKsefColumns()
+        $columns = array_merge(array_keys(IfirmaSchema::newReceiptColumnsFor110()), array('ksef_sent_at', 'ksef_error'));
+        $expected = array();
+        foreach ($columns as $column) {
+            $expected[] = "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()"
+                . " AND TABLE_NAME = 'ps_ifirma_receipt' AND COLUMN_NAME = '" . $column . "'";
+        }
+        $probes = array_values(array_filter(Db::getInstance()->queries, function ($q) {
+            return strpos($q, 'SELECT COUNT(*) FROM information_schema.COLUMNS') === 0;
+        }));
+        $this->assertSame($expected, $probes);
+    }
+
+    public function testUpgradeAddsOnlyTheColumnsThatAreMissing()
+    {
+        $present = array('source', 'ksef_sent_at', 'ksef_error');
+        foreach ($present as $column) {
+            Db::getInstance()->whenGetValue("/COLUMN_NAME = '" . $column . "'/", '1');
+        }
+
+        $this->assertTrue(upgrade_module_1_1_0(new Module()));
+
+        $added = array();
+        foreach ($this->alters() as $alter) {
+            preg_match('/ADD COLUMN `([^`]+)`/', $alter, $m);
+            $added[] = $m[1];
+        }
+        $this->assertSame(
+            array_values(array_diff(array_keys(IfirmaSchema::newReceiptColumnsFor110()), $present)),
+            $added
+        );
+        $this->assertCount(17, $added);
+    }
+
     public function testConfigurationNeverOverwritten()
     {
         $this->scriptColumnProbe();
