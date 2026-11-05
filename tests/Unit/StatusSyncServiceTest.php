@@ -602,6 +602,162 @@ class StatusSyncServiceTest extends TestCase
         $this->assertStringContainsString('LIMIT 50', $sql);
     }
 
+    // ---- the two cron queries: selectForCron() and countHeldOrders() ------------------------
+
+    /**
+     * The receipts query selectForCron() sends, line by line, with the clock of setUp(): the stale
+     * cut-off is 24 hours before it. The indentation inside the string is part of the text; the line
+     * endings are not (see sentQueries()).
+     *
+     * @param int $limit
+     * @return string
+     */
+    private function dueReceiptsSql($limit)
+    {
+        return implode("\n", array(
+            'SELECT id_ifirma_receipt FROM `ps_ifirma_receipt`',
+            "             WHERE ifirma_id != '' AND status != 'error'",
+            "             AND (status != 'paid' OR remote_sent = 0 OR last_sync_at IS NULL",
+            "                  OR last_sync_at < '" . date('Y-m-d H:i:s', $this->now - 24 * 3600) . "')",
+            '             ORDER BY last_sync_at ASC, id_ifirma_receipt ASC',
+            '             LIMIT ' . $limit,
+        ));
+    }
+
+    /**
+     * @return string the SQL countHeldOrders() sends
+     */
+    private function heldOrdersSql()
+    {
+        return implode("\n", array(
+            'SELECT COUNT(DISTINCT id_order) FROM `ps_ifirma_data_request`',
+            "             WHERE status = 'pending'",
+        ));
+    }
+
+    /**
+     * @return string[] every SQL string sent so far, in order, with the CRLF line endings of a Windows
+     *                  checkout turned into "\n", so that the text is the same on every checkout
+     */
+    private function sentQueries()
+    {
+        return array_map(function ($sql) {
+            return str_replace("\r\n", "\n", (string) $sql);
+        }, Db::getInstance()->queries);
+    }
+
+    /**
+     * @param IfirmaReceipt[] $receipts
+     * @return int[] their ids, under the same keys
+     */
+    private function receiptIds(array $receipts)
+    {
+        return array_map(function ($receipt) {
+            return $receipt->id;
+        }, $receipts);
+    }
+
+    public function testSelectForCronSendsOneQueryWithTheCutOffOfTheServiceClock()
+    {
+        $this->svc->selectForCron(50);
+
+        $this->assertSame(array($this->dueReceiptsSql(50)), $this->sentQueries());
+    }
+
+    public function testSelectForCronReadsAtMostFiveHundredReceiptsByDefault()
+    {
+        $this->svc->selectForCron();
+
+        $this->assertSame(array($this->dueReceiptsSql(500)), $this->sentQueries());
+    }
+
+    public static function dueReceiptsLimits()
+    {
+        return array(
+            'a limit of 1 is sent as it is' => array(1, 1),
+            'a limit of 0 is raised to 1' => array(0, 1),
+            'a negative limit is raised to 1' => array(-5, 1),
+            'a numeric string is sent as a whole number' => array('25', 25),
+            'a fraction is cut down to a whole number' => array(7.9, 7),
+        );
+    }
+
+    /**
+     * @dataProvider dueReceiptsLimits
+     */
+    public function testSelectForCronSendsAWholeLimitOfAtLeastOne($given, $sent)
+    {
+        $this->svc->selectForCron($given);
+
+        $this->assertSame(array($this->dueReceiptsSql($sent)), $this->sentQueries());
+    }
+
+    public function testSelectForCronReturnsTheReceiptsInTheOrderOfTheRows()
+    {
+        $first = $this->receipt(71);
+        $second = $this->receipt(72);
+        $third = $this->receipt(73);
+        Db::getInstance()->whenExecuteS('/FROM `ps_ifirma_receipt`/', array(
+            array('id_ifirma_receipt' => (string) $third->id),
+            array('id_ifirma_receipt' => (string) $first->id),
+            array('id_ifirma_receipt' => (string) $second->id),
+        ));
+
+        $receipts = $this->svc->selectForCron();
+
+        // the keys are 0, 1, 2 and the order is the database's, not the id order
+        $this->assertSame(array((int) $third->id, (int) $first->id, (int) $second->id), $this->receiptIds($receipts));
+        $this->assertContainsOnlyInstancesOf('IfirmaReceipt', $receipts);
+        $this->assertSame(array('73', '71', '72'), array_map(function ($receipt) {
+            return $receipt->ifirma_id;
+        }, $receipts));
+    }
+
+    public function testSelectForCronSkipsARowWhoseReceiptDoesNotLoad()
+    {
+        $first = $this->receipt(74);
+        $second = $this->receipt(75);
+        Db::getInstance()->whenExecuteS('/FROM `ps_ifirma_receipt`/', array(
+            array('id_ifirma_receipt' => (string) $first->id),
+            array('id_ifirma_receipt' => '9999'),
+            array('id_ifirma_receipt' => '0'),
+            array('id_ifirma_receipt' => (string) $second->id),
+        ));
+
+        $receipts = $this->svc->selectForCron();
+
+        $this->assertSame(array((int) $first->id, (int) $second->id), $this->receiptIds($receipts));
+    }
+
+    public function testSelectForCronReturnsAnEmptyListWhenNoRowIsDue()
+    {
+        $this->assertSame(array(), $this->svc->selectForCron());
+    }
+
+    public function testCountHeldOrdersCountsTheOrdersOfThePendingDataRequestsInOneQuery()
+    {
+        Db::getInstance()->whenGetValue('/COUNT\(DISTINCT id_order\)/', '4');
+
+        $this->assertSame(4, $this->svc->countHeldOrders());
+        $this->assertSame(array($this->heldOrdersSql()), $this->sentQueries());
+    }
+
+    public function testCountHeldOrdersIsZeroWhenTheDatabaseAnswersNothing()
+    {
+        $this->assertSame(0, $this->svc->countHeldOrders());
+    }
+
+    public function testRunCronSendsTheDueReceiptsQueryFirstAndTheHeldOrdersCountLast()
+    {
+        Db::getInstance()->whenGetValue('/COUNT\(DISTINCT id_order\)/', 3);
+
+        $summary = $this->svc->runCron();
+
+        $this->assertSame(array($this->dueReceiptsSql(500), $this->heldOrdersSql()), $this->sentQueries());
+        $this->assertSame(3, $summary['held_orders']);
+        $this->assertSame(0, $summary['receipts_checked']);
+    }
+
     public function testFrontControllerClassLoads()
     {
         $this->assertInstanceOf('ModuleFrontController', IfirmaTestModuleLoader::loadFrontController('cron'));
