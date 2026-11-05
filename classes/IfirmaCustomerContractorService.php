@@ -300,11 +300,11 @@ class IfirmaCustomerContractorService
         $merged = array();
         foreach ($phrases as $phrase) {
             $found = $this->contractors->search($phrase);
-            $error = (string) $this->contractors->getLastSearchError();
+            $error = $found->getError();
             if ($error !== '') {
                 $out['errors'][$phrase] = $error;
             }
-            foreach ($found as $row) {
+            foreach ($found->getRows() as $row) {
                 $identifier = isset($row['Identyfikator']) ? trim((string) $row['Identyfikator']) : '';
                 if ($identifier === '' || isset($merged[$identifier])) {
                     continue;

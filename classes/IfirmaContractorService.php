@@ -10,6 +10,8 @@ if (!defined('_PS_VERSION_')) {
 
 require_once dirname(__FILE__) . '/IfirmaApiClient.php';
 require_once dirname(__FILE__) . '/IfirmaContractorMap.php';
+require_once dirname(__FILE__) . '/IfirmaContractorResolution.php';
+require_once dirname(__FILE__) . '/IfirmaContractorSearchResult.php';
 
 /**
  * Keeps one iFirma contractor (Identyfikator PS-C<id_customer>) in step with the shop customer.
@@ -360,7 +362,7 @@ class IfirmaContractorService
      * @param array    $contractor buildContractor() result (must carry Identyfikator)
      * @param int|null $idCustomer
      * @param array    $hints      nip (digits), email, postcode, name; missing keys come from $contractor
-     * @return array identifier (string|null), action, message, matched_by, linked_identifier
+     * @return IfirmaContractorResolution
      */
     public function ensure(array $contractor, $idCustomer = null, array $hints = array())
     {
@@ -446,7 +448,7 @@ class IfirmaContractorService
      * @param array  $contractor   shop-owned data
      * @param string $matchedBy
      * @param int    $linkCustomer customer to link (0 = the mapping is already stored)
-     * @return array
+     * @return IfirmaContractorResolution
      */
     private function useExisting($identifier, array $existing, array $contractor, $matchedBy, $linkCustomer)
     {
@@ -500,7 +502,7 @@ class IfirmaContractorService
             return null;
         }
         $rows = array();
-        foreach ($this->search($hints['nip']) as $row) {
+        foreach ($this->search($hints['nip'])->getRows() as $row) {
             if (isset($row['NIP']) && preg_replace('/\D/', '', (string) $row['NIP']) === $hints['nip']) {
                 $rows[] = $row;
             }
@@ -538,7 +540,7 @@ class IfirmaContractorService
             return null;
         }
         $candidates = array();
-        foreach ($this->search($hints['name']) as $row) {
+        foreach ($this->search($hints['name'])->getRows() as $row) {
             if (self::normalizeName(isset($row['Nazwa']) ? $row['Nazwa'] : '') !== $name) {
                 continue;
             }
@@ -591,24 +593,25 @@ class IfirmaContractorService
 
     /**
      * Contractor search (identifier, name or NIP fragment; iFirma returns at most 20 rows).
-     * Any failure counts as "no match" and is recorded in getLastSearchError().
+     * Any failure counts as "no match": no rows, and the message of the failure in the answer
+     * (also kept in getLastSearchError() until that accessor goes, task 13.2).
      *
      * @param string $phrase
-     * @return array list of contractor rows
+     * @return IfirmaContractorSearchResult the contractor rows and the failure message
      */
     public function search($phrase)
     {
         $this->lastSearchError = '';
         $phrase = trim((string) $phrase);
         if ($phrase === '') {
-            return array();
+            return new IfirmaContractorSearchResult();
         }
 
         $response = $this->client->get('kontrahenci/' . rawurlencode($phrase) . '.json', 'faktura');
         if ($response === null) {
             $this->lastSearchError = (string) $this->client->getLastError();
 
-            return array();
+            return new IfirmaContractorSearchResult(array(), $this->lastSearchError);
         }
         $node = isset($response['response']) && is_array($response['response']) ? $response['response'] : $response;
         if (!isset($node['Kod']) || (int) $node['Kod'] !== 0) {
@@ -618,10 +621,10 @@ class IfirmaContractorService
                     : 'Kod ' . (int) $node['Kod'];
             }
 
-            return array();
+            return new IfirmaContractorSearchResult(array(), $this->lastSearchError);
         }
         if (!isset($node['Wynik']) || !is_array($node['Wynik'])) {
-            return array();
+            return new IfirmaContractorSearchResult();
         }
 
         $rows = array();
@@ -631,7 +634,7 @@ class IfirmaContractorService
             }
         }
 
-        return $rows;
+        return new IfirmaContractorSearchResult($rows);
     }
 
     /**
@@ -735,21 +738,14 @@ class IfirmaContractorService
     }
 
     /**
-     * @return array
+     * @return IfirmaContractorResolution
      */
     private function remember($identifier, $action, $message, $matchedBy = '', $note = null)
     {
-        $this->lastAction = array(
-            'identifier' => $identifier,
-            'action' => $action,
-            'message' => (string) $message,
-            'matched_by' => $identifier === null ? '' : (string) $matchedBy,
-            'linked_identifier' => ($identifier !== null && $matchedBy !== '') ? $identifier : null,
-            'note' => $note,
-            'assigned_identifier' => ($identifier !== null && $this->assignedIdentifier !== null) ? $this->assignedIdentifier : null,
-        );
+        $resolution = new IfirmaContractorResolution($identifier, $action, $message, $matchedBy, $note, $this->assignedIdentifier, $this->lastReadback);
+        $this->lastAction = $resolution->toArray();
 
-        return $this->lastAction;
+        return $resolution;
     }
 
     /**

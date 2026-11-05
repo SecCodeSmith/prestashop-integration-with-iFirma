@@ -220,15 +220,15 @@ class IfirmaReceiptService
         if ($response !== null && !empty($payload['IdentyfikatorKontrahenta'])
             && $this->contractorReferenceRejected($response, (string) $payload['IdentyfikatorKontrahenta'])) {
             $rejected = $this->extractInformacja($response);
-            $contractorInfo = array(
-                'identifier' => null,
-                'action' => IfirmaContractorService::ACTION_FALLBACK,
-                'message' => $rejected,
-                'matched_by' => '',
-                'note' => array(
+            $contractorInfo = new IfirmaContractorResolution(
+                null,
+                IfirmaContractorService::ACTION_FALLBACK,
+                $rejected,
+                '',
+                array(
                     'code' => 'reference_rejected',
                     'params' => array('identifier' => (string) $payload['IdentyfikatorKontrahenta'], 'error' => $rejected),
-                ),
+                )
             );
             $payload = $this->referenceContractor($payload, $contractorInfo);
             $receipt->request_payload = $this->encodeRequest($payload, $contractorInfo);
@@ -294,14 +294,14 @@ class IfirmaReceiptService
      * Kontrahent.Identyfikator is never sent: the live API answers Kod 201 "Nie znaleziono
      * kontrahenta" for a value it does not know instead of creating the contractor under it.
      *
-     * @param array      $payload
-     * @param array|null $contractorInfo ensure() result; null when the contractor step was skipped
+     * @param array                           $payload
+     * @param IfirmaContractorResolution|null $contractorInfo ensure() result; null when the contractor step was skipped
      * @return array
      */
     private function referenceContractor(array $payload, $contractorInfo)
     {
-        $identifier = ($contractorInfo !== null && isset($contractorInfo['identifier']))
-            ? trim((string) $contractorInfo['identifier'])
+        $identifier = ($contractorInfo !== null && $contractorInfo->getIdentifier() !== null)
+            ? trim((string) $contractorInfo->getIdentifier())
             : '';
         $payload['IdentyfikatorKontrahenta'] = $identifier !== '' ? $identifier : null;
         if (isset($payload['Kontrahent']) && is_array($payload['Kontrahent'])) {
@@ -318,19 +318,19 @@ class IfirmaReceiptService
      * iFirma attached, so the next order of this customer reuses it instead of adding a duplicate.
      * One extra GET, only in those cases; never blocks issuance.
      *
-     * @param IfirmaReceipt $receipt        issued receipt (ifirma_id set, not yet saved)
-     * @param array         $payload
-     * @param array|null    $contractorInfo
+     * @param IfirmaReceipt                   $receipt        issued receipt (ifirma_id set, not yet saved)
+     * @param array                           $payload
+     * @param IfirmaContractorResolution|null $contractorInfo
      */
     private function learnDocumentContractor(IfirmaReceipt $receipt, array $payload, $contractorInfo)
     {
         if ($contractorInfo === null || (string) $receipt->ifirma_id === '' || (int) $receipt->id_customer <= 0) {
             return;
         }
-        if (isset($contractorInfo['action']) && $contractorInfo['action'] === IfirmaContractorService::ACTION_DISABLED) {
+        if ($contractorInfo->getAction() === IfirmaContractorService::ACTION_DISABLED) {
             return;
         }
-        $referenced = isset($contractorInfo['identifier']) ? trim((string) $contractorInfo['identifier']) : '';
+        $referenced = $contractorInfo->getIdentifier() !== null ? trim((string) $contractorInfo->getIdentifier()) : '';
         if ($referenced !== '' && mb_strlen($referenced) <= self::DOCUMENT_IDENTIFIER_MAX) {
             return;
         }
@@ -347,8 +347,7 @@ class IfirmaReceiptService
             return;
         }
 
-        $contractorInfo['document_identifier'] = $used;
-        $receipt->request_payload = $this->encodeRequest($payload, $contractorInfo);
+        $receipt->request_payload = $this->encodeRequest($payload, $contractorInfo, $used);
         if ($used !== $referenced) {
             try {
                 IfirmaContractorMap::link(
@@ -409,28 +408,29 @@ class IfirmaReceiptService
     /**
      * Stored request_payload: what was sent plus the private _contractor note (never sent to iFirma).
      *
-     * @param array      $payload
-     * @param array|null $contractorInfo
+     * @param array                           $payload
+     * @param IfirmaContractorResolution|null $contractorInfo
+     * @param string                          $documentIdentifier the contractor the issued document turned out to carry; '' when not read back
      * @return string
      */
-    private function encodeRequest(array $payload, $contractorInfo)
+    private function encodeRequest(array $payload, $contractorInfo, $documentIdentifier = '')
     {
         $payload = $this->sendable($payload);
         if ($contractorInfo !== null) {
             $payload['_contractor'] = array(
-                'action' => $contractorInfo['action'],
-                'message' => (string) $contractorInfo['message'],
-                'matched_by' => isset($contractorInfo['matched_by']) ? (string) $contractorInfo['matched_by'] : '',
-                'identifier' => isset($contractorInfo['identifier']) ? (string) $contractorInfo['identifier'] : '',
+                'action' => $contractorInfo->getAction(),
+                'message' => $contractorInfo->getMessage(),
+                'matched_by' => $contractorInfo->getMatchedBy(),
+                'identifier' => (string) $contractorInfo->getIdentifier(),
             );
-            if (isset($contractorInfo['note']) && is_array($contractorInfo['note'])) {
-                $payload['_contractor']['note'] = $contractorInfo['note'];
+            if (is_array($contractorInfo->getNote())) {
+                $payload['_contractor']['note'] = $contractorInfo->getNote();
             }
-            if (isset($contractorInfo['assigned_identifier']) && (string) $contractorInfo['assigned_identifier'] !== '') {
-                $payload['_contractor']['assigned_identifier'] = (string) $contractorInfo['assigned_identifier'];
+            if ((string) $contractorInfo->getAssignedId() !== '') {
+                $payload['_contractor']['assigned_identifier'] = (string) $contractorInfo->getAssignedId();
             }
-            if (isset($contractorInfo['document_identifier']) && (string) $contractorInfo['document_identifier'] !== '') {
-                $payload['_contractor']['document_identifier'] = (string) $contractorInfo['document_identifier'];
+            if ((string) $documentIdentifier !== '') {
+                $payload['_contractor']['document_identifier'] = (string) $documentIdentifier;
             }
         }
 

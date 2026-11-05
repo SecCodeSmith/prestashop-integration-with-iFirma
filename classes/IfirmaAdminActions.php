@@ -330,15 +330,15 @@ class IfirmaAdminActions
                 (int) $order->id_customer,
                 $receiptService->contractorHints($order, $contractor, $override)
             );
-            $identifier = $result['identifier'] !== null ? (string) $result['identifier'] : (string) $contractor['Identyfikator'];
-            $matchedBy = isset($result['matched_by']) ? (string) $result['matched_by'] : '';
+            $identifier = $result->getIdentifier() !== null ? (string) $result->getIdentifier() : (string) $contractor['Identyfikator'];
+            $matchedBy = $result->getMatchedBy();
             $data = array(
                 'identifier' => $identifier,
-                'action' => $result['action'],
-                'message' => $result['message'],
+                'action' => $result->getAction(),
+                'message' => $result->getMessage(),
                 'matched_by' => $matchedBy,
-                'note' => isset($result['note']) ? $result['note'] : null,
-                'assigned_identifier' => isset($result['assigned_identifier']) ? $result['assigned_identifier'] : null,
+                'note' => $result->getNote(),
+                'assigned_identifier' => $result->getAssignedId(),
             );
             $matchLabels = $this->module->matchLabels();
             $linked = in_array($matchedBy, $matchLabels->linkCodes(), true)
@@ -352,7 +352,7 @@ class IfirmaAdminActions
                 );
             }
 
-            switch ($result['action']) {
+            switch ($result->getAction()) {
                 case IfirmaContractorService::ACTION_CREATED:
                     $message = sprintf($this->module->l('Contractor %s created in iFirma.', 'ifirmaadminactions'), $identifier);
                     break;
@@ -371,7 +371,7 @@ class IfirmaAdminActions
                         sprintf(
                             $this->module->l('Contractor %s could not be registered: %s', 'ifirmaadminactions'),
                             $identifier,
-                            $result['message']
+                            $result->getMessage()
                         ),
                         $data
                     );

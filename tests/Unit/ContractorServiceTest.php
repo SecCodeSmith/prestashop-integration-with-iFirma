@@ -189,8 +189,8 @@ class ContractorServiceTest extends TestCase
     {
         Configuration::updateValue('IFIRMA_CONTRACTOR_SYNC', 0);
         $r = $this->svc->ensure($this->owned());
-        $this->assertNull($r['identifier']);
-        $this->assertSame('disabled', $r['action']);
+        $this->assertNull($r->getIdentifier());
+        $this->assertSame('disabled', $r->getAction());
         $this->assertSame(array(), $this->t->calls);
         $last = $this->svc->getLastAction();
         $this->assertSame('disabled', $last['action']);
@@ -200,8 +200,8 @@ class ContractorServiceTest extends TestCase
     {
         $this->t->queue('GET', '#kontrahenci/id/#', $this->found());
         $r = $this->svc->ensure($this->owned());
-        $this->assertSame('PS-C7', $r['identifier']);
-        $this->assertSame('kept', $r['action']);
+        $this->assertSame('PS-C7', $r->getIdentifier());
+        $this->assertSame('kept', $r->getAction());
         $this->assertCount(1, $this->t->calls);
     }
 
@@ -210,10 +210,10 @@ class ContractorServiceTest extends TestCase
         $this->t->queue('GET', '#kontrahenci/id/#', $this->found(array('Ulica' => 'Stara 2')));
         $this->t->queue('PUT', '#kontrahenci/PS-C7\.json#', $this->ok('Zaktualizowano kontrahenta'));
         $r = $this->svc->ensure($this->owned());
-        $this->assertSame('PS-C7', $r['identifier']);
-        $this->assertSame('updated', $r['action']);
+        $this->assertSame('PS-C7', $r->getIdentifier());
+        $this->assertSame('updated', $r->getAction());
         $this->assertSame(array('GET', 'PUT'), array_column($this->t->calls, 'method'));
-        $this->assertSame($r, $this->svc->getLastAction());
+        $this->assertSame($r->toArray(), $this->svc->getLastAction());
     }
 
     public function testEnsureUpdateFailureFallsBack()
@@ -221,12 +221,12 @@ class ContractorServiceTest extends TestCase
         $this->t->queue('GET', '#kontrahenci/id/#', $this->found(array('Ulica' => 'Stara 2')));
         $this->t->queue('PUT', '#kontrahenci/#', array('body' => '{"response":{"Kod":201,"Informacja":"bad"}}'));
         $r = $this->svc->ensure($this->owned());
-        $this->assertNull($r['identifier']);
-        $this->assertSame('fallback', $r['action']);
-        $this->assertStringContainsString('bad', $r['message']);
-        $this->assertSame('update_failed', $r['note']['code']);
-        $this->assertSame('PS-C7', $r['note']['params']['identifier']);
-        $this->assertStringContainsString('bad', $r['note']['params']['error']);
+        $this->assertNull($r->getIdentifier());
+        $this->assertSame('fallback', $r->getAction());
+        $this->assertStringContainsString('bad', $r->getMessage());
+        $this->assertSame('update_failed', $r->getNote()['code']);
+        $this->assertSame('PS-C7', $r->getNote()['params']['identifier']);
+        $this->assertStringContainsString('bad', $r->getNote()['params']['error']);
     }
 
     public function testEnsureCreated()
@@ -235,8 +235,8 @@ class ContractorServiceTest extends TestCase
         $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
         $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
         $r = $this->svc->ensure($this->owned());
-        $this->assertSame('PS-C7', $r['identifier']);
-        $this->assertSame('created', $r['action']);
+        $this->assertSame('PS-C7', $r->getIdentifier());
+        $this->assertSame('created', $r->getAction());
         $this->assertSame(array('GET', 'POST', 'GET'), array_column($this->t->calls, 'method'));
         $sent = json_decode($this->t->calls[1]['body'], true);
         $this->assertSame('PS-C7', $sent['Identyfikator']);
@@ -246,13 +246,13 @@ class ContractorServiceTest extends TestCase
     {
         $this->t->queue('GET', '#kontrahenci/id/#', array('status' => 0, 'error' => 'timeout'));
         $r = $this->svc->ensure($this->owned());
-        $this->assertNull($r['identifier']);
-        $this->assertSame('fallback', $r['action']);
-        $this->assertStringContainsString('timeout', $r['message']);
+        $this->assertNull($r->getIdentifier());
+        $this->assertSame('fallback', $r->getAction());
+        $this->assertStringContainsString('timeout', $r->getMessage());
         $this->assertCount(1, $this->t->calls);
-        $this->assertSame('lookup_failed', $r['note']['code']);
-        $this->assertSame('PS-C7', $r['note']['params']['identifier']);
-        $this->assertStringContainsString('timeout', $r['note']['params']['error']);
+        $this->assertSame('lookup_failed', $r->getNote()['code']);
+        $this->assertSame('PS-C7', $r->getNote()['params']['identifier']);
+        $this->assertStringContainsString('timeout', $r->getNote()['params']['error']);
     }
 
     public function testEnsureFallbackOnPostFailure()
@@ -260,11 +260,11 @@ class ContractorServiceTest extends TestCase
         $this->t->queue('GET', '#kontrahenci/id/#', array('body' => '{"response":{"Kod":208,"Informacja":"x"}}'));
         $this->t->queue('POST', '#kontrahenci\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"Zly kod pocztowy"}}'));
         $r = $this->svc->ensure($this->owned());
-        $this->assertNull($r['identifier']);
-        $this->assertSame('fallback', $r['action']);
-        $this->assertStringContainsString('Zly kod pocztowy', $r['message']);
-        $this->assertSame('create_rejected', $r['note']['code']);
-        $this->assertStringContainsString('Zly kod pocztowy', $r['note']['params']['error']);
+        $this->assertNull($r->getIdentifier());
+        $this->assertSame('fallback', $r->getAction());
+        $this->assertStringContainsString('Zly kod pocztowy', $r->getMessage());
+        $this->assertSame('create_rejected', $r->getNote()['code']);
+        $this->assertStringContainsString('Zly kod pocztowy', $r->getNote()['params']['error']);
         $this->assertSame(array('GET', 'POST'), array_column($this->t->calls, 'method'));
         $this->assertSame(array(), $this->waits);
     }
@@ -322,10 +322,10 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame('KOWALSKI-01', $r['identifier']);
-        $this->assertSame('kept', $r['action']);
-        $this->assertSame('import-nip', $r['matched_by']);
-        $this->assertSame('KOWALSKI-01', $r['linked_identifier']);
+        $this->assertSame('KOWALSKI-01', $r->getIdentifier());
+        $this->assertSame('kept', $r->getAction());
+        $this->assertSame('import-nip', $r->getMatchedBy());
+        $this->assertSame('KOWALSKI-01', $r->getLinkedIdentifier());
         $this->assertSame(array('/iapi/kontrahenci/id/KOWALSKI-01.json'), $this->paths('GET'));
         $this->assertSame('import-nip', $this->mapped()['matched_by']);
     }
@@ -338,7 +338,7 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame('updated', $r['action']);
+        $this->assertSame('updated', $r->getAction());
         $put = json_decode($this->t->calls[1]['body'], true);
         $this->assertSame('Warszawa', $put['Miejscowosc']);
         $this->assertSame('123', $put['NumerKonta']);
@@ -357,8 +357,8 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame('created', $r['action']);
-        $this->assertSame('PS-C7', $r['identifier']);
+        $this->assertSame('created', $r->getAction());
+        $this->assertSame('PS-C7', $r->getIdentifier());
         $rows = IfirmaTestState::objects('ifirma_contractor_map');
         $this->assertCount(1, $rows);
         $this->assertSame('PS-C7', $this->mapped()['ifirma_identifier']);
@@ -372,13 +372,13 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertNull($r['identifier']);
-        $this->assertSame('fallback', $r['action']);
+        $this->assertNull($r->getIdentifier());
+        $this->assertSame('fallback', $r->getAction());
         $this->assertSame('KOWALSKI-01', $this->mapped()['ifirma_identifier']);
         $this->assertCount(1, $this->t->calls);
-        $this->assertSame('lookup_failed', $r['note']['code']);
-        $this->assertSame('KOWALSKI-01', $r['note']['params']['identifier']);
-        $this->assertStringContainsString('timeout', $r['note']['params']['error']);
+        $this->assertSame('lookup_failed', $r->getNote()['code']);
+        $this->assertSame('KOWALSKI-01', $r->getNote()['params']['identifier']);
+        $this->assertStringContainsString('timeout', $r->getNote()['params']['error']);
     }
 
     public function testModuleContractorFoundIsLinkedAsModule()
@@ -387,8 +387,8 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame('kept', $r['action']);
-        $this->assertSame('module', $r['matched_by']);
+        $this->assertSame('kept', $r->getAction());
+        $this->assertSame('module', $r->getMatchedBy());
         $this->assertSame('PS-C7', $this->mapped()['ifirma_identifier']);
         $this->assertSame('module', $this->mapped()['matched_by']);
         $this->assertSame(array(), $this->searchPaths());
@@ -402,9 +402,9 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned());
 
-        $this->assertSame('created', $r['action']);
-        $this->assertSame('', $r['matched_by']);
-        $this->assertNull($r['linked_identifier']);
+        $this->assertSame('created', $r->getAction());
+        $this->assertSame('', $r->getMatchedBy());
+        $this->assertNull($r->getLinkedIdentifier());
         $this->assertSame(array(), $this->searchPaths());
         $this->assertNull($this->mapped());
     }
@@ -421,10 +421,10 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
 
-        $this->assertSame('ACME-02', $r['identifier']);
-        $this->assertSame('updated', $r['action']);
-        $this->assertSame('nip', $r['matched_by']);
-        $this->assertSame('ACME-02', $r['linked_identifier']);
+        $this->assertSame('ACME-02', $r->getIdentifier());
+        $this->assertSame('updated', $r->getAction());
+        $this->assertSame('nip', $r->getMatchedBy());
+        $this->assertSame('ACME-02', $r->getLinkedIdentifier());
         $this->assertSame(array('/iapi/kontrahenci/5252248481.json'), $this->searchPaths());
         $this->assertSame('ACME-02', $this->mapped()['ifirma_identifier']);
         $this->assertSame('nip', $this->mapped()['matched_by']);
@@ -440,7 +440,7 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
 
-        $this->assertSame('kept', $r['action']);
+        $this->assertSame('kept', $r->getAction());
         $this->assertSame(array(), $this->paths('PUT'));
     }
 
@@ -455,8 +455,8 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
 
-        $this->assertSame('ACME-02', $r['identifier']);
-        $this->assertSame('nip', $r['matched_by']);
+        $this->assertSame('ACME-02', $r->getIdentifier());
+        $this->assertSame('nip', $r->getMatchedBy());
     }
 
     public function testSeveralNipMatchesFallBackToThePostcode()
@@ -470,7 +470,7 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
 
-        $this->assertSame('ACME-B', $r['identifier']);
+        $this->assertSame('ACME-B', $r->getIdentifier());
     }
 
     public function testSeveralNipMatchesWithoutATieBreakGiveUpOnTheNipStep()
@@ -486,8 +486,8 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
 
-        $this->assertSame('created', $r['action']);
-        $this->assertSame('PS-C7', $r['identifier']);
+        $this->assertSame('created', $r->getAction());
+        $this->assertSame('PS-C7', $r->getIdentifier());
     }
 
     public function testNipRowsWithAnotherNipAreIgnored()
@@ -502,7 +502,7 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
 
-        $this->assertSame('created', $r['action']);
+        $this->assertSame('created', $r->getAction());
     }
 
     public function testPrivatePersonMatchedByNameAndEmail()
@@ -517,8 +517,8 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame('KOWALSKI-01', $r['identifier']);
-        $this->assertSame('name', $r['matched_by']);
+        $this->assertSame('KOWALSKI-01', $r->getIdentifier());
+        $this->assertSame('name', $r->getMatchedBy());
         $this->assertSame('KOWALSKI-01', $this->mapped()['ifirma_identifier']);
         $this->assertSame('name', $this->mapped()['matched_by']);
         $this->assertSame(array('/iapi/kontrahenci/Jan%20Kowalski.json'), $this->searchPaths());
@@ -535,8 +535,8 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame('KOWALSKI-02', $r['identifier']);
-        $this->assertSame('name', $r['matched_by']);
+        $this->assertSame('KOWALSKI-02', $r->getIdentifier());
+        $this->assertSame('name', $r->getMatchedBy());
     }
 
     public function testAmbiguousNameCreatesTheModuleContractor()
@@ -551,8 +551,8 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame('created', $r['action']);
-        $this->assertSame('PS-C7', $r['identifier']);
+        $this->assertSame('created', $r->getAction());
+        $this->assertSame('PS-C7', $r->getIdentifier());
         $this->assertSame('module', $this->mapped()['matched_by']);
     }
 
@@ -567,7 +567,7 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints(array('email' => '', 'postcode' => '')));
 
-        $this->assertSame('created', $r['action']);
+        $this->assertSame('created', $r->getAction());
     }
 
     public function testNameMatchIgnoresCaseDiacriticsAndDoubleSpaces()
@@ -581,8 +581,8 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($owned, 7, $this->hints(array('name' => $owned['Nazwa'])));
 
-        $this->assertSame('ZOLC-03', $r['identifier']);
-        $this->assertSame('name', $r['matched_by']);
+        $this->assertSame('ZOLC-03', $r->getIdentifier());
+        $this->assertSame('name', $r->getMatchedBy());
     }
 
     public function testNormalizeName()
@@ -606,20 +606,20 @@ class ContractorServiceTest extends TestCase
         $this->t->queue('GET', '#kontrahenci/ABC\.json#', $this->rows(array($this->remote('A-1'))));
         $this->t->queue('GET', '#kontrahenci/NONE\.json#', $this->notFoundBody());
 
-        $this->assertCount(1, $this->svc->search('ABC'));
-        $this->assertSame(array(), $this->svc->search('NONE'));
+        $this->assertCount(1, $this->svc->search('ABC')->getRows());
+        $this->assertSame(array(), $this->svc->search('NONE')->getRows());
         $this->assertSame('', $this->svc->getLastSearchError());
-        $this->assertSame(array(), $this->svc->search('   '));
+        $this->assertSame(array(), $this->svc->search('   ')->getRows());
     }
 
     public function testSearchFailuresAreNoMatchAndRecorded()
     {
         $this->t->queue('GET', '#kontrahenci/BOOM\.json#', array('status' => 0, 'error' => 'timeout'));
-        $this->assertSame(array(), $this->svc->search('BOOM'));
+        $this->assertSame(array(), $this->svc->search('BOOM')->getRows());
         $this->assertStringContainsString('timeout', $this->svc->getLastSearchError());
 
         $this->t->queue('GET', '#kontrahenci/SIGN\.json#', array('body' => '{"response":{"Kod":403,"Informacja":"Bledny podpis"}}'));
-        $this->assertSame(array(), $this->svc->search('SIGN'));
+        $this->assertSame(array(), $this->svc->search('SIGN')->getRows());
         $this->assertStringContainsString('Bledny podpis', $this->svc->getLastSearchError());
     }
 
@@ -633,8 +633,8 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
 
-        $this->assertSame('created', $r['action']);
-        $this->assertSame('PS-C7', $r['identifier']);
+        $this->assertSame('created', $r->getAction());
+        $this->assertSame('PS-C7', $r->getIdentifier());
         $this->assertStringContainsString('connection reset', $this->svc->getLastSearchError());
     }
 
@@ -647,7 +647,7 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame('created', $r['action']);
+        $this->assertSame('created', $r->getAction());
         $this->assertSame('Bledny podpis', $this->svc->getLastSearchError());
     }
 
@@ -672,16 +672,16 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame('124451232', $r['identifier']);
-        $this->assertSame('created', $r['action']);
-        $this->assertSame('124451232', $r['linked_identifier']);
+        $this->assertSame('124451232', $r->getIdentifier());
+        $this->assertSame('created', $r->getAction());
+        $this->assertSame('124451232', $r->getLinkedIdentifier());
         $this->assertSame('124451232', $this->mapped()['ifirma_identifier']);
         $this->assertSame('module', $this->mapped()['matched_by']);
         $this->assertSame(array('GET', 'GET', 'POST', 'GET', 'GET'), array_column($this->t->calls, 'method'));
         $this->assertSame(array(), $this->waits);
         $this->assertSame('124451232', $this->svc->getAssignedIdentifier());
-        $this->assertSame('124451232', $r['assigned_identifier']);
-        $this->assertSame('assigned', $r['note']['code']);
+        $this->assertSame('124451232', $r->getAssignedId());
+        $this->assertSame('assigned', $r->getNote()['code']);
     }
 
     public function testCreatedContractorWhoseIdentifierCannotBeReadBackFallsBackWithBothIdentifiers()
@@ -692,12 +692,12 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertNull($r['identifier']);
-        $this->assertSame('fallback', $r['action']);
+        $this->assertNull($r->getIdentifier());
+        $this->assertSame('fallback', $r->getAction());
         // message keeps the English sentence naming both identifiers (older panels, diagnostics)
-        $this->assertStringContainsString('PS-C7', $r['message']);
-        $this->assertStringContainsString('124451232', $r['message']);
-        $this->assertSame($r['message'], $this->svc->getLastSearchError());
+        $this->assertStringContainsString('PS-C7', $r->getMessage());
+        $this->assertStringContainsString('124451232', $r->getMessage());
+        $this->assertSame($r->getMessage(), $this->svc->getLastSearchError());
         $this->assertNull($this->mapped());
     }
 
@@ -731,10 +731,10 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame('PS-C7', $r['identifier']);
-        $this->assertSame('created', $r['action']);
-        $this->assertNull($r['note']);
-        $this->assertNull($r['assigned_identifier']);
+        $this->assertSame('PS-C7', $r->getIdentifier());
+        $this->assertSame('created', $r->getAction());
+        $this->assertNull($r->getNote());
+        $this->assertNull($r->getAssignedId());
         $this->assertSame(array('GET', 'GET', 'POST', 'GET'), array_column($this->t->calls, 'method'));
         $this->assertSame(array(), $this->waits);
         $this->assertSame(array('/iapi/kontrahenci/Jan%20Kowalski.json'), $this->searchPaths());
@@ -784,9 +784,9 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame('PS-C7', $r['identifier']);
-        $this->assertSame('created', $r['action']);
-        $this->assertNull($r['note']);
+        $this->assertSame('PS-C7', $r->getIdentifier());
+        $this->assertSame('created', $r->getAction());
+        $this->assertNull($r->getNote());
         $this->assertSame(array(IfirmaContractorService::READBACK_WAIT_SECONDS), $this->waits);
         $this->assertSame(array(2), $this->waits);
         $this->assertSame(array('GET', 'GET', 'POST', 'GET', 'GET', 'GET'), array_column($this->t->calls, 'method'));
@@ -807,16 +807,17 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
 
-        $this->assertSame('IFI1909556979', $r['identifier']);
-        $this->assertSame('created', $r['action']);
-        $this->assertSame('module', $r['matched_by']);
-        $this->assertSame('IFI1909556979', $r['assigned_identifier']);
+        $this->assertSame('IFI1909556979', $r->getIdentifier());
+        $this->assertSame('created', $r->getAction());
+        $this->assertSame('module', $r->getMatchedBy());
+        $this->assertSame('IFI1909556979', $r->getAssignedId());
         $this->assertSame('IFI1909556979', $this->svc->getAssignedIdentifier());
-        $this->assertSame(array('code' => 'assigned', 'params' => array('identifier' => 'IFI1909556979')), $r['note']);
+        $this->assertSame(array('code' => 'assigned', 'params' => array('identifier' => 'IFI1909556979')), $r->getNote());
         $this->assertSame('IFI1909556979', $this->mapped()['ifirma_identifier']);
         $this->assertSame('module', $this->mapped()['matched_by']);
         $this->assertSame(array(2), $this->waits);
         $this->assertSame('found', $this->svc->getLastReadback()['search']);
+        $this->assertSame('found', $r->getReadback()['search']);
     }
 
     public function testPrivatePersonFoundByNameAndEmailUnderAnAssignedIdentifier()
@@ -829,9 +830,9 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame('IFI77', $r['identifier']);
-        $this->assertSame('created', $r['action']);
-        $this->assertSame('assigned', $r['note']['code']);
+        $this->assertSame('IFI77', $r->getIdentifier());
+        $this->assertSame('created', $r->getAction());
+        $this->assertSame('assigned', $r->getNote()['code']);
         $this->assertSame('IFI77', $this->mapped()['ifirma_identifier']);
         $this->assertSame('module', $this->mapped()['matched_by']);
     }
@@ -852,10 +853,10 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
 
-        $this->assertNull($r['identifier']);
-        $this->assertSame('fallback', $r['action']);
-        $this->assertSame('readback_failed', $r['note']['code']);
-        $this->assertSame('ambiguous', $r['note']['params']['search']);
+        $this->assertNull($r->getIdentifier());
+        $this->assertSame('fallback', $r->getAction());
+        $this->assertSame('readback_failed', $r->getNote()['code']);
+        $this->assertSame('ambiguous', $r->getNote()['params']['search']);
         $this->assertNull($this->mapped());
     }
 
@@ -867,11 +868,11 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertNull($r['identifier']);
-        $this->assertSame('fallback', $r['action']);
+        $this->assertNull($r->getIdentifier());
+        $this->assertSame('fallback', $r->getAction());
         $this->assertNull($this->mapped());
         $this->assertSame(array(2), $this->waits);
-        $this->assertSame('readback_failed', $r['note']['code']);
+        $this->assertSame('readback_failed', $r->getNote()['code']);
         // shape: one entry per fetch, two passes over the two candidates (sent, reported) = 4 entries
         $miss = 'Kod 208: Nie znaleziono kontrahenta';
         $this->assertSame(array(
@@ -879,11 +880,12 @@ class ContractorServiceTest extends TestCase
             array('identifier' => '124451232', 'answer' => $miss),
             array('identifier' => 'PS-C7', 'answer' => $miss),
             array('identifier' => '124451232', 'answer' => $miss),
-        ), $r['note']['params']['tried']);
-        $this->assertSame('none', $r['note']['params']['search']);
-        $this->assertSame('', $r['note']['params']['search_error']);
-        $this->assertSame($r['note']['params']['tried'], $this->svc->getLastReadback()['tried']);
-        $this->assertStringContainsString('Kod 208: Nie znaleziono kontrahenta', $r['message']);
+        ), $r->getNote()['params']['tried']);
+        $this->assertSame('none', $r->getNote()['params']['search']);
+        $this->assertSame('', $r->getNote()['params']['search_error']);
+        $this->assertSame($r->getNote()['params']['tried'], $this->svc->getLastReadback()['tried']);
+        $this->assertSame($r->getNote()['params']['tried'], $r->getReadback()['tried']);
+        $this->assertStringContainsString('Kod 208: Nie znaleziono kontrahenta', $r->getMessage());
         $this->assertSame(array('GET', 'GET', 'POST', 'GET', 'GET', 'GET', 'GET', 'GET'), array_column($this->t->calls, 'method'));
     }
 
@@ -898,11 +900,11 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame('fallback', $r['action']);
-        foreach ($r['note']['params']['tried'] as $entry) {
+        $this->assertSame('fallback', $r->getAction());
+        foreach ($r->getNote()['params']['tried'] as $entry) {
             $this->assertSame('empty result', $entry['answer']);
         }
-        $this->assertCount(4, $r['note']['params']['tried']);
+        $this->assertCount(4, $r->getNote()['params']['tried']);
     }
 
     public function testReadbackTransportFailureContinuesToTheWaitAndTheSearch()
@@ -916,13 +918,13 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame('fallback', $r['action']);
+        $this->assertSame('fallback', $r->getAction());
         $this->assertSame(array(2), $this->waits);
-        $this->assertSame('readback_failed', $r['note']['code']);
-        foreach ($r['note']['params']['tried'] as $entry) {
+        $this->assertSame('readback_failed', $r->getNote()['code']);
+        foreach ($r->getNote()['params']['tried'] as $entry) {
             $this->assertStringContainsString('connection reset by peer', $entry['answer']);
         }
-        $this->assertSame('none', $r['note']['params']['search']);
+        $this->assertSame('none', $r->getNote()['params']['search']);
         // GET id, name search, POST, 4 read-backs, post-create name search
         $this->assertCount(8, $this->t->calls);
     }
@@ -935,9 +937,9 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame('fallback', $r['action']);
-        $this->assertSame('error', $r['note']['params']['search']);
-        $this->assertStringContainsString('search timeout', $r['note']['params']['search_error']);
+        $this->assertSame('fallback', $r->getAction());
+        $this->assertSame('error', $r->getNote()['params']['search']);
+        $this->assertStringContainsString('search timeout', $r->getNote()['params']['search_error']);
     }
 
     public function testCreateWithoutHintsSkipsTheSearch()
@@ -959,12 +961,13 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame('fallback', $r['action']);
-        $this->assertSame('create_rejected', $r['note']['code']);
-        $this->assertStringContainsString('Zly kod pocztowy', $r['note']['params']['error']);
+        $this->assertSame('fallback', $r->getAction());
+        $this->assertSame('create_rejected', $r->getNote()['code']);
+        $this->assertStringContainsString('Zly kod pocztowy', $r->getNote()['params']['error']);
         $this->assertSame(array('GET', 'GET', 'POST'), array_column($this->t->calls, 'method'));
         $this->assertSame(array(), $this->waits);
         $this->assertSame(array(), $this->svc->getLastReadback()['tried']);
+        $this->assertSame(array(), $r->getReadback()['tried']);
     }
 
     public function testMapTableFailuresNeverBlockEnsure()
@@ -976,8 +979,8 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame('kept', $r['action']);
-        $this->assertSame('PS-C7', $r['identifier']);
+        $this->assertSame('kept', $r->getAction());
+        $this->assertSame('PS-C7', $r->getIdentifier());
     }
 
     // ---- the exact ensure() answer of every outcome (refactor-clean-code-tda 13.1 + 13.2) -----------
@@ -990,7 +993,7 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame(array('identifier' => null, 'action' => 'disabled', 'message' => '', 'matched_by' => '', 'linked_identifier' => null, 'note' => null, 'assigned_identifier' => null), $r);
+        $this->assertSame(array('identifier' => null, 'action' => 'disabled', 'message' => '', 'matched_by' => '', 'linked_identifier' => null, 'note' => null, 'assigned_identifier' => null), $r->toArray());
         $this->assertSame(array(), $this->t->calls);
     }
 
@@ -1001,7 +1004,7 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($owned, 7, $this->hints());
 
-        $this->assertSame(array('identifier' => null, 'action' => 'disabled', 'message' => '', 'matched_by' => '', 'linked_identifier' => null, 'note' => null, 'assigned_identifier' => null), $r);
+        $this->assertSame(array('identifier' => null, 'action' => 'disabled', 'message' => '', 'matched_by' => '', 'linked_identifier' => null, 'note' => null, 'assigned_identifier' => null), $r->toArray());
         $this->assertSame(array(), $this->t->calls);
     }
 
@@ -1011,7 +1014,7 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame(array('identifier' => 'PS-C7', 'action' => 'kept', 'message' => '', 'matched_by' => 'module', 'linked_identifier' => 'PS-C7', 'note' => null, 'assigned_identifier' => null), $r);
+        $this->assertSame(array('identifier' => 'PS-C7', 'action' => 'kept', 'message' => '', 'matched_by' => 'module', 'linked_identifier' => 'PS-C7', 'note' => null, 'assigned_identifier' => null), $r->toArray());
     }
 
     public function testEnsureWithoutACustomerStillNamesTheModuleAsTheMatchOfAKeptContractor()
@@ -1020,7 +1023,7 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned());
 
-        $this->assertSame(array('identifier' => 'PS-C7', 'action' => 'kept', 'message' => '', 'matched_by' => 'module', 'linked_identifier' => 'PS-C7', 'note' => null, 'assigned_identifier' => null), $r);
+        $this->assertSame(array('identifier' => 'PS-C7', 'action' => 'kept', 'message' => '', 'matched_by' => 'module', 'linked_identifier' => 'PS-C7', 'note' => null, 'assigned_identifier' => null), $r->toArray());
         $this->assertNull($this->mapped());
     }
 
@@ -1031,7 +1034,7 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame(array('identifier' => 'KOWALSKI-01', 'action' => 'kept', 'message' => '', 'matched_by' => 'import-nip', 'linked_identifier' => 'KOWALSKI-01', 'note' => null, 'assigned_identifier' => null), $r);
+        $this->assertSame(array('identifier' => 'KOWALSKI-01', 'action' => 'kept', 'message' => '', 'matched_by' => 'import-nip', 'linked_identifier' => 'KOWALSKI-01', 'note' => null, 'assigned_identifier' => null), $r->toArray());
     }
 
     public function testEnsureAnswersTheExactArrayWhenTheModuleContractorIsUpdated()
@@ -1041,7 +1044,7 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame(array('identifier' => 'PS-C7', 'action' => 'updated', 'message' => '', 'matched_by' => 'module', 'linked_identifier' => 'PS-C7', 'note' => null, 'assigned_identifier' => null), $r);
+        $this->assertSame(array('identifier' => 'PS-C7', 'action' => 'updated', 'message' => '', 'matched_by' => 'module', 'linked_identifier' => 'PS-C7', 'note' => null, 'assigned_identifier' => null), $r->toArray());
     }
 
     public function testEnsureAnswersTheExactArrayWhenTheNipMatchIsUpdated()
@@ -1053,7 +1056,7 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
 
-        $this->assertSame(array('identifier' => 'ACME-02', 'action' => 'updated', 'message' => '', 'matched_by' => 'nip', 'linked_identifier' => 'ACME-02', 'note' => null, 'assigned_identifier' => null), $r);
+        $this->assertSame(array('identifier' => 'ACME-02', 'action' => 'updated', 'message' => '', 'matched_by' => 'nip', 'linked_identifier' => 'ACME-02', 'note' => null, 'assigned_identifier' => null), $r->toArray());
     }
 
     public function testEnsureAnswersTheExactArrayWhenTheNameMatchIsUpdated()
@@ -1064,7 +1067,7 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame(array('identifier' => 'KOWALSKI-01', 'action' => 'updated', 'message' => '', 'matched_by' => 'name', 'linked_identifier' => 'KOWALSKI-01', 'note' => null, 'assigned_identifier' => null), $r);
+        $this->assertSame(array('identifier' => 'KOWALSKI-01', 'action' => 'updated', 'message' => '', 'matched_by' => 'name', 'linked_identifier' => 'KOWALSKI-01', 'note' => null, 'assigned_identifier' => null), $r->toArray());
     }
 
     public function testEnsureAnswersTheExactArrayWhenTheModuleContractorIsCreated()
@@ -1074,7 +1077,7 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame(array('identifier' => 'PS-C7', 'action' => 'created', 'message' => '', 'matched_by' => 'module', 'linked_identifier' => 'PS-C7', 'note' => null, 'assigned_identifier' => null), $r);
+        $this->assertSame(array('identifier' => 'PS-C7', 'action' => 'created', 'message' => '', 'matched_by' => 'module', 'linked_identifier' => 'PS-C7', 'note' => null, 'assigned_identifier' => null), $r->toArray());
     }
 
     public function testEnsureAnswersTheExactArrayWhenTheContractorIsCreatedForNoCustomer()
@@ -1085,7 +1088,7 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned());
 
-        $this->assertSame(array('identifier' => 'PS-C7', 'action' => 'created', 'message' => '', 'matched_by' => '', 'linked_identifier' => null, 'note' => null, 'assigned_identifier' => null), $r);
+        $this->assertSame(array('identifier' => 'PS-C7', 'action' => 'created', 'message' => '', 'matched_by' => '', 'linked_identifier' => null, 'note' => null, 'assigned_identifier' => null), $r->toArray());
     }
 
     public function testEnsureAnswersTheExactArrayWhenTheContractorIsCreatedUnderAnAssignedIdentifier()
@@ -1106,7 +1109,7 @@ class ContractorServiceTest extends TestCase
             'linked_identifier' => '124451232',
             'note' => array('code' => 'assigned', 'params' => array('identifier' => '124451232')),
             'assigned_identifier' => '124451232',
-        ), $r);
+        ), $r->toArray());
     }
 
     public function testEnsureAnswersTheExactArrayWhenTheStoredMappingCannotBeLookedUp()
@@ -1124,7 +1127,7 @@ class ContractorServiceTest extends TestCase
             'linked_identifier' => null,
             'note' => array('code' => 'lookup_failed', 'params' => array('identifier' => 'KOWALSKI-01', 'error' => 'cURL error: timeout')),
             'assigned_identifier' => null,
-        ), $r);
+        ), $r->toArray());
     }
 
     public function testEnsureAnswersTheExactArrayWhenTheModuleContractorCannotBeLookedUp()
@@ -1141,7 +1144,7 @@ class ContractorServiceTest extends TestCase
             'linked_identifier' => null,
             'note' => array('code' => 'lookup_failed', 'params' => array('identifier' => 'PS-C7', 'error' => 'cURL error: timeout')),
             'assigned_identifier' => null,
-        ), $r);
+        ), $r->toArray());
     }
 
     public function testEnsureAnswersTheExactArrayWhenTheUpdateIsRejected()
@@ -1159,7 +1162,7 @@ class ContractorServiceTest extends TestCase
             'linked_identifier' => null,
             'note' => array('code' => 'update_failed', 'params' => array('identifier' => 'PS-C7', 'error' => 'Validation error in document data (Kod 201): bad')),
             'assigned_identifier' => null,
-        ), $r);
+        ), $r->toArray());
     }
 
     public function testEnsureAnswersTheExactArrayWhenTheCreateIsRejected()
@@ -1178,8 +1181,9 @@ class ContractorServiceTest extends TestCase
             'linked_identifier' => null,
             'note' => array('code' => 'create_rejected', 'params' => array('error' => 'Validation error in document data (Kod 201): Zly kod pocztowy')),
             'assigned_identifier' => null,
-        ), $r);
+        ), $r->toArray());
         $this->assertSame(array('tried' => array(), 'search' => 'none', 'search_error' => ''), $this->svc->getLastReadback());
+        $this->assertSame(array('tried' => array(), 'search' => 'none', 'search_error' => ''), $r->getReadback());
     }
 
     public function testEnsureAnswersTheExactArrayWhenTheCreateNeverReachesIFirma()
@@ -1198,7 +1202,7 @@ class ContractorServiceTest extends TestCase
             'linked_identifier' => null,
             'note' => array('code' => 'create_rejected', 'params' => array('error' => 'cURL error: timeout')),
             'assigned_identifier' => null,
-        ), $r);
+        ), $r->toArray());
         $this->assertSame(array('GET', 'GET', 'POST'), array_column($this->t->calls, 'method'));
         $this->assertSame(array(), $this->waits);
         $this->assertNull($this->mapped());
@@ -1227,8 +1231,9 @@ class ContractorServiceTest extends TestCase
             'linked_identifier' => null,
             'note' => array('code' => 'readback_failed', 'params' => array('tried' => $tried, 'search' => 'none', 'search_error' => '')),
             'assigned_identifier' => null,
-        ), $r);
+        ), $r->toArray());
         $this->assertSame(array('tried' => $tried, 'search' => 'none', 'search_error' => ''), $this->svc->getLastReadback());
+        $this->assertSame(array('tried' => $tried, 'search' => 'none', 'search_error' => ''), $r->getReadback());
         $this->assertNull($this->svc->getAssignedIdentifier());
     }
 
@@ -1244,13 +1249,13 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
 
-        $this->assertSame('fallback', $r['action']);
-        $this->assertSame('error', $r['note']['params']['search']);
-        $this->assertSame('cURL error: nip search down', $r['note']['params']['search_error']);
+        $this->assertSame('fallback', $r->getAction());
+        $this->assertSame('error', $r->getNote()['params']['search']);
+        $this->assertSame('cURL error: nip search down', $r->getNote()['params']['search_error']);
         $miss = 'Kod 208: Nie znaleziono kontrahenta';
         $this->assertSame(
             'iFirma created the contractor but it cannot be read back (PS-C7: ' . $miss . '; 124451232: ' . $miss . '); search: error (cURL error: nip search down).',
-            $r['message']
+            $r->getMessage()
         );
         $this->assertNull($this->mapped());
     }
@@ -1267,8 +1272,8 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
 
-        $this->assertSame('error', $r['note']['params']['search']);
-        $this->assertSame('cURL error: nip search down', $r['note']['params']['search_error']);
+        $this->assertSame('error', $r->getNote()['params']['search']);
+        $this->assertSame('cURL error: nip search down', $r->getNote()['params']['search_error']);
     }
 
     public function testASecondEnsureOnTheSameInstanceCarriesNothingOverFromTheFirst()
@@ -1281,14 +1286,15 @@ class ContractorServiceTest extends TestCase
         $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->found());
 
         $first = $this->svc->ensure($this->owned(), 7, $this->hints());
-        $this->assertSame('124451232', $first['assigned_identifier']);
+        $this->assertSame('124451232', $first->getAssignedId());
         $this->assertSame('124451232', $this->svc->getAssignedIdentifier());
 
         $second = $this->svc->ensure($this->owned());
 
-        $this->assertSame(array('identifier' => 'PS-C7', 'action' => 'kept', 'message' => '', 'matched_by' => 'module', 'linked_identifier' => 'PS-C7', 'note' => null, 'assigned_identifier' => null), $second);
+        $this->assertSame(array('identifier' => 'PS-C7', 'action' => 'kept', 'message' => '', 'matched_by' => 'module', 'linked_identifier' => 'PS-C7', 'note' => null, 'assigned_identifier' => null), $second->toArray());
         $this->assertNull($this->svc->getAssignedIdentifier());
         $this->assertSame(array('tried' => array(), 'search' => 'none', 'search_error' => ''), $this->svc->getLastReadback());
+        $this->assertSame(array('tried' => array(), 'search' => 'none', 'search_error' => ''), $second->getReadback());
         $this->assertSame('', $this->svc->getLastSearchError());
     }
 
@@ -1296,9 +1302,10 @@ class ContractorServiceTest extends TestCase
     {
         $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->found());
 
-        $this->svc->ensure($this->owned(), 7, $this->hints());
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
         $this->assertSame(array('tried' => array(), 'search' => 'none', 'search_error' => ''), $this->svc->getLastReadback());
+        $this->assertSame(array('tried' => array(), 'search' => 'none', 'search_error' => ''), $r->getReadback());
         $this->assertNull($this->svc->getAssignedIdentifier());
     }
 
@@ -1309,17 +1316,18 @@ class ContractorServiceTest extends TestCase
         // found at once under the sent identifier
         $this->queueUntilCreate();
         $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
-        $this->svc->ensure($this->owned(), 7, $this->hints());
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
         $this->assertSame(
             array('tried' => array(array('identifier' => 'PS-C7', 'answer' => 'found')), 'search' => 'none', 'search_error' => ''),
             $this->svc->getLastReadback()
         );
+        $this->assertSame($this->svc->getLastReadback(), $r->getReadback());
 
         // found under the identifier iFirma reported, in the first pass
         $this->queueUntilCreate();
         $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
         $this->t->queue('GET', '#kontrahenci/id/124451232\.json#', $this->verifiedGet('124451232'));
-        $this->svc->ensure($this->owned(), 8, $this->hints());
+        $r = $this->svc->ensure($this->owned(), 8, $this->hints());
         $this->assertSame(
             array(
                 'tried' => array(array('identifier' => 'PS-C7', 'answer' => $miss), array('identifier' => '124451232', 'answer' => 'found')),
@@ -1328,12 +1336,13 @@ class ContractorServiceTest extends TestCase
             ),
             $this->svc->getLastReadback()
         );
+        $this->assertSame($this->svc->getLastReadback(), $r->getReadback());
 
         // found in the second pass, after the wait
         $this->queueUntilCreate();
         $this->queueReadbackMisses(2);
         $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
-        $this->svc->ensure($this->owned(), 9, $this->hints());
+        $r = $this->svc->ensure($this->owned(), 9, $this->hints());
         $this->assertSame(
             array(
                 'tried' => array(
@@ -1346,6 +1355,7 @@ class ContractorServiceTest extends TestCase
             ),
             $this->svc->getLastReadback()
         );
+        $this->assertSame($this->svc->getLastReadback(), $r->getReadback());
         $this->assertSame(array(2), $this->waits);
     }
 
@@ -1360,7 +1370,7 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame('IFI77', $r['identifier']);
+        $this->assertSame('IFI77', $r->getIdentifier());
         $this->assertSame(
             array(
                 'tried' => array(
@@ -1374,6 +1384,7 @@ class ContractorServiceTest extends TestCase
             ),
             $this->svc->getLastReadback()
         );
+        $this->assertSame($this->svc->getLastReadback(), $r->getReadback());
         $this->assertSame('IFI77', $this->svc->getAssignedIdentifier());
     }
 
@@ -1395,11 +1406,13 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
 
-        $this->assertSame('created', $r['action']);
-        $this->assertSame('IFI-NAME', $r['identifier']);
-        $this->assertSame('IFI-NAME', $r['assigned_identifier']);
+        $this->assertSame('created', $r->getAction());
+        $this->assertSame('IFI-NAME', $r->getIdentifier());
+        $this->assertSame('IFI-NAME', $r->getAssignedId());
         $this->assertSame('found', $this->svc->getLastReadback()['search']);
         $this->assertSame('', $this->svc->getLastReadback()['search_error']);
+        $this->assertSame('found', $r->getReadback()['search']);
+        $this->assertSame('', $r->getReadback()['search_error']);
     }
 
     public function testANipRowWithoutAnIdentifierAfterTheCreateIsNotAMatch()
@@ -1416,10 +1429,10 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
 
-        $this->assertSame('fallback', $r['action']);
-        $this->assertSame('readback_failed', $r['note']['code']);
-        $this->assertSame('none', $r['note']['params']['search']);
-        $this->assertSame('', $r['note']['params']['search_error']);
+        $this->assertSame('fallback', $r->getAction());
+        $this->assertSame('readback_failed', $r->getNote()['code']);
+        $this->assertSame('none', $r->getNote()['params']['search']);
+        $this->assertSame('', $r->getNote()['params']['search_error']);
         // the NIP and the name were searched before the create and again after it
         $this->assertSame(
             array('/iapi/kontrahenci/5252248481.json', '/iapi/kontrahenci/ACME%20Sp.%20z%20o.o..json', '/iapi/kontrahenci/5252248481.json', '/iapi/kontrahenci/ACME%20Sp.%20z%20o.o..json'),
@@ -1439,9 +1452,9 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
 
-        $this->assertSame('created', $r['action']);
-        $this->assertSame('PS-C7', $r['identifier']);
-        $this->assertSame('module', $r['matched_by']);
+        $this->assertSame('created', $r->getAction());
+        $this->assertSame('PS-C7', $r->getIdentifier());
+        $this->assertSame('module', $r->getMatchedBy());
         $this->assertSame(array('/iapi/kontrahenci/5252248481.json'), $this->searchPaths());
         $this->assertSame(array(), $this->paths('PUT'));
     }
@@ -1470,7 +1483,7 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($owned, 7, $this->hints(array('name' => '..')));
 
-        $this->assertSame('created', $r['action']);
+        $this->assertSame('created', $r->getAction());
         $this->assertSame(array(), $this->searchPaths());
     }
 
@@ -1486,8 +1499,8 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
 
-        $this->assertSame('created', $r['action']);
-        $this->assertSame('PS-C7', $r['identifier']);
+        $this->assertSame('created', $r->getAction());
+        $this->assertSame('PS-C7', $r->getIdentifier());
         $this->assertSame(array(), $this->paths('PUT'));
         $this->assertSame('PS-C7', $this->mapped()['ifirma_identifier']);
     }
@@ -1503,9 +1516,9 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
 
-        $this->assertSame('updated', $r['action']);
-        $this->assertSame('ACME-NONIP', $r['identifier']);
-        $this->assertSame('name', $r['matched_by']);
+        $this->assertSame('updated', $r->getAction());
+        $this->assertSame('ACME-NONIP', $r->getIdentifier());
+        $this->assertSame('name', $r->getMatchedBy());
     }
 
     public function testSeveralNameAndEmailMatchesFallBackToThePostcode()
@@ -1518,9 +1531,9 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame('kept', $r['action']);
-        $this->assertSame('KOWALSKI-02', $r['identifier']);
-        $this->assertSame('name', $r['matched_by']);
+        $this->assertSame('kept', $r->getAction());
+        $this->assertSame('KOWALSKI-02', $r->getIdentifier());
+        $this->assertSame('name', $r->getMatchedBy());
         $this->assertSame(array(), $this->paths('POST'));
     }
 
@@ -1536,8 +1549,8 @@ class ContractorServiceTest extends TestCase
 
         $r = $this->svc->ensure($this->owned(), 7, $this->hints());
 
-        $this->assertSame('created', $r['action']);
-        $this->assertSame('PS-C7', $r['identifier']);
+        $this->assertSame('created', $r->getAction());
+        $this->assertSame('PS-C7', $r->getIdentifier());
     }
 
     // ---- search(): the rows and the message, per call ---------------------------------------------
@@ -1550,20 +1563,25 @@ class ContractorServiceTest extends TestCase
             'second' => $this->remote('A-2'),
         )));
 
-        $rows = $this->svc->search('ABC');
+        $found = $this->svc->search('ABC');
 
-        $this->assertSame(array($this->remote('A-1'), $this->remote('A-2')), $rows);
+        $this->assertSame(array($this->remote('A-1'), $this->remote('A-2')), $found->getRows());
+        $this->assertSame('', $found->getError());
         $this->assertSame('', $this->svc->getLastSearchError());
     }
 
     public function testSearchTheErrorsAreExactlyTheMessageOfTheFailure()
     {
         $this->t->queue('GET', '#kontrahenci/BOOM\.json#', array('status' => 0, 'error' => 'timeout'));
-        $this->assertSame(array(), $this->svc->search('BOOM'));
+        $boom = $this->svc->search('BOOM');
+        $this->assertSame(array(), $boom->getRows());
+        $this->assertSame('cURL error: timeout', $boom->getError());
         $this->assertSame('cURL error: timeout', $this->svc->getLastSearchError());
 
         $this->t->queue('GET', '#kontrahenci/SIGN\.json#', array('body' => '{"response":{"Kod":403,"Informacja":"Bledny podpis"}}'));
-        $this->assertSame(array(), $this->svc->search('SIGN'));
+        $sign = $this->svc->search('SIGN');
+        $this->assertSame(array(), $sign->getRows());
+        $this->assertSame('Bledny podpis', $sign->getError());
         $this->assertSame('Bledny podpis', $this->svc->getLastSearchError());
     }
 
@@ -1572,9 +1590,13 @@ class ContractorServiceTest extends TestCase
         $this->t->queue('GET', '#kontrahenci/NOTEXT\.json#', array('body' => '{"response":{"Kod":500,"Informacja":""}}'));
         $this->t->queue('GET', '#kontrahenci/NOINFO\.json#', array('body' => '{"response":{"Kod":201}}'));
 
-        $this->assertSame(array(), $this->svc->search('NOTEXT'));
+        $noText = $this->svc->search('NOTEXT');
+        $this->assertSame(array(), $noText->getRows());
+        $this->assertSame('Kod 500', $noText->getError());
         $this->assertSame('Kod 500', $this->svc->getLastSearchError());
-        $this->assertSame(array(), $this->svc->search('NOINFO'));
+        $noInfo = $this->svc->search('NOINFO');
+        $this->assertSame(array(), $noInfo->getRows());
+        $this->assertSame('Kod 201', $noInfo->getError());
         $this->assertSame('Kod 201', $this->svc->getLastSearchError());
     }
 
@@ -1582,7 +1604,9 @@ class ContractorServiceTest extends TestCase
     {
         $this->t->queue('GET', '#kontrahenci/NOKOD\.json#', array('body' => '{"response":{"Informacja":"?"}}'));
 
-        $this->assertSame(array(), $this->svc->search('NOKOD'));
+        $noKod = $this->svc->search('NOKOD');
+        $this->assertSame(array(), $noKod->getRows());
+        $this->assertSame('', $noKod->getError());
         $this->assertSame('', $this->svc->getLastSearchError());
     }
 
@@ -1591,9 +1615,13 @@ class ContractorServiceTest extends TestCase
         $this->t->queue('GET', '#kontrahenci/NOLIST\.json#', array('body' => '{"response":{"Kod":0,"Informacja":""}}'));
         $this->t->queue('GET', '#kontrahenci/TEXT\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"","Wynik":"none"}}'));
 
-        $this->assertSame(array(), $this->svc->search('NOLIST'));
+        $noList = $this->svc->search('NOLIST');
+        $this->assertSame(array(), $noList->getRows());
+        $this->assertSame('', $noList->getError());
         $this->assertSame('', $this->svc->getLastSearchError());
-        $this->assertSame(array(), $this->svc->search('TEXT'));
+        $text = $this->svc->search('TEXT');
+        $this->assertSame(array(), $text->getRows());
+        $this->assertSame('', $text->getError());
         $this->assertSame('', $this->svc->getLastSearchError());
     }
 
@@ -1602,13 +1630,20 @@ class ContractorServiceTest extends TestCase
         $this->t->queue('GET', '#kontrahenci/BOOM\.json#', array('status' => 0, 'error' => 'timeout'));
         $this->t->queue('GET', '#kontrahenci/ABC\.json#', $this->rows(array($this->remote('A-1'))));
 
-        $this->svc->search('BOOM');
+        $boom = $this->svc->search('BOOM');
+        $this->assertSame('cURL error: timeout', $boom->getError());
         $this->assertSame('cURL error: timeout', $this->svc->getLastSearchError());
 
-        $this->assertCount(1, $this->svc->search('ABC'));
+        $abc = $this->svc->search('ABC');
+        $this->assertCount(1, $abc->getRows());
+        $this->assertSame('', $abc->getError());
         $this->assertSame('', $this->svc->getLastSearchError());
+        // the answer of the first call is a value of its own: the second call did not touch it
+        $this->assertSame('cURL error: timeout', $boom->getError());
 
-        $this->assertSame(array(), $this->svc->search(''));
+        $blank = $this->svc->search('');
+        $this->assertSame(array(), $blank->getRows());
+        $this->assertSame('', $blank->getError());
         $this->assertSame('', $this->svc->getLastSearchError());
     }
 }
