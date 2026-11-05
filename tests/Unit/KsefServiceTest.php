@@ -199,6 +199,35 @@ class KsefServiceTest extends TestCase
         $this->assertSame($res['message'], $row['ksef_error']);
     }
 
+    /**
+     * @return array name => array(Throwable)
+     */
+    public function throwables()
+    {
+        return array(
+            'Exception' => array(new RuntimeException('exception raised')),
+            'Error' => array(new TypeError('error raised')),
+        );
+    }
+
+    /** @dataProvider throwables */
+    public function testSubmitRecordsAThrowableFromTheClientAsTheError(Throwable $failure)
+    {
+        $this->t->queue('POST', '#ksef/send#', function () use ($failure) {
+            throw $failure;
+        });
+        $r = $this->receipt('1234567890');
+
+        $res = $this->svc->submit($r, $this->order());
+
+        $this->assertSame(array('ok' => false, 'message' => $failure->getMessage()), $res);
+        $this->assertCount(1, $this->t->calls);
+        $row = $this->row();
+        $this->assertSame('BLAD', $row['ksef_status']);
+        $this->assertSame($failure->getMessage(), $row['ksef_error']);
+        $this->assertEmpty($row['ksef_sent_at']);
+    }
+
     public function testSubmitNotEligibleDoesNotCallIfirma()
     {
         $this->address('');

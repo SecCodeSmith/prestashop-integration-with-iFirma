@@ -80,7 +80,7 @@ class IssuancePipelineTest extends TestCase
         });
     }
 
-    private function buildPipeline(IfirmaApiClient $client, IfirmaDataRequestService $requests, Module $module)
+    private function buildPipeline(IfirmaApiClient $client, IfirmaDataRequestService $requests, Module $module, ?IfirmaKsefService $ksef = null)
     {
         $service = new IfirmaReceiptService($client, $module);
         $waits = &$this->waits;
@@ -94,7 +94,7 @@ class IssuancePipelineTest extends TestCase
             $requests,
             $module,
             null,
-            new IfirmaKsefService($client, $module)
+            $ksef ?: new IfirmaKsefService($client, $module)
         );
     }
 
@@ -209,6 +209,18 @@ class IssuancePipelineTest extends TestCase
         };
 
         return $this->buildPipeline($this->client, $broken, $module);
+    }
+
+    /** A pipeline whose first data-request lookup (the hold step) raises $failure, an Exception or an Error. */
+    private function pipelineWhoseHoldCheckRaises(Throwable $failure)
+    {
+        $requests = $this->getMockBuilder(IfirmaDataRequestService::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(array('hasPendingForOrder'))
+            ->getMock();
+        $requests->method('hasPendingForOrder')->willThrowException($failure);
+
+        return $this->buildPipeline($this->client, $requests, new Module());
     }
 
     /** Leaves an unknown-outcome row for the order (the create request timed out), then clears the write log. */
@@ -993,6 +1005,135 @@ class IssuancePipelineTest extends TestCase
         $this->assertNull($this->pipeline->onOrderStatusChange(999, 4));
         $r = $this->pipeline->onOrderStatusChange(999, 5);
         $this->assertTrue($r === null || $r instanceof IfirmaPipelineResult);
+    }
+
+    // ---- every guard catches both an Exception and an Error -----------------------------
+
+    /**
+     * The pipeline guards its entry points and two of its steps with one catch of Throwable each. The
+     * tests below throw an Exception and an Error at one guard each and assert what the guard makes of
+     * them. The Exception side of the run's own guard is pinned above, by
+     * testExceptionIsLoggedRecordedAndNotThrown() and testExceptionOnANewOrderWritesTheErrorRowOnce();
+     * its Error side is the first test here.
+     *
+     * @return array name => array(Throwable)
+     */
+    public function throwables()
+    {
+        return array(
+            'Exception' => array(new RuntimeException('exception raised')),
+            'Error' => array(new TypeError('error raised')),
+        );
+    }
+
+    public function testAnErrorFromAStepIsLoggedRecordedAndNotThrown()
+    {
+        $r = $this->pipelineWhoseHoldCheckRaises(new TypeError('hold check broke'))->run($this->order());
+
+        $this->assertFalse($r->ok);
+        $this->assertSame(IfirmaPipelineResult::OUTCOME_ERROR, $r->outcome);
+        $this->assertSame('hold check broke', $r->message);
+        $this->assertSame(IfirmaIssuancePipeline::STEP_HOLD, $r->stoppedAt);
+        $this->assertCount(1, PrestaShopLogger::$logs);
+        $this->assertSame('iFirma pipeline: hold check broke', PrestaShopLogger::$logs[0]['message']);
+        $this->assertSame(3, PrestaShopLogger::$logs[0]['severity']);
+        $writes = IfirmaTestState::writes('ifirma_receipt');
+        $this->assertSame(array('add'), array_column($writes, 'op'));
+        $this->assertSame('error', $writes[0]['row']['status']);
+        $this->assertSame('hold check broke', $writes[0]['row']['last_error']);
+        $this->assertSame($writes[0]['id'], $r->receipt->id);
+        $this->assertCount(0, $this->t->calls);
+    }
+
+    /** @dataProvider throwables */
+    public function testAThrowableWhileRecordingTheFailureKeepsTheOriginalFailure(Throwable $recordingFailure)
+    {
+        // the hold check fails first; the receipt lookup that then records the failure fails as well
+        $lookups = 0;
+        Db::getInstance()->whenGetValue('/FROM `ps_ifirma_receipt`\s+WHERE id_order = (\d+)/', function () use (&$lookups, $recordingFailure) {
+            if (++$lookups > 1) {
+                throw $recordingFailure;
+            }
+
+            return false;
+        });
+
+        $r = $this->pipelineWhoseHoldCheckRaises(new RuntimeException('hold check broke'))->run($this->order());
+
+        $this->assertSame(2, $lookups);
+        $this->assertFalse($r->ok);
+        $this->assertSame(IfirmaPipelineResult::OUTCOME_ERROR, $r->outcome);
+        $this->assertSame('hold check broke', $r->message);
+        $this->assertSame(IfirmaIssuancePipeline::STEP_HOLD, $r->stoppedAt);
+        $this->assertNull($r->receipt);
+        $this->assertSame(array(), IfirmaTestState::writes('ifirma_receipt'));
+        // only the original failure is logged; the one from the best-effort recording is dropped silently
+        $this->assertCount(1, PrestaShopLogger::$logs);
+        $this->assertSame('iFirma pipeline: hold check broke', PrestaShopLogger::$logs[0]['message']);
+    }
+
+    /** @dataProvider throwables */
+    public function testTheStatusHookLogsAndSwallowsAThrowableFromTheRun(Throwable $failure)
+    {
+        // run() promises never to throw; the hook still shields the status change from a broken promise
+        $pipeline = $this->getMockBuilder(IfirmaIssuancePipeline::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(array('run'))
+            ->getMock();
+        $pipeline->expects($this->once())->method('run')->willThrowException($failure);
+
+        $this->assertNull($pipeline->onOrderStatusChange(15, 5));
+
+        $this->assertCount(1, PrestaShopLogger::$logs);
+        $this->assertSame('iFirma pipeline: ' . $failure->getMessage(), PrestaShopLogger::$logs[0]['message']);
+        $this->assertSame(3, PrestaShopLogger::$logs[0]['severity']);
+    }
+
+    /** @dataProvider throwables */
+    public function testTheResumeLogsAndSwallowsAThrowableFromTheReceiptLookup(Throwable $failure)
+    {
+        $request = new IfirmaDataRequest();
+        $request->id_order = 15;
+        Db::getInstance()->whenGetValue('/FROM `ps_ifirma_receipt`\s+WHERE id_order = (\d+)/', function () use ($failure) {
+            throw $failure;
+        });
+
+        $this->assertNull($this->pipeline->resumeAfterRequest($request));
+
+        $this->assertCount(1, PrestaShopLogger::$logs);
+        $this->assertSame('iFirma pipeline resume: ' . $failure->getMessage(), PrestaShopLogger::$logs[0]['message']);
+        $this->assertSame(3, PrestaShopLogger::$logs[0]['severity']);
+        $this->assertCount(0, $this->t->calls);
+        $this->assertSame(array(), IfirmaTestState::writes('ifirma_receipt'));
+    }
+
+    /** @dataProvider throwables */
+    public function testAThrowableFromTheKsefStepFailsOnlyThatStep(Throwable $failure)
+    {
+        $ksef = $this->getMockBuilder(IfirmaKsefService::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(array('skipReason', 'submit'))
+            ->getMock();
+        $ksef->method('skipReason')->willReturn('');
+        $ksef->method('submit')->willThrowException($failure);
+        $module = new Module();
+        $pipeline = $this->buildPipeline($this->client, new IfirmaDataRequestService($module), $module, $ksef);
+        $this->queueFullSuccess();
+
+        $r = $pipeline->run($this->order());
+
+        // like a refused submission, a throwing one fails the KSeF step only: the run is issued and delivered
+        $this->assertTrue($r->ok);
+        $this->assertSame(IfirmaPipelineResult::OUTCOME_ISSUED, $r->outcome);
+        $this->assertNull($r->stoppedAt);
+        $this->assertSame(
+            array('hold:ok', 'guard:ok', 'create:ok', 'number:ok', 'ksef:failed', 'deliver:ok'),
+            $this->stepNames($r)
+        );
+        $this->assertSame($failure->getMessage(), $r->steps[4]['message']);
+        $this->assertSame('document issued KSeF: ' . $failure->getMessage(), $r->message);
+        $this->assertStringContainsString('KSeF submission failed: ' . $failure->getMessage(), $pipeline->describe($r));
+        $this->assertSame('sent', $this->dbRow()['delivery_status']);
     }
 
     public function testIfirmaUnreachableAtGuardIsInconclusive()

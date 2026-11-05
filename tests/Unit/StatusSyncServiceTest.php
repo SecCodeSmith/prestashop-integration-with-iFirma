@@ -268,6 +268,36 @@ class StatusSyncServiceTest extends TestCase
         $this->assertSame('sent', $r->delivery_status);
     }
 
+    /**
+     * @return array name => array(Throwable)
+     */
+    public function throwables()
+    {
+        return array(
+            'Exception' => array(new RuntimeException('exception raised')),
+            'Error' => array(new TypeError('error raised')),
+        );
+    }
+
+    /** @dataProvider throwables */
+    public function testOpportunisticSyncSwallowsAThrowableFromTheListCall(Throwable $failure)
+    {
+        $r = $this->receipt(35, '2026-10-30', array('last_sync_at' => date('Y-m-d H:i:s', $this->now - 20 * 60)));
+        IfirmaTestState::clearWrites();
+        $this->t->queue('GET', '#faktury\.json#', function () use ($failure) {
+            throw $failure;
+        });
+
+        $this->assertFalse($this->svc->opportunisticSync($r));
+
+        // the receipt was stale, so the list call was made; nothing of it was recorded
+        $this->assertCount(1, $this->t->calls);
+        $this->assertSame(array(), IfirmaTestState::writes('ifirma_receipt'));
+        $after = new IfirmaReceipt((int) $r->id);
+        $this->assertSame('', (string) $after->sync_error);
+        $this->assertSame($r->last_sync_at, $after->last_sync_at);
+    }
+
     public function testShouldSyncRespectsConfiguredInterval()
     {
         Configuration::updateValue('IFIRMA_SYNC_INTERVAL_MIN', '60');
