@@ -217,7 +217,7 @@ class IfirmaIssuancePipeline
         $result->trigger = isset($options['trigger']) ? (string) $options['trigger'] : self::TRIGGER_MANUAL;
 
         try {
-            $this->execute($order, $options, $result);
+            return $this->execute($order, $options, $result);
         } catch (Throwable $e) {
             $this->fail($order, $result, $e->getMessage());
         }
@@ -262,133 +262,276 @@ class IfirmaIssuancePipeline
     }
 
     /**
+     * Runs the steps in order. A step that ends the run returns the finished result and the steps after it do
+     * not run; a step that lets the run go on returns null. The steps that can never end a run (number, KSeF
+     * and delivery: a failure of the last two is logged, not terminal) return nothing.
+     *
+     * @param Order                $order
+     * @param array                $options
+     * @param IfirmaPipelineResult $result
+     * @return IfirmaPipelineResult the finished result
+     */
+    private function execute(Order $order, array $options, IfirmaPipelineResult $result)
+    {
+        if ($stop = $this->stepHold($order, $result)) {
+            return $stop;
+        }
+        if ($stop = $this->stepGuard($order, $options, $result)) {
+            return $stop;
+        }
+        if ($stop = $this->stepCreate($order, $options, $result)) {
+            return $stop;
+        }
+        $this->stepNumber($result);
+        $this->stepKsef($order, $options, $result);
+        $this->stepDeliver($order, $options, $result);
+
+        return $result;
+    }
+
+    /**
+     * 1. HOLD: a pending data request holds the run. An issued document is only noted here; the guard ends
+     * that run.
+     *
+     * @param Order                $order
+     * @param IfirmaPipelineResult $result
+     * @return IfirmaPipelineResult|null the finished result when the run is held, null to go on
+     */
+    private function stepHold(Order $order, IfirmaPipelineResult $result)
+    {
+        $idOrder = (int) $order->id;
+        $existing = IfirmaReceipt::getByOrder($idOrder);
+        if ($existing && $existing->isIssued()) {
+            $result->addStep(self::STEP_HOLD, 'skipped', 'document already issued');
+
+            return null;
+        }
+        if (!$this->requests->hasPendingForOrder($idOrder)) {
+            $result->addStep(self::STEP_HOLD, 'ok', '');
+
+            return null;
+        }
+        $pending = $this->requests->getPendingForOrder($idOrder);
+        $reason = 'held: data request #' . ($pending ? (int) $pending->id : 0) . ' pending';
+        $row = $this->ensureRow($order, $isNew);
+        $row->markHeld($reason);
+        $row->save();
+
+        $result->receipt = $row;
+        $result->stopAt(IfirmaPipelineResult::OUTCOME_HELD, self::STEP_HOLD, $reason);
+
+        return $result;
+    }
+
+    /**
+     * 2. GUARD: an issued document, a suspected duplicate and an inconclusive check end the run. An adopted
+     * document goes on to KSeF and delivery without a create; any other answer goes on to the create.
+     *
+     * @param Order                $order
+     * @param array                $options
+     * @param IfirmaPipelineResult $result
+     * @return IfirmaPipelineResult|null the finished result when the guard ends the run, null to go on
+     */
+    private function stepGuard(Order $order, array $options, IfirmaPipelineResult $result)
+    {
+        $g = $this->guard->check($order, array('bypass' => !empty($options['bypass_guard'])));
+        $result->guard = $g;
+        if ($g->outcome === IfirmaGuardResult::OUTCOME_LOCAL_ISSUED) {
+            return $this->stopForIssued($result, $g);
+        }
+        if ($g->outcome === IfirmaGuardResult::OUTCOME_SUSPECTED) {
+            return $this->stopForSuspected($result, $g);
+        }
+        if ($g->outcome === IfirmaGuardResult::OUTCOME_INCONCLUSIVE) {
+            return $this->stopForInconclusive($order, $result, $g);
+        }
+        if ($g->outcome === IfirmaGuardResult::OUTCOME_ADOPT) {
+            $result->receipt = $g->receipt;
+            $result->addStep(self::STEP_GUARD, 'ok', 'existing document adopted');
+            $result->markAdopted();
+        } elseif ($g->outcome === IfirmaGuardResult::OUTCOME_DISABLED) {
+            $result->addStep(self::STEP_GUARD, 'skipped', 'duplicate check disabled');
+        } else {
+            $result->addStep(self::STEP_GUARD, 'ok', $g->outcome === IfirmaGuardResult::OUTCOME_BYPASSED ? 'bypassed' : '');
+        }
+
+        return null;
+    }
+
+    /**
+     * The guard found the order's document already issued: every remaining step is skipped.
+     *
+     * @param IfirmaPipelineResult $result
+     * @param IfirmaGuardResult    $g
+     * @return IfirmaPipelineResult
+     */
+    private function stopForIssued(IfirmaPipelineResult $result, IfirmaGuardResult $g)
+    {
+        $result->receipt = $g->receipt;
+        foreach (array(self::STEP_GUARD, self::STEP_CREATE, self::STEP_NUMBER, self::STEP_KSEF, self::STEP_DELIVER) as $s) {
+            $result->addStep($s, 'skipped', 'document already issued');
+        }
+        $result->alreadyIssued();
+
+        return $result;
+    }
+
+    /**
+     * The guard found documents that may be the order's: nothing is issued.
+     *
+     * @param IfirmaPipelineResult $result
+     * @param IfirmaGuardResult    $g
+     * @return IfirmaPipelineResult
+     */
+    private function stopForSuspected(IfirmaPipelineResult $result, IfirmaGuardResult $g)
+    {
+        $result->receipt = $g->receipt;
+        $message = $g->receipt instanceof IfirmaReceipt ? (string) $g->receipt->last_error : 'suspected duplicate';
+        $result->stopAt(IfirmaPipelineResult::OUTCOME_SUSPECTED, self::STEP_GUARD, $message);
+
+        return $result;
+    }
+
+    /**
+     * The guard could not tell whether the order has a document. A rate limited check leaves no record; any
+     * other failure is recorded on the order's receipt row.
+     *
+     * @param Order                $order
+     * @param IfirmaPipelineResult $result
+     * @param IfirmaGuardResult    $g
+     * @return IfirmaPipelineResult
+     */
+    private function stopForInconclusive(Order $order, IfirmaPipelineResult $result, IfirmaGuardResult $g)
+    {
+        if ($g->rateLimited) {
+            $result->stopAt(IfirmaPipelineResult::OUTCOME_RATE_LIMITED, self::STEP_GUARD, (string) $g->error);
+
+            return $result;
+        }
+        $row = $this->ensureRow($order, $isNew);
+        if ($isNew) {
+            $row->markError((string) $g->error);
+        } else {
+            $row->last_error = (string) $g->error;
+        }
+        $row->save();
+        $result->receipt = $row;
+        $result->stopAt(IfirmaPipelineResult::OUTCOME_INCONCLUSIVE, self::STEP_GUARD, (string) $g->error);
+
+        return $result;
+    }
+
+    /**
+     * 3. CREATE: issues the document, unless the guard adopted one. A create that fails ends the run.
+     *
+     * @param Order                $order
+     * @param array                $options
+     * @param IfirmaPipelineResult $result
+     * @return IfirmaPipelineResult|null the finished result when the create failed, null to go on
+     */
+    private function stepCreate(Order $order, array $options, IfirmaPipelineResult $result)
+    {
+        if ($this->isAdopted($result)) {
+            $result->addStep(self::STEP_CREATE, 'skipped', 'adopted document');
+
+            return null;
+        }
+        $idOrder = (int) $order->id;
+        try {
+            $receipt = $this->service->createReceipt($order, array(
+                'override' => $this->requests->getOverrideForOrder($idOrder),
+            ));
+        } catch (Exception $e) {
+            $row = IfirmaReceipt::getByOrder($idOrder);
+            $result->receipt = $row;
+            $unknown = $row && $row->status === IfirmaReceipt::STATUS_UNKNOWN;
+            $outcome = $unknown ? IfirmaPipelineResult::OUTCOME_UNKNOWN : IfirmaPipelineResult::OUTCOME_ERROR;
+            $result->stopAt($outcome, self::STEP_CREATE, $e->getMessage());
+
+            return $result;
+        }
+        $result->receipt = $receipt;
+        $result->addStep(self::STEP_CREATE, 'ok', '');
+
+        if ($result->guard->outcome === IfirmaGuardResult::OUTCOME_BYPASSED) {
+            $idEmployee = isset($options['id_employee']) ? $options['id_employee'] : null;
+            $this->guard->recordResolution($receipt, 'issue_anyway', $idEmployee);
+        }
+
+        return null;
+    }
+
+    /**
+     * 4. NUMBER: createReceipt already looked the number up, so there is no further iFirma call; the step
+     * says whether the number is there and marks the run issued. An adopted document skips it.
+     *
+     * @param IfirmaPipelineResult $result
+     */
+    private function stepNumber(IfirmaPipelineResult $result)
+    {
+        if ($this->isAdopted($result)) {
+            $result->addStep(self::STEP_NUMBER, 'skipped', 'adopted document');
+
+            return;
+        }
+        $result->addStep(self::STEP_NUMBER, 'ok', $result->receipt->ifirma_number ? '' : 'number not yet available');
+        $result->markIssued();
+    }
+
+    /**
+     * 5. KSEF: skipped with a reason, ok with iFirma's message, or failed. A failure never ends the run: the
+     * step is logged as failed and the message of the result ends with the error.
+     *
      * @param Order                $order
      * @param array                $options
      * @param IfirmaPipelineResult $result
      */
-    private function execute(Order $order, array $options, IfirmaPipelineResult $result)
+    private function stepKsef(Order $order, array $options, IfirmaPipelineResult $result)
     {
-        $idOrder = (int) $order->id;
-        $bypass = !empty($options['bypass_guard']);
-        $idEmployee = isset($options['id_employee']) ? $options['id_employee'] : null;
-
-        // 1. HOLD
-        $existing = IfirmaReceipt::getByOrder($idOrder);
-        if ($existing && $existing->isIssued()) {
-            $this->step($result, self::STEP_HOLD, 'skipped', 'document already issued');
-        } elseif ($this->requests->hasPendingForOrder($idOrder)) {
-            $pending = $this->requests->getPendingForOrder($idOrder);
-            $reason = 'held: data request #' . ($pending ? (int) $pending->id : 0) . ' pending';
-            $row = $this->ensureRow($order, $isNew);
-            $row->markHeld($reason);
-            $row->save();
-
-            $result->receipt = $row;
-            $this->stop($result, IfirmaPipelineResult::OUTCOME_HELD, self::STEP_HOLD, $reason);
+        if (!empty($options['skip_ksef'])) {
+            $result->addStep(self::STEP_KSEF, 'skipped', 'KSeF skipped by caller');
 
             return;
-        } else {
-            $this->step($result, self::STEP_HOLD, 'ok', '');
         }
+        $receipt = $result->receipt;
+        if (!$receipt instanceof IfirmaReceipt) {
+            $result->addStep(self::STEP_KSEF, 'skipped', 'no document');
 
-        // 2. GUARD
-        $g = $this->guard->check($order, array('bypass' => $bypass));
-        $result->guard = $g;
-        $adopted = false;
-        switch ($g->outcome) {
-            case IfirmaGuardResult::OUTCOME_LOCAL_ISSUED:
-                $result->receipt = $g->receipt;
-                foreach (array(self::STEP_GUARD, self::STEP_CREATE, self::STEP_NUMBER, self::STEP_KSEF, self::STEP_DELIVER) as $s) {
-                    $this->step($result, $s, 'skipped', 'document already issued');
-                }
-                $result->ok = true;
-                $result->outcome = IfirmaPipelineResult::OUTCOME_ALREADY_ISSUED;
-                $result->message = 'document already issued';
-
-                return;
-
-            case IfirmaGuardResult::OUTCOME_ADOPT:
-                $result->receipt = $g->receipt;
-                $this->step($result, self::STEP_GUARD, 'ok', 'existing document adopted');
-                $this->step($result, self::STEP_CREATE, 'skipped', 'adopted document');
-                $this->step($result, self::STEP_NUMBER, 'skipped', 'adopted document');
-                $result->outcome = IfirmaPipelineResult::OUTCOME_ADOPTED;
-                $result->ok = true;
-                $result->message = 'existing document adopted';
-                $adopted = true;
-                break;
-
-            case IfirmaGuardResult::OUTCOME_SUSPECTED:
-                $result->receipt = $g->receipt;
-                $message = $g->receipt instanceof IfirmaReceipt ? (string) $g->receipt->last_error : 'suspected duplicate';
-                $this->stop($result, IfirmaPipelineResult::OUTCOME_SUSPECTED, self::STEP_GUARD, $message);
-
-                return;
-
-            case IfirmaGuardResult::OUTCOME_INCONCLUSIVE:
-                if ($g->rateLimited) {
-                    $this->stop($result, IfirmaPipelineResult::OUTCOME_RATE_LIMITED, self::STEP_GUARD, (string) $g->error);
-
-                    return;
-                }
-                $row = $this->ensureRow($order, $isNew);
-                if ($isNew) {
-                    $row->markError((string) $g->error);
-                } else {
-                    $row->last_error = (string) $g->error;
-                }
-                $row->save();
-                $result->receipt = $row;
-                $this->stop($result, IfirmaPipelineResult::OUTCOME_INCONCLUSIVE, self::STEP_GUARD, (string) $g->error);
-
-                return;
-
-            case IfirmaGuardResult::OUTCOME_DISABLED:
-                $this->step($result, self::STEP_GUARD, 'skipped', 'duplicate check disabled');
-                break;
-
-            default:
-                $this->step($result, self::STEP_GUARD, 'ok', $g->outcome === IfirmaGuardResult::OUTCOME_BYPASSED ? 'bypassed' : '');
-                break;
+            return;
         }
-
-        if (!$adopted) {
-            // 3. CREATE
-            try {
-                $receipt = $this->service->createReceipt($order, array(
-                    'override' => $this->requests->getOverrideForOrder($idOrder),
-                ));
-            } catch (Exception $e) {
-                $row = IfirmaReceipt::getByOrder($idOrder);
-                $result->receipt = $row;
-                $unknown = $row && $row->status === IfirmaReceipt::STATUS_UNKNOWN;
-                $outcome = $unknown ? IfirmaPipelineResult::OUTCOME_UNKNOWN : IfirmaPipelineResult::OUTCOME_ERROR;
-                $this->stop($result, $outcome, self::STEP_CREATE, $e->getMessage());
+        try {
+            $reason = $this->ksef->skipReason($receipt, $order);
+            if ($reason !== '') {
+                $result->addStep(self::STEP_KSEF, 'skipped', $reason);
 
                 return;
             }
-            $result->receipt = $receipt;
-            $this->step($result, self::STEP_CREATE, 'ok', '');
-
-            if ($g->outcome === IfirmaGuardResult::OUTCOME_BYPASSED) {
-                $this->guard->recordResolution($receipt, 'issue_anyway', $idEmployee);
-            }
-
-            // 4. NUMBER (createReceipt already looked it up; no further iFirma call)
-            $this->step($result, self::STEP_NUMBER, 'ok', $receipt->ifirma_number ? '' : 'number not yet available');
-
-            $result->outcome = IfirmaPipelineResult::OUTCOME_ISSUED;
-            $result->ok = true;
-            $result->message = 'document issued';
+            $k = $this->ksef->submit($receipt, $order);
+        } catch (Throwable $e) {
+            $k = array('ok' => false, 'message' => $e->getMessage());
         }
+        $message = isset($k['message']) ? (string) $k['message'] : '';
+        if (!empty($k['ok'])) {
+            $result->addStep(self::STEP_KSEF, 'ok', $message);
 
-        // 5. KSEF (a failure never stops the run)
-        $ksefError = $this->submitToKsef($order, $options, $result);
+            return;
+        }
+        $result->addStep(self::STEP_KSEF, 'failed', $message);
+        $result->message = rtrim((string) $result->message) . ' KSeF: ' . ($message !== '' ? $message : 'KSeF submission failed');
+    }
 
-        // 6. DELIVER
+    /**
+     * 6. DELIVER: a delivery that fails never changes ok or the outcome: the step is logged as stopped and
+     * named in stoppedAt.
+     *
+     * @param Order                $order
+     * @param array                $options
+     * @param IfirmaPipelineResult $result
+     */
+    private function stepDeliver(Order $order, array $options, IfirmaPipelineResult $result)
+    {
         if (!empty($options['skip_delivery'])) {
-            $this->appendKsefError($result, $ksefError);
-            $this->step($result, self::STEP_DELIVER, 'skipped', 'delivery skipped by caller');
+            $result->addStep(self::STEP_DELIVER, 'skipped', 'delivery skipped by caller');
 
             return;
         }
@@ -400,66 +543,19 @@ class IfirmaIssuancePipeline
         $result->delivery = $d;
         $message = $d->getMessage();
         if ($d->isSent()) {
-            $this->step($result, self::STEP_DELIVER, 'ok', $message !== '' ? $message : $d->getStatus());
+            $result->addStep(self::STEP_DELIVER, 'ok', $message !== '' ? $message : $d->getStatus());
         } else {
-            $this->step($result, self::STEP_DELIVER, 'stopped', $message);
-            $result->stoppedAt = self::STEP_DELIVER;
+            $result->stopStep(self::STEP_DELIVER, $message);
         }
-        $this->appendKsefError($result, $ksefError);
-    }
-
-    /**
-     * KSeF step: skipped with a reason, ok with iFirma's message, or failed (non-stopping).
-     *
-     * @param Order                $order
-     * @param array                $options
-     * @param IfirmaPipelineResult $result
-     * @return string error text when the submission failed, '' otherwise
-     */
-    private function submitToKsef(Order $order, array $options, IfirmaPipelineResult $result)
-    {
-        if (!empty($options['skip_ksef'])) {
-            $this->step($result, self::STEP_KSEF, 'skipped', 'KSeF skipped by caller');
-
-            return '';
-        }
-        $receipt = $result->receipt;
-        if (!$receipt instanceof IfirmaReceipt) {
-            $this->step($result, self::STEP_KSEF, 'skipped', 'no document');
-
-            return '';
-        }
-        try {
-            $reason = $this->ksef->skipReason($receipt, $order);
-            if ($reason !== '') {
-                $this->step($result, self::STEP_KSEF, 'skipped', $reason);
-
-                return '';
-            }
-            $k = $this->ksef->submit($receipt, $order);
-        } catch (Throwable $e) {
-            $k = array('ok' => false, 'message' => $e->getMessage());
-        }
-        $message = isset($k['message']) ? (string) $k['message'] : '';
-        if (!empty($k['ok'])) {
-            $this->step($result, self::STEP_KSEF, 'ok', $message);
-
-            return '';
-        }
-        $this->step($result, self::STEP_KSEF, 'failed', $message);
-
-        return $message !== '' ? $message : 'KSeF submission failed';
     }
 
     /**
      * @param IfirmaPipelineResult $result
-     * @param string               $error
+     * @return bool true when the guard adopted the order's document, so that there is nothing to create
      */
-    private function appendKsefError(IfirmaPipelineResult $result, $error)
+    private function isAdopted(IfirmaPipelineResult $result)
     {
-        if ($error !== '') {
-            $result->message = rtrim((string) $result->message) . ' KSeF: ' . $error;
-        }
+        return $result->outcome === IfirmaPipelineResult::OUTCOME_ADOPTED;
     }
 
     /**
@@ -524,32 +620,6 @@ class IfirmaIssuancePipeline
         $row->order_reference = IfirmaReceiptService::buildOrderReference($order);
 
         return $row;
-    }
-
-    /**
-     * @param IfirmaPipelineResult $r
-     * @param string               $outcome
-     * @param string               $step
-     * @param string               $message
-     */
-    private function stop(IfirmaPipelineResult $r, $outcome, $step, $message)
-    {
-        $this->step($r, $step, 'stopped', $message);
-        $r->ok = false;
-        $r->outcome = $outcome;
-        $r->stoppedAt = $step;
-        $r->message = (string) $message;
-    }
-
-    /**
-     * @param IfirmaPipelineResult $r
-     * @param string               $step
-     * @param string               $status ok|skipped|stopped|failed
-     * @param string               $message
-     */
-    private function step(IfirmaPipelineResult $r, $step, $status, $message)
-    {
-        $r->steps[] = array('step' => $step, 'status' => $status, 'message' => (string) $message);
     }
 
     /**
