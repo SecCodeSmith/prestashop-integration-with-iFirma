@@ -1,6 +1,7 @@
 # Tasks
 
 Every refactor task follows the D1 protocol of `refactor-clean-code-tda`:
+
 1. Characterise: pin every uncovered line of the methods to be touched, with tests that pass on unchanged code.
 2. Refactor.
 3. The whole suite passes.
@@ -20,7 +21,7 @@ Each task is one commit straight on master; a characterisation commit may come f
 ## 2. One contractor identifier length
 
 - [x] 2.1 Characterise the identifier limits: `IfirmaContractorMap`'s field size, `link()`'s truncation, and the limits that `IfirmaContractorImport` and `IfirmaCustomerContractorService` apply. A 64-character identifier passes and a 65-character one is cut or refused, exactly as today. Verify on unchanged code.
-- [ ] 2.2 Reference `IfirmaSchema::CONTRACTOR_IDENTIFIER_LENGTH` in the four places, each file requiring `IfirmaSchema.php` (design D2). Verify:
+- [x] 2.2 Reference `IfirmaSchema::CONTRACTOR_IDENTIFIER_LENGTH` in the four places, each file requiring `IfirmaSchema.php` (design D2). Verify:
   - `git grep -nwE "64" classes/IfirmaContractorMap.php classes/IfirmaContractorImport.php classes/IfirmaCustomerContractorService.php` shows no identifier-length literal;
   - the suite is green and diff-cover is at 100%;
   - the PHP 7.2 lint passes;
@@ -29,7 +30,7 @@ Each task is one commit straight on master; a characterisation commit may come f
   Evidence:
   - Characterisation `fe0fc6e` passes on base: a 64-character identifier passes and a 65-character one is cut or refused.
   - Refactor `7d9f4b9`: the four places reference the constant, and the three files require `IfirmaSchema.php` themselves. The grep finds no `64` left.
-  - Each class file loads on its own on PHP 7.2 and 8.2.
+  - Each class file loads on its own on PHP 7.2 and 8.2, and the PHP 7.2 lint passes.
   - Gate against `f68120e`: `OK (1626 tests)`, 100%.
   - The end-to-end smoke on `dd6dc23` matched the pre-refactor run line for line.
   - Those `require_once` lines are redundant in today's load chain, so no test can kill their removal. They are insurance for when `refactor-srp-splits` cuts that chain.
@@ -59,7 +60,11 @@ Each task is one commit straight on master; a characterisation commit may come f
 
 ## 5. Integration check
 
-- [ ] 5.1 Run the gate over the whole change against its base, the PHP 7.2 lint, the licence check, the end-to-end smoke and `openspec validate refactor-tda-followups --strict`. Then run `graphify update .`, commit, push, and confirm that all six CI jobs pass with the coverage job at 100%.
+- [x] 5.1 Run the gate over the whole change against its base, the PHP 7.2 lint, the licence check, the end-to-end smoke and `openspec validate refactor-tda-followups --strict`. Then run `graphify update .`, commit, push, and confirm that all six CI jobs pass with the coverage job at 100%. Evidence:
+  - Gate against `6c29e1b`, which also covers the KSeF fix that landed first: `OK (1639 tests, 6946 assertions)`, 27 changed lines, 100%. The PHP 7.2 lint, the licence check and `openspec validate --strict` pass.
+  - The end-to-end smoke on `dd6dc23` matched the pre-refactor run line for line. The later commits change only tests and docs.
+  - `graphify update .` rebuilt the graph into `5471c7a`, with `cost.json` unchanged.
+  - CI run #24 on `5471c7a`: all six jobs pass, and the coverage job reports 100%.
 
 ## Workflow follow-up
 

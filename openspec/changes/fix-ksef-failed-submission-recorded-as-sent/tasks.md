@@ -41,13 +41,19 @@ Test-first, straight to master, behind the same local gate as `refactor-clean-co
 
 ## 2. Integration check
 
-- [ ] 2.1 Before pushing, run:
+- [x] 2.1 Before pushing, run:
   - the whole suite and the gate against the base commit;
   - the PHP 7.2 lint and the licence check;
   - `openspec validate fix-ksef-failed-submission-recorded-as-sent --strict`;
   - the end-to-end smoke (`tests/smoke/run.php` in the PrestaShop container), whose KSeF scenario must still pass.
 
   Then run `graphify update .`, commit, push to master, and confirm that all six CI jobs pass with the coverage job at 100%. Verify by the smoke summary and by the CI run's job list and diff-cover summary.
+
+  Evidence:
+  - Gate against `6c29e1b`, which also covers `refactor-tda-followups` because both landed between the same commits: `OK (1639 tests, 6946 assertions)`, 27 changed lines, 100%. The PHP 7.2 lint, the licence check and `openspec validate --strict` pass.
+  - The end-to-end smoke on `dd6dc23` passed 90 checks, and all 91 check lines match the pre-refactor master, scenario F included. No shipped file changed after `dd6dc23`.
+  - `graphify update .` rebuilt the graph into the evidence commit `5471c7a`. `cost.json` is unchanged and the 18 semantic cache files are still tracked.
+  - CI run #24 on `5471c7a`: all six jobs pass. The coverage job reports 27 changed lines at 100% against `6c29e1b`, and the test build `ifirma-1.3.0+build.24` verifies with the matching commit.
 
 ## Workflow follow-up
 
