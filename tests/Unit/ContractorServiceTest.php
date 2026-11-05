@@ -470,6 +470,31 @@ class ContractorServiceTest extends TestCase
         $this->assertSame('ACME-B', $r->getIdentifier());
     }
 
+    public function testSeveralNipMatchesWithTheBuyerNameFallBackToThePostcodeAmongThem()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $this->rows(array(
+            $this->remote('ACME-A', array('Nazwa' => 'ACME Sp. z o.o.', 'NIP' => '5252248481', 'KodPocztowy' => '30-001', 'OsobaFizyczna' => false)),
+            $this->remote('ACME-B', array('Nazwa' => 'ACME Sp. z o.o.', 'NIP' => '5252248481', 'KodPocztowy' => '00-001', 'OsobaFizyczna' => false)),
+            // another name: not a candidate, although it has the buyer's postcode as well
+            $this->remote('ACME-HOLDING', array('Nazwa' => 'ACME Holding', 'NIP' => '5252248481', 'KodPocztowy' => '00-001', 'OsobaFizyczna' => false)),
+        )));
+        // were the first of the two rows with the buyer name taken for the buyer, it would be updated
+        $this->t->queue('PUT', '#kontrahenci/ACME-A\.json#', $this->ok('Zaktualizowano'));
+
+        $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
+
+        $this->assertSame('ACME-B', $r->getIdentifier());
+        $this->assertSame('kept', $r->getAction());
+        $this->assertSame('nip', $r->getMatchedBy());
+        $this->assertSame('ACME-B', $r->getLinkedIdentifier());
+        $this->assertSame(array('/iapi/kontrahenci/5252248481.json'), $this->searchPaths());
+        $this->assertSame(array(), $this->paths('POST'));
+        $this->assertSame(array(), $this->paths('PUT'));
+        $this->assertSame('ACME-B', $this->mapped()['ifirma_identifier']);
+        $this->assertSame('nip', $this->mapped()['matched_by']);
+    }
+
     public function testSeveralNipMatchesWithoutATieBreakGiveUpOnTheNipStep()
     {
         $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
@@ -500,6 +525,32 @@ class ContractorServiceTest extends TestCase
         $r = $this->svc->ensure($this->businessOwned(), 7, $this->businessHints());
 
         $this->assertSame('created', $r->getAction());
+    }
+
+    public function testANipOfNineDigitsIsNotSearched()
+    {
+        $nine = '525224848';
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
+        // were the nine digits searched, this contractor would be taken for the buyer
+        $this->t->queue('GET', '#kontrahenci/525224848\.json#', $this->rows(array(
+            $this->remote('ACME-02', array('Nazwa' => 'ACME Sp. z o.o.', 'NIP' => $nine, 'OsobaFizyczna' => false)),
+        )));
+        $this->t->queue('GET', '#kontrahenci/ACME#', $this->notFoundBody());
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
+
+        $r = $this->svc->ensure(
+            array_merge($this->businessOwned(), array('NIP' => $nine)),
+            7,
+            $this->businessHints(array('nip' => $nine))
+        );
+
+        // only the name is searched, nothing matches it, and the module creates the contractor
+        $this->assertSame(array('/iapi/kontrahenci/ACME%20Sp.%20z%20o.o..json'), $this->searchPaths());
+        $this->assertSame(array('GET', 'GET', 'POST', 'GET'), array_column($this->t->calls, 'method'));
+        $this->assertSame('created', $r->getAction());
+        $this->assertSame('PS-C7', $r->getIdentifier());
+        $this->assertSame('module', $r->getMatchedBy());
     }
 
     public function testPrivatePersonMatchedByNameAndEmail()

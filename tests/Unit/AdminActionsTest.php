@@ -17,6 +17,7 @@ use PHPUnit\Framework\TestCase;
 class AdminActionsTest extends TestCase
 {
     use IfirmaWiringFixture;
+    use IfirmaContractorMapDb;
 
     /** @var IfirmaAdminActions */
     private $actions;
@@ -24,6 +25,7 @@ class AdminActionsTest extends TestCase
     protected function setUp(): void
     {
         $this->wiringSetUp();
+        $this->scriptContractorMapDb();
         $this->actions = new IfirmaAdminActions($this->module);
     }
 
@@ -752,6 +754,42 @@ class AdminActionsTest extends TestCase
             ),
             $r
         );
+    }
+
+    /**
+     * A stored mapping whose matched_by is empty (the schema default) still names a contractor, but
+     * no match code says how it was found. The answer must carry the mapped contractor, not PS-C5.
+     */
+    public function testRegisterContractorAnswersTheWholeEnvelopeOfAStoredMappingWithoutAMatchCode()
+    {
+        IfirmaContractorMap::link(5, 'KOWALSKI-01', '', 'Jan K');
+        $mapped = array_merge(
+            IfirmaReceiptService::build($this->module)->buildContractor(Order::$instances[15]),
+            array('Identyfikator' => 'KOWALSKI-01')
+        );
+        $this->t->queue('GET', '#kontrahenci/id/KOWALSKI-01\.json#', array('body' => json_encode(array(
+            'response' => array('Kod' => 0, 'Informacja' => '', 'Wynik' => array($mapped)),
+        ))));
+
+        $r = $this->actions->registerContractor(15);
+
+        $this->assertSame(
+            array(
+                'success' => true,
+                'message' => 'Contractor KOWALSKI-01 already exists in iFirma and is up to date.',
+                'data' => array(
+                    'identifier' => 'KOWALSKI-01',
+                    'action' => 'kept',
+                    'message' => '',
+                    'matched_by' => '',
+                    'note' => null,
+                    'assigned_identifier' => null,
+                ),
+            ),
+            $r
+        );
+        $this->assertCount(1, $this->t->calls);
+        $this->assertSame('/iapi/kontrahenci/id/KOWALSKI-01.json', parse_url($this->t->calls[0]['url'], PHP_URL_PATH));
     }
 
     public function testRegisterContractorExplainsARejectedCreate()

@@ -406,6 +406,37 @@ class ContractorReferenceTest extends TestCase
         }
     }
 
+    /**
+     * A stored mapping whose matched_by is empty (the schema default) still names the contractor the
+     * document references. That identifier is short enough, so the document is not read back.
+     */
+    public function testStoredMappingWithoutAMatchCodeIsReferencedAndMakesNoDetailCall()
+    {
+        $this->enableSync();
+        IfirmaContractorMap::link(5, 'KOWALSKI-01', '', 'Jan K');
+        $this->t->queue('GET', '#kontrahenci/id/KOWALSKI-01\.json#', $this->foundContractor('KOWALSKI-01'));
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
+        // a read-back of the document, were it made, would name another contractor
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => json_encode(array('response' => array(
+            'Kod' => 0,
+            'Identyfikator' => 77,
+            'Kontrahent' => array('Nazwa' => 'Jan K', 'Identyfikator' => 'AUTO-81'),
+        )))));
+
+        $receipt = $this->service->createReceipt($this->order());
+
+        $this->assertSame('created', $receipt->status);
+        $this->assertSame(array('GET', 'POST'), array_column($this->t->calls, 'method'));
+        $this->assertSame('KOWALSKI-01', $this->sentDocument()['IdentyfikatorKontrahenta']);
+        $this->assertSame(
+            array('action' => 'kept', 'message' => '', 'matched_by' => '', 'identifier' => 'KOWALSKI-01'),
+            $this->storedPayload()['_contractor']
+        );
+        $map = IfirmaContractorMap::getByCustomer(5);
+        $this->assertSame('KOWALSKI-01', $map->ifirma_identifier);
+        $this->assertSame('', $map->matched_by);
+    }
+
     // ---- g. failed detail read never blocks issuance ---------------------------------------
 
     public function testFailedDetailReadDoesNotBlockIssuance()
@@ -622,6 +653,62 @@ class ContractorReferenceTest extends TestCase
                     'code' => 'reference_rejected',
                     'params' => array('identifier' => 'PS-C5', 'error' => 'IdentyfikatorKontrahenta: wartość nieprawidłowa'),
                 ),
+            ),
+            $this->storedPayload()['_contractor']
+        );
+    }
+
+    public function testStoredRecordOfAnUpdateIFirmaRejected()
+    {
+        $this->enableSync();
+        $outdated = array_merge($this->service->buildContractor($this->order()), array('Identyfikator' => 'PS-C5', 'Miejscowosc' => 'Stare Miasto'));
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array($outdated))))));
+        $this->t->queue('PUT', '#kontrahenci/PS-C5\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"Zly kod pocztowy"}}'));
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('status' => 0, 'error' => 'timeout'));
+
+        $this->service->createReceipt($this->order());
+
+        // contractor read, refused update, document, read of the issued document (it names no contractor);
+        // the document goes out without a reference to the contractor
+        $this->assertSame(array('GET', 'PUT', 'POST', 'GET'), array_column($this->t->calls, 'method'));
+        $this->assertArrayNotHasKey('IdentyfikatorKontrahenta', $this->sentDocument());
+        $error = 'Validation error in document data (Kod 201): Zly kod pocztowy';
+        $this->assertSame(
+            array(
+                'action' => 'fallback',
+                'message' => $error,
+                'matched_by' => '',
+                'identifier' => '',
+                'note' => array('code' => 'update_failed', 'params' => array('identifier' => 'PS-C5', 'error' => $error)),
+            ),
+            $this->storedPayload()['_contractor']
+        );
+    }
+
+    public function testStoredRecordOfACreateIFirmaRejected()
+    {
+        $this->enableSync();
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', $this->notFoundAnswer());
+        $this->t->queue('GET', '#kontrahenci/Jan%20K\.json#', $this->notFoundAnswer());
+        $this->t->queue('POST', '#kontrahenci\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"Zly kod pocztowy"}}'));
+        $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('status' => 0, 'error' => 'timeout'));
+
+        $this->service->createReceipt($this->order());
+
+        // id read, name search, refused create (no read-back of the contractor follows it), document, read
+        // of the issued document; the document goes out without a reference to the contractor
+        $this->assertSame(array('GET', 'GET', 'POST', 'POST', 'GET'), array_column($this->t->calls, 'method'));
+        $this->assertArrayNotHasKey('IdentyfikatorKontrahenta', $this->sentDocument());
+        $error = 'Validation error in document data (Kod 201): Zly kod pocztowy';
+        $this->assertSame(
+            array(
+                'action' => 'fallback',
+                'message' => $error,
+                'matched_by' => '',
+                'identifier' => '',
+                'note' => array('code' => 'create_rejected', 'params' => array('error' => $error)),
             ),
             $this->storedPayload()['_contractor']
         );
