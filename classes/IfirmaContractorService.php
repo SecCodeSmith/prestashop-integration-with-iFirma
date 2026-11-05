@@ -48,20 +48,8 @@ class IfirmaContractorService
     /** @var IfirmaApiClient */
     private $client;
 
-    /** @var array */
-    private $lastAction = array('identifier' => null, 'action' => self::ACTION_DISABLED, 'message' => '', 'matched_by' => '', 'linked_identifier' => null, 'note' => null, 'assigned_identifier' => null);
-
-    /** @var string */
-    private $lastSearchError = '';
-
     /** @var callable|null */
     private $sleeper;
-
-    /** @var string|null identifier iFirma assigned in the last create, when it differs from the sent one */
-    private $assignedIdentifier = null;
-
-    /** @var array|null structured result of the last create read-back (null when no create was confirmed) */
-    private $lastReadback = null;
 
     /** @var string answer text of the last fetch() ("Kod N: Informacja", "empty result", transport error) */
     private $lastFetchAnswer = '';
@@ -160,28 +148,30 @@ class IfirmaContractorService
      */
     public function create(array $contractor)
     {
-        return $this->createAndGetIdentifier($contractor) !== false;
+        return $this->createAndResolve($contractor)->getIdentifier() !== null;
     }
 
     /**
-     * Creates the contractor and returns the identifier under which iFirma stored it: found by the
-     * sent identifier or by the one reported in the answer (immediately and once more after a
-     * short wait), otherwise through the contractor search with the pre-create matching rules.
-     * False when the create was rejected or the contractor cannot be found (the caller then falls
-     * back to a document without identifier); getLastReadback() tells the two apart.
+     * Creates the contractor and resolves it to the identifier under which iFirma stored it: found
+     * by the sent identifier or by the one reported in the answer (immediately and once more after
+     * a short wait), otherwise through the contractor search with the pre-create matching rules.
+     * Answers a created resolution (linked to the customer when there is one, carrying the
+     * read-back), or a fallback one when the create was rejected (create_rejected note, no
+     * read-back) or the contractor cannot be found (readback_failed note, the read-back attached):
+     * the caller then falls back to a document without identifier.
      *
-     * @param array $contractor
-     * @param array $hints completed hints (nip, email, postcode, name) for the search; empty skips it
-     * @return string|false
+     * @param array    $contractor
+     * @param int|null $idCustomer customer to link the created contractor to; 0 for none
+     * @param array    $hints      completed hints (nip, email, postcode, name) for the search; empty skips it
+     * @return IfirmaContractorResolution
      */
-    public function createAndGetIdentifier(array $contractor, array $hints = array())
+    public function createAndResolve(array $contractor, $idCustomer = 0, array $hints = array())
     {
-        $this->assignedIdentifier = null;
-        $this->lastReadback = null;
-
         $response = $this->client->post('kontrahenci.json', 'faktura', $this->whitelist($contractor));
         if (!$this->isOk($response)) {
-            return false;
+            $error = (string) $this->client->getLastError();
+
+            return new IfirmaContractorResolution(null, self::ACTION_FALLBACK, $error, '', $this->note('create_rejected', array('error' => $error)));
         }
         $sent = isset($contractor['Identyfikator']) ? trim((string) $contractor['Identyfikator']) : '';
         $node = isset($response['response']) && is_array($response['response']) ? $response['response'] : $response;
@@ -219,21 +209,27 @@ class IfirmaContractorService
         if ($found === null && $hints) {
             $found = $this->searchCreated($hints, $readback);
         }
-        $this->lastReadback = $readback;
         if ($found !== null) {
-            $this->assignedIdentifier = $found !== $sent ? $found : null;
+            $this->safeLink($idCustomer, $found, IfirmaContractorMap::BY_MODULE, isset($contractor['Nazwa']) ? (string) $contractor['Nazwa'] : '');
+            $assigned = $found !== $sent ? $found : null;
+            $note = $assigned !== null ? $this->note('assigned', array('identifier' => $found)) : null;
 
-            return $found;
+            return new IfirmaContractorResolution($found, self::ACTION_CREATED, '', $idCustomer > 0 ? IfirmaContractorMap::BY_MODULE : '', $note, $assigned, $readback);
         }
 
         $tried = array();
         foreach ($readback['tried'] as $entry) {
             $tried[$entry['identifier'] . ': ' . $entry['answer']] = true;
         }
-        $this->lastSearchError = 'iFirma created the contractor but it cannot be read back (' . implode('; ', array_keys($tried))
+        $message = 'iFirma created the contractor but it cannot be read back (' . implode('; ', array_keys($tried))
             . '); search: ' . $readback['search'] . ($readback['search_error'] !== '' ? ' (' . $readback['search_error'] . ')' : '') . '.';
+        $note = $this->note('readback_failed', array(
+            'tried' => $readback['tried'],
+            'search' => $readback['search'],
+            'search_error' => $readback['search_error'],
+        ));
 
-        return false;
+        return new IfirmaContractorResolution(null, self::ACTION_FALLBACK, $message, '', $note, null, $readback);
     }
 
     /**
@@ -248,22 +244,21 @@ class IfirmaContractorService
         $error = '';
         $ambiguous = false;
 
-        $this->lastSearchError = '';
         $this->lastNipRows = 0;
-        $row = $this->findByNip($hints);
-        if ($this->lastSearchError !== '') {
-            $error = $this->lastSearchError;
+        $byNip = $this->findByNip($hints);
+        $row = $byNip['row'];
+        if ($byNip['error'] !== '') {
+            $error = $byNip['error'];
         } elseif ($row === null && $this->lastNipRows > 1) {
             $ambiguous = true;
         }
         if ($row === null || !$this->hasIdentifier($row)) {
-            $this->lastSearchError = '';
-            $row = $this->findByName($hints);
-            if ($error === '' && $this->lastSearchError !== '') {
-                $error = $this->lastSearchError;
+            $byName = $this->findByName($hints);
+            $row = $byName['row'];
+            if ($error === '' && $byName['error'] !== '') {
+                $error = $byName['error'];
             }
         }
-        $this->lastSearchError = '';
 
         if ($row !== null && $this->hasIdentifier($row)) {
             $readback['search'] = 'found';
@@ -287,22 +282,6 @@ class IfirmaContractorService
     private function hasIdentifier(array $row)
     {
         return isset($row['Identyfikator']) && trim((string) $row['Identyfikator']) !== '';
-    }
-
-    /**
-     * @return array tried (identifier, answer), search (none|ambiguous|error|found), search_error of the last create
-     */
-    public function getLastReadback()
-    {
-        return $this->lastReadback !== null ? $this->lastReadback : array('tried' => array(), 'search' => 'none', 'search_error' => '');
-    }
-
-    /**
-     * @return string|null the identifier iFirma stored the last created contractor under, when it differs from the sent one
-     */
-    public function getAssignedIdentifier()
-    {
-        return $this->assignedIdentifier;
     }
 
     /**
@@ -368,12 +347,9 @@ class IfirmaContractorService
     {
         $identifier = isset($contractor['Identyfikator']) ? trim((string) $contractor['Identyfikator']) : '';
         $idCustomer = (int) $idCustomer;
-        $this->lastSearchError = '';
-        $this->assignedIdentifier = null;
-        $this->lastReadback = null;
 
         if (!$this->isEnabled() || $identifier === '') {
-            return $this->remember(null, self::ACTION_DISABLED, '');
+            return new IfirmaContractorResolution(null, self::ACTION_DISABLED);
         }
 
         $hints = $this->completeHints($contractor, $hints);
@@ -388,7 +364,7 @@ class IfirmaContractorService
                     return $this->useExisting($mapped, $existing, $contractor, (string) $mapping->matched_by, 0);
                 }
                 if ($existing === false) {
-                    return $this->remember(null, self::ACTION_FALLBACK, $this->client->getLastError(), '', $this->note('lookup_failed', array('identifier' => $mapped, 'error' => (string) $this->client->getLastError())));
+                    return new IfirmaContractorResolution(null, self::ACTION_FALLBACK, $this->client->getLastError(), '', $this->note('lookup_failed', array('identifier' => $mapped, 'error' => (string) $this->client->getLastError())));
                 }
                 $this->safeUnlink($idCustomer);
             }
@@ -397,7 +373,7 @@ class IfirmaContractorService
         // b. the module identifier
         $existing = $this->fetch($identifier);
         if ($existing === false) {
-            return $this->remember(null, self::ACTION_FALLBACK, $this->client->getLastError(), '', $this->note('lookup_failed', array('identifier' => $identifier, 'error' => (string) $this->client->getLastError())));
+            return new IfirmaContractorResolution(null, self::ACTION_FALLBACK, $this->client->getLastError(), '', $this->note('lookup_failed', array('identifier' => $identifier, 'error' => (string) $this->client->getLastError())));
         }
         if (is_array($existing)) {
             return $this->useExisting($identifier, $existing, $contractor, IfirmaContractorMap::BY_MODULE, $idCustomer);
@@ -405,10 +381,10 @@ class IfirmaContractorService
 
         // c. + d. existing contractors found through the search endpoint
         if ($idCustomer > 0) {
-            $found = $this->findByNip($hints);
+            $found = $this->findByNip($hints)['row'];
             $matchedBy = IfirmaContractorMap::BY_NIP;
             if ($found === null) {
-                $found = $this->findByName($hints);
+                $found = $this->findByName($hints)['row'];
                 $matchedBy = IfirmaContractorMap::BY_NAME;
             }
             if ($found !== null && isset($found['Identyfikator']) && trim((string) $found['Identyfikator']) !== '') {
@@ -417,27 +393,7 @@ class IfirmaContractorService
         }
 
         // e. create the module contractor
-        $assigned = $this->createAndGetIdentifier($contractor, $hints);
-        if ($assigned !== false) {
-            $this->safeLink($idCustomer, $assigned, IfirmaContractorMap::BY_MODULE, isset($contractor['Nazwa']) ? (string) $contractor['Nazwa'] : '');
-            $note = $this->assignedIdentifier !== null ? $this->note('assigned', array('identifier' => $assigned)) : null;
-
-            return $this->remember($assigned, self::ACTION_CREATED, '', $idCustomer > 0 ? IfirmaContractorMap::BY_MODULE : '', $note);
-        }
-
-        if ($this->lastReadback === null) {
-            $error = (string) $this->client->getLastError();
-
-            return $this->remember(null, self::ACTION_FALLBACK, $error, '', $this->note('create_rejected', array('error' => $error)));
-        }
-        $readback = $this->lastReadback;
-        $note = $this->note('readback_failed', array(
-            'tried' => $readback['tried'],
-            'search' => $readback['search'],
-            'search_error' => $readback['search_error'],
-        ));
-
-        return $this->remember(null, self::ACTION_FALLBACK, $this->lastSearchError, '', $note);
+        return $this->createAndResolve($contractor, $idCustomer, $hints);
     }
 
     /**
@@ -456,7 +412,7 @@ class IfirmaContractorService
             if (!$this->update($identifier, $existing, $contractor)) {
                 $error = (string) $this->client->getLastError();
 
-                return $this->remember(null, self::ACTION_FALLBACK, $error, '', $this->note('update_failed', array('identifier' => (string) $identifier, 'error' => $error)));
+                return new IfirmaContractorResolution(null, self::ACTION_FALLBACK, $error, '', $this->note('update_failed', array('identifier' => (string) $identifier, 'error' => $error)));
             }
             $action = self::ACTION_UPDATED;
         } else {
@@ -466,7 +422,7 @@ class IfirmaContractorService
             $this->safeLink($linkCustomer, $identifier, $matchedBy, isset($existing['Nazwa']) ? (string) $existing['Nazwa'] : '');
         }
 
-        return $this->remember($identifier, $action, '', $matchedBy);
+        return new IfirmaContractorResolution($identifier, $action, '', $matchedBy);
     }
 
     /**
@@ -494,20 +450,32 @@ class IfirmaContractorService
 
     /**
      * @param array $hints
-     * @return array|null contractor row with exactly this NIP
+     * @return array row (contractor row with exactly this NIP, null when there is none), error (message of the NIP search, empty when it worked)
      */
     private function findByNip(array $hints)
     {
         if (strlen($hints['nip']) < 10) {
-            return null;
+            return array('row' => null, 'error' => '');
         }
+        $search = $this->search($hints['nip']);
         $rows = array();
-        foreach ($this->search($hints['nip'])->getRows() as $row) {
+        foreach ($search->getRows() as $row) {
             if (isset($row['NIP']) && preg_replace('/\D/', '', (string) $row['NIP']) === $hints['nip']) {
                 $rows[] = $row;
             }
         }
         $this->lastNipRows = count($rows);
+
+        return array('row' => $this->pickByNip($rows, $hints), 'error' => $search->getError());
+    }
+
+    /**
+     * @param array $rows  the contractor rows with exactly the buyer NIP
+     * @param array $hints
+     * @return array|null the buyer's row: the only one, else the one with the buyer name, else the only one with the postcode
+     */
+    private function pickByNip(array $rows, array $hints)
+    {
         if (count($rows) === 1) {
             return $rows[0];
         }
@@ -531,16 +499,17 @@ class IfirmaContractorService
 
     /**
      * @param array $hints
-     * @return array|null contractor row with the buyer name, confirmed by e-mail or postcode
+     * @return array row (contractor row with the buyer name, confirmed by e-mail or postcode; null when there is none), error (message of the name search, empty when it worked)
      */
     private function findByName(array $hints)
     {
         $name = self::normalizeName($hints['name']);
         if ($name === '') {
-            return null;
+            return array('row' => null, 'error' => '');
         }
+        $search = $this->search($hints['name']);
         $candidates = array();
-        foreach ($this->search($hints['name'])->getRows() as $row) {
+        foreach ($search->getRows() as $row) {
             if (self::normalizeName(isset($row['Nazwa']) ? $row['Nazwa'] : '') !== $name) {
                 continue;
             }
@@ -551,6 +520,16 @@ class IfirmaContractorService
             $candidates[] = $row;
         }
 
+        return array('row' => $this->pickByName($candidates, $hints), 'error' => $search->getError());
+    }
+
+    /**
+     * @param array $candidates the contractor rows with the buyer name (and not another NIP)
+     * @param array $hints
+     * @return array|null the buyer's row: the only one confirmed by e-mail, else the only one with the postcode
+     */
+    private function pickByName(array $candidates, array $hints)
+    {
         $email = mb_strtolower($hints['email'], 'UTF-8');
         $byEmail = array();
         if ($email !== '') {
@@ -593,15 +572,13 @@ class IfirmaContractorService
 
     /**
      * Contractor search (identifier, name or NIP fragment; iFirma returns at most 20 rows).
-     * Any failure counts as "no match": no rows, and the message of the failure in the answer
-     * (also kept in getLastSearchError() until that accessor goes, task 13.2).
+     * Any failure counts as "no match": no rows, and the message of the failure in the answer.
      *
      * @param string $phrase
      * @return IfirmaContractorSearchResult the contractor rows and the failure message
      */
     public function search($phrase)
     {
-        $this->lastSearchError = '';
         $phrase = trim((string) $phrase);
         if ($phrase === '') {
             return new IfirmaContractorSearchResult();
@@ -609,19 +586,18 @@ class IfirmaContractorService
 
         $response = $this->client->get('kontrahenci/' . rawurlencode($phrase) . '.json', 'faktura');
         if ($response === null) {
-            $this->lastSearchError = (string) $this->client->getLastError();
-
-            return new IfirmaContractorSearchResult(array(), $this->lastSearchError);
+            return new IfirmaContractorSearchResult(array(), (string) $this->client->getLastError());
         }
         $node = isset($response['response']) && is_array($response['response']) ? $response['response'] : $response;
         if (!isset($node['Kod']) || (int) $node['Kod'] !== 0) {
+            $error = '';
             if (isset($node['Kod']) && (int) $node['Kod'] !== 208) {
-                $this->lastSearchError = isset($node['Informacja']) && (string) $node['Informacja'] !== ''
+                $error = isset($node['Informacja']) && (string) $node['Informacja'] !== ''
                     ? (string) $node['Informacja']
                     : 'Kod ' . (int) $node['Kod'];
             }
 
-            return new IfirmaContractorSearchResult(array(), $this->lastSearchError);
+            return new IfirmaContractorSearchResult(array(), $error);
         }
         if (!isset($node['Wynik']) || !is_array($node['Wynik'])) {
             return new IfirmaContractorSearchResult();
@@ -635,14 +611,6 @@ class IfirmaContractorService
         }
 
         return new IfirmaContractorSearchResult($rows);
-    }
-
-    /**
-     * @return string failure message of the last search that failed in this ensure() call
-     */
-    public function getLastSearchError()
-    {
-        return $this->lastSearchError;
     }
 
     /**
@@ -707,14 +675,6 @@ class IfirmaContractorService
     }
 
     /**
-     * @return array identifier, action, message of the last ensure() call
-     */
-    public function getLastAction()
-    {
-        return $this->lastAction;
-    }
-
-    /**
      * @param array $record
      * @return array
      */
@@ -735,17 +695,6 @@ class IfirmaContractorService
         $node = isset($response['response']) && is_array($response['response']) ? $response['response'] : $response;
 
         return isset($node['Kod']) && (int) $node['Kod'] === 0;
-    }
-
-    /**
-     * @return IfirmaContractorResolution
-     */
-    private function remember($identifier, $action, $message, $matchedBy = '', $note = null)
-    {
-        $resolution = new IfirmaContractorResolution($identifier, $action, $message, $matchedBy, $note, $this->assignedIdentifier, $this->lastReadback);
-        $this->lastAction = $resolution->toArray();
-
-        return $resolution;
     }
 
     /**

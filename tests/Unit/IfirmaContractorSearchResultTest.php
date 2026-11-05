@@ -13,7 +13,7 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * IfirmaContractorSearchResult: the immutable answer of IfirmaContractorService::search(), the rows
- * and the message of the failure that used to be read from getLastSearchError().
+ * and the message of the failure that the service used to keep as state between its calls.
  */
 class IfirmaContractorSearchResultTest extends TestCase
 {
