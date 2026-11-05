@@ -29,7 +29,7 @@ Note: controllers use `exit`/`die`/`header()`; those paths cannot be unit-tested
 | `OrderHistory` | `id`, `id_order`, `id_order_state`, `date_add`; `changeIdOrderState()` recorded in `static $changes`; `add()`/`addWithemail()`; registry |
 | `Address` | id, id_customer, firstname, lastname, company, vat_number, dni, address1, address2, postcode, city, id_country, phone, phone_mobile; registry; `save()/add()/update()` append `$this` to `static $saved` (assert it stays empty) |
 | `Customer` | id, email, firstname, lastname, id_lang, is_guest, company, `date_add`, `$logged` (-> `isLogged()`), `isGuest()`, `getAddresses($idLang)` (rows from the Address registry whose `id_customer` matches, lowest id first; all Address props plus `id_address`; `Customer::$addressesHook`, a callable `($idLang, $rows)`, replaces them with its return value, so a test can see the language id, count calls, throw or return a non-array; cleared by `reset()`); registry |
-| `Country` | id, iso_code, name; registry; `getNameById($lang,$id)`, `getByIso($iso)` |
+| `Country` | id, iso_code, name, `active` (default true); registry; `getNameById($lang,$id)`, `getByIso($iso)`, `getCountries($lang, $active = false)` (rows keyed by id with `id_country`, `iso_code`, `name`, `active`, in registration order; `$active` = true leaves out the countries whose `active` is false) |
 | `Currency` | id, iso_code; registry; `getDefaultCurrency()` (registry id 1 or PLN) |
 | `Language` | `static $languages` (default en id 1, pl id 2; a row may carry `'active' => 0`); `getLanguages($active = true)` (leaves out rows with `'active' => 0` when `$active`), `getIsoById()` |
 | `Shop` | `getContextShopID()` = 1; `static $name` |

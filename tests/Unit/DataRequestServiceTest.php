@@ -1428,4 +1428,258 @@ class DataRequestServiceTest extends TestCase
         $this->assertSame('front-token', $vars['ifirma_token']);
         $this->assertTrue($vars['ifirma_eligibility']['allowed']);
     }
+
+    // ---- controller: reading the form, starting it from the address ----------
+
+    /** Sets $fields on top of the invoice address of setUp() (order 15 -> address 3). */
+    private function changeInvoiceAddress(array $fields)
+    {
+        foreach ($fields as $field => $value) {
+            Address::$instances[3]->$field = $value;
+        }
+    }
+
+    /** @return array the form values for the invoice address of setUp(), with $override on top */
+    private function formValues(array $override = array())
+    {
+        return array_merge(array(
+            'want_invoice_for_company' => false,
+            'company' => null,
+            'vat_number' => null,
+            'firstname' => 'Anna',
+            'lastname' => 'Nowak',
+            'address1' => 'Stara 1',
+            'address2' => null,
+            'postcode' => '00-001',
+            'city' => 'Warszawa',
+            'id_country' => 14,
+            'customer_note' => '',
+        ), $override);
+    }
+
+    /**
+     * Fields set on top of the invoice address of setUp() => the values the form starts from.
+     *
+     * @return array
+     */
+    public function invoiceAddresses()
+    {
+        $others = array('firstname' => 'Jan', 'lastname' => 'Kowalski', 'address1' => 'Nowa 5', 'address2' => 'lok. 2',
+            'postcode' => '80-001', 'city' => 'Gdansk', 'id_country' => '14');
+
+        return array(
+            'a private person' => array(array(), $this->formValues()),
+            'a company with a VAT number' => array(
+                array('company' => 'ACME Sp. z o.o.', 'vat_number' => '525-000-12-34', 'dni' => 'not used'),
+                $this->formValues(array('want_invoice_for_company' => true, 'company' => 'ACME Sp. z o.o.', 'vat_number' => '525-000-12-34')),
+            ),
+            'a company with its number in the dni field' => array(
+                array('company' => 'ACME', 'vat_number' => '', 'dni' => '5250001234'),
+                $this->formValues(array('want_invoice_for_company' => true, 'company' => 'ACME', 'vat_number' => '5250001234')),
+            ),
+            'a VAT number of blanks falls back to the dni' => array(
+                array('company' => 'ACME', 'vat_number' => " \t ", 'dni' => '5250001234'),
+                $this->formValues(array('want_invoice_for_company' => true, 'company' => 'ACME', 'vat_number' => '5250001234')),
+            ),
+            'blanks and no dni leave the VAT number null' => array(
+                array('company' => 'ACME', 'vat_number' => '   '),
+                $this->formValues(array('company' => 'ACME')),
+            ),
+            'blanks and a blank dni leave the VAT number empty' => array(
+                array('company' => 'ACME', 'vat_number' => '', 'dni' => ''),
+                $this->formValues(array('company' => 'ACME', 'vat_number' => '')),
+            ),
+            'the VAT number is shown as stored' => array(
+                array('company' => 'ACME', 'vat_number' => ' PL 525-000-12-34 '),
+                $this->formValues(array('want_invoice_for_company' => true, 'company' => 'ACME', 'vat_number' => ' PL 525-000-12-34 ')),
+            ),
+            'a VAT number of 0 is no number' => array(
+                array('company' => 'ACME', 'vat_number' => '0'),
+                $this->formValues(array('company' => 'ACME', 'vat_number' => '0')),
+            ),
+            'an empty company name is no company' => array(
+                array('company' => '', 'vat_number' => '5250001234'),
+                $this->formValues(array('company' => '', 'vat_number' => '5250001234')),
+            ),
+            'a company name of one space is a company' => array(
+                array('company' => ' ', 'vat_number' => '5250001234'),
+                $this->formValues(array('want_invoice_for_company' => true, 'company' => ' ', 'vat_number' => '5250001234')),
+            ),
+            'no company name is no company' => array(
+                array('company' => null, 'vat_number' => '5250001234'),
+                $this->formValues(array('vat_number' => '5250001234')),
+            ),
+            'the other fields are shown as stored' => array($others, $this->formValues($others)),
+        );
+    }
+
+    public function testControllerDoesNothingWhenTheFormWasNotPosted()
+    {
+        $controller = $this->controller();
+        Tools::$values = array('id_order' => 15, 'token' => 'front-token') + $this->companyInput();
+
+        $this->assertNull($controller->postProcess());
+        $this->assertSame(array(), $controller->errors);
+        $this->assertSame(array(), $controller->fieldErrors);
+        $this->assertSame(array(), $controller->submitted);
+        $this->assertSame(array(), IfirmaTestState::objects('ifirma_data_request'));
+    }
+
+    public function testControllerCancelsThePendingRequestAndRedirects()
+    {
+        $request = $this->submitPending();
+        Db::getInstance()->whenGetValue('/SELECT id_ifirma_data_request.*status = "pending"/s', (int) $request->id);
+        IfirmaTestState::clearWrites();
+        $controller = $this->controller();
+        Tools::$values = array('id_order' => 15, 'cancelIfirmaDataRequest' => '1', 'token' => 'front-token') + $this->companyInput();
+        try {
+            $controller->postProcess();
+            $this->fail('expected redirect');
+        } catch (IfirmaTestRedirect $r) {
+            $this->assertStringContainsString('order-detail', $r->getUrl());
+        }
+
+        $writes = IfirmaTestState::writes('ifirma_data_request');
+        $this->assertCount(1, $writes);
+        $this->assertSame('update', $writes[0]['op']);
+        $this->assertSame('cancelled', $writes[0]['row']['status']);
+        $this->assertSame(array(), $controller->errors);
+        $this->assertSame(array(), $controller->submitted);
+    }
+
+    public function testControllerRefusesToCancelWhenNothingIsPending()
+    {
+        $controller = $this->controller();
+        Tools::$values = array('id_order' => 15, 'cancelIfirmaDataRequest' => '1', 'token' => 'front-token');
+        $controller->postProcess();
+
+        $this->assertSame(array('This request is no longer pending.'), $controller->errors);
+        $this->assertSame(array(), $controller->fieldErrors);
+        $this->assertSame(array(), IfirmaTestState::objects('ifirma_data_request'));
+    }
+
+    public function testControllerRemembersEveryFormFieldInFormOrderAndNothingElse()
+    {
+        $controller = $this->controller();
+        Tools::$values = array(
+            'stray' => 'ignored', 'id_order' => 15, 'submitIfirmaDataRequest' => '1', 'token' => 'front-token',
+            'customer_note' => 'Call me', 'city' => 'Gdansk', 'company' => array('Not', 'text'),
+        );
+        $controller->postProcess();
+
+        $this->assertSame(array(
+            'want_invoice_for_company' => false,
+            'company' => array('Not', 'text'),
+            'vat_number' => false,
+            'firstname' => false,
+            'lastname' => false,
+            'address1' => false,
+            'address2' => false,
+            'postcode' => false,
+            'city' => 'Gdansk',
+            'id_country' => false,
+            'customer_note' => 'Call me',
+        ), $controller->submitted);
+        // the service refused exactly this input: a field that was not posted arrives as false
+        $this->assertSame(array('Please correct the highlighted fields.'), $controller->errors);
+        $this->assertSame(array('postcode', 'firstname', 'lastname', 'id_country'), array_keys($controller->fieldErrors));
+        $this->assertSame(array(), IfirmaTestState::objects('ifirma_data_request'));
+    }
+
+    public function testControllerStoresTheRequestFromTheFormFields()
+    {
+        $controller = $this->controller();
+        Tools::$values = array('stray' => 'ignored', 'id_order' => 15, 'submitIfirmaDataRequest' => '1', 'token' => 'front-token')
+            + $this->companyInput();
+        try {
+            $controller->postProcess();
+            $this->fail('expected redirect');
+        } catch (IfirmaTestRedirect $r) {
+            $this->assertStringContainsString('order-detail', $r->getUrl());
+        }
+
+        $this->assertSame($this->companyInput(), $controller->submitted);
+        $writes = IfirmaTestState::writes('ifirma_data_request');
+        $this->assertCount(1, $writes);
+        $this->assertSame('add', $writes[0]['op']);
+        $row = $writes[0]['row'];
+        $this->assertSame(array(
+            'want_invoice_for_company' => true,
+            'company' => 'ACME Sp. z o.o.',
+            'vat_number' => '5250001234',
+            'firstname' => '',
+            'lastname' => '',
+            'address1' => 'Nowa 5',
+            'address2' => '',
+            'postcode' => '00-950',
+            'city' => 'Warszawa',
+            'id_country' => 14,
+        ), json_decode($row['requested_data'], true));
+        $this->assertSame('Please use company data', $row['customer_note']);
+        $this->assertSame('pending', $row['status']);
+        $this->assertSame(15, (int) $row['id_order']);
+        $this->assertSame(7, (int) $row['id_customer']);
+        $this->assertCount(1, Mail::$sent);
+        $this->assertSame('data_request_received', Mail::$sent[0]['template']);
+    }
+
+    public function testControllerRefillsTheFormWithWhatWasSubmitted()
+    {
+        $controller = $this->controller();
+        $posted = $this->companyInput(array('vat_number' => ''));
+        Tools::$values = array('id_order' => 15, 'submitIfirmaDataRequest' => '1', 'token' => 'front-token') + $posted;
+        $controller->postProcess();
+        $controller->initContent();
+
+        $vars = Context::getContext()->smarty->vars;
+        $this->assertSame($posted, $vars['ifirma_values']);
+        $this->assertSame(array('Please correct the highlighted fields.'), $vars['ifirma_errors']);
+        $this->assertSame(array('vat_number'), array_keys($vars['ifirma_field_errors']));
+    }
+
+    /**
+     * @dataProvider invoiceAddresses
+     */
+    public function testControllerStartsTheFormFromTheInvoiceAddress(array $address, array $expected)
+    {
+        $this->changeInvoiceAddress($address);
+        $controller = $this->controller();
+        Tools::$values = array('id_order' => 15);
+        $controller->initContent();
+
+        $vars = Context::getContext()->smarty->vars;
+        $this->assertSame($expected, $vars['ifirma_values']);
+        $this->assertSame(3, $vars['ifirma_address']->id);
+        $this->assertSame(array(), Address::$saved);
+    }
+
+    public function testControllerOffersTheActiveCountriesOnly()
+    {
+        Country::$instances[14]->name = 'Polska';
+        $closed = new Country();
+        $closed->id = 15;
+        $closed->iso_code = 'XX';
+        $closed->active = false;
+        Country::register($closed);
+        $controller = $this->controller();
+        Tools::$values = array('id_order' => 15);
+        $controller->initContent();
+
+        $this->assertSame(
+            array(14 => array('id_country' => 14, 'iso_code' => 'PL', 'name' => 'Polska', 'active' => 1)),
+            Context::getContext()->smarty->vars['ifirma_countries']
+        );
+    }
+
+    public function testControllerBuildsItsServiceOnce()
+    {
+        $controller = $this->controller();
+        $service = new ReflectionMethod($controller, 'service');
+        $service->setAccessible(true);
+
+        $first = $service->invoke($controller);
+
+        $this->assertInstanceOf('IfirmaDataRequestService', $first);
+        $this->assertSame($first, $service->invoke($controller));
+    }
 }

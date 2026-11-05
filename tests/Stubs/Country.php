@@ -16,10 +16,29 @@ class Country
     public $id;
     public $iso_code;
     public $name;
+    /** @var bool|int a country that is switched off is left out by getCountries($idLang, true) */
+    public $active = true;
 
     public function __construct($id = null, $idLang = null)
     {
         $this->loadFromRegistry($id);
+    }
+
+    /**
+     * Like core: the countries as rows keyed by id_country (id_country, iso_code, name, active),
+     * in the order they were registered; $active = true leaves out the ones that are switched
+     * off. The language does not change the rows.
+     */
+    public static function getCountries($idLang, $active = false, $containStates = false, $listStates = true)
+    {
+        $rows = [];
+        foreach (self::$instances as $id => $c) {
+            if (!$active || $c->active) {
+                $rows[$id] = ['id_country' => $id, 'iso_code' => $c->iso_code, 'name' => $c->name, 'active' => (int) $c->active];
+            }
+        }
+
+        return $rows;
     }
 
     public static function getNameById($idLang, $idCountry)
