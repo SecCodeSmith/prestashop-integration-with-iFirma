@@ -44,12 +44,38 @@ No task starts on a red tree. Each task is one commit straight on master, with n
 
 ## 3. AdminActions error guard (Tier 1)
 
-- [ ] 3.1 Characterise the failure path of each of the 15 guarded actions: each needs a test where the service throws and the action returns the `failure()` shape. Add any that AdminActionsTest lacks. Verify that they pass on unchanged code.
-- [ ] 3.2 Introduce `guard(callable)` with a single `Throwable` catch, apply it to all 15 actions and to the pair at `ifirma.php:~1455`. Verify that `grep -c "catch (Exception" classes/IfirmaAdminActions.php` returns 0, the suite is green, and diff-cover is at 100%.
+- [x] 3.1 Characterise the failure path of each of the 15 guarded actions: each needs a test where the service throws and the action returns the `failure()` shape. Add any that AdminActionsTest lacks. Verify that they pass on unchanged code. Evidence, characterisation commit `4b3cff0`, which passes on base:
+  - `ErrorGuardTest` adds 44 tests. Every action answers the exact failure envelope for an Exception and for an Error. The order-status hook logs its failure instead of throwing.
+  - It also pins every other line of the 15 action bodies that no test reached, as D1 requires.
+  - Added at integration: `rejectRequest`'s own `reason_required` answer as an exact envelope. A mutant that routed it through the guard used to survive and now fails.
+  - Added at integration: the settings page's API limit box when the limit request throws (an Exception and an Error).
+- [x] 3.2 Introduce `guard(callable)` with a single `Throwable` catch, apply it to all 15 actions and to the pair at `ifirma.php:~1455`. Verify that `grep -c "catch (Exception" classes/IfirmaAdminActions.php` returns 0, the suite is green, and diff-cover is at 100%. Evidence, refactor commit `fcbf782`:
+  - Each action body now sits in `return $this->guard(function () use (...) { ... });`. The opener replaces the `try {` line at the same indentation, so the bodies keep their indent.
+  - `rejectRequest` keeps an inner catch for its own `reason_required` answer and rethrows any other refusal to the guard.
+  - Both remaining dual pairs in `ifirma.php` are now a single `Throwable` catch: the order-status hook, as the task names, and the limit box in `renderLimitBox()`, the same duplication, added at integration.
+  - `grep -c "catch (Exception" classes/IfirmaAdminActions.php` returns 0, and `ifirma.php` has no dual pair left.
+  - Gate against `bb9fc16`: `OK (1280 tests)`, 47 changed lines, 100%.
 
 ## 4. Match labels (Tier 1)
 
-- [ ] 4.1 List every code where `ifirma.php::matchedByLabel` and `IfirmaAdminActions::matchedByLabel` word labels differently, and get the user's choice for each. Verify that the decisions are recorded in this task's notes.
+- [x] 4.1 List every code where `ifirma.php::matchedByLabel` and `IfirmaAdminActions::matchedByLabel` word labels differently, and get the user's choice for each. Verify that the decisions are recorded in this task's notes. Decision, 2026-11-05: the user chose the long, module-file wording everywhere, as design D6 proposes.
+
+  Codes worded the same in both maps: `nip` (NIP), `name` (name / nazwa), `email` (e-mail) and `manual` (manual link / powiązanie ręczne).
+
+  Codes that differ:
+
+  | Code | Module file (panels) | AdminActions (note) |
+  |---|---|---|
+  | `import-nip` | "import, NIP" | "NIP" |
+  | `import-email` | "import, e-mail" | "e-mail" |
+  | `import-name` | "import, name and postcode" (PL "import, nazwa i kod pocztowy") | "name" |
+  | `document` | "attached by iFirma to an issued document" (PL "przypisany przez iFirma do wystawionego dokumentu") | "issued document" (PL "wystawiony dokument") |
+  | `module` | "module contractor" | its default, but never reached there, because the note's code list excludes `module` |
+  | unknown | the raw code | "manual link" |
+
+  Every variant already has a Polish translation. The order panel already prints the long forms after "matched by:".
+
+  The only visible change is in the AdminActions note "linked to existing contractor %s (matched by %s)" (PL "… (dopasowanie: %s)"): it now reads, for example, "dopasowanie: import, NIP" instead of "dopasowanie: NIP". The panels do not change.
 - [ ] 4.2 Characterise both label paths, plus `contractorActionLabel`, which has no direct test today: one test per code. Verify that they pass on unchanged code.
 - [ ] 4.3 Introduce `IfirmaMatchLabels` (design D6), keyed by `IfirmaContractorMap::BY_*`. Replace both methods and the hard-coded match-code lists (`ifirma.php:~984`, `IfirmaAdminActions.php:~376`). Verify that the suite is green, `TranslationCoverageTest` is green, and diff-cover is at 100%.
 
@@ -76,6 +102,10 @@ No task starts on a red tree. Each task is one commit straight on master, with n
   - `HttpStatusTest` pins all of this; `HTTP/1.1 200 OK` and `HTTP/1.1 403 Forbidden` are unchanged.
   - The `cron.php` diff is exactly the new `require_once` and the `header()` line.
   - Gate against `8e565fb`: `OK (1129 tests)`, 5 changed lines, 100%.
+  - End to end on the local test-stack shop (master `bb9fc16`, port 8099):
+    - The cron URL with a wrong token answers `HTTP/1.1 403 Forbidden` and `{"error":"Forbidden"}`.
+    - With the real `IFIRMA_CRON_TOKEN` it answers `HTTP/1.1 200 OK` and the JSON sync summary.
+    - This is the proof for the gate-exempt `respond()`. The smoke script's own HTTP check skips here, because `localhost` inside the container redirects.
 
 ## 7. Schema helper (Tier 1)
 
@@ -99,7 +129,20 @@ No task starts on a red tree. Each task is one commit straight on master, with n
   - The methods only set fields and never save. They were derived from today's callers, which task 9.2 will switch over.
   - Messages are stored as given: null and an integer were added at integration, because ReceiptService stores iFirma's `Informacja` raw. A `(string)` cast mutant now fails.
   - Gate against `0d2a0ca`: `OK (1207 tests)`, 9 changed lines, 100%.
-- [ ] 9.2 Replace the field-by-field status mutations in ReceiptService (`~253-265`), Pipeline (`ensureRow`/`fail`), DeliveryService and StatusSyncService (`applyRow`) with the intent methods, keeping the existing `save()` calls. Verify that the suite is green, the number of `save()` calls per path is unchanged (asserted in the existing Db stub tests where available), and diff-cover is at 100%.
+- [x] 9.2 Replace the field-by-field status mutations in ReceiptService (`~253-265`), Pipeline (`ensureRow`/`fail`), DeliveryService and StatusSyncService (`applyRow`) with the intent methods, keeping the existing `save()` calls. Verify that the suite is green, the number of `save()` calls per path is unchanged (asserted in the existing Db stub tests where available), and diff-cover is at 100%.
+
+  Scope, decided by the lead:
+  - Only design D8's four methods are used.
+  - `StatusSyncService::applyRow` stays unchanged, because it only writes the paid status, which none of the four covers. The same goes for `ensureRow()`, which sets no status.
+  - The pipeline's error sites set the error status only for a new row, so they became `if ($isNew) markError() else last_error = …`.
+  - `delivered_at` stays an explicit assignment next to `recordDelivery()`.
+  - `DuplicateGuard::adopt()`'s delivery triple was included as well.
+  - Left for later: `markPaid`, or a `markSuspected` for the duplicate guard.
+
+  Evidence:
+  - Characterisation `98644a8` passes on base. It pins the fields and the number of writes on every path: the ObjectModel stub now logs each persisted add or update, and `IfirmaTestState::writes()` reads that log.
+  - Added at integration: a failed shop-mail fallback records `shop_mail_fallback`. A mutant recording the configured channel used to survive and now fails.
+  - Refactor `b7f281e`. Gate against `fcbf782`: `OK (1307 tests)`, 14 changed lines, 100%.
 
 ## 10. IfirmaDataRequest approve/reject (Tier 2)
 
@@ -112,8 +155,20 @@ No task starts on a red tree. Each task is one commit straight on master, with n
 
 ## 11. Data-request notifier (Tier 2)
 
-- [ ] 11.1 Characterise `notifyMerchant` and `notifyCustomer` (template name, recipient, language fallback, and the return value when Mail fails) using the Mail stub. Verify that they pass on unchanged code.
-- [ ] 11.2 Extract `IfirmaDataRequestNotifier` (design D10) and inject it into the service, defaulting in `build()`. Move the characterisation tests onto the notifier, and add service tests using a recording fake for approve, reject and notify calls. Verify that `git grep -n "Mail::Send" classes/IfirmaDataRequestService.php` is empty, the suite is green, and diff-cover is at 100%.
+- [x] 11.1 Characterise `notifyMerchant` and `notifyCustomer` (template name, recipient, language fallback, and the return value when Mail fails) using the Mail stub. Verify that they pass on unchanged code. Evidence, characterisation commit `5cc6b6a`, which passes on base:
+  - It pins the five uncovered lines: a merchant with no address, a failing admin link, a customer without an address, and the context-language fallback.
+  - It also pins everything around them: the template, recipient, shop and language of each mail (the order language, then English, then the context), every variable and its escaping, the subjects with their translator source, and the `false` returned when Mail fails.
+- [x] 11.2 Extract `IfirmaDataRequestNotifier` (design D10) and inject it into the service, defaulting in `build()`. Move the characterisation tests onto the notifier, and add service tests using a recording fake for approve, reject and notify calls. Verify that `git grep -n "Mail::Send" classes/IfirmaDataRequestService.php` is empty, the suite is green, and diff-cover is at 100%. Evidence, refactor commit `a5f5d61`:
+  - The notifier owns the templates, the merchant address, the language choice and the mail call.
+  - The service still composes the subjects and variables, so every `l()` literal stays in place under the same source.
+  - The notifier is an optional third constructor argument, so `build()` and the direct constructor calls are unchanged.
+  - The delivery tests moved to `IfirmaDataRequestNotifierTest`. The service tests use a recording notifier.
+  - The grep for `Mail::Send` in the service is empty.
+  - Gate against `b7f281e`: `OK (1369 tests)`, 54 changed lines, 100%.
+
+  Wave 2 as a whole (tasks 3, 9.2 and 11):
+  - Gate against `bb9fc16`: 1369 tests, 115 changed lines, 100%. The PHP 7.2 lint is clean.
+  - The end-to-end smoke (`tests/smoke/run.php` in the PrestaShop 8.1 container against the mock) gives `passed 90, failed 0, skipped 1`. That is the same list of checks with the same verdicts as the run on `bb9fc16` before the wave. The skip is the in-container cron HTTP check; it is covered under task 6.1.
 
 ## 12. Delivery result object (Tier 2)
 
