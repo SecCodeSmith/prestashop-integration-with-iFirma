@@ -1,0 +1,576 @@
+{
+  "provenance": "Written on 2026-11-05 from Ifirma::postProcessConfiguration() as of commit d708c46 and confirmed by running it, before the IfirmaSettings table replaced its checks (refactor-srp-splits 7.2). 'valid' is the request the settings form sends when everything is right, and the Configuration::updateValue() calls the save makes for it, in order, type for type. A scenario changes that request ('change'; a null removes the field) or replaces it ('post'), and lists the calls it must cause ('writes') or only those whose value differs from the valid ones ('writes_as_valid'). A request with a validation error writes nothing. 'notice' is what the page shows above the form. A value {\"repeat\": s, \"times\": n} stands for s repeated n times. Change this file only when the settings behaviour is changed on purpose.",
+  "employees": [
+    {"id": 0, "firstname": "Nobody", "lastname": "Zero", "active": 1},
+    {"id": 3, "firstname": "Anna", "lastname": "Nowak", "active": 1},
+    {"id": 4, "firstname": "Ewa", "lastname": "Adamska", "active": 1},
+    {"id": 5, "firstname": "Olek", "lastname": "Zielinski", "active": 0}
+  ],
+  "valid": {
+    "post": {
+      "submitIfirma": "1",
+      "IFIRMA_BASE_URL": "https://sandbox.ifirma.example/iapi/",
+      "IFIRMA_USER": "firma@example.test",
+      "IFIRMA_KEY_FAKTURA": "0123456789abcdef0123456789abcdef",
+      "IFIRMA_KEY_ABONENT": "fedcba9876543210fedcba9876543210",
+      "IFIRMA_KEY_RACHUNEK": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+      "IFIRMA_DOC_TYPE": "fakturakraj",
+      "IFIRMA_SIGNATURE_TYPE": "UPO",
+      "IFIRMA_PAYMENT_METHOD": "KAR",
+      "IFIRMA_PAYMENT_METHOD_MODE": "fixed",
+      "IFIRMA_PAYMENT_METHOD_MAP": "ps_wirepayment=PRZ\nmygateway*=ELE",
+      "IFIRMA_CONTRACTOR_SYNC": "1",
+      "IFIRMA_PAYMENT_TYPE_TOKEN": "prz_faktura_kraj",
+      "IFIRMA_DEFAULT_UNIT": "szt.",
+      "IFIRMA_AUTO_CREATE_STATE": "7",
+      "IFIRMA_MARK_PAID_ON_CREATE": "0",
+      "IFIRMA_SEND_CHANNEL": "ifirma_mail",
+      "IFIRMA_SEND_TEXT": "Dziękujemy za zakupy.",
+      "IFIRMA_SEND_COPY_MODE": "employee",
+      "IFIRMA_SEND_COPY_EMPLOYEE": "3",
+      "IFIRMA_KSEF_MODE": "all",
+      "IFIRMA_DUPLICATE_CHECK": "1",
+      "IFIRMA_DUPLICATE_WINDOW_DAYS": "45",
+      "IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "0,05",
+      "IFIRMA_ALLOW_DATA_REQUEST": "0",
+      "IFIRMA_NOTIFY_EMAIL": "biuro@example.test",
+      "IFIRMA_SYNC_INTERVAL_MIN": "30",
+      "IFIRMA_CRON_MAX_CALLS": "20",
+      "IFIRMA_RATE_MAX_PER_MIN": "60"
+    },
+    "writes": [
+      ["IFIRMA_BASE_URL", "https://sandbox.ifirma.example/iapi/"],
+      ["IFIRMA_USER", "firma@example.test"],
+      ["IFIRMA_KEY_FAKTURA", "0123456789abcdef0123456789abcdef"],
+      ["IFIRMA_KEY_ABONENT", "fedcba9876543210fedcba9876543210"],
+      ["IFIRMA_KEY_RACHUNEK", "a1b2c3d4e5f60718293a4b5c6d7e8f90"],
+      ["IFIRMA_DOC_TYPE", "fakturakraj"],
+      ["IFIRMA_SIGNATURE_TYPE", "UPO"],
+      ["IFIRMA_PAYMENT_METHOD", "KAR"],
+      ["IFIRMA_PAYMENT_METHOD_MODE", "fixed"],
+      ["IFIRMA_PAYMENT_METHOD_MAP", "ps_wirepayment=PRZ\nmygateway*=ELE"],
+      ["IFIRMA_CONTRACTOR_SYNC", 1],
+      ["IFIRMA_PAYMENT_TYPE_TOKEN", "prz_faktura_kraj"],
+      ["IFIRMA_DEFAULT_UNIT", "szt."],
+      ["IFIRMA_AUTO_CREATE_STATE", 7],
+      ["IFIRMA_MARK_PAID_ON_CREATE", 0],
+      ["IFIRMA_SEND_CHANNEL", "ifirma_mail"],
+      ["IFIRMA_SEND_TEXT", "Dziękujemy za zakupy."],
+      ["IFIRMA_SEND_COPY_MODE", "employee"],
+      ["IFIRMA_SEND_COPY_EMPLOYEE", 3],
+      ["IFIRMA_KSEF_MODE", "all"],
+      ["IFIRMA_DUPLICATE_CHECK", 1],
+      ["IFIRMA_DUPLICATE_WINDOW_DAYS", 45],
+      ["IFIRMA_DUPLICATE_AMOUNT_TOLERANCE", "0.05"],
+      ["IFIRMA_ALLOW_DATA_REQUEST", 0],
+      ["IFIRMA_NOTIFY_EMAIL", "biuro@example.test"],
+      ["IFIRMA_SYNC_INTERVAL_MIN", 30],
+      ["IFIRMA_CRON_MAX_CALLS", 20],
+      ["IFIRMA_RATE_MAX_PER_MIN", 60]
+    ]
+  },
+  "scenarios": [
+    {
+      "name": "fully valid request",
+      "change": {},
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {}
+    },
+    {
+      "name": "switches and selects set the other way round",
+      "change": {
+        "IFIRMA_PAYMENT_METHOD_MODE": "order",
+        "IFIRMA_MARK_PAID_ON_CREATE": "1",
+        "IFIRMA_SEND_CHANNEL": "none",
+        "IFIRMA_SEND_COPY_MODE": "shop",
+        "IFIRMA_SEND_COPY_EMPLOYEE": "0",
+        "IFIRMA_KSEF_MODE": "off",
+        "IFIRMA_DUPLICATE_CHECK": "0"
+      },
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {
+        "IFIRMA_PAYMENT_METHOD_MODE": "order",
+        "IFIRMA_MARK_PAID_ON_CREATE": 1,
+        "IFIRMA_SEND_CHANNEL": "none",
+        "IFIRMA_SEND_COPY_MODE": "shop",
+        "IFIRMA_SEND_COPY_EMPLOYEE": 0,
+        "IFIRMA_KSEF_MODE": "off",
+        "IFIRMA_DUPLICATE_CHECK": 0
+      }
+    },
+    {
+      "name": "minimal request: only the fields the checks need",
+      "post": {
+        "submitIfirma": "1",
+        "IFIRMA_USER": "firma@example.test",
+        "IFIRMA_PAYMENT_METHOD": "PRZ",
+        "IFIRMA_PAYMENT_METHOD_MODE": "order",
+        "IFIRMA_DUPLICATE_WINDOW_DAYS": "30",
+        "IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "0",
+        "IFIRMA_SYNC_INTERVAL_MIN": "15",
+        "IFIRMA_CRON_MAX_CALLS": "10",
+        "IFIRMA_RATE_MAX_PER_MIN": "60"
+      },
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes": [
+        ["IFIRMA_BASE_URL", "https://www.ifirma.pl/iapi/"],
+        ["IFIRMA_USER", "firma@example.test"],
+        ["IFIRMA_KEY_FAKTURA", ""],
+        ["IFIRMA_KEY_ABONENT", ""],
+        ["IFIRMA_KEY_RACHUNEK", ""],
+        ["IFIRMA_DOC_TYPE", "fakturakraj"],
+        ["IFIRMA_SIGNATURE_TYPE", "BPO"],
+        ["IFIRMA_PAYMENT_METHOD", "PRZ"],
+        ["IFIRMA_PAYMENT_METHOD_MODE", "order"],
+        ["IFIRMA_PAYMENT_METHOD_MAP", ""],
+        ["IFIRMA_CONTRACTOR_SYNC", 0],
+        ["IFIRMA_PAYMENT_TYPE_TOKEN", ""],
+        ["IFIRMA_DEFAULT_UNIT", false],
+        ["IFIRMA_AUTO_CREATE_STATE", 0],
+        ["IFIRMA_MARK_PAID_ON_CREATE", 0],
+        ["IFIRMA_SEND_CHANNEL", "shop_mail"],
+        ["IFIRMA_SEND_TEXT", ""],
+        ["IFIRMA_SEND_COPY_MODE", "none"],
+        ["IFIRMA_SEND_COPY_EMPLOYEE", 0],
+        ["IFIRMA_KSEF_MODE", "b2b"],
+        ["IFIRMA_DUPLICATE_CHECK", 0],
+        ["IFIRMA_DUPLICATE_WINDOW_DAYS", 30],
+        ["IFIRMA_DUPLICATE_AMOUNT_TOLERANCE", "0"],
+        ["IFIRMA_ALLOW_DATA_REQUEST", 0],
+        ["IFIRMA_NOTIFY_EMAIL", ""],
+        ["IFIRMA_SYNC_INTERVAL_MIN", 15],
+        ["IFIRMA_CRON_MAX_CALLS", 10],
+        ["IFIRMA_RATE_MAX_PER_MIN", 60]
+      ]
+    },
+    {
+      "name": "optional fields posted empty",
+      "change": {
+        "IFIRMA_BASE_URL": "   ",
+        "IFIRMA_KEY_FAKTURA": "",
+        "IFIRMA_KEY_ABONENT": "",
+        "IFIRMA_KEY_RACHUNEK": "",
+        "IFIRMA_PAYMENT_METHOD_MAP": "",
+        "IFIRMA_PAYMENT_TYPE_TOKEN": "",
+        "IFIRMA_DEFAULT_UNIT": "",
+        "IFIRMA_SEND_TEXT": "",
+        "IFIRMA_NOTIFY_EMAIL": ""
+      },
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {
+        "IFIRMA_BASE_URL": "https://www.ifirma.pl/iapi/",
+        "IFIRMA_KEY_FAKTURA": "",
+        "IFIRMA_KEY_ABONENT": "",
+        "IFIRMA_KEY_RACHUNEK": "",
+        "IFIRMA_PAYMENT_METHOD_MAP": "",
+        "IFIRMA_PAYMENT_TYPE_TOKEN": "",
+        "IFIRMA_DEFAULT_UNIT": "",
+        "IFIRMA_SEND_TEXT": "",
+        "IFIRMA_NOTIFY_EMAIL": ""
+      }
+    },
+    {
+      "name": "padded request: which fields are trimmed",
+      "change": {
+        "IFIRMA_BASE_URL": "  https://sandbox.ifirma.example/iapi/  ",
+        "IFIRMA_USER": "  firma@example.test  ",
+        "IFIRMA_KEY_FAKTURA": "  0123456789abcdef0123456789abcdef  ",
+        "IFIRMA_KEY_ABONENT": "  fedcba9876543210fedcba9876543210  ",
+        "IFIRMA_KEY_RACHUNEK": "  a1b2c3d4e5f60718293a4b5c6d7e8f90  ",
+        "IFIRMA_DOC_TYPE": "  fakturakraj  ",
+        "IFIRMA_SIGNATURE_TYPE": "  upo  ",
+        "IFIRMA_PAYMENT_METHOD": "  kar  ",
+        "IFIRMA_PAYMENT_METHOD_MODE": "  fixed  ",
+        "IFIRMA_PAYMENT_TYPE_TOKEN": "  prz_faktura_kraj  ",
+        "IFIRMA_DEFAULT_UNIT": "  szt.  ",
+        "IFIRMA_AUTO_CREATE_STATE": " 7 ",
+        "IFIRMA_SEND_CHANNEL": "  ifirma_mail  ",
+        "IFIRMA_SEND_TEXT": "  Dziękujemy za zakupy.  ",
+        "IFIRMA_SEND_COPY_MODE": " employee ",
+        "IFIRMA_SEND_COPY_EMPLOYEE": " 3 ",
+        "IFIRMA_KSEF_MODE": " ALL ",
+        "IFIRMA_DUPLICATE_WINDOW_DAYS": " 45 ",
+        "IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": " 0,05 ",
+        "IFIRMA_NOTIFY_EMAIL": "  biuro@example.test  ",
+        "IFIRMA_SYNC_INTERVAL_MIN": " 30 ",
+        "IFIRMA_CRON_MAX_CALLS": " 20 ",
+        "IFIRMA_RATE_MAX_PER_MIN": " 60 "
+      },
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {
+        "IFIRMA_DEFAULT_UNIT": "  szt.  ",
+        "IFIRMA_SEND_COPY_MODE": "none"
+      }
+    },
+    {
+      "name": "unknown selections fall back to their defaults",
+      "change": {
+        "IFIRMA_DOC_TYPE": "fakturaparagon",
+        "IFIRMA_SIGNATURE_TYPE": "xyz",
+        "IFIRMA_SEND_CHANNEL": "carrier_pigeon",
+        "IFIRMA_SEND_COPY_MODE": "everyone",
+        "IFIRMA_KSEF_MODE": "whenever"
+      },
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {
+        "IFIRMA_SIGNATURE_TYPE": "BPO",
+        "IFIRMA_SEND_CHANNEL": "shop_mail",
+        "IFIRMA_SEND_COPY_MODE": "none",
+        "IFIRMA_KSEF_MODE": "b2b"
+      }
+    },
+    {
+      "name": "payment map is normalised",
+      "change": {
+        "IFIRMA_PAYMENT_METHOD_MAP": "  PS_CheckPayment = prz \r\n\r\n# comment\r\nMyGateway* = ele\rps_checkpayment=GTK"
+      },
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {
+        "IFIRMA_PAYMENT_METHOD_MAP": "ps_checkpayment=GTK\nmygateway*=ELE"
+      }
+    },
+    {
+      "name": "payment map of comments and blanks is stored empty",
+      "change": {
+        "IFIRMA_PAYMENT_METHOD_MAP": "  \r\n# only a comment\r\n\t\n"
+      },
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {
+        "IFIRMA_PAYMENT_METHOD_MAP": ""
+      }
+    },
+    {
+      "name": "send text is cut at 1000 characters, not bytes",
+      "change": {
+        "IFIRMA_SEND_TEXT": {"repeat": "ą", "times": 1001}
+      },
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {
+        "IFIRMA_SEND_TEXT": {"repeat": "ą", "times": 1000}
+      }
+    },
+    {
+      "name": "send text is stored as typed, markup and quotes included",
+      "change": {"IFIRMA_SEND_TEXT": "<b>Dziękujemy</b> & \"zapraszamy\""},
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {"IFIRMA_SEND_TEXT": "<b>Dziękujemy</b> & \"zapraszamy\""}
+    },
+    {
+      "name": "employee id with padding is accepted",
+      "change": {"IFIRMA_SEND_COPY_EMPLOYEE": " 3 "},
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {}
+    },
+    {
+      "name": "numbers with leading zeros",
+      "change": {
+        "IFIRMA_DUPLICATE_WINDOW_DAYS": "030",
+        "IFIRMA_SYNC_INTERVAL_MIN": "05"
+      },
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {
+        "IFIRMA_DUPLICATE_WINDOW_DAYS": 30,
+        "IFIRMA_SYNC_INTERVAL_MIN": 5
+      }
+    },
+    {
+      "name": "lowest allowed numbers",
+      "change": {
+        "IFIRMA_DUPLICATE_WINDOW_DAYS": "1",
+        "IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "0",
+        "IFIRMA_SYNC_INTERVAL_MIN": "1",
+        "IFIRMA_CRON_MAX_CALLS": "1",
+        "IFIRMA_RATE_MAX_PER_MIN": "1"
+      },
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {
+        "IFIRMA_DUPLICATE_WINDOW_DAYS": 1,
+        "IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "0",
+        "IFIRMA_SYNC_INTERVAL_MIN": 1,
+        "IFIRMA_CRON_MAX_CALLS": 1,
+        "IFIRMA_RATE_MAX_PER_MIN": 1
+      }
+    },
+    {
+      "name": "highest allowed numbers",
+      "change": {
+        "IFIRMA_DUPLICATE_WINDOW_DAYS": "365",
+        "IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "1234.56789",
+        "IFIRMA_SYNC_INTERVAL_MIN": "1440",
+        "IFIRMA_CRON_MAX_CALLS": "90",
+        "IFIRMA_RATE_MAX_PER_MIN": "100"
+      },
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {
+        "IFIRMA_DUPLICATE_WINDOW_DAYS": 365,
+        "IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "1234.5679",
+        "IFIRMA_SYNC_INTERVAL_MIN": 1440,
+        "IFIRMA_CRON_MAX_CALLS": 90,
+        "IFIRMA_RATE_MAX_PER_MIN": 100
+      }
+    },
+    {
+      "name": "tolerance padded with a NUL byte (the only way to see its trim on PHP 8)",
+      "change": {"IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": " 0,05\u0000"},
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {}
+    },
+    {
+      "name": "tolerance 10 keeps its zero",
+      "change": {"IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "10"},
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {"IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "10"}
+    },
+    {
+      "name": "tolerance 1.50 loses its trailing zero",
+      "change": {"IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "1.50"},
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {"IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "1.5"}
+    },
+    {
+      "name": "tolerance .5 gains a leading zero",
+      "change": {"IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": ".5"},
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {"IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "0.5"}
+    },
+    {
+      "name": "tolerance below four decimals rounds to 0",
+      "change": {"IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "0.00004"},
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {"IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "0"}
+    },
+    {
+      "name": "tolerance in exponent form",
+      "change": {"IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "1e2"},
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {"IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "100"}
+    },
+    {
+      "name": "switch values are cast to 0 or 1, the paid mark only to an integer",
+      "change": {
+        "IFIRMA_CONTRACTOR_SYNC": "2",
+        "IFIRMA_MARK_PAID_ON_CREATE": "2",
+        "IFIRMA_DUPLICATE_CHECK": " 0 ",
+        "IFIRMA_ALLOW_DATA_REQUEST": "yes"
+      },
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {
+        "IFIRMA_CONTRACTOR_SYNC": 1,
+        "IFIRMA_MARK_PAID_ON_CREATE": 2,
+        "IFIRMA_DUPLICATE_CHECK": 1,
+        "IFIRMA_ALLOW_DATA_REQUEST": 1
+      }
+    },
+    {
+      "name": "contractor sync switched off",
+      "change": {"IFIRMA_CONTRACTOR_SYNC": "0"},
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {"IFIRMA_CONTRACTOR_SYNC": 0}
+    },
+    {
+      "name": "order state values are cast like PHP casts them",
+      "change": {
+        "IFIRMA_AUTO_CREATE_STATE": "2.9",
+        "IFIRMA_MARK_PAID_ON_CREATE": "7abc"
+      },
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {
+        "IFIRMA_AUTO_CREATE_STATE": 2,
+        "IFIRMA_MARK_PAID_ON_CREATE": 7
+      }
+    },
+    {
+      "name": "login is blank",
+      "change": {"IFIRMA_USER": "   "},
+      "notice": "<error>The iFirma login is required.</error>",
+      "writes": []
+    },
+    {
+      "name": "login is missing from the request",
+      "change": {"IFIRMA_USER": null},
+      "notice": "<error>The iFirma login is required.</error>",
+      "writes": []
+    },
+    {
+      "name": "invoice key is not hexadecimal",
+      "change": {"IFIRMA_KEY_FAKTURA": "not-a-hex-key"},
+      "notice": "<error>The invoice API key must be a hexadecimal string.</error>",
+      "writes": []
+    },
+    {
+      "name": "employee copy without an employee, even when an active employee has id 0",
+      "change": {"IFIRMA_SEND_COPY_EMPLOYEE": "0"},
+      "notice": "<error>Choose an active employee for the delivery copy.</error>",
+      "writes": []
+    },
+    {
+      "name": "employee copy for an unknown employee",
+      "change": {"IFIRMA_SEND_COPY_EMPLOYEE": "99"},
+      "notice": "<error>Choose an active employee for the delivery copy.</error>",
+      "writes": []
+    },
+    {
+      "name": "employee copy for an inactive employee",
+      "change": {"IFIRMA_SEND_COPY_EMPLOYEE": "5"},
+      "notice": "<error>Choose an active employee for the delivery copy.</error>",
+      "writes": []
+    },
+    {
+      "name": "duplicate window above 365",
+      "change": {"IFIRMA_DUPLICATE_WINDOW_DAYS": "366"},
+      "notice": "<error>The duplicate-check window must be a whole number of days between 1 and 365.</error>",
+      "writes": []
+    },
+    {
+      "name": "duplicate window below 1",
+      "change": {"IFIRMA_DUPLICATE_WINDOW_DAYS": "0"},
+      "notice": "<error>The duplicate-check window must be a whole number of days between 1 and 365.</error>",
+      "writes": []
+    },
+    {
+      "name": "duplicate window with decimals",
+      "change": {"IFIRMA_DUPLICATE_WINDOW_DAYS": "12.5"},
+      "notice": "<error>The duplicate-check window must be a whole number of days between 1 and 365.</error>",
+      "writes": []
+    },
+    {
+      "name": "duplicate window in exponent form",
+      "change": {"IFIRMA_DUPLICATE_WINDOW_DAYS": "1e2"},
+      "notice": "<error>The duplicate-check window must be a whole number of days between 1 and 365.</error>",
+      "writes": []
+    },
+    {
+      "name": "duplicate window empty",
+      "change": {"IFIRMA_DUPLICATE_WINDOW_DAYS": ""},
+      "notice": "<error>The duplicate-check window must be a whole number of days between 1 and 365.</error>",
+      "writes": []
+    },
+    {
+      "name": "tolerance below 0",
+      "change": {"IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "-1"},
+      "notice": "<error>The amount tolerance must be a number greater than or equal to 0.</error>",
+      "writes": []
+    },
+    {
+      "name": "tolerance is text",
+      "change": {"IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "abc"},
+      "notice": "<error>The amount tolerance must be a number greater than or equal to 0.</error>",
+      "writes": []
+    },
+    {
+      "name": "tolerance empty",
+      "change": {"IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": ""},
+      "notice": "<error>The amount tolerance must be a number greater than or equal to 0.</error>",
+      "writes": []
+    },
+    {
+      "name": "tolerance with two separators",
+      "change": {"IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "1.2.3"},
+      "notice": "<error>The amount tolerance must be a number greater than or equal to 0.</error>",
+      "writes": []
+    },
+    {
+      "name": "notification address is not an e-mail",
+      "change": {"IFIRMA_NOTIFY_EMAIL": "not-an-email"},
+      "notice": "<error>The notification e-mail address is not valid.</error>",
+      "writes": []
+    },
+    {
+      "name": "sync interval above 1440",
+      "change": {"IFIRMA_SYNC_INTERVAL_MIN": "1441"},
+      "notice": "<error>The sync interval must be a whole number of minutes between 1 and 1440.</error>",
+      "writes": []
+    },
+    {
+      "name": "sync interval below 1",
+      "change": {"IFIRMA_SYNC_INTERVAL_MIN": "0"},
+      "notice": "<error>The sync interval must be a whole number of minutes between 1 and 1440.</error>",
+      "writes": []
+    },
+    {
+      "name": "cron budget above 90",
+      "change": {"IFIRMA_CRON_MAX_CALLS": "91"},
+      "notice": "<error>The cron call budget must be a whole number between 1 and 90.</error>",
+      "writes": []
+    },
+    {
+      "name": "cron budget below 1",
+      "change": {"IFIRMA_CRON_MAX_CALLS": "0"},
+      "notice": "<error>The cron call budget must be a whole number between 1 and 90.</error>",
+      "writes": []
+    },
+    {
+      "name": "rate limit above 100",
+      "change": {"IFIRMA_RATE_MAX_PER_MIN": "101"},
+      "notice": "<error>The API rate limit must be a whole number between 1 and 100 calls per minute.</error>",
+      "writes": []
+    },
+    {
+      "name": "rate limit below 1",
+      "change": {"IFIRMA_RATE_MAX_PER_MIN": "0"},
+      "notice": "<error>The API rate limit must be a whole number between 1 and 100 calls per minute.</error>",
+      "writes": []
+    },
+    {
+      "name": "payment mode unknown",
+      "change": {"IFIRMA_PAYMENT_METHOD_MODE": "sometimes"},
+      "notice": "<error>The payment method mode must be \"order\" or \"fixed\".</error>",
+      "writes": []
+    },
+    {
+      "name": "payment mode empty",
+      "change": {"IFIRMA_PAYMENT_METHOD_MODE": ""},
+      "notice": "<error>The payment method mode must be \"order\" or \"fixed\".</error>",
+      "writes": []
+    },
+    {
+      "name": "payment mode in capitals",
+      "change": {"IFIRMA_PAYMENT_METHOD_MODE": "Order"},
+      "notice": "<error>The payment method mode must be \"order\" or \"fixed\".</error>",
+      "writes": []
+    },
+    {
+      "name": "fallback payment code unknown",
+      "change": {"IFIRMA_PAYMENT_METHOD": "XYZ"},
+      "notice": "<error>The fallback payment method must be one of the listed codes.</error>",
+      "writes": []
+    },
+    {
+      "name": "fallback payment code empty",
+      "change": {"IFIRMA_PAYMENT_METHOD": ""},
+      "notice": "<error>The fallback payment method must be one of the listed codes.</error>",
+      "writes": []
+    },
+    {
+      "name": "payment map with a bad line",
+      "change": {"IFIRMA_PAYMENT_METHOD_MAP": "ps_checkpayment=XYZ"},
+      "notice": "<error>Payment method map: line 1: ps_checkpayment=XYZ</error>",
+      "writes": []
+    },
+    {
+      "name": "payment map with two bad lines after blank lines and a comment",
+      "change": {"IFIRMA_PAYMENT_METHOD_MAP": "\n  \n# note\n\nps_checkpayment\nps_wirepayment=PRZ\nbad module=PRZ"},
+      "notice": "<error>Payment method map: line 5: ps_checkpayment; line 7: bad module=PRZ</error>",
+      "writes": []
+    },
+    {
+      "name": "every validation error at once",
+      "change": {
+        "IFIRMA_USER": "",
+        "IFIRMA_KEY_FAKTURA": "zz",
+        "IFIRMA_SEND_COPY_EMPLOYEE": "0",
+        "IFIRMA_DUPLICATE_WINDOW_DAYS": "0",
+        "IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "-1",
+        "IFIRMA_NOTIFY_EMAIL": "no",
+        "IFIRMA_SYNC_INTERVAL_MIN": "0",
+        "IFIRMA_CRON_MAX_CALLS": "0",
+        "IFIRMA_RATE_MAX_PER_MIN": "0",
+        "IFIRMA_PAYMENT_METHOD_MODE": "never",
+        "IFIRMA_PAYMENT_METHOD": "XYZ",
+        "IFIRMA_PAYMENT_METHOD_MAP": "ps_checkpayment=XYZ"
+      },
+      "notice": "<error>The iFirma login is required.<br>The invoice API key must be a hexadecimal string.<br>Choose an active employee for the delivery copy.<br>The duplicate-check window must be a whole number of days between 1 and 365.<br>The amount tolerance must be a number greater than or equal to 0.<br>The notification e-mail address is not valid.<br>The sync interval must be a whole number of minutes between 1 and 1440.<br>The cron call budget must be a whole number between 1 and 90.<br>The API rate limit must be a whole number between 1 and 100 calls per minute.<br>The payment method mode must be \"order\" or \"fixed\".<br>The fallback payment method must be one of the listed codes.<br>Payment method map: line 1: ps_checkpayment=XYZ</error>",
+      "writes": []
+    }
+  ]
+}

@@ -14,9 +14,13 @@ class Configuration
     /** @var array key => value */
     public static $values = [];
 
+    /** @var array[] every updateValue() call since the last reset(), oldest first, as [key, value] */
+    public static $writes = [];
+
     public static function reset()
     {
         self::$values = ['PS_SHOP_EMAIL' => 'shop@example.test', 'PS_SHOP_NAME' => 'Test Shop'];
+        self::$writes = [];
     }
 
     public static function get($key, $idLang = null, $idShopGroup = null, $idShop = null, $default = false)
@@ -26,6 +30,7 @@ class Configuration
 
     public static function updateValue($key, $values, $html = false, $idShopGroup = null, $idShop = null)
     {
+        self::$writes[] = [$key, $values];
         self::$values[$key] = $values;
 
         return true;
