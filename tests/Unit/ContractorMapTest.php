@@ -145,6 +145,32 @@ class ContractorMapTest extends TestCase
         $this->assertStringContainsString('UNIQUE KEY `uniq_customer` (`id_customer`)', $creates[0]);
     }
 
+    public function modelCallProvider()
+    {
+        // link() and unlinkCustomer() reach the table through getByCustomer(), which checks it first
+        return array(
+            'getByCustomer' => array('getByCustomer', array(7)),
+            'getByIdentifier' => array('getByIdentifier', array('KOWALSKI-01')),
+            'link' => array('link', array(7, 'KOWALSKI-01', 'nip')),
+            'unlinkCustomer' => array('unlinkCustomer', array(7)),
+            'countByMatchType' => array('countByMatchType', array()),
+            'truncateAll' => array('truncateAll', array()),
+        );
+    }
+
+    /**
+     * @dataProvider modelCallProvider
+     */
+    public function testEveryModelCallEnsuresTheTableExactlyOnce($method, $args)
+    {
+        $this->assertCount(0, $this->creates());
+
+        call_user_func_array(array('IfirmaContractorMap', $method), $args);
+        call_user_func_array(array('IfirmaContractorMap', $method), $args);
+
+        $this->assertCount(1, $this->creates());
+    }
+
     public function testTruncateAll()
     {
         $this->assertTrue(IfirmaContractorMap::truncateAll());
