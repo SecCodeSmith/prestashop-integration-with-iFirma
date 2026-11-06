@@ -27,8 +27,9 @@ if (!defined('_PS_VERSION_')) {
  * trigger     status | manual | resume | issue_anyway
  *
  * The pipeline records a step with addStep() and what happened to the run with the intent methods
- * markIssued(), markAdopted(), alreadyIssued(), stopAt() and stopStep(); they set ok, outcome,
- * stoppedAt and message together, so no caller has to know which fields belong to an outcome.
+ * markIssued(), markAdopted() and alreadyIssued(), which set ok, outcome and message; stopAt(), which
+ * sets the same three and also names the step in stoppedAt and logs it as stopped; and stopStep(),
+ * which only names the step and logs it, keeping ok, outcome and message.
  */
 class IfirmaPipelineResult
 {

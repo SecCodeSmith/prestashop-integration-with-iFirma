@@ -29,8 +29,6 @@ use PHPUnit\Framework\TestCase;
  */
 class IssuancePipelineStepsTest extends TestCase
 {
-    use IfirmaThrowableProviders;
-
     const PDF = "%PDF-1.4\nfake body\n%%EOF";
 
     /** @var ScriptedTransport */
