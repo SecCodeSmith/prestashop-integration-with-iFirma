@@ -13,11 +13,33 @@ use PHPUnit\Framework\TestCase;
 
 class UpgradeTest extends TestCase
 {
+    use IfirmaSentQueries;
+
+    const RECEIPT = 'ps_ifirma_receipt';
+    const DATA_REQUEST = 'ps_ifirma_data_request';
+    const CONTRACTOR_MAP = 'ps_ifirma_contractor_map';
+
+    /** @var array table => (column => DDL fragment): the database the install and upgrade paths run on */
+    private $schema = array();
+
+    /** @var array the KSeF receipt columns every shop needs, with their DDL */
+    private static $ksefColumns = array(
+        'ksef_status' => "VARCHAR(32) NOT NULL DEFAULT ''",
+        'ksef_number' => "VARCHAR(64) NOT NULL DEFAULT ''",
+        'ksef_sent_at' => 'DATETIME NULL',
+        'ksef_error' => 'TEXT NULL',
+    );
+
     protected function setUp(): void
     {
         IfirmaTestState::resetAll();
         require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.1.0.php';
         require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.2.0.php';
+    }
+
+    protected function tearDown(): void
+    {
+        IfirmaSchema::resetEnsureCache();
     }
 
     private function scriptColumnProbe()
@@ -142,5 +164,358 @@ class UpgradeTest extends TestCase
 
         $this->assertFalse($module->isRegisteredInHook('displayAdminOrder'));
         $this->assertSame(array('displayAdminOrderMainBottom', 'displayAdminCustomers'), Module::$hooks);
+    }
+
+    // ---- the schema each path ends with (refactor-srp-splits 9.1) ---------------------------------
+    //
+    // PrestaShop runs an upgrade file only when the version recorded for the shop is below the file's
+    // version and the file's version is not above the module's (1.3.1), oldest file first. So:
+    //   fresh install of 1.3.1  -> sql/install.php, through Ifirma::install()
+    //   1.0.x                   -> upgrade-1.1.0.php, then upgrade-1.2.0.php
+    //   1.1.0                   -> upgrade-1.2.0.php only (it changes hooks, not the schema)
+    // The 1.1.0 build grew in place under one version number: the first build had no contractor map table,
+    // the table came with 4452d02 and the KSeF sent/error receipt columns with 882f929. A shop recorded as
+    // 1.1.0 by an earlier build never runs upgrade-1.1.0.php again.
+    //
+    // The tests that prove a path run with the runtime ensure*() checks switched off (startPath()), so the
+    // schema they end with is the work of the install or upgrade code alone. The tests about what the upgrade
+    // to 1.2.0 leaves behind, and about what the runtime checks add, leave the checks on (startFrom()).
+    // The Db stub plays a database: it applies the CREATE TABLE and ALTER TABLE statements it receives and
+    // answers the information_schema probes from the result.
+
+    /**
+     * Schemas that a shop recorded as 1.1.0 can have, none of them complete.
+     *
+     * @return array description => array(name of the method that returns the schema)
+     */
+    public function incomplete110Schemas()
+    {
+        return array(
+            'the first 1.1.0 build, before the contractor map' => array('schemaOfTheFirst110Build'),
+            'a 1.1.0 build with the contractor map, before the KSeF sent and error columns' => array('schemaOfTheBuildWithTheContractorMap'),
+            'a contractor map whose identifier column is still 15 characters wide' => array('schemaWithANarrowContractorMap'),
+        );
+    }
+
+    public function testAFreshInstallCreatesTheContractorMapAndTheKsefColumnsWithoutTheRuntimeChecks()
+    {
+        $this->startPath(array());
+
+        $this->assertTrue(IfirmaTestModuleLoader::loadModule()->install());
+
+        $this->assertEndsWithTheContractorMapAndTheKsefColumns();
+        $this->assertSame($this->expectedSchema(), $this->schema);
+        // install() sends the three CREATE statements and nothing else: no ALTER, no probe
+        $sent = $this->sentQueries();
+        $this->assertCount(3, $sent);
+        $this->assertStringStartsWith('CREATE TABLE IF NOT EXISTS `ps_ifirma_receipt` (', $sent[0]);
+        $this->assertStringStartsWith('CREATE TABLE IF NOT EXISTS `ps_ifirma_data_request` (', $sent[1]);
+        $this->assertStringStartsWith('CREATE TABLE IF NOT EXISTS `ps_ifirma_contractor_map` (', $sent[2]);
+        $this->assertStringContainsString('`ksef_sent_at` DATETIME NULL', $sent[0]);
+        $this->assertStringContainsString('`ksef_error` TEXT NULL', $sent[0]);
+        $this->assertStringContainsString('`ifirma_identifier` VARCHAR(64) NOT NULL', $sent[2]);
+    }
+
+    public function testTheUpgradeFrom10xCreatesTheContractorMapAndTheKsefColumnsWithoutTheRuntimeChecks()
+    {
+        $this->startPath($this->schemaOf10x());
+        $this->assertSame(array(self::RECEIPT), array_keys($this->schema));
+        $this->assertArrayNotHasKey('ksef_sent_at', $this->schema[self::RECEIPT]);
+        $this->assertArrayNotHasKey('ksef_error', $this->schema[self::RECEIPT]);
+
+        $module = new Module();
+        $this->assertTrue(upgrade_module_1_1_0($module));
+        $this->assertTrue(upgrade_module_1_2_0($module));
+
+        $this->assertEndsWithTheContractorMapAndTheKsefColumns();
+        $sent = $this->sentQueries();
+        $alters = array_values(array_filter($sent, function ($sql) {
+            return strpos($sql, 'ALTER TABLE') === 0;
+        }));
+        $this->assertCount(20, $alters, 'the 20 receipt columns of 1.1.0, nothing else is altered');
+        $this->assertContains('ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `ksef_sent_at` DATETIME NULL', $alters);
+        $this->assertContains('ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `ksef_error` TEXT NULL', $alters);
+        $maps = array_values(array_filter($sent, function ($sql) {
+            return strpos($sql, 'CREATE TABLE IF NOT EXISTS `ps_ifirma_contractor_map`') === 0;
+        }));
+        $this->assertCount(1, $maps);
+        $this->assertStringContainsString('`ifirma_identifier` VARCHAR(64) NOT NULL', $maps[0]);
+    }
+
+    /**
+     * Not a path a shop takes (PrestaShop does not run the 1.1.0 file for a shop recorded as 1.1.0): it shows
+     * what a script that ran these steps again would reach from each earlier schema.
+     *
+     * @dataProvider incomplete110Schemas
+     */
+    public function testTheUpgradeTo110CompletesEveryIncomplete110SchemaWithoutTheRuntimeChecks($incomplete)
+    {
+        $this->startPath($this->$incomplete());
+
+        $this->assertTrue(upgrade_module_1_1_0(new Module()));
+
+        $this->assertEndsWithTheContractorMapAndTheKsefColumns();
+    }
+
+    /**
+     * The 1.2.0 script changes hooks and nothing else: a shop whose 1.1.0 was complete stays complete, and
+     * (next test) a shop whose 1.1.0 was not stays as it is. The runtime checks stay on in this test and in
+     * the next two, so that a script which completes a shop through them is seen as well.
+     */
+    public function testTheUpgradeTo120SendsNoSchemaStatement()
+    {
+        $this->startFrom($this->expectedSchema());
+
+        $this->assertTrue(upgrade_module_1_2_0(new Module()));
+
+        $this->assertSame(array(), $this->sentQueries());
+        $this->assertSame($this->expectedSchema(), $this->schema);
+    }
+
+    /**
+     * What the previous test means for a shop that stopped at an earlier 1.1.0 build: the upgrade to 1.2.0 (and
+     * from there to 1.3.1) leaves it as it found it. If this fails, an upgrade script now completes these
+     * shops: re-read task 9.2 of refactor-srp-splits, the runtime checks may then go.
+     *
+     * @dataProvider incomplete110Schemas
+     */
+    public function testTheUpgradeTo120LeavesAnIncomplete110SchemaAsItIs($incomplete)
+    {
+        $start = $this->$incomplete();
+        $this->startFrom($start);
+
+        $this->assertTrue(upgrade_module_1_2_0(new Module()));
+
+        $this->assertSame($start, $this->schema);
+        $this->assertNotSame($this->sortedSchema($this->expectedSchema()), $this->sortedSchema($this->schema));
+    }
+
+    /**
+     * What the runtime checks still add: they complete the shops the install and upgrade code never reaches.
+     *
+     * @dataProvider incomplete110Schemas
+     */
+    public function testOnlyTheRuntimeChecksCompleteAnIncomplete110Schema($incomplete)
+    {
+        $this->startFrom($this->$incomplete());
+        $this->assertTrue(upgrade_module_1_2_0(new Module()));
+
+        $this->assertTrue(IfirmaSchema::ensureContractorMapTable());
+        $this->assertTrue(IfirmaSchema::ensureReceiptKsefColumns());
+
+        $this->assertEndsWithTheContractorMapAndTheKsefColumns();
+    }
+
+    public function testTheSimulatedDatabaseRefusesWhatMysqlWouldRefuse()
+    {
+        $start = array('ps_demo' => array('name' => 'VARCHAR(15) NOT NULL'));
+        $this->startFrom($start);
+        $db = Db::getInstance();
+
+        $this->assertFalse($db->execute('ALTER TABLE `ps_demo` ADD COLUMN `name` TEXT NULL'), 'duplicate column');
+        $this->assertFalse($db->execute('ALTER TABLE `ps_demo` MODIFY `other` TEXT NULL'), 'unknown column');
+        $this->assertFalse($db->execute('ALTER TABLE `ps_missing` ADD COLUMN `a` TEXT NULL'), 'unknown table');
+        $this->assertFalse($db->execute('ALTER TABLE `ps_demo` DROP COLUMN `name`'), 'a statement it does not model');
+        $this->assertFalse($db->execute('CREATE TABLE `ps_other` (`a` INT)'), 'a statement it does not model');
+        $this->assertSame($start, $this->schema);
+
+        $this->assertTrue($db->execute('ALTER TABLE `ps_demo` MODIFY `name` VARCHAR(64) NOT NULL'));
+        $this->assertTrue($db->execute('ALTER TABLE `ps_demo` ADD COLUMN `note` TEXT NULL'));
+        $this->assertSame(array('name' => 'VARCHAR(64) NOT NULL', 'note' => 'TEXT NULL'), $this->schema['ps_demo']);
+    }
+
+    public function testTheSimulatedDatabaseCreatesATableOnlyOnce()
+    {
+        $narrow = $this->schemaWithANarrowContractorMap();
+        $this->startFrom($narrow);
+
+        $this->assertTrue(Db::getInstance()->execute(IfirmaSchema::contractorMapCreateSql()));
+        $this->assertSame($narrow, $this->schema, 'CREATE TABLE IF NOT EXISTS leaves an existing table alone');
+
+        $this->startFrom(array());
+        $this->assertTrue(Db::getInstance()->execute(IfirmaSchema::contractorMapCreateSql()));
+        $this->assertSame(array(self::CONTRACTOR_MAP => IfirmaSchema::contractorMapColumns()), $this->schema);
+    }
+
+    public function testTheSimulatedDatabaseAnswersTheProbesFromTheSchema()
+    {
+        $this->startFrom(array(self::CONTRACTOR_MAP => array('ifirma_identifier' => 'VARCHAR(15) NOT NULL', 'ifirma_name' => 'TEXT NULL')));
+
+        $this->assertTrue(IfirmaSchema::columnExists(self::CONTRACTOR_MAP, 'ifirma_name'));
+        $this->assertFalse(IfirmaSchema::columnExists(self::CONTRACTOR_MAP, 'other'));
+        $this->assertFalse(IfirmaSchema::columnExists('ps_missing', 'ifirma_name'));
+
+        // the width is read from the column: a 15 character column is widened, a text column has none to read
+        $this->assertTrue(IfirmaSchema::widenContractorMapIdentifier());
+        $this->assertSame('VARCHAR(64) NOT NULL', $this->schema[self::CONTRACTOR_MAP]['ifirma_identifier']);
+        $this->startFrom(array(self::CONTRACTOR_MAP => array('ifirma_identifier' => 'TEXT NOT NULL')));
+        $this->assertTrue(IfirmaSchema::widenContractorMapIdentifier());
+        $this->assertSame('TEXT NOT NULL', $this->schema[self::CONTRACTOR_MAP]['ifirma_identifier']);
+
+        $this->expectException(LogicException::class);
+        Db::getInstance()->getValue('SELECT COUNT(*) FROM information_schema.COLUMNS');
+    }
+
+    // ---- helpers: the database each path runs on ----------------------------------------------------
+
+    /** What the module's own column lists say a complete install has. */
+    private function expectedSchema()
+    {
+        return array(
+            self::RECEIPT => IfirmaSchema::receiptColumns(),
+            self::DATA_REQUEST => IfirmaSchema::dataRequestColumns(),
+            self::CONTRACTOR_MAP => IfirmaSchema::contractorMapColumns(),
+        );
+    }
+
+    /** What sql/install.php of 1.0.0 created: the receipt table, without the columns 1.1.0 added. */
+    private function schemaOf10x()
+    {
+        return array(self::RECEIPT => array_diff_key(IfirmaSchema::receiptColumns(), IfirmaSchema::newReceiptColumnsFor110()));
+    }
+
+    /** The first 1.1.0 build: no contractor map yet, and not yet the KSeF sent and error columns. */
+    private function schemaOfTheFirst110Build()
+    {
+        $schema = $this->expectedSchema();
+        unset($schema[self::CONTRACTOR_MAP], $schema[self::RECEIPT]['ksef_sent_at'], $schema[self::RECEIPT]['ksef_error']);
+
+        return $schema;
+    }
+
+    /** A 1.1.0 build that created the contractor map, but not yet the two KSeF columns added after it. */
+    private function schemaOfTheBuildWithTheContractorMap()
+    {
+        $schema = $this->expectedSchema();
+        unset($schema[self::RECEIPT]['ksef_sent_at'], $schema[self::RECEIPT]['ksef_error']);
+
+        return $schema;
+    }
+
+    /** A contractor map created before its identifier column was widened (see widenContractorMapIdentifier()). */
+    private function schemaWithANarrowContractorMap()
+    {
+        $schema = $this->expectedSchema();
+        $schema[self::CONTRACTOR_MAP]['ifirma_identifier'] = 'VARCHAR(15) NOT NULL';
+
+        return $schema;
+    }
+
+    /**
+     * The runtime checks run at most once per request and remember a success. Letting them succeed once on an
+     * empty stub leaves them doing nothing for the rest of the test.
+     */
+    private function switchOffTheRuntimeChecks()
+    {
+        $this->assertTrue(IfirmaSchema::ensureContractorMapTable());
+        $this->assertTrue(IfirmaSchema::ensureReceiptKsefColumns());
+        Db::reset();
+
+        $this->assertTrue(IfirmaSchema::ensureContractorMapTable());
+        $this->assertTrue(IfirmaSchema::ensureReceiptKsefColumns());
+        $this->assertSame(array(), $this->sentQueries(), 'the runtime checks must send nothing');
+    }
+
+    /** Starts a path on a database holding $schema, with the runtime checks switched off. */
+    private function startPath(array $schema)
+    {
+        $this->switchOffTheRuntimeChecks();
+        $this->startFrom($schema);
+    }
+
+    /**
+     * Makes the Db stub a database holding $schema. A statement it does not model, or that MySQL would
+     * refuse (an existing column added again, a column or table that is not there), makes execute() return
+     * false, so that a path cannot pass by luck.
+     */
+    private function startFrom(array $schema)
+    {
+        $this->schema = $schema;
+        $db = Db::getInstance();
+        $db->whenExecute('/^(CREATE|ALTER) TABLE/', function ($sql) {
+            return $this->applyStatement($sql);
+        });
+        $db->whenGetValue('/FROM information_schema\.COLUMNS/', function ($sql) {
+            return $this->answerProbe($sql);
+        });
+    }
+
+    private function applyStatement($sql)
+    {
+        $sql = str_replace("\r\n", "\n", $sql);
+        if (preg_match('/^CREATE TABLE IF NOT EXISTS `([^`]+)` \(\n(.*)\n\) ENGINE=/s', $sql, $m)) {
+            if (!isset($this->schema[$m[1]])) {
+                $this->schema[$m[1]] = array();
+                foreach (explode("\n", $m[2]) as $line) {
+                    if (preg_match('/^\s+`([^`]+)` (.+?),?$/', $line, $column)) {
+                        $this->schema[$m[1]][$column[1]] = $column[2];
+                    }
+                }
+            }
+
+            return true;
+        }
+        if (preg_match('/^ALTER TABLE `([^`]+)` (ADD COLUMN|MODIFY) `([^`]+)` (.+)$/s', $sql, $m) && isset($this->schema[$m[1]])) {
+            if (isset($this->schema[$m[1]][$m[3]]) === ($m[2] === 'MODIFY')) {
+                $this->schema[$m[1]][$m[3]] = $m[4];
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function answerProbe($sql)
+    {
+        if (!preg_match(
+            "/^SELECT (COUNT\(\*\)|CHARACTER_MAXIMUM_LENGTH) FROM information_schema\.COLUMNS WHERE TABLE_SCHEMA = DATABASE\(\)"
+            . " AND TABLE_NAME = '([^']+)' AND COLUMN_NAME = '([^']+)'$/",
+            $sql,
+            $m
+        )) {
+            throw new LogicException('The simulated database does not know this probe: ' . $sql);
+        }
+        $ddl = isset($this->schema[$m[2]][$m[3]]) ? $this->schema[$m[2]][$m[3]] : null;
+        if ($m[1] === 'COUNT(*)') {
+            return $ddl === null ? '0' : '1';
+        }
+
+        return $ddl !== null && preg_match('/^VARCHAR\((\d+)\)/', $ddl, $length) ? $length[1] : false;
+    }
+
+    /** The table order and the column order of a CREATE TABLE do not matter once a column was added later. */
+    private function sortedSchema(array $schema)
+    {
+        ksort($schema);
+        foreach ($schema as $table => $columns) {
+            ksort($columns);
+            $schema[$table] = $columns;
+        }
+
+        return $schema;
+    }
+
+    private function assertEndsWithTheContractorMapAndTheKsefColumns()
+    {
+        $this->assertArrayHasKey(self::CONTRACTOR_MAP, $this->schema, 'the contractor map table does not exist');
+        $this->assertArrayHasKey('ifirma_identifier', $this->schema[self::CONTRACTOR_MAP]);
+        $this->assertSame('VARCHAR(64) NOT NULL', $this->schema[self::CONTRACTOR_MAP]['ifirma_identifier']);
+        $this->assertSame(
+            'VARCHAR(' . IfirmaSchema::CONTRACTOR_IDENTIFIER_LENGTH . ') NOT NULL',
+            $this->schema[self::CONTRACTOR_MAP]['ifirma_identifier']
+        );
+
+        $this->assertArrayHasKey(self::RECEIPT, $this->schema, 'the receipt table does not exist');
+        foreach (self::$ksefColumns as $column => $ddl) {
+            $this->assertArrayHasKey($column, $this->schema[self::RECEIPT], 'receipt column ' . $column);
+            $this->assertSame($ddl, $this->schema[self::RECEIPT][$column], 'receipt column ' . $column);
+        }
+
+        $this->assertSame(
+            $this->sortedSchema($this->expectedSchema()),
+            $this->sortedSchema($this->schema),
+            'the schema of a fresh install'
+        );
     }
 }
