@@ -353,6 +353,34 @@ class SettingsSaveTest extends TestCase
         $this->assertSame('0', $this->stored($field));
     }
 
+    /**
+     * @return array[] field => array(field)
+     */
+    public function textFieldsWithoutALimit()
+    {
+        $cases = array();
+        foreach (array('IFIRMA_USER', 'IFIRMA_BASE_URL', 'IFIRMA_KEY_FAKTURA', 'IFIRMA_KEY_RACHUNEK', 'IFIRMA_PAYMENT_TYPE_TOKEN') as $field) {
+            $cases[$field] = array($field);
+        }
+
+        return $cases;
+    }
+
+    /**
+     * Only the e-mail text is cut, at a thousand characters; the other texts are stored whatever their length.
+     *
+     * @dataProvider textFieldsWithoutALimit
+     */
+    public function testOnlyTheSendTextIsCut($field)
+    {
+        $long = str_repeat('a', 1500);
+
+        $page = $this->save(array($field => $long));
+
+        $this->assertSaved($page);
+        $this->assertSame($long, $this->stored($field));
+    }
+
     public function testANotificationAddressOfZeroIsNotValid()
     {
         $page = $this->save(array('IFIRMA_NOTIFY_EMAIL' => '0'));
