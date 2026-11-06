@@ -1051,7 +1051,9 @@ class Ifirma extends Module
         if (!$this->hasGrid() || !isset($params['search_query_builder']) || !is_object($params['search_query_builder'])) {
             return;
         }
-        foreach (IfirmaOrderGridIndicator::selectSql('o') as $select) {
+        $join = IfirmaOrderGridIndicator::joinSql('o');
+        $params['search_query_builder']->leftJoin('o', $join['table'], $join['alias'], $join['condition']);
+        foreach (IfirmaOrderGridIndicator::selectSql() as $select) {
             $params['search_query_builder']->addSelect($select);
         }
     }

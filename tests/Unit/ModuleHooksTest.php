@@ -406,10 +406,18 @@ class ModuleHooksTest extends TestCase
     {
         $search = new class {
             public $selects = array();
+            public $joins = array();
 
             public function addSelect($s)
             {
                 $this->selects[] = $s;
+
+                return $this;
+            }
+
+            public function leftJoin($fromAlias, $join, $alias, $condition = null)
+            {
+                $this->joins[] = array($fromAlias, $join, $alias, $condition);
 
                 return $this;
             }
@@ -422,8 +430,11 @@ class ModuleHooksTest extends TestCase
             'search_criteria' => null,
         ));
 
-        $this->assertSame(IfirmaOrderGridIndicator::selectSql('o'), $search->selects);
+        $join = IfirmaOrderGridIndicator::joinSql('o');
+        $this->assertSame(array(array('o', $join['table'], $join['alias'], $join['condition'])), $search->joins);
+        $this->assertSame(IfirmaOrderGridIndicator::selectSql(), $search->selects);
         $this->assertSame(array(), $count->selects);
+        $this->assertSame(array(), $count->joins, 'the count query keeps its shape and its total');
     }
 
     public function testPresenterHookFillsTheIconCellOfEveryRecord()

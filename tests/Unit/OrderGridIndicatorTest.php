@@ -47,17 +47,28 @@ class OrderGridIndicatorTest extends TestCase
 
     public function testNumberFallsBackToTheIdentifierInSql()
     {
-        $sql = IfirmaOrderGridIndicator::selectSql('o');
+        $sql = IfirmaOrderGridIndicator::selectSql();
 
-        $this->assertStringContainsString('IF(r.ifirma_number <> \'\', r.ifirma_number, r.ifirma_id)', $sql[0]);
+        $this->assertStringContainsString('IF(ifr.ifirma_number <> \'\', ifr.ifirma_number, ifr.ifirma_id)', $sql[0]);
         $this->assertStringEndsWith(' AS ifirma_document_number', $sql[0]);
         $this->assertStringEndsWith(' AS ifirma_document_status', $sql[1]);
         foreach ($sql as $expression) {
-            $this->assertStringContainsString('FROM `ps_ifirma_receipt` r', $expression);
-            $this->assertStringContainsString('WHERE r.id_order = o.id_order', $expression);
-            $this->assertStringContainsString('ORDER BY r.id_ifirma_receipt DESC LIMIT 1', $expression);
-            $this->assertStringContainsString('r.ifirma_id <> \'\' AND r.status <> \'error\'', $expression);
+            $this->assertStringStartsWith('IF(ifr.ifirma_id <> \'\' AND ifr.status <> \'error\', ', $expression);
+            $this->assertStringNotContainsString('SELECT', $expression, 'the values come from the joined row, not from a subquery each');
         }
+    }
+
+    /**
+     * One LEFT JOIN on the newest record of the order (MAX id through idx_order) replaces the two correlated
+     * subselects of the first version, so a listed row costs one lookup instead of two.
+     */
+    public function testTheJoinReadsTheNewestRecordOfTheOrder()
+    {
+        $this->assertSame(array(
+            'table' => '`ps_ifirma_receipt`',
+            'alias' => 'ifr',
+            'condition' => 'ifr.id_ifirma_receipt = (SELECT MAX(r.id_ifirma_receipt) FROM `ps_ifirma_receipt` r WHERE r.id_order = o.id_order)',
+        ), IfirmaOrderGridIndicator::joinSql('o'));
     }
 
     public function testOrderWithoutARecordHasAnEmptyCell()
@@ -95,11 +106,11 @@ class OrderGridIndicatorTest extends TestCase
     public function testTheAliasIsValidated()
     {
         $this->expectException(InvalidArgumentException::class);
-        IfirmaOrderGridIndicator::selectSql('o; DROP');
+        IfirmaOrderGridIndicator::joinSql('o; DROP');
     }
 
     public function testTheSelectCountIsTwo()
     {
-        $this->assertCount(2, IfirmaOrderGridIndicator::selectSql('o'));
+        $this->assertCount(2, IfirmaOrderGridIndicator::selectSql());
     }
 }

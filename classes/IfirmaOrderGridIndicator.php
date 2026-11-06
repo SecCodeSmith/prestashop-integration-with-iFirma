@@ -20,25 +20,54 @@ class IfirmaOrderGridIndicator
     const FIELD_STATUS = 'ifirma_document_status';
     const ICON = 'receipt_long';
 
+    /** @var string alias of the joined receipt row; none of PrestaShop's order-grid aliases (o, cu, cur, a, c, os, osl, s) */
+    const JOIN_ALIAS = 'ifr';
+
     /**
+     * One LEFT JOIN on the newest module record of each order (the MAX id, found through idx_order), so the two
+     * selected values cost one lookup per listed row instead of a correlated subquery each.
+     *
      * @param string $orderAlias alias of the orders table in the grid query (PrestaShop uses 'o')
-     * @return string[] two select expressions, each with an AS alias, for QueryBuilder::addSelect()
+     * @return array 'table', 'alias' and 'condition' for QueryBuilder::leftJoin($orderAlias, table, alias, condition)
      */
-    public static function selectSql($orderAlias)
+    public static function joinSql($orderAlias)
     {
-        if (!preg_match('/^[a-z_][a-z0-9_]*$/i', $orderAlias)) {
-            throw new InvalidArgumentException('The order alias is not a plain SQL identifier: ' . $orderAlias);
-        }
-        $a = $orderAlias;
+        self::assertAlias($orderAlias);
         $t = '`' . _DB_PREFIX_ . 'ifirma_receipt`';
-        // the same "issued" rule as IfirmaReceipt::isIssued(): an identifier and not the error state
-        $issued = "r.ifirma_id <> '' AND r.status <> '" . pSQL(IfirmaReceipt::STATUS_ERROR) . "'";
-        $newest = "FROM {$t} r WHERE r.id_order = {$a}.id_order ORDER BY r.id_ifirma_receipt DESC LIMIT 1";
 
         return array(
-            "(SELECT IF({$issued}, IF(r.ifirma_number <> '', r.ifirma_number, r.ifirma_id), '') {$newest}) AS " . self::FIELD_NUMBER,
-            "(SELECT IF({$issued}, r.status, '') {$newest}) AS " . self::FIELD_STATUS,
+            'table' => $t,
+            'alias' => self::JOIN_ALIAS,
+            'condition' => self::JOIN_ALIAS . '.id_ifirma_receipt = (SELECT MAX(r.id_ifirma_receipt) FROM ' . $t
+                . ' r WHERE r.id_order = ' . $orderAlias . '.id_order)',
         );
+    }
+
+    /**
+     * @return string[] two select expressions on the joined row, each with an AS alias, for QueryBuilder::addSelect();
+     *                  both are '' for an order without an issued document (no row joined, or not issued)
+     */
+    public static function selectSql()
+    {
+        $j = self::JOIN_ALIAS;
+        // the same "issued" rule as IfirmaReceipt::isIssued(): an identifier and not the error state
+        $issued = "{$j}.ifirma_id <> '' AND {$j}.status <> '" . pSQL(IfirmaReceipt::STATUS_ERROR) . "'";
+
+        return array(
+            "IF({$issued}, IF({$j}.ifirma_number <> '', {$j}.ifirma_number, {$j}.ifirma_id), '') AS " . self::FIELD_NUMBER,
+            "IF({$issued}, {$j}.status, '') AS " . self::FIELD_STATUS,
+        );
+    }
+
+    /**
+     * @param string $alias
+     * @throws InvalidArgumentException when the alias is not a plain SQL identifier
+     */
+    private static function assertAlias($alias)
+    {
+        if (!preg_match('/^[a-z_][a-z0-9_]*$/i', $alias)) {
+            throw new InvalidArgumentException('The order alias is not a plain SQL identifier: ' . $alias);
+        }
     }
 
     /**
