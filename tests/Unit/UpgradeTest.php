@@ -35,6 +35,7 @@ class UpgradeTest extends TestCase
         IfirmaTestState::resetAll();
         require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.1.0.php';
         require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.2.0.php';
+        require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.4.0.php';
     }
 
     protected function tearDown(): void
@@ -166,13 +167,57 @@ class UpgradeTest extends TestCase
         $this->assertSame(array('displayAdminOrderMainBottom', 'displayAdminCustomers'), Module::$hooks);
     }
 
+    public function testUpgrade140RegistersTheGridHooksOnce()
+    {
+        $module = new Module();
+        $module->registerHook('displayAdminOrderMainBottom');
+        $module->registerHook('displayAdminCustomers');
+        $gridHooks = array(
+            'actionOrderGridDefinitionModifier',
+            'actionOrderGridQueryBuilderModifier',
+            'actionOrderGridPresenterModifier',
+        );
+        foreach ($gridHooks as $hook) {
+            $this->assertFalse($module->isRegisteredInHook($hook));
+        }
+
+        $this->assertTrue(upgrade_module_1_4_0($module));
+        $this->assertTrue(upgrade_module_1_4_0($module));
+
+        foreach ($gridHooks as $hook) {
+            $this->assertTrue($module->isRegisteredInHook($hook));
+        }
+        $this->assertSame(array(
+            'displayAdminOrderMainBottom',
+            'displayAdminCustomers',
+            'actionOrderGridDefinitionModifier',
+            'actionOrderGridQueryBuilderModifier',
+            'actionOrderGridPresenterModifier',
+        ), Module::$hooks);
+    }
+
+    public function testUpgrade140LeavesAnAlreadyRegisteredGridHookAlone()
+    {
+        $module = new Module();
+        $module->registerHook('actionOrderGridQueryBuilderModifier');
+
+        $this->assertTrue(upgrade_module_1_4_0($module));
+
+        $this->assertSame(array(
+            'actionOrderGridQueryBuilderModifier',
+            'actionOrderGridDefinitionModifier',
+            'actionOrderGridPresenterModifier',
+        ), Module::$hooks);
+    }
+
     // ---- the schema each path ends with (refactor-srp-splits 9.1) ---------------------------------
     //
     // PrestaShop runs an upgrade file only when the version recorded for the shop is below the file's
-    // version and the file's version is not above the module's (1.3.1), oldest file first. So:
-    //   fresh install of 1.3.1  -> sql/install.php, through Ifirma::install()
-    //   1.0.x                   -> upgrade-1.1.0.php, then upgrade-1.2.0.php
-    //   1.1.0                   -> upgrade-1.2.0.php only (it changes hooks, not the schema)
+    // version and the file's version is not above the module's (1.4.0), oldest file first. So:
+    //   fresh install of 1.4.0  -> sql/install.php, through Ifirma::install()
+    //   1.0.x                   -> upgrade-1.1.0.php, then upgrade-1.2.0.php, then upgrade-1.4.0.php
+    //   1.1.0                   -> upgrade-1.2.0.php, then upgrade-1.4.0.php (1.2.0 changes hooks, not the schema)
+    //   1.2.0 .. 1.3.x -> upgrade-1.4.0.php only (it registers hooks, not the schema)
     // The 1.1.0 build grew in place under one version number: the first build had no contractor map table,
     // the table came with 4452d02 and the KSeF sent/error receipt columns with 882f929. A shop recorded as
     // 1.1.0 by an earlier build never runs upgrade-1.1.0.php again.
@@ -233,6 +278,7 @@ class UpgradeTest extends TestCase
         $module = new Module();
         $this->assertTrue(upgrade_module_1_1_0($module));
         $this->assertTrue(upgrade_module_1_2_0($module));
+        $this->assertTrue(upgrade_module_1_4_0($module));
 
         $this->assertEndsWithTheContractorMapAndTheKsefColumns();
         $sent = $this->sentQueries();
@@ -281,7 +327,7 @@ class UpgradeTest extends TestCase
 
     /**
      * What the previous test means for the incomplete 1.1.0 schemas: the upgrade to 1.2.0 (and from there to
-     * 1.3.1) leaves each as it found it. The first two are what a shop that stopped at an earlier 1.1.0 build
+     * 1.4.0) leaves each as it found it. The first two are what a shop that stopped at an earlier 1.1.0 build
      * has; the third is hypothetical. If this fails, an upgrade script now completes these shops: re-read task
      * 9.2 of refactor-srp-splits, the runtime checks may then go.
      *
