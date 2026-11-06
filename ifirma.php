@@ -32,6 +32,7 @@ require_once __DIR__ . '/classes/IfirmaAdminPanelPresenter.php';
 require_once __DIR__ . '/classes/IfirmaAdminOrderPanelView.php';
 require_once __DIR__ . '/classes/IfirmaCustomerContractorService.php';
 require_once __DIR__ . '/classes/IfirmaAdminActions.php';
+require_once __DIR__ . '/classes/IfirmaOrderGridIndicator.php';
 
 class Ifirma extends Module
 {

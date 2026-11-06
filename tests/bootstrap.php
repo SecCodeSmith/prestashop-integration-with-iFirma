@@ -71,3 +71,4 @@ require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDataRequestService.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaPipelineResult.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaIssuancePipeline.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaAdminActions.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaOrderGridIndicator.php';
