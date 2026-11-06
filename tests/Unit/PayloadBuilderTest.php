@@ -13,12 +13,16 @@ use PHPUnit\Framework\TestCase;
 
 class PayloadBuilderTest extends TestCase
 {
-    /** @var IfirmaReceiptService */
+    /** @var IfirmaPayloadBuilder */
+    private $builder;
+
+    /** @var IfirmaReceiptService only for getDocumentType(), which stays with the service */
     private $service;
 
     protected function setUp(): void
     {
         IfirmaTestState::resetAll();
+        $this->builder = IfirmaPayloadBuilder::build(new Module());
         $this->service = new IfirmaReceiptService(new IfirmaApiClient('u', array()), new Module());
 
         $c = new Customer();
@@ -70,7 +74,7 @@ class PayloadBuilderTest extends TestCase
     {
         $o = $this->order();
         $o->module = 'ps_cashondelivery';
-        $p = $this->service->buildInvoicePayload($o);
+        $p = $this->builder->buildInvoicePayload($o);
         $this->assertSame('POB', $p['SposobZaplaty']);
     }
 
@@ -80,13 +84,13 @@ class PayloadBuilderTest extends TestCase
         Configuration::updateValue('IFIRMA_PAYMENT_METHOD', 'GTK');
         $o = $this->order();
         $o->module = 'ps_cashondelivery';
-        $p = $this->service->buildInvoicePayload($o);
+        $p = $this->builder->buildInvoicePayload($o);
         $this->assertSame('GTK', $p['SposobZaplaty']);
     }
 
     public function testIdentifierScheme()
     {
-        $p = $this->service->buildInvoicePayload($this->order());
+        $p = $this->builder->buildInvoicePayload($this->order());
         $this->assertSame('PS-C12345', $p['Kontrahent']['Identyfikator']);
     }
 
@@ -97,13 +101,13 @@ class PayloadBuilderTest extends TestCase
         $g->is_guest = 1;
         $g->email = 'guest@example.test';
         Customer::register($g);
-        $p = $this->service->buildInvoicePayload($this->order(99));
+        $p = $this->builder->buildInvoicePayload($this->order(99));
         $this->assertSame('PS-C99', $p['Kontrahent']['Identyfikator']);
     }
 
     public function testIdentifierCappedAt15()
     {
-        $p = $this->service->buildInvoicePayload($this->order(PHP_INT_MAX));
+        $p = $this->builder->buildInvoicePayload($this->order(PHP_INT_MAX));
         $this->assertSame(15, strlen($p['Kontrahent']['Identyfikator']));
         $this->assertSame(substr('PS-C' . PHP_INT_MAX, 0, 15), $p['Kontrahent']['Identyfikator']);
     }
@@ -114,7 +118,7 @@ class PayloadBuilderTest extends TestCase
         Address::$instances[7]->lastname = '';
         $o = $this->order();
         $o->details[0]['product_name'] = str_repeat('P', 600);
-        $p = $this->service->buildInvoicePayload($o);
+        $p = $this->builder->buildInvoicePayload($o);
         $this->assertSame(150, mb_strlen($p['Kontrahent']['Nazwa']));
         $this->assertSame(500, mb_strlen($p['Pozycje'][0]['NazwaPelna']));
     }
@@ -123,7 +127,7 @@ class PayloadBuilderTest extends TestCase
     {
         Address::$instances[7]->firstname = str_repeat('ł', 160);
         Address::$instances[7]->lastname = '';
-        $p = $this->service->buildInvoicePayload($this->order());
+        $p = $this->builder->buildInvoicePayload($this->order());
         $this->assertSame(150, mb_strlen($p['Kontrahent']['Nazwa'], 'UTF-8'));
         $this->assertTrue(mb_check_encoding($p['Kontrahent']['Nazwa'], 'UTF-8'));
         $this->assertSame(str_repeat('ł', 150), $p['Kontrahent']['Nazwa']);
@@ -132,7 +136,7 @@ class PayloadBuilderTest extends TestCase
 
     public function testWithinLimitUnchanged()
     {
-        $p = $this->service->buildInvoicePayload($this->order());
+        $p = $this->builder->buildInvoicePayload($this->order());
         $k = $p['Kontrahent'];
         $this->assertSame('Jan Kowalski', $k['Nazwa']);
         $this->assertSame('Długa 1 m. 2', $k['Ulica']);
@@ -145,9 +149,9 @@ class PayloadBuilderTest extends TestCase
 
     public function testTruncateHelperAndLimits()
     {
-        $this->assertSame('ab', IfirmaReceiptService::truncate('  abc ', 2));
-        $this->assertSame('', IfirmaReceiptService::truncate(null, 5));
-        $l = IfirmaReceiptService::fieldLimits();
+        $this->assertSame('ab', IfirmaPayloadBuilder::truncate('  abc ', 2));
+        $this->assertSame('', IfirmaPayloadBuilder::truncate(null, 5));
+        $l = IfirmaPayloadBuilder::fieldLimits();
         $this->assertSame(150, $l['Nazwa']);
         $this->assertSame(15, $l['Identyfikator']);
         $this->assertSame(1000, $l['Uwagi']);
@@ -155,22 +159,22 @@ class PayloadBuilderTest extends TestCase
 
     public function testOrderReferenceStamping()
     {
-        $p = $this->service->buildInvoicePayload($this->order());
+        $p = $this->builder->buildInvoicePayload($this->order());
         $this->assertSame('PS-ORDER-15-ABCDEFGHI', $p['Uwagi']);
         $this->assertSame(array('Typ' => 'NUMER_ZAMOWIENIA', 'Info' => 'PS-ORDER-15-ABCDEFGHI'), $p['DodatkoweUwagi']);
-        $this->assertSame('PS-ORDER-15-ABCDEFGHI', IfirmaReceiptService::buildOrderReference($this->order()));
+        $this->assertSame('PS-ORDER-15-ABCDEFGHI', IfirmaPayloadBuilder::buildOrderReference($this->order()));
     }
 
     public function testSkipDodatkoweUwagi()
     {
-        $p = $this->service->buildInvoicePayload($this->order(), null, array('skip_dodatkowe_uwagi' => true));
+        $p = $this->builder->buildInvoicePayload($this->order(), null, array('skip_dodatkowe_uwagi' => true));
         $this->assertArrayNotHasKey('DodatkoweUwagi', $p);
         $this->assertSame('PS-ORDER-15-ABCDEFGHI', $p['Uwagi']);
     }
 
     public function testOverrideCompany()
     {
-        $k = $this->service->buildContractor($this->order(), array(
+        $k = $this->builder->buildContractor($this->order(), array(
             'want_invoice_for_company' => true,
             'company' => 'ACME Sp. z o.o.',
             'vat_number' => 'PL 123-456-78-90',
@@ -195,7 +199,7 @@ class PayloadBuilderTest extends TestCase
 
     public function testOverridePrivate()
     {
-        $k = $this->service->buildContractor($this->order(), array(
+        $k = $this->builder->buildContractor($this->order(), array(
             'want_invoice_for_company' => false,
             'company' => 'Ignored',
             'vat_number' => '123',
@@ -218,13 +222,13 @@ class PayloadBuilderTest extends TestCase
         $a = Address::$instances[7];
         $a->company = 'Firma';
         $a->vat_number = '525-000-11-22';
-        $k = $this->service->buildContractor($this->order());
+        $k = $this->builder->buildContractor($this->order());
         $this->assertSame('Firma', $k['Nazwa']);
         $this->assertSame('5250001122', $k['NIP']);
         $this->assertFalse($k['OsobaFizyczna']);
 
         $a->company = '';
-        $k = $this->service->buildContractor($this->order());
+        $k = $this->builder->buildContractor($this->order());
         $this->assertSame('Jan Kowalski', $k['Nazwa']);
         $this->assertTrue($k['OsobaFizyczna']);
     }
@@ -241,7 +245,7 @@ class PayloadBuilderTest extends TestCase
             'unit_price_tax_excl' => 10.00,
             'tax_rate' => 0,
         );
-        $p = $this->service->buildInvoicePayload($o);
+        $p = $this->builder->buildInvoicePayload($o);
         $this->assertSame('BRT', $p['LiczOd']);
         $this->assertSame(0.23, $p['Pozycje'][0]['StawkaVat']);
         $this->assertSame('PRC', $p['Pozycje'][0]['TypStawkiVat']);
@@ -256,16 +260,16 @@ class PayloadBuilderTest extends TestCase
 
     public function testDocumentTypeNormalisesToFakturakraj()
     {
-        $this->assertSame('fakturakraj', IfirmaReceiptService::normalizeDocumentType('fakturakraj'));
-        $this->assertSame('fakturakraj', IfirmaReceiptService::normalizeDocumentType('fakturaparagon'));
-        $this->assertSame('fakturakraj', IfirmaReceiptService::normalizeDocumentType(''));
-        $this->assertSame('fakturakraj', IfirmaReceiptService::normalizeDocumentType(null));
-        $this->assertSame('fakturakraj', IfirmaReceiptService::normalizeDocumentType('something-else'));
+        $this->assertSame('fakturakraj', IfirmaDocumentSettings::normalizeDocumentType('fakturakraj'));
+        $this->assertSame('fakturakraj', IfirmaDocumentSettings::normalizeDocumentType('fakturaparagon'));
+        $this->assertSame('fakturakraj', IfirmaDocumentSettings::normalizeDocumentType(''));
+        $this->assertSame('fakturakraj', IfirmaDocumentSettings::normalizeDocumentType(null));
+        $this->assertSame('fakturakraj', IfirmaDocumentSettings::normalizeDocumentType('something-else'));
     }
 
     public function testOnlyFakturakrajIsEnabled()
     {
-        $this->assertSame(array('fakturakraj'), array_keys(IfirmaReceiptService::enabledDocumentTypes()));
+        $this->assertSame(array('fakturakraj'), array_keys(IfirmaDocumentSettings::enabledDocumentTypes()));
     }
 
     public function testStoredParagonSettingReadsAsFakturakraj()
@@ -284,7 +288,7 @@ class PayloadBuilderTest extends TestCase
             'unit_price_tax_excl' => 10.00,
             'tax_rate' => 0,
         ));
-        $p = $this->service->buildInvoicePayload($o);
+        $p = $this->builder->buildInvoicePayload($o);
         $this->assertSame('PRC', $p['Pozycje'][0]['TypStawkiVat']);
         $this->assertSame(0.0, $p['Pozycje'][0]['StawkaVat']);
     }
@@ -295,7 +299,7 @@ class PayloadBuilderTest extends TestCase
         $o->total_shipping_tax_incl = 10.00;
         $o->total_shipping_tax_excl = 10.00;
         $o->carrier_tax_rate = 0;
-        $p = $this->service->buildInvoicePayload($o);
+        $p = $this->builder->buildInvoicePayload($o);
         $last = $p['Pozycje'][count($p['Pozycje']) - 1];
         $this->assertSame('PRC', $last['TypStawkiVat']);
         $this->assertSame(0.0, $last['StawkaVat']);
@@ -311,18 +315,18 @@ class PayloadBuilderTest extends TestCase
             'unit_price_tax_excl' => 100.00,
             'tax_rate' => 8,
         ));
-        $p = $this->service->buildInvoicePayload($o);
+        $p = $this->builder->buildInvoicePayload($o);
         $this->assertSame('PRC', $p['Pozycje'][0]['TypStawkiVat']);
         $this->assertSame(0.08, $p['Pozycje'][0]['StawkaVat']);
     }
 
     public function testSnapVatRateToDocumentedRates()
     {
-        $this->assertSame(8.0, IfirmaReceiptService::snapVatRate(7.99));
-        $this->assertSame(23.0, IfirmaReceiptService::snapVatRate(23.2));
-        $this->assertSame(5.0, IfirmaReceiptService::snapVatRate(4.6));
-        $this->assertSame(7.0, IfirmaReceiptService::snapVatRate(7.0));
-        $this->assertSame(0.0, IfirmaReceiptService::snapVatRate(0.3));
+        $this->assertSame(8.0, IfirmaPayloadBuilder::snapVatRate(7.99));
+        $this->assertSame(23.0, IfirmaPayloadBuilder::snapVatRate(23.2));
+        $this->assertSame(5.0, IfirmaPayloadBuilder::snapVatRate(4.6));
+        $this->assertSame(7.0, IfirmaPayloadBuilder::snapVatRate(7.0));
+        $this->assertSame(0.0, IfirmaPayloadBuilder::snapVatRate(0.3));
     }
 
     public function testStoredLineRateBeatsRoundingNoise()
@@ -335,49 +339,49 @@ class PayloadBuilderTest extends TestCase
             'unit_price_tax_excl' => 100.00,
             'tax_rate' => '8.000',
         ));
-        $p = $this->service->buildInvoicePayload($o);
+        $p = $this->builder->buildInvoicePayload($o);
         $this->assertSame(0.08, $p['Pozycje'][0]['StawkaVat']);
     }
 
     public function testSignatureTypeDefaultsToBpo()
     {
-        $p = $this->service->buildInvoicePayload($this->order());
+        $p = $this->builder->buildInvoicePayload($this->order());
         $this->assertSame('BPO', $p['RodzajPodpisuOdbiorcy']);
     }
 
     public function testConfiguredSignatureTypeIsNormalised()
     {
         Configuration::updateValue('IFIRMA_SIGNATURE_TYPE', ' bwo ');
-        $p = $this->service->buildInvoicePayload($this->order());
+        $p = $this->builder->buildInvoicePayload($this->order());
         $this->assertSame('BWO', $p['RodzajPodpisuOdbiorcy']);
     }
 
     public function testRemovedBrkValueFallsBackToBpo()
     {
         Configuration::updateValue('IFIRMA_SIGNATURE_TYPE', 'BRK');
-        $p = $this->service->buildInvoicePayload($this->order());
+        $p = $this->builder->buildInvoicePayload($this->order());
         $this->assertSame('BPO', $p['RodzajPodpisuOdbiorcy']);
     }
 
     public function testSignatureTypesAreTheFourAcceptedCodes()
     {
-        $this->assertSame(array('BPO', 'BWO', 'OUP', 'UPO'), array_keys(IfirmaReceiptService::signatureTypes()));
+        $this->assertSame(array('BPO', 'BWO', 'OUP', 'UPO'), array_keys(IfirmaDocumentSettings::signatureTypes()));
     }
 
     public function testEmptyOrNullSignatureTypeFallsBackToBpo()
     {
-        $this->assertSame('BPO', IfirmaReceiptService::normalizeSignatureType(null));
-        $this->assertSame('BPO', IfirmaReceiptService::normalizeSignatureType(''));
-        $this->assertSame('OUP', IfirmaReceiptService::normalizeSignatureType('oup'));
+        $this->assertSame('BPO', IfirmaDocumentSettings::normalizeSignatureType(null));
+        $this->assertSame('BPO', IfirmaDocumentSettings::normalizeSignatureType(''));
+        $this->assertSame('OUP', IfirmaDocumentSettings::normalizeSignatureType('oup'));
     }
 
     public function testOrderSaleDateIsTheOrderDate()
     {
         $o = $this->order();
-        $this->assertSame('2026-03-04', IfirmaReceiptService::orderSaleDate($o));
-        $this->assertSame('2026-03-04', $this->service->buildInvoicePayload($o)['DataSprzedazy']);
+        $this->assertSame('2026-03-04', IfirmaPayloadBuilder::orderSaleDate($o));
+        $this->assertSame('2026-03-04', $this->builder->buildInvoicePayload($o)['DataSprzedazy']);
         $o->date_add = '';
-        $this->assertSame(date('Y-m-d'), IfirmaReceiptService::orderSaleDate($o));
+        $this->assertSame(date('Y-m-d'), IfirmaPayloadBuilder::orderSaleDate($o));
     }
 
     public function testOrderProductLinesCarryTruncatedNameAndFloatQuantity()
@@ -389,7 +393,7 @@ class PayloadBuilderTest extends TestCase
             'unit_price_tax_incl' => 10,
             'unit_price_tax_excl' => 10,
         );
-        $lines = IfirmaReceiptService::orderProductLines($o);
+        $lines = IfirmaPayloadBuilder::orderProductLines($o);
         $this->assertCount(2, $lines);
         $this->assertSame('Widget', $lines[0]['name']);
         $this->assertSame(2.0, $lines[0]['quantity']);
@@ -398,7 +402,7 @@ class PayloadBuilderTest extends TestCase
         $this->assertSame(3.0, $lines[1]['quantity']);
         $this->assertNull($lines[1]['tax_rate']);
 
-        $p = $this->service->buildInvoicePayload($o);
+        $p = $this->builder->buildInvoicePayload($o);
         $this->assertCount(2, $p['Pozycje']);
         $this->assertSame('Widget', $p['Pozycje'][0]['NazwaPelna']);
         $this->assertSame(2.0, $p['Pozycje'][0]['Ilosc']);
@@ -407,7 +411,7 @@ class PayloadBuilderTest extends TestCase
 
     public function testBuyerNamesBusinessAndPrivate()
     {
-        $this->assertSame(array('Jan Kowalski'), IfirmaReceiptService::buyerNames($this->order()));
+        $this->assertSame(array('Jan Kowalski'), IfirmaPayloadBuilder::buyerNames($this->order()));
 
         $a = new Address();
         $a->id = 7;
@@ -417,6 +421,6 @@ class PayloadBuilderTest extends TestCase
         $a->vat_number = '1234567890';
         $a->id_country = 14;
         Address::register($a);
-        $this->assertSame(array('ACME Sp. z o.o.', 'Jan Kowalski'), IfirmaReceiptService::buyerNames($this->order()));
+        $this->assertSame(array('ACME Sp. z o.o.', 'Jan Kowalski'), IfirmaPayloadBuilder::buyerNames($this->order()));
     }
 }

@@ -13,8 +13,8 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * The document type and signature type settings, pinned table by table and value by value before they
- * move out of IfirmaReceiptService (refactor-srp-splits 5.3). PayloadBuilderTest asserts only the keys of
- * both tables and a few of the values the normalisers accept.
+ * moved from IfirmaReceiptService to IfirmaDocumentSettings (refactor-srp-splits 5.3). PayloadBuilderTest
+ * asserts only the keys of both tables and a few of the values the normalisers accept.
  */
 class DocumentSettingsTest extends TestCase
 {
@@ -27,7 +27,7 @@ class DocumentSettingsTest extends TestCase
     {
         $this->assertSame(
             array('fakturakraj' => 'Domestic VAT invoice (fakturakraj)'),
-            IfirmaReceiptService::enabledDocumentTypes()
+            IfirmaDocumentSettings::enabledDocumentTypes()
         );
     }
 
@@ -38,7 +38,7 @@ class DocumentSettingsTest extends TestCase
             'BWO' => 'bez podpisu odbiorcy i wystawcy',
             'OUP' => 'osoba upoważniona do otrzymania faktury VAT',
             'UPO' => 'upoważnienie',
-        ), IfirmaReceiptService::signatureTypes());
+        ), IfirmaDocumentSettings::signatureTypes());
     }
 
     public function documentTypeInputs()
@@ -61,10 +61,10 @@ class DocumentSettingsTest extends TestCase
      */
     public function testAnyDocumentTypeReadsAsAnEnabledOne($input)
     {
-        $type = IfirmaReceiptService::normalizeDocumentType($input);
+        $type = IfirmaDocumentSettings::normalizeDocumentType($input);
 
         $this->assertSame('fakturakraj', $type);
-        $this->assertArrayHasKey($type, IfirmaReceiptService::enabledDocumentTypes());
+        $this->assertArrayHasKey($type, IfirmaDocumentSettings::enabledDocumentTypes());
     }
 
     public function signatureTypeInputs()
@@ -93,7 +93,7 @@ class DocumentSettingsTest extends TestCase
      */
     public function testASignatureTypeIsUpperCasedAndTrimmedOrReadsAsBpo($input, $expected)
     {
-        $this->assertSame($expected, IfirmaReceiptService::normalizeSignatureType($input));
+        $this->assertSame($expected, IfirmaDocumentSettings::normalizeSignatureType($input));
     }
 
     public function testTheConfiguredDocumentTypeIsNormalisedWhenItIsRead()

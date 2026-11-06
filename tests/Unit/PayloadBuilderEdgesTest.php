@@ -13,7 +13,7 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * The edges of the payload code that PayloadBuilderTest and the golden payloads leave open, pinned
- * before the code moves out of IfirmaReceiptService (refactor-srp-splits 5.3):
+ * before the code moved from IfirmaReceiptService to IfirmaPayloadBuilder (refactor-srp-splits 5.3):
  *  - the table of field limits and the limit each contractor field is cut to;
  *  - when a contractor is looked up by NIP (ten digits and nothing else);
  *  - when the buyer of the invoice address is a business (a company and a VAT number or DNI), and the
@@ -22,19 +22,19 @@ use PHPUnit\Framework\TestCase;
  *  - product rows that are not arrays, or carry no values;
  *  - positions that have neither a stored rate nor a price ratio to take the rate from;
  *  - the half-point edge of snapVatRate() and the list of documented rates;
- *  - the translation of the shipping line, which has to stay in the domain of the receipt service, and
- *    the module of the service that does the translating;
+ *  - the translation of the shipping line, which stays in the domain of the receipt service, and the
+ *    module the service hands to the builder for it;
  *  - the names a buyer is looked up by, and the cut of a long order reference.
  */
 class PayloadBuilderEdgesTest extends TestCase
 {
-    /** @var IfirmaReceiptService */
-    private $service;
+    /** @var IfirmaPayloadBuilder */
+    private $builder;
 
     protected function setUp(): void
     {
         IfirmaTestState::resetAll();
-        $this->service = new IfirmaReceiptService(new IfirmaApiClient('u', array()), new Module());
+        $this->builder = IfirmaPayloadBuilder::build(new Module());
 
         $c = new Customer();
         $c->id = 12345;
@@ -121,7 +121,7 @@ class PayloadBuilderEdgesTest extends TestCase
             'NazwaPelna' => 500,
             'Identyfikator' => 15,
             'Kraj' => 70,
-        ), IfirmaReceiptService::fieldLimits());
+        ), IfirmaPayloadBuilder::fieldLimits());
     }
 
     public function testEveryContractorFieldIsCutToItsOwnLimit()
@@ -136,7 +136,7 @@ class PayloadBuilderEdgesTest extends TestCase
         Customer::$instances[12345]->email = str_repeat('e', 70);
         Country::$instances[14]->name = str_repeat('K', 80);
 
-        $k = $this->service->buildContractor($this->order());
+        $k = $this->builder->buildContractor($this->order());
 
         $this->assertSame(str_repeat('C', 150), $k['Nazwa']);
         $this->assertSame(str_repeat('1', 13), $k['NIP']);
@@ -169,7 +169,7 @@ class PayloadBuilderEdgesTest extends TestCase
         $a->vat_number = $vat;
         $a->dni = $dni;
 
-        $k = $this->service->buildContractor($this->order());
+        $k = $this->builder->buildContractor($this->order());
 
         $this->assertSame($name, $k['Nazwa']);
         $this->assertSame($nip, $k['NIP']);
@@ -178,7 +178,7 @@ class PayloadBuilderEdgesTest extends TestCase
 
     public function testTheStreetOfAnOverrideJoinsBothAddressLines()
     {
-        $k = $this->service->buildContractor($this->order(), array(
+        $k = $this->builder->buildContractor($this->order(), array(
             'want_invoice_for_company' => false,
             'firstname' => 'Anna',
             'lastname' => 'Nowak',
@@ -201,7 +201,7 @@ class PayloadBuilderEdgesTest extends TestCase
         Country::register($three);
         Address::$instances[7]->id_country = 2;
 
-        $k = $this->service->buildContractor($this->order());
+        $k = $this->builder->buildContractor($this->order());
 
         $this->assertSame('DE', $k['KodKraju']);
         $this->assertSame('DEU', $k['Kraj']);
@@ -211,7 +211,7 @@ class PayloadBuilderEdgesTest extends TestCase
     {
         $reference = 'PS-ORDER-15-' . str_repeat('R', 1100);
 
-        $p = $this->service->buildInvoicePayload($this->order(12345, 15, str_repeat('R', 1100)));
+        $p = $this->builder->buildInvoicePayload($this->order(12345, 15, str_repeat('R', 1100)));
 
         $this->assertSame(1000, mb_strlen($p['Uwagi'], 'UTF-8'));
         $this->assertSame(substr($reference, 0, 1000), $p['Uwagi']);
@@ -224,12 +224,12 @@ class PayloadBuilderEdgesTest extends TestCase
         $o->total_paid_tax_incl = 44.446;
         $o->totalPaidReal = 33.337;
 
-        $p = $this->service->buildInvoicePayload($o);
+        $p = $this->builder->buildInvoicePayload($o);
         $this->assertSame(33.34, $p['Zaplacono']);
         $this->assertSame(33.34, $p['ZaplaconoNaDokumencie']);
 
         Configuration::updateValue('IFIRMA_MARK_PAID_ON_CREATE', 1);
-        $p = $this->service->buildInvoicePayload($o);
+        $p = $this->builder->buildInvoicePayload($o);
         $this->assertSame(44.45, $p['Zaplacono']);
         $this->assertSame(44.45, $p['ZaplaconoNaDokumencie']);
     }
@@ -240,7 +240,7 @@ class PayloadBuilderEdgesTest extends TestCase
         $o->total_shipping_tax_incl = 12.344;
         $o->total_shipping_tax_excl = 10.00;
 
-        $p = $this->service->buildInvoicePayload($o);
+        $p = $this->builder->buildInvoicePayload($o);
 
         $this->assertCount(2, $p['Pozycje']);
         $this->assertSame(12.34, $p['Pozycje'][1]['CenaJednostkowa']);
@@ -271,7 +271,7 @@ class PayloadBuilderEdgesTest extends TestCase
         $a->company = 'Firma';
         $a->vat_number = $vat;
 
-        $p = $this->service->buildInvoicePayload($this->order());
+        $p = $this->builder->buildInvoicePayload($this->order());
 
         $this->assertSame($expected, $p['NIPKontrahenta']);
     }
@@ -282,7 +282,7 @@ class PayloadBuilderEdgesTest extends TestCase
         $a->company = '';
         $a->vat_number = '5250001122';
 
-        $p = $this->service->buildInvoicePayload($this->order());
+        $p = $this->builder->buildInvoicePayload($this->order());
 
         $this->assertSame('', $p['Kontrahent']['NIP']);
         $this->assertNull($p['NIPKontrahenta']);
@@ -308,12 +308,12 @@ class PayloadBuilderEdgesTest extends TestCase
         ));
 
         $names = array();
-        foreach (IfirmaReceiptService::orderProductLines($o) as $line) {
+        foreach (IfirmaPayloadBuilder::orderProductLines($o) as $line) {
             $names[] = $line['name'];
         }
         $this->assertSame(array('First', 'Second'), $names);
 
-        $p = $this->service->buildInvoicePayload($o);
+        $p = $this->builder->buildInvoicePayload($o);
         $this->assertCount(2, $p['Pozycje']);
         $this->assertSame('Second', $p['Pozycje'][1]['NazwaPelna']);
         $this->assertSame(3.0, $p['Pozycje'][1]['Ilosc']);
@@ -333,7 +333,7 @@ class PayloadBuilderEdgesTest extends TestCase
 
         $this->assertSame(
             array(array_merge($zero, array('name' => 'Only a name')), $zero),
-            IfirmaReceiptService::orderProductLines($o)
+            IfirmaPayloadBuilder::orderProductLines($o)
         );
     }
 
@@ -352,7 +352,7 @@ class PayloadBuilderEdgesTest extends TestCase
         $o->total_shipping_tax_excl = 0.00;
         $o->carrier_tax_rate = null;
 
-        $positions = $this->service->buildInvoicePayload($o)['Pozycje'];
+        $positions = $this->builder->buildInvoicePayload($o)['Pozycje'];
 
         $this->assertCount(5, $positions);
         $this->assertSame(0.0, $positions[0]['StawkaVat']);
@@ -375,7 +375,7 @@ class PayloadBuilderEdgesTest extends TestCase
             'unit_price_tax_excl' => 100.00,
         ));
 
-        $positions = $this->service->buildInvoicePayload($o)['Pozycje'];
+        $positions = $this->builder->buildInvoicePayload($o)['Pozycje'];
 
         $this->assertSame(0.0675, $positions[0]['StawkaVat']);
     }
@@ -391,14 +391,14 @@ class PayloadBuilderEdgesTest extends TestCase
             'tax_rate' => 22.8,
         ));
 
-        $positions = $this->service->buildInvoicePayload($o)['Pozycje'];
+        $positions = $this->builder->buildInvoicePayload($o)['Pozycje'];
 
         $this->assertSame(0.23, $positions[0]['StawkaVat']);
     }
 
     public function testTheDocumentedVatRatesAreZeroFiveEightAndTwentyThree()
     {
-        $this->assertSame(array(0.0, 5.0, 8.0, 23.0), IfirmaReceiptService::allowedVatRates());
+        $this->assertSame(array(0.0, 5.0, 8.0, 23.0), IfirmaPayloadBuilder::allowedVatRates());
     }
 
     public function testAMiddleRateSnapsToTheDocumentedOneUpToHalfAPointAway()
@@ -412,22 +412,22 @@ class PayloadBuilderEdgesTest extends TestCase
             '22.5' => 23.0,
             '23.5' => 23.0,
         ) as $rate => $snapped) {
-            $this->assertSame($snapped, IfirmaReceiptService::snapVatRate((float) $rate), 'rate ' . $rate);
+            $this->assertSame($snapped, IfirmaPayloadBuilder::snapVatRate((float) $rate), 'rate ' . $rate);
         }
     }
 
     public function testARateMoreThanHalfAPointAwayFromEveryDocumentedOneIsLeftAlone()
     {
         foreach (array(0.51, 5.51, 6.5, 8.51, 15.0, 23.51, -0.51) as $rate) {
-            $this->assertSame($rate, IfirmaReceiptService::snapVatRate($rate), 'rate ' . $rate);
+            $this->assertSame($rate, IfirmaPayloadBuilder::snapVatRate($rate), 'rate ' . $rate);
         }
     }
 
     public function testASnappedRateIsAFloatWhateverTheInput()
     {
-        $this->assertSame(8.0, IfirmaReceiptService::snapVatRate('8.2'));
-        $this->assertSame(23.0, IfirmaReceiptService::snapVatRate(23));
-        $this->assertSame(6.7, IfirmaReceiptService::snapVatRate('6.7'));
+        $this->assertSame(8.0, IfirmaPayloadBuilder::snapVatRate('8.2'));
+        $this->assertSame(23.0, IfirmaPayloadBuilder::snapVatRate(23));
+        $this->assertSame(6.7, IfirmaPayloadBuilder::snapVatRate('6.7'));
     }
 
     // ---- the shipping line -------------------------------------------------------------------
@@ -435,12 +435,12 @@ class PayloadBuilderEdgesTest extends TestCase
     public function testTheShippingLineIsNamedByTheReceiptServiceTranslation()
     {
         $module = $this->recordingModule();
-        $service = new IfirmaReceiptService(new IfirmaApiClient('u', array()), $module);
+        $builder = IfirmaPayloadBuilder::build($module);
         $o = $this->order();
         $o->total_shipping_tax_incl = 12.30;
         $o->total_shipping_tax_excl = 10.00;
 
-        $p = $service->buildInvoicePayload($o);
+        $p = $builder->buildInvoicePayload($o);
 
         $this->assertCount(2, $p['Pozycje']);
         $this->assertSame('[pl] Shipping', $p['Pozycje'][1]['NazwaPelna']);
@@ -469,9 +469,9 @@ class PayloadBuilderEdgesTest extends TestCase
     public function testAnOrderWithoutShippingNeverAsksTheTranslator()
     {
         $module = $this->recordingModule();
-        $service = new IfirmaReceiptService(new IfirmaApiClient('u', array()), $module);
+        $builder = IfirmaPayloadBuilder::build($module);
 
-        $p = $service->buildInvoicePayload($this->order());
+        $p = $builder->buildInvoicePayload($this->order());
 
         $this->assertCount(1, $p['Pozycje']);
         $this->assertSame(array(), $module->asked);
@@ -480,12 +480,12 @@ class PayloadBuilderEdgesTest extends TestCase
     public function testTheTranslatedShippingNameIsTrimmedAndCutToTheNameLimit()
     {
         $module = $this->recordingModule('  ' . str_repeat('ł', 600));
-        $service = new IfirmaReceiptService(new IfirmaApiClient('u', array()), $module);
+        $builder = IfirmaPayloadBuilder::build($module);
         $o = $this->order();
         $o->total_shipping_tax_incl = 12.30;
         $o->total_shipping_tax_excl = 10.00;
 
-        $p = $service->buildInvoicePayload($o);
+        $p = $builder->buildInvoicePayload($o);
 
         $this->assertSame(str_repeat('ł', 500), $p['Pozycje'][1]['NazwaPelna']);
     }
@@ -498,25 +498,25 @@ class PayloadBuilderEdgesTest extends TestCase
         $a->company = '   ';
         $a->firstname = '';
         $a->lastname = '';
-        $this->assertSame(array(), IfirmaReceiptService::buyerNames($this->order()));
+        $this->assertSame(array(), IfirmaPayloadBuilder::buyerNames($this->order()));
 
         $a->company = ' ACME ';
-        $this->assertSame(array('ACME'), IfirmaReceiptService::buyerNames($this->order()));
+        $this->assertSame(array('ACME'), IfirmaPayloadBuilder::buyerNames($this->order()));
     }
 
     public function testBuyerNamesJoinWhateverPartOfThePersonNameThereIs()
     {
         $a = Address::$instances[7];
         $a->lastname = '';
-        $this->assertSame(array('Jan'), IfirmaReceiptService::buyerNames($this->order()));
+        $this->assertSame(array('Jan'), IfirmaPayloadBuilder::buyerNames($this->order()));
 
         $a->firstname = '';
         $a->lastname = 'Kowalski';
-        $this->assertSame(array('Kowalski'), IfirmaReceiptService::buyerNames($this->order()));
+        $this->assertSame(array('Kowalski'), IfirmaPayloadBuilder::buyerNames($this->order()));
 
         $a->firstname = ' Jan ';
         $a->lastname = ' Kowalski ';
-        $this->assertSame(array('Jan Kowalski'), IfirmaReceiptService::buyerNames($this->order()));
+        $this->assertSame(array('Jan Kowalski'), IfirmaPayloadBuilder::buyerNames($this->order()));
     }
 
     public function testBuyerNamesAreCutToTheNameLimit()
@@ -528,7 +528,7 @@ class PayloadBuilderEdgesTest extends TestCase
 
         $this->assertSame(
             array(str_repeat('C', 150), str_repeat('J', 150)),
-            IfirmaReceiptService::buyerNames($this->order())
+            IfirmaPayloadBuilder::buyerNames($this->order())
         );
     }
 }

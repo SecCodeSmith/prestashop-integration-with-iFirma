@@ -10,17 +10,18 @@ if (!defined('_PS_VERSION_')) {
 
 require_once dirname(__FILE__) . '/IfirmaApiClient.php';
 require_once dirname(__FILE__) . '/IfirmaReceipt.php';
-require_once dirname(__FILE__) . '/IfirmaPaymentMethodResolver.php';
 require_once dirname(__FILE__) . '/IfirmaContractorService.php';
 require_once dirname(__FILE__) . '/IfirmaCreateResponse.php';
+require_once dirname(__FILE__) . '/IfirmaDocumentSettings.php';
+require_once dirname(__FILE__) . '/IfirmaPayloadBuilder.php';
 
 class IfirmaReceiptService
 {
-    const CONTRACTOR_ID_PREFIX = 'PS-C';
+    /** Moved to IfirmaPayloadBuilder; this alias goes with the wrappers below in task 5.4. */
+    const CONTRACTOR_ID_PREFIX = IfirmaPayloadBuilder::CONTRACTOR_ID_PREFIX;
 
     /** Longest contractor identifier the document endpoints accept in IdentyfikatorKontrahenta. */
     const DOCUMENT_IDENTIFIER_MAX = 15;
-    const ORDER_REFERENCE_PREFIX = 'PS-ORDER-';
 
     /** @var IfirmaApiClient */
     private $client;
@@ -31,10 +32,14 @@ class IfirmaReceiptService
     /** @var IfirmaContractorService|null */
     private $contractors;
 
+    /** @var IfirmaPayloadBuilder */
+    private $payloadBuilder;
+
     public function __construct(IfirmaApiClient $client, Module $module)
     {
         $this->client = $client;
         $this->module = $module;
+        $this->payloadBuilder = IfirmaPayloadBuilder::build($module);
     }
 
     /**
@@ -48,119 +53,66 @@ class IfirmaReceiptService
         return new self($client, $module);
     }
 
-    /**
-     * Documented iFirma maximum lengths (characters) of the payload fields.
-     *
-     * @return array
-     */
+    // ---- temporary delegating wrappers (refactor-srp-splits 5.3) -----------------------------------
+    // The payload helpers moved to IfirmaPayloadBuilder and the document settings to
+    // IfirmaDocumentSettings. These forward to them for the callers that still name this class;
+    // task 5.4 points those callers at the new classes and deletes this block.
+
+    /** @see IfirmaPayloadBuilder::fieldLimits() */
     public static function fieldLimits()
     {
-        return array(
-            'Nazwa' => 150,
-            'Email' => 65,
-            'NIP' => 13,
-            'Ulica' => 65,
-            'Miejscowosc' => 65,
-            'KodPocztowy' => 16,
-            'Uwagi' => 1000,
-            'NazwaPelna' => 500,
-            'Identyfikator' => 15,
-            'Kraj' => 70,
-        );
+        return IfirmaPayloadBuilder::fieldLimits();
     }
 
-    /**
-     * Trim and cut a value to at most $max characters (never splits a multibyte character).
-     *
-     * @param mixed $value
-     * @param int   $max
-     * @return string
-     */
+    /** @see IfirmaPayloadBuilder::truncate() */
     public static function truncate($value, $max)
     {
-        $value = trim((string) $value);
-        $max = (int) $max;
-        if (mb_strlen($value, 'UTF-8') > $max) {
-            $value = mb_substr($value, 0, $max, 'UTF-8');
-        }
-
-        return $value;
+        return IfirmaPayloadBuilder::truncate($value, $max);
     }
 
-    /**
-     * @param Order $order
-     * @return string
-     */
+    /** @see IfirmaPayloadBuilder::buildOrderReference() */
     public static function buildOrderReference(Order $order)
     {
-        return self::ORDER_REFERENCE_PREFIX . (int) $order->id . '-' . $order->reference;
+        return IfirmaPayloadBuilder::buildOrderReference($order);
     }
 
-    /**
-     * Sale date the module stamps on the document (DataSprzedazy): the order date, today when the
-     * order has none. Shared with the duplicate guard so both sides compare the same value.
-     *
-     * @param Order $order
-     * @return string Y-m-d
-     */
+    /** @see IfirmaPayloadBuilder::orderSaleDate() */
     public static function orderSaleDate(Order $order)
     {
-        $ts = $order->date_add ? strtotime((string) $order->date_add) : false;
-
-        return $ts ? date('Y-m-d', $ts) : date('Y-m-d');
+        return IfirmaPayloadBuilder::orderSaleDate($order);
     }
 
-    /**
-     * Product lines of the order as the module sends them (name cut to the NazwaPelna limit,
-     * quantity as float) plus the price fields the payload builder needs. Shipping is not a line.
-     *
-     * @param Order $order
-     * @return array of name, quantity, unit_price_tax_incl, unit_price_tax_excl, tax_rate
-     */
+    /** @see IfirmaPayloadBuilder::orderProductLines() */
     public static function orderProductLines(Order $order)
     {
-        $limits = self::fieldLimits();
-        $lines = array();
-        foreach ($order->getOrderDetailList() as $row) {
-            if (!is_array($row)) {
-                continue;
-            }
-            $lines[] = array(
-                'name' => self::truncate(isset($row['product_name']) ? $row['product_name'] : '', $limits['NazwaPelna']),
-                'quantity' => isset($row['product_quantity']) ? (float) $row['product_quantity'] : 0.0,
-                'unit_price_tax_incl' => isset($row['unit_price_tax_incl']) ? (float) $row['unit_price_tax_incl'] : 0.0,
-                'unit_price_tax_excl' => isset($row['unit_price_tax_excl']) ? (float) $row['unit_price_tax_excl'] : 0.0,
-                'tax_rate' => isset($row['tax_rate']) ? $row['tax_rate'] : null,
-            );
-        }
-
-        return $lines;
+        return IfirmaPayloadBuilder::orderProductLines($order);
     }
 
-    /**
-     * Names under which the buyer of the order may appear as an iFirma contractor: the company of
-     * the invoice address when it has one, and the person name. Both cut to the Nazwa limit, raw
-     * (not normalised) so callers decide how to compare.
-     *
-     * @param Order $order
-     * @return string[]
-     */
+    /** @see IfirmaPayloadBuilder::buyerNames() */
     public static function buyerNames(Order $order)
     {
-        $limits = self::fieldLimits();
-        $address = new Address((int) $order->id_address_invoice);
-        $names = array();
-        $company = trim((string) $address->company);
-        if ($company !== '') {
-            $names[] = self::truncate($company, $limits['Nazwa']);
-        }
-        $person = trim(trim((string) $address->firstname) . ' ' . trim((string) $address->lastname));
-        if ($person !== '') {
-            $names[] = self::truncate($person, $limits['Nazwa']);
-        }
-
-        return $names;
+        return IfirmaPayloadBuilder::buyerNames($order);
     }
+
+    /** @see IfirmaPayloadBuilder::buildContractor() */
+    public function buildContractor(Order $order, $override = null)
+    {
+        return $this->payloadBuilder->buildContractor($order, $override);
+    }
+
+    /** @see IfirmaDocumentSettings::normalizeDocumentType() */
+    public static function normalizeDocumentType($value)
+    {
+        return IfirmaDocumentSettings::normalizeDocumentType($value);
+    }
+
+    /** @see IfirmaDocumentSettings::normalizeSignatureType() */
+    public static function normalizeSignatureType($value)
+    {
+        return IfirmaDocumentSettings::normalizeSignatureType($value);
+    }
+
+    // ---- end of the temporary wrappers --------------------------------------------------------------
 
     /**
      * Issues the document of the order: registers the contractor, posts the payload (postWithRetries()),
@@ -179,7 +131,7 @@ class IfirmaReceiptService
         }
 
         $docType = $this->getDocumentType();
-        $payload = $this->buildInvoicePayload(
+        $payload = $this->payloadBuilder->buildInvoicePayload(
             $order,
             isset($options['override']) ? $options['override'] : null,
             $options
@@ -233,7 +185,7 @@ class IfirmaReceiptService
         // Kod 201 naming DodatkoweUwagi: retry exactly once without that object.
         if ($response !== null && empty($options['skip_dodatkowe_uwagi']) && $this->dodatkoweUwagiRejected($response, $payload)) {
             $options['skip_dodatkowe_uwagi'] = true;
-            $payload = $this->buildInvoicePayload(
+            $payload = $this->payloadBuilder->buildInvoicePayload(
                 $order,
                 isset($options['override']) ? $options['override'] : null,
                 $options
@@ -353,10 +305,10 @@ class IfirmaReceiptService
             }
         }
         $receipt->status = IfirmaReceipt::STATUS_CREATED;
-        $receipt->order_reference = self::buildOrderReference($order);
+        $receipt->order_reference = IfirmaPayloadBuilder::buildOrderReference($order);
         $receipt->issue_date = $payload['DataWystawienia'];
         $receipt->source = IfirmaReceipt::SOURCE_MODULE;
-        $receipt->paid_amount = (float) $this->getPaidAmount($order);
+        $receipt->paid_amount = (float) $this->payloadBuilder->getPaidAmount($order);
         $receipt->last_error = '';
 
         if (!$receipt->security_token) {
@@ -592,7 +544,7 @@ class IfirmaReceiptService
 
         if ($amount === null) {
             $order = new Order((int) $receipt->id_order);
-            $amount = $this->getPaidAmount($order);
+            $amount = $this->payloadBuilder->getPaidAmount($order);
         }
         $amount = round((float) $amount, 2);
 
@@ -686,88 +638,6 @@ class IfirmaReceiptService
     }
 
     /**
-     * @param Order      $order
-     * @param array|null $override Approved buyer data (see buildContractor())
-     * @param array      $options  skip_dodatkowe_uwagi (bool)
-     * @return array
-     */
-    public function buildInvoicePayload(Order $order, $override = null, array $options = array())
-    {
-        $limits = self::fieldLimits();
-
-        $paid = $this->getPaidAmount($order);
-        $today = date('Y-m-d');
-        $saleDate = self::orderSaleDate($order);
-
-        $unit = Configuration::get('IFIRMA_DEFAULT_UNIT') ?: 'szt.';
-
-        $positions = array();
-        foreach (self::orderProductLines($order) as $line) {
-            $grossUnit = round($line['unit_price_tax_incl'], 2);
-            $netUnit = $line['unit_price_tax_excl'];
-            $taxRate = $this->deriveTaxRate($grossUnit, $netUnit, $line['tax_rate']);
-
-            $positions[] = array(
-                'StawkaVat' => round($taxRate / 100, 4),
-                'Ilosc' => $line['quantity'],
-                'CenaJednostkowa' => $grossUnit,
-                'NazwaPelna' => $line['name'],
-                'Jednostka' => $unit,
-                // Always a percentage rate (0% included): "ZW" (exempt) would require a PKWiU code per position.
-                'TypStawkiVat' => 'PRC',
-            );
-        }
-
-        $shippingIncl = round((float) $order->total_shipping_tax_incl, 2);
-        if ($shippingIncl > 0) {
-            $shipRate = $this->deriveTaxRate($shippingIncl, (float) $order->total_shipping_tax_excl, isset($order->carrier_tax_rate) ? $order->carrier_tax_rate : null);
-            $positions[] = array(
-                'StawkaVat' => round($shipRate / 100, 4),
-                'Ilosc' => 1,
-                'CenaJednostkowa' => $shippingIncl,
-                'NazwaPelna' => self::truncate($this->l('Shipping'), $limits['NazwaPelna']),
-                'Jednostka' => 'usł.',
-                'TypStawkiVat' => 'PRC',
-            );
-        }
-
-        $reference = self::buildOrderReference($order);
-
-        $payload = array(
-            'Zaplacono' => $paid,
-            'ZaplaconoNaDokumencie' => $paid,
-            'LiczOd' => 'BRT',
-            'DataWystawienia' => $today,
-            'DataSprzedazy' => $saleDate,
-            'FormatDatySprzedazy' => 'DZN',
-            'SposobZaplaty' => IfirmaPaymentMethodResolver::build()->resolve($order),
-            'RodzajPodpisuOdbiorcy' => self::normalizeSignatureType(Configuration::get('IFIRMA_SIGNATURE_TYPE')),
-            'WidocznyNumerBdo' => false,
-            'Numer' => null,
-            'Uwagi' => self::truncate($reference, $limits['Uwagi']),
-            'IdentyfikatorKontrahenta' => null,
-            'NIPKontrahenta' => null,
-            'Kontrahent' => $this->buildContractor($order, $override),
-            'Pozycje' => $positions,
-        );
-
-        // Documented second lookup step: an existing contractor with this (Polish) NIP is reused.
-        $nip = preg_replace('/\D/', '', (string) $payload['Kontrahent']['NIP']);
-        if (strlen($nip) === 10 && strlen($nip) === strlen((string) $payload['Kontrahent']['NIP'])) {
-            $payload['NIPKontrahenta'] = $nip;
-        }
-
-        if (empty($options['skip_dodatkowe_uwagi'])) {
-            $payload['DodatkoweUwagi'] = array(
-                'Typ' => 'NUMER_ZAMOWIENIA',
-                'Info' => $reference,
-            );
-        }
-
-        return $payload;
-    }
-
-    /**
      * Matching hints for IfirmaContractorService::ensure().
      *
      * @param Order      $order
@@ -794,124 +664,11 @@ class IfirmaReceiptService
     }
 
     /**
-     * Build the Kontrahent node. $override (approved buyer data) replaces the invoice-address data.
-     *
-     * @param Order      $order
-     * @param array|null $override want_invoice_for_company, company, vat_number, firstname,
-     *                             lastname, address1, address2, postcode, city, id_country
-     * @return array
-     */
-    public function buildContractor(Order $order, $override = null)
-    {
-        $limits = self::fieldLimits();
-        $customer = new Customer((int) $order->id_customer);
-
-        if (is_array($override)) {
-            $get = function ($key) use ($override) {
-                return isset($override[$key]) ? (string) $override[$key] : '';
-            };
-            $idCountry = isset($override['id_country']) ? (int) $override['id_country'] : 0;
-            $isBusiness = !empty($override['want_invoice_for_company']);
-            $company = trim($get('company'));
-            $vatNumber = trim($get('vat_number'));
-            $firstname = $get('firstname');
-            $lastname = $get('lastname');
-            $street = trim($get('address1') . ' ' . $get('address2'));
-            $postcode = $get('postcode');
-            $city = $get('city');
-        } else {
-            $invoiceAddress = new Address((int) $order->id_address_invoice);
-            $idCountry = (int) $invoiceAddress->id_country;
-            $vatNumber = trim((string) $invoiceAddress->vat_number . $invoiceAddress->dni);
-            $company = trim((string) $invoiceAddress->company);
-            $isBusiness = ($company !== '' && $vatNumber !== '');
-            $firstname = (string) $invoiceAddress->firstname;
-            $lastname = (string) $invoiceAddress->lastname;
-            $street = trim($invoiceAddress->address1 . ' ' . $invoiceAddress->address2);
-            $postcode = (string) $invoiceAddress->postcode;
-            $city = (string) $invoiceAddress->city;
-        }
-
-        $country = new Country($idCountry);
-        $countryIso = $country->iso_code ? mb_strtoupper($country->iso_code) : 'PL';
-        $countryName = trim((string) Country::getNameById((int) $order->id_lang, $idCountry));
-        if ($countryName === '') {
-            $countryName = $countryIso;
-        }
-
-        $name = $isBusiness ? $company : trim($firstname . ' ' . $lastname);
-
-        return array(
-            'Nazwa' => self::truncate($name, $limits['Nazwa']),
-            'Identyfikator' => self::truncate(self::CONTRACTOR_ID_PREFIX . (int) $order->id_customer, $limits['Identyfikator']),
-            'NIP' => $isBusiness ? self::truncate(preg_replace('/[^0-9A-Za-z]/', '', $vatNumber), $limits['NIP']) : '',
-            'Ulica' => self::truncate($street, $limits['Ulica']),
-            'KodPocztowy' => self::truncate($postcode, $limits['KodPocztowy']),
-            'Kraj' => self::truncate($countryName, $limits['Kraj']),
-            'KodKraju' => self::truncate($countryIso, 2),
-            'Miejscowosc' => self::truncate($city, $limits['Miejscowosc']),
-            'Email' => self::truncate($customer->email, $limits['Email']),
-            'OsobaFizyczna' => !$isBusiness,
-        );
-    }
-
-    /**
      * @return string
      */
     public function getDocumentType()
     {
-        return self::normalizeDocumentType(Configuration::get('IFIRMA_DOC_TYPE'));
-    }
-
-    /**
-     * Document types the merchant can choose. `fakturaparagon` (invoice to a fiscal receipt) is
-     * disabled for now: the only supported type is the domestic VAT invoice, and a stored
-     * `fakturaparagon` setting is treated as `fakturakraj` until the option returns.
-     *
-     * @return string[] type => label key
-     */
-    public static function enabledDocumentTypes()
-    {
-        return array('fakturakraj' => 'Domestic VAT invoice (fakturakraj)');
-    }
-
-    /**
-     * @param mixed $value configured value
-     * @return string an enabled document type, `fakturakraj` for anything else
-     */
-    public static function normalizeDocumentType($value)
-    {
-        $type = trim((string) $value);
-
-        return array_key_exists($type, self::enabledDocumentTypes()) ? $type : 'fakturakraj';
-    }
-
-    /**
-     * The only RodzajPodpisuOdbiorcy values the document endpoints accept (fakturakraj and
-     * fakturaparagon documentation): anything else makes iFirma answer Kod 200 "nie można utworzyć
-     * obiektu na podstawie zawartości żądania" without naming the field.
-     *
-     * @return string[] code => documented meaning (Polish)
-     */
-    public static function signatureTypes()
-    {
-        return array(
-            'BPO' => 'bez podpisu odbiorcy',
-            'BWO' => 'bez podpisu odbiorcy i wystawcy',
-            'OUP' => 'osoba upoważniona do otrzymania faktury VAT',
-            'UPO' => 'upoważnienie',
-        );
-    }
-
-    /**
-     * @param mixed $value configured value
-     * @return string a documented code; BPO (no recipient signature, the online-sales default) otherwise
-     */
-    public static function normalizeSignatureType($value)
-    {
-        $code = strtoupper(trim((string) $value));
-
-        return array_key_exists($code, self::signatureTypes()) ? $code : 'BPO';
+        return IfirmaDocumentSettings::normalizeDocumentType(Configuration::get('IFIRMA_DOC_TYPE'));
     }
 
     /**
@@ -932,68 +689,6 @@ class IfirmaReceiptService
         } catch (Exception $e) {
             return substr(hash('sha256', uniqid((string) mt_rand(), true)), 0, 40);
         }
-    }
-
-    /**
-     * @param float      $gross
-     * @param float      $net
-     * @param mixed|null $fallbackRate
-     * @return float
-     */
-    private function deriveTaxRate($gross, $net, $fallbackRate = null)
-    {
-        // PrestaShop stores the applied rate on the order line; it beats a ratio of rounded prices.
-        if ($fallbackRate !== null && is_numeric($fallbackRate)) {
-            return self::snapVatRate((float) $fallbackRate);
-        }
-        if ($net > 0 && $gross > 0) {
-            return self::snapVatRate(round((($gross / $net) - 1) * 100, 2));
-        }
-
-        return 0.0;
-    }
-
-    /**
-     * VAT rates (percent) the document endpoints accept in StawkaVat: 0, 5, 8 and 23.
-     *
-     * @return float[]
-     */
-    public static function allowedVatRates()
-    {
-        return array(0.0, 5.0, 8.0, 23.0);
-    }
-
-    /**
-     * Rounding noise (7.99 from gross/net of rounded prices) becomes the documented rate; a rate
-     * further than half a point from every documented one is returned unchanged so iFirma reports it
-     * instead of the module silently changing the tax.
-     *
-     * @param float $rate percent
-     * @return float
-     */
-    public static function snapVatRate($rate)
-    {
-        $rate = (float) $rate;
-        foreach (self::allowedVatRates() as $allowed) {
-            if (abs($rate - $allowed) <= 0.5) {
-                return $allowed;
-            }
-        }
-
-        return $rate;
-    }
-
-    /**
-     * @param Order $order
-     * @return float
-     */
-    private function getPaidAmount(Order $order)
-    {
-        if ((bool) Configuration::get('IFIRMA_MARK_PAID_ON_CREATE')) {
-            return round((float) $order->total_paid_tax_incl, 2);
-        }
-
-        return round((float) $order->getTotalPaid(), 2);
     }
 
     /**
