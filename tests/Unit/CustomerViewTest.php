@@ -502,14 +502,13 @@ class CustomerViewTest extends TestCase
     }
 
     /**
-     * Module::$context is protected in PrestaShop (the stub makes it public), so the language has to come from
-     * the context itself and never from the module the view was given.
+     * Module::$context is protected in PrestaShop and in the stub, so the language has to come from the context
+     * itself and never from the module the view was given. The module here holds a context of its own, a blank
+     * one without a language.
      */
     public function testTheLanguageComesFromTheContextAndNotFromTheModule()
     {
-        $module = new Module();
-        $module->context = null;
-        $view = new IfirmaCustomerView($module, Context::getContext()->link);
+        $view = new IfirmaCustomerView(new Module(null, new Context()), Context::getContext()->link);
         $this->registerState(5, array(1 => 'Paid', 2 => 'Zaplacono'));
         Configuration::updateValue('IFIRMA_AUTO_CREATE_STATE', 5);
         Context::getContext()->language->id = 2;

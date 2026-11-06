@@ -22,7 +22,14 @@ class Module
     public $ps_versions_compliancy;
     public $bootstrap;
     public $_path;
-    public $context;
+    /**
+     * Protected like Module::$context in PrestaShop 8.1 and 9.1: only the module and its subclasses read it, so a
+     * class that reads $module->context fails here as it does in the shop. Another context goes in through the
+     * constructor.
+     *
+     * @var Context
+     */
+    protected $context;
     public $id;
 
     /** @var Module[] name => instance; tests set this for getInstanceByName */
