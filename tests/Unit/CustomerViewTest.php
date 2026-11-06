@@ -442,6 +442,7 @@ class CustomerViewTest extends TestCase
             'zero, saved as text' => array('0', false, '', array()),
             'negative' => array(-1, false, '', array()),
             'not a number' => array('abc', false, '', array()),
+            'the lowest state id' => array(1, true, '', array(1)),
             'a state' => array(5, true, 'Payment accepted', array(5)),
             'a state, saved as text' => array('5', true, 'Payment accepted', array(5)),
         );

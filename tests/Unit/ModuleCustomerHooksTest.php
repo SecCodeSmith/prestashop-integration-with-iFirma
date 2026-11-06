@@ -335,6 +335,7 @@ class ModuleCustomerHooksTest extends TestCase
             'zero' => array(0, false, '', array()),
             'zero, saved as text' => array('0', false, '', array()),
             'negative' => array(-1, false, '', array()),
+            'the lowest state id' => array(1, true, '', array(1)),
             'a state' => array(5, true, 'Payment accepted', array(5)),
             'a state, saved as text' => array('5', true, 'Payment accepted', array(5)),
         );
