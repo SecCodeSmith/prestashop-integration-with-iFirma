@@ -11,7 +11,9 @@
 
 class Employee
 {
-    use IfirmaTestRegistryTrait;
+    use IfirmaTestRegistryTrait {
+        reset as protected resetRegistry;
+    }
 
     public $id;
     public $firstname;
@@ -20,6 +22,19 @@ class Employee
     public $active = 1;
     /** @var int profile id (1 = SuperAdmin in core); read by the customer panel permission check */
     public $id_profile = 1;
+
+    /**
+     * @var callable|null test seam of getEmployees(): it receives the $activeOnly argument and the rows the
+     *      stub would return, and what it returns replaces them, so a test can count the calls, see the
+     *      argument or return rows of its own. Cleared by reset().
+     */
+    public static $employeesHook;
+
+    public static function reset()
+    {
+        self::resetRegistry();
+        self::$employeesHook = null;
+    }
 
     public function __construct($id = null)
     {
@@ -48,6 +63,9 @@ class Employee
         usort($rows, function ($a, $b) {
             return strcmp((string) $a['lastname'], (string) $b['lastname']);
         });
+        if (static::$employeesHook !== null) {
+            return call_user_func(static::$employeesHook, $activeOnly, $rows);
+        }
 
         return $rows;
     }
