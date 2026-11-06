@@ -22,6 +22,7 @@ require_once __DIR__ . '/classes/IfirmaDocumentSettings.php';
 require_once __DIR__ . '/classes/IfirmaDuplicateGuard.php';
 require_once __DIR__ . '/classes/IfirmaDeliveryService.php';
 require_once __DIR__ . '/classes/IfirmaKsefService.php';
+require_once __DIR__ . '/classes/IfirmaSettings.php';
 require_once __DIR__ . '/classes/IfirmaStatusSyncService.php';
 require_once __DIR__ . '/classes/IfirmaDataRequestNotifier.php';
 require_once __DIR__ . '/classes/IfirmaDataRequestService.php';
@@ -278,143 +279,78 @@ class Ifirma extends Module
     }
 
     /**
-     * @return string[] allowed delivery channels
-     */
-    private function sendChannels()
-    {
-        return array('shop_mail', 'ifirma_mail', 'none');
-    }
-
-    /**
      * Validates and stores the settings form.
      *
      * @return string HTML notice
      */
     private function postProcessConfiguration()
     {
-        $user = trim(Tools::getValue('IFIRMA_USER'));
-        $keyFaktura = trim(Tools::getValue('IFIRMA_KEY_FAKTURA'));
-
-        $errors = array();
-        if ($user === '') {
-            $errors[] = $this->l('The iFirma login is required.');
-        }
-        if ($keyFaktura !== '' && !ctype_xdigit($keyFaktura)) {
-            $errors[] = $this->l('The invoice API key must be a hexadecimal string.');
+        $input = array();
+        foreach (array_keys(IfirmaSettings::fields()) as $key) {
+            $input[$key] = Tools::getValue($key);
         }
 
-        $channel = trim((string) Tools::getValue('IFIRMA_SEND_CHANNEL'));
-        if (!in_array($channel, $this->sendChannels(), true)) {
-            $channel = 'shop_mail';
+        $settings = IfirmaSettings::fromInput($input, function () {
+            return $this->activeEmployeeIds();
+        });
+        if ($settings['errors']) {
+            return $this->displayError(implode('<br>', $this->settingErrors($settings['errors'])));
         }
 
-        $copyMode = (string) Tools::getValue('IFIRMA_SEND_COPY_MODE');
-        $copyMode = in_array($copyMode, IfirmaDeliveryService::copyModes(), true) ? $copyMode : 'none';
-        $copyEmployee = (int) Tools::getValue('IFIRMA_SEND_COPY_EMPLOYEE');
-        if ($copyMode === 'employee') {
-            $activeIds = array();
-            foreach (Employee::getEmployees(true) as $row) {
-                $activeIds[] = (int) $row['id_employee'];
-            }
-            if ($copyEmployee <= 0 || !in_array($copyEmployee, $activeIds, true)) {
-                $errors[] = $this->l('Choose an active employee for the delivery copy.');
-            }
+        foreach ($settings['values'] as $key => $value) {
+            Configuration::updateValue($key, $value);
         }
-
-        $ksefMode = IfirmaKsefService::normalizeMode(Tools::getValue('IFIRMA_KSEF_MODE'));
-
-        $windowDays = $this->parseInt(Tools::getValue('IFIRMA_DUPLICATE_WINDOW_DAYS'), 1, 365);
-        if ($windowDays === null) {
-            $errors[] = $this->l('The duplicate-check window must be a whole number of days between 1 and 365.');
-        }
-
-        $tolerance = str_replace(',', '.', trim((string) Tools::getValue('IFIRMA_DUPLICATE_AMOUNT_TOLERANCE')));
-        if ($tolerance === '' || !is_numeric($tolerance) || (float) $tolerance < 0) {
-            $errors[] = $this->l('The amount tolerance must be a number greater than or equal to 0.');
-            $tolerance = null;
-        } else {
-            $tolerance = rtrim(rtrim(sprintf('%.4F', (float) $tolerance), '0'), '.');
-            if ($tolerance === '') {
-                $tolerance = '0';
-            }
-        }
-
-        $notify = trim((string) Tools::getValue('IFIRMA_NOTIFY_EMAIL'));
-        if ($notify !== '' && !Validate::isEmail($notify)) {
-            $errors[] = $this->l('The notification e-mail address is not valid.');
-        }
-
-        $syncInterval = $this->parseInt(Tools::getValue('IFIRMA_SYNC_INTERVAL_MIN'), 1, 1440);
-        if ($syncInterval === null) {
-            $errors[] = $this->l('The sync interval must be a whole number of minutes between 1 and 1440.');
-        }
-
-        $cronMax = $this->parseInt(Tools::getValue('IFIRMA_CRON_MAX_CALLS'), 1, 90);
-        if ($cronMax === null) {
-            $errors[] = $this->l('The cron call budget must be a whole number between 1 and 90.');
-        }
-
-        $rateMax = $this->parseInt(Tools::getValue('IFIRMA_RATE_MAX_PER_MIN'), 1, 100);
-        if ($rateMax === null) {
-            $errors[] = $this->l('The API rate limit must be a whole number between 1 and 100 calls per minute.');
-        }
-
-        $paymentMode = trim((string) Tools::getValue('IFIRMA_PAYMENT_METHOD_MODE'));
-        if (!in_array($paymentMode, array(IfirmaPaymentMethodResolver::MODE_ORDER, IfirmaPaymentMethodResolver::MODE_FIXED), true)) {
-            $errors[] = $this->l('The payment method mode must be "order" or "fixed".');
-        }
-
-        $paymentCode = strtoupper(trim((string) Tools::getValue('IFIRMA_PAYMENT_METHOD')));
-        if (!isset(IfirmaPaymentMethodResolver::codes()[$paymentCode])) {
-            $errors[] = $this->l('The fallback payment method must be one of the listed codes.');
-        }
-
-        $paymentMap = '';
-        try {
-            $parsedMap = IfirmaPaymentMethodResolver::parseMap((string) Tools::getValue('IFIRMA_PAYMENT_METHOD_MAP'));
-            $paymentMap = IfirmaPaymentMethodResolver::formatMap($parsedMap);
-        } catch (InvalidArgumentException $e) {
-            $errors[] = $this->l('Payment method map') . ': ' . $e->getMessage();
-        }
-
-        if ($errors) {
-            return $this->displayError(implode('<br>', $errors));
-        }
-
-        $text = trim((string) Tools::getValue('IFIRMA_SEND_TEXT'));
-        $text = mb_substr($text, 0, IfirmaDeliveryService::TEXT_MAX);
-
-        $baseUrl = trim(Tools::getValue('IFIRMA_BASE_URL'));
-        Configuration::updateValue('IFIRMA_BASE_URL', $baseUrl !== '' ? $baseUrl : IfirmaApiClient::BASE_URL);
-        Configuration::updateValue('IFIRMA_USER', $user);
-        Configuration::updateValue('IFIRMA_KEY_FAKTURA', $keyFaktura);
-        Configuration::updateValue('IFIRMA_KEY_ABONENT', trim(Tools::getValue('IFIRMA_KEY_ABONENT')));
-        Configuration::updateValue('IFIRMA_KEY_RACHUNEK', trim(Tools::getValue('IFIRMA_KEY_RACHUNEK')));
-        Configuration::updateValue('IFIRMA_DOC_TYPE', IfirmaDocumentSettings::normalizeDocumentType(Tools::getValue('IFIRMA_DOC_TYPE')));
-        Configuration::updateValue('IFIRMA_SIGNATURE_TYPE', IfirmaDocumentSettings::normalizeSignatureType(Tools::getValue('IFIRMA_SIGNATURE_TYPE')));
-        Configuration::updateValue('IFIRMA_PAYMENT_METHOD', $paymentCode);
-        Configuration::updateValue('IFIRMA_PAYMENT_METHOD_MODE', $paymentMode);
-        Configuration::updateValue('IFIRMA_PAYMENT_METHOD_MAP', $paymentMap);
-        Configuration::updateValue('IFIRMA_CONTRACTOR_SYNC', (int) (bool) Tools::getValue('IFIRMA_CONTRACTOR_SYNC'));
-        Configuration::updateValue('IFIRMA_PAYMENT_TYPE_TOKEN', trim(Tools::getValue('IFIRMA_PAYMENT_TYPE_TOKEN')));
-        Configuration::updateValue('IFIRMA_DEFAULT_UNIT', Tools::getValue('IFIRMA_DEFAULT_UNIT'));
-        Configuration::updateValue('IFIRMA_AUTO_CREATE_STATE', (int) Tools::getValue('IFIRMA_AUTO_CREATE_STATE'));
-        Configuration::updateValue('IFIRMA_MARK_PAID_ON_CREATE', (int) Tools::getValue('IFIRMA_MARK_PAID_ON_CREATE'));
-        Configuration::updateValue('IFIRMA_SEND_CHANNEL', $channel);
-        Configuration::updateValue('IFIRMA_SEND_TEXT', $text);
-        Configuration::updateValue('IFIRMA_SEND_COPY_MODE', $copyMode);
-        Configuration::updateValue('IFIRMA_SEND_COPY_EMPLOYEE', $copyEmployee);
-        Configuration::updateValue('IFIRMA_KSEF_MODE', $ksefMode);
-        Configuration::updateValue('IFIRMA_DUPLICATE_CHECK', (int) (bool) Tools::getValue('IFIRMA_DUPLICATE_CHECK'));
-        Configuration::updateValue('IFIRMA_DUPLICATE_WINDOW_DAYS', $windowDays);
-        Configuration::updateValue('IFIRMA_DUPLICATE_AMOUNT_TOLERANCE', $tolerance);
-        Configuration::updateValue('IFIRMA_ALLOW_DATA_REQUEST', (int) (bool) Tools::getValue('IFIRMA_ALLOW_DATA_REQUEST'));
-        Configuration::updateValue('IFIRMA_NOTIFY_EMAIL', $notify);
-        Configuration::updateValue('IFIRMA_SYNC_INTERVAL_MIN', $syncInterval);
-        Configuration::updateValue('IFIRMA_CRON_MAX_CALLS', $cronMax);
-        Configuration::updateValue('IFIRMA_RATE_MAX_PER_MIN', $rateMax);
 
         return $this->displayConfirmation($this->l('Settings updated.'));
+    }
+
+    /**
+     * @return int[] the ids of the active employees
+     */
+    private function activeEmployeeIds()
+    {
+        $ids = array();
+        foreach (Employee::getEmployees(true) as $row) {
+            $ids[] = (int) $row['id_employee'];
+        }
+
+        return $ids;
+    }
+
+    /**
+     * The messages of the settings that failed, in the order the form reports them. IfirmaSettings knows the rules
+     * and has no words of its own: the translation scanner only finds l() literals in this file, so every message
+     * stays here, keyed by the setting it is about.
+     *
+     * @param array $failed setting key => detail, the errors of IfirmaSettings::fromInput()
+     * @return string[]
+     */
+    private function settingErrors(array $failed)
+    {
+        $messages = array(
+            'IFIRMA_USER' => $this->l('The iFirma login is required.'),
+            'IFIRMA_KEY_FAKTURA' => $this->l('The invoice API key must be a hexadecimal string.'),
+            'IFIRMA_SEND_COPY_EMPLOYEE' => $this->l('Choose an active employee for the delivery copy.'),
+            'IFIRMA_DUPLICATE_WINDOW_DAYS' => $this->l('The duplicate-check window must be a whole number of days between 1 and 365.'),
+            'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE' => $this->l('The amount tolerance must be a number greater than or equal to 0.'),
+            'IFIRMA_NOTIFY_EMAIL' => $this->l('The notification e-mail address is not valid.'),
+            'IFIRMA_SYNC_INTERVAL_MIN' => $this->l('The sync interval must be a whole number of minutes between 1 and 1440.'),
+            'IFIRMA_CRON_MAX_CALLS' => $this->l('The cron call budget must be a whole number between 1 and 90.'),
+            'IFIRMA_RATE_MAX_PER_MIN' => $this->l('The API rate limit must be a whole number between 1 and 100 calls per minute.'),
+            'IFIRMA_PAYMENT_METHOD_MODE' => $this->l('The payment method mode must be "order" or "fixed".'),
+            'IFIRMA_PAYMENT_METHOD' => $this->l('The fallback payment method must be one of the listed codes.'),
+            'IFIRMA_PAYMENT_METHOD_MAP' => $this->l('Payment method map'),
+        );
+
+        $errors = array();
+        foreach ($messages as $key => $message) {
+            if (isset($failed[$key])) {
+                // the detail is empty, except for the payment method map: it lists the bad lines
+                $errors[] = $failed[$key] === '' ? $message : $message . ': ' . $failed[$key];
+            }
+        }
+
+        return $errors;
     }
 
     /**
@@ -438,23 +374,6 @@ class Ifirma extends Module
         }
 
         return $options;
-    }
-
-    /**
-     * @param mixed $value
-     * @param int   $min
-     * @param int   $max
-     * @return int|null null when not a whole number inside the range
-     */
-    private function parseInt($value, $min, $max)
-    {
-        $value = trim((string) $value);
-        if ($value === '' || !ctype_digit($value)) {
-            return null;
-        }
-        $int = (int) $value;
-
-        return ($int >= $min && $int <= $max) ? $int : null;
     }
 
     /**
