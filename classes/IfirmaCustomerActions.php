@@ -51,71 +51,130 @@ class IfirmaCustomerActions extends IfirmaActionSupport
                     $this->module->l('Contractor registration is disabled in the module settings.', 'ifirmaadminactions')
                 );
             }
+            $contractor = $this->contractorRecord($order, $idOrder);
+            $resolution = $this->resolveContractor($order, $idOrder, $contractor);
 
-            $contractor = IfirmaPayloadBuilder::build($this->module)->buildContractor(
-                $order,
-                IfirmaDataRequestService::build($this->module)->getOverrideForOrder($idOrder)
-            );
-            $receiptService = IfirmaReceiptService::build($this->module);
-            $override = IfirmaDataRequestService::build($this->module)->getOverrideForOrder($idOrder);
-            $result = IfirmaContractorService::build($this->module)->ensure(
-                $contractor,
-                (int) $order->id_customer,
-                $receiptService->contractorHints($order, $contractor, $override)
-            );
-            $identifier = $result->getIdentifier() !== null ? (string) $result->getIdentifier() : (string) $contractor['Identyfikator'];
-            $matchedBy = $result->getMatchedBy();
-            $data = array(
-                'identifier' => $identifier,
-                'action' => $result->getAction(),
-                'message' => $result->getMessage(),
-                'matched_by' => $matchedBy,
-                'note' => $result->getNote(),
-                'assigned_identifier' => $result->getAssignedId(),
-            );
-            $matchLabels = $this->module->matchLabels();
-            $linked = in_array($matchedBy, $matchLabels->linkCodes(), true)
-                && $identifier !== (string) $contractor['Identyfikator'];
-            if ($linked) {
-                $matchedLabel = $matchLabels->label($matchedBy);
-                $linkNote = sprintf(
-                    $this->module->l('linked to existing contractor %s (matched by %s)', 'ifirmaadminactions'),
-                    $identifier,
-                    $matchedLabel
-                );
-            }
-
-            switch ($result->getAction()) {
-                case IfirmaContractorService::ACTION_CREATED:
-                    $message = sprintf($this->module->l('Contractor %s created in iFirma.', 'ifirmaadminactions'), $identifier);
-                    break;
-                case IfirmaContractorService::ACTION_UPDATED:
-                    $message = sprintf($this->module->l('Contractor %s updated in iFirma.', 'ifirmaadminactions'), $identifier);
-                    break;
-                case IfirmaContractorService::ACTION_KEPT:
-                    $message = sprintf(
-                        $this->module->l('Contractor %s already exists in iFirma and is up to date.', 'ifirmaadminactions'),
-                        $identifier
-                    );
-                    break;
-                default:
-                    return $this->result(
-                        false,
-                        sprintf(
-                            $this->module->l('Contractor %s could not be registered: %s', 'ifirmaadminactions'),
-                            $identifier,
-                            $result->getMessage()
-                        ),
-                        $data
-                    );
-            }
-
-            if ($linked) {
-                $message = ucfirst($linkNote) . '. ' . $message;
-            }
-
-            return $this->result(true, $message, $data);
+            return $this->describeResolution($resolution, (string) $contractor['Identyfikator']);
         });
+    }
+
+    /**
+     * The contractor record of the order: built from the buyer data of its approved data request when it has one,
+     * from its invoice address otherwise.
+     *
+     * @param Order $order
+     * @param int   $idOrder
+     * @return array IfirmaPayloadBuilder::buildContractor() result
+     */
+    private function contractorRecord(Order $order, $idOrder)
+    {
+        return IfirmaPayloadBuilder::build($this->module)->buildContractor(
+            $order,
+            IfirmaDataRequestService::build($this->module)->getOverrideForOrder($idOrder)
+        );
+    }
+
+    /**
+     * Has iFirma look the contractor up and create or update it, matching it with the hints of the order.
+     *
+     * @param Order $order
+     * @param int   $idOrder
+     * @param array $contractor the record from contractorRecord()
+     * @return IfirmaContractorResolution
+     */
+    private function resolveContractor(Order $order, $idOrder, array $contractor)
+    {
+        $receiptService = IfirmaReceiptService::build($this->module);
+        $override = IfirmaDataRequestService::build($this->module)->getOverrideForOrder($idOrder);
+
+        return IfirmaContractorService::build($this->module)->ensure(
+            $contractor,
+            (int) $order->id_customer,
+            $receiptService->contractorHints($order, $contractor, $override)
+        );
+    }
+
+    /**
+     * The answer for what the registration came to: the contractor the customer stands for and what was done to it,
+     * with the way the customer was linked in front of the sentence when it was linked to an existing contractor.
+     *
+     * @param IfirmaContractorResolution $resolution
+     * @param string                     $moduleIdentifier the identifier the module gives the contractor itself
+     * @return array
+     */
+    private function describeResolution($resolution, $moduleIdentifier)
+    {
+        $identifier = $resolution->getIdentifier() !== null ? (string) $resolution->getIdentifier() : $moduleIdentifier;
+        $matchedBy = $resolution->getMatchedBy();
+        $data = array(
+            'identifier' => $identifier,
+            'action' => $resolution->getAction(),
+            'message' => $resolution->getMessage(),
+            'matched_by' => $matchedBy,
+            'note' => $resolution->getNote(),
+            'assigned_identifier' => $resolution->getAssignedId(),
+        );
+        $linkNote = $this->linkNote($matchedBy, $identifier, $moduleIdentifier);
+        $message = $this->successMessage($resolution->getAction(), $identifier);
+        if ($message === null) {
+            return $this->result(
+                false,
+                sprintf(
+                    $this->module->l('Contractor %s could not be registered: %s', 'ifirmaadminactions'),
+                    $identifier,
+                    $resolution->getMessage()
+                ),
+                $data
+            );
+        }
+
+        return $this->result(true, $linkNote === null ? $message : ucfirst($linkNote) . '. ' . $message, $data);
+    }
+
+    /**
+     * Says that the customer was linked to a contractor that already existed in iFirma, and how it was found.
+     *
+     * @param string $matchedBy        how the contractor was found (IfirmaContractorMap::BY_*)
+     * @param string $identifier       the contractor the customer stands for
+     * @param string $moduleIdentifier the identifier the module gives the contractor itself
+     * @return string|null null for a contractor the module made itself, one it found under its own identifier or one
+     *                     found in a way the module has no label for
+     */
+    private function linkNote($matchedBy, $identifier, $moduleIdentifier)
+    {
+        $matchLabels = $this->module->matchLabels();
+        if (!in_array($matchedBy, $matchLabels->linkCodes(), true) || $identifier === $moduleIdentifier) {
+            return null;
+        }
+        $matchedLabel = $matchLabels->label($matchedBy);
+
+        return sprintf(
+            $this->module->l('linked to existing contractor %s (matched by %s)', 'ifirmaadminactions'),
+            $identifier,
+            $matchedLabel
+        );
+    }
+
+    /**
+     * @param string $action     IfirmaContractorService::ACTION_*
+     * @param string $identifier the contractor the customer stands for
+     * @return string|null what was done to the contractor in iFirma; null when the registration failed
+     */
+    private function successMessage($action, $identifier)
+    {
+        switch ($action) {
+            case IfirmaContractorService::ACTION_CREATED:
+                return sprintf($this->module->l('Contractor %s created in iFirma.', 'ifirmaadminactions'), $identifier);
+            case IfirmaContractorService::ACTION_UPDATED:
+                return sprintf($this->module->l('Contractor %s updated in iFirma.', 'ifirmaadminactions'), $identifier);
+            case IfirmaContractorService::ACTION_KEPT:
+                return sprintf(
+                    $this->module->l('Contractor %s already exists in iFirma and is up to date.', 'ifirmaadminactions'),
+                    $identifier
+                );
+            default:
+                return null;
+        }
     }
 
     // ---- customer page (customer-contractor-panel) -----------------------------------------
