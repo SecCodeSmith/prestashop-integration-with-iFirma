@@ -96,6 +96,14 @@ class AdminActionsAnswersTest extends TestCase
         $this->assertSame($this->refusal('Invalid order.'), $this->actions->registerContractor(999));
     }
 
+    public function testRegisterContractorRefusesAnUnknownOrderWhetherOrNotRegistrationIsSwitchedOff()
+    {
+        Configuration::updateValue('IFIRMA_CONTRACTOR_SYNC', 0);
+
+        $this->assertSame($this->refusal('Invalid order.'), $this->actions->registerContractor(999));
+        $this->assertSame(array(), $this->t->calls);
+    }
+
     public function testRegisterContractorRegistersTheDataOfTheApprovedRequestOfTheOrder()
     {
         $request = $this->makeRequest('pending', array(
