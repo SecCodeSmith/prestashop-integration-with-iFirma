@@ -60,9 +60,9 @@
     "semantic_hash": ""
   },
   "ifirma.php": {
-    "mtime": 1793932184.8956995,
-    "seen": 1793937209.828519,
-    "ast_hash": "0c41500a92c38d039437263c62c4cf0c",
+    "mtime": 1793938612.5091684,
+    "seen": 1793938806.636088,
+    "ast_hash": "0b94725dbd059a6dbbbba21126b12d39",
     "semantic_hash": ""
   },
   "index.php": {
@@ -474,9 +474,9 @@
     "semantic_hash": ""
   },
   "tests/Stubs/Employee.php": {
-    "mtime": 1793811632.4932098,
-    "seen": 1793812916.065842,
-    "ast_hash": "234913965775470662c67da031935d69",
+    "mtime": 1793938596.070141,
+    "seen": 1793938806.6361372,
+    "ast_hash": "97e21278e3ef6ffdd2e4a43c09d678b9",
     "semantic_hash": ""
   },
   "tests/Stubs/HelperForm.php": {
@@ -912,9 +912,9 @@
     "semantic_hash": ""
   },
   "tests/Stubs/README.md": {
-    "mtime": 1793937009.8722515,
-    "seen": 1793937209.8289874,
-    "ast_hash": "4629ef69eebe126ebb4b841d422b9903",
+    "mtime": 1793938611.5622704,
+    "seen": 1793938806.636536,
+    "ast_hash": "d67059f6255077c5a65c41ba9a423425",
     "semantic_hash": ""
   },
   "tests/fixtures/README.md": {
@@ -1314,9 +1314,9 @@
     "semantic_hash": ""
   },
   "openspec/changes/refactor-srp-splits/tasks.md": {
-    "mtime": 1793937195.5719297,
-    "seen": 1793937209.828957,
-    "ast_hash": "c43e39798a63ff79a3e7dbcdad5890b7",
+    "mtime": 1793938794.8368993,
+    "seen": 1793938806.636507,
+    "ast_hash": "ed0ecfe9d2f401041201afbf402f0db7",
     "semantic_hash": ""
   },
   "openspec/changes/archive/2026-11-04-ci-test-builds-and-housekeeping/.openspec.yaml": {
@@ -2247,6 +2247,30 @@
     "mtime": 1793932139.2782655,
     "seen": 1793937209.828733,
     "ast_hash": "67c3bfdad14b464cb72a759a0b581630",
+    "semantic_hash": ""
+  },
+  "classes/IfirmaSettings.php": {
+    "mtime": 1793938612.507656,
+    "seen": 1793938806.6360705,
+    "ast_hash": "4bebce074478b9db77b570578cd8db0b",
+    "semantic_hash": ""
+  },
+  "tests/Unit/IfirmaSettingsTest.php": {
+    "mtime": 1793938612.510173,
+    "seen": 1793938806.6362622,
+    "ast_hash": "f9da9c804b1bc41c90a71d31a464e7cc",
+    "semantic_hash": ""
+  },
+  "tests/Unit/SettingsClassLoadingTest.php": {
+    "mtime": 1793938612.5111756,
+    "seen": 1793938806.6362839,
+    "ast_hash": "f968223ce71d6767e73cbedcc741e579",
+    "semantic_hash": ""
+  },
+  "tests/Unit/SettingsSaveTest.php": {
+    "mtime": 1793938612.1857064,
+    "seen": 1793938806.6362867,
+    "ast_hash": "b8599736fdb5485d055a065c01cfe92b",
     "semantic_hash": ""
   }
 }

@@ -205,7 +205,18 @@ Like `refactor-clean-code-tda`, the change lands straight on master: one commit 
   - The Configuration stub now also records the order of its writes.
   - Gate against `87d3fd1`: `OK (2771 tests)`.
 
-- [ ] 7.2 Introduce the `IfirmaSettings` table plus `fromInput()` (design D5), and make `postProcessConfiguration` loop over it. Error-message literals stay in `ifirma.php`. Verify that the golden write set is equal, the ModuleHooksTest `getContent` tests and TranslationCoverageTest are green, and diff-cover is at 100%.
+- [x] 7.2 Introduce the `IfirmaSettings` table plus `fromInput()` (design D5), and make `postProcessConfiguration` loop over it. Error-message literals stay in `ifirma.php`. Verify that the golden write set is equal, the ModuleHooksTest `getContent` tests and TranslationCoverageTest are green, and diff-cover is at 100%.
+
+  Evidence:
+  - Characterisation `b5bc165`, `6eeba65` and `1086789` pin the save beyond the 7.1 golden: when the employee list is read, integer employee ids, tolerance and whole-number parsing, and the cut of the e-mail text. The last two closed gaps that a mutation round found.
+  - Refactor `2050809`:
+    - `IfirmaSettings` holds the table of the 28 settings: a type plus the cells it reads (min, max, default, options, trim, normaliser).
+    - Its pure `fromInput()` returns the normalised values and the errors, and the table order is the write order.
+    - `postProcessConfiguration()` went from 126 lines to 20. Every error and label stays a literal `$this->l()` call in `ifirma.php`: the same 156 calls, with 154 distinct texts.
+  - `fromInput(array $input, callable $activeEmployeeIds)` takes a second argument, although the plan named only the array. The callback keeps the old read pattern: the shop's active employees are read only when the copy goes to an employee, and `fromInput()` stays pure.
+  - Known difference, for crafted requests only: a POST field sent as an array (`IFIRMA_*[]=x`), which the form never sends, now fails the whole save before any write. The old code could write the settings before that field and then stop.
+  - The 7.1 golden write set is equal. A differential run compared old and new over 80,000 random saves and found them byte-identical. 180 of 190 mutants of the new code are killed, and the 10 survivors are equivalent.
+  - Gate against `60ebe04`: `OK (3521 tests)`, 124 changed lines, 100%.
 - [x] 7.3 Add a golden test of the full Smarty assignment array from `renderAdminOrderPanel` for the existing ModuleHooksTest admin-panel fixtures. Verify that it passes on unchanged code.
 
   Evidence: commit `18e8107`, passing on unchanged code. AdminOrderPanelGoldenTest pins the full Smarty array of every ModuleHooksTest admin-panel fixture. Its fixture list is kept by hand.
@@ -282,6 +293,7 @@ Like `refactor-clean-code-tda`, the change lands straight on master: one commit 
   - the Module stub keeps `$context` protected, as PrestaShop does.
 
   Gate over the range against `345476b`: `OK (3192 tests, 13291 assertions)`, 812 changed lines, 100%. The PHP 7.2 lint passes on 18 files, and the licence check on 202. The smoke's 91 check lines are identical to the run before this change, and the PDF download check passes in the front and back office.
+- Then 7.2, the last implementation task. Gate over the range against `60ebe04`: `OK (3521 tests, 14420 assertions)`, 124 changed lines, 100%. The PHP 7.2 lint (2 files) and the licence check (206 files) pass, the smoke's 91 check lines are identical to the pre-change run, and the PDF check passes in the front and back office.
 
 ## Workflow follow-up
 
