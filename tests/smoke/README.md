@@ -128,6 +128,7 @@ Notes:
 |---|---|---|---|---|
 | 2026-11-01 | 8.1.7 | 8.1 | 4.3 | 47 passed, 1 skipped (in-container cron URL); upgrade 1.0.0 -> 1.1.0 verified |
 | 2026-11-01 | 9.1.4 | 8.5 | 4.5 | 47 passed, 1 skipped; admin panel and configuration form rendered via `AdminKernel`; cron 403/200 from the host |
+| 2026-11-06 | 8.1.7 | 8.1 | 4.3 | 90 passed, 1 skipped; upgrade test from 1.0.0 as written: phase 1 with the mock's legacy switch, cleanup (2 tables, 14 settings), phase 2 to 1.3.2 (39 checks); PDF download front and admin OK |
 
 PrestaShop 9 / PHP 8.4+ also flagged implicitly nullable parameters (`Type $x = null`); the module now declares
 them as `?Type $x = null` (PHP 7.1+ syntax, still inside the 7.2 floor).
