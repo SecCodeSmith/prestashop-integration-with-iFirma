@@ -145,3 +145,14 @@ The document request references the resolved contractor through the top-level `I
 never sends `Kontrahent.Identyfikator`.
 
 `guard-unknown-contractor-check.php` resets the mock state, confirms that `faktury.json?kontrahent=<unknown>` is answered with Kod 201 "Nie znaleziono kontrahenta o zadanym identyfikatorze" (the live-API behaviour that stopped every first issuance at the guard step before 2026-11-02), and then runs the duplicate guard and the whole pipeline for an order whose customer has no contractor yet: the guard must proceed and the document must be issued with the freshly created `PS-C` contractor. Run it as `docker compose exec -T -u www-data prestashop php modules/ifirma/tests/smoke/guard-unknown-contractor-check.php`. It wipes the mock's in-memory contractors and documents, so run it last.
+
+## Orders list column check
+
+`order-grid-check.php` builds the real back-office Orders grid (`prestashop.core.grid.factory.order` and the grid presenter, all rows) and checks the "iFirma" column added by the three `actionOrderGrid*Modifier` hooks: the hooks are registered (the script runs `upgrade_module_1_4_0()` when they are not), the `ifirma_document` column sits right before `actions`, the query builder hook selects the number and status of the newest module record, an order with an issued document shows the `receipt_long` icon with its number and `(Paid)` / `(Issued)`, an order without any record shows an empty cell, the grid total equals `COUNT(*)` of `ps_orders`, and building the grid sends no request to the iFirma mock (measured with `IfirmaApiClient::getLimit()` before and after; skipped when `IFIRMA_KEY_ABONENT` is empty, because the mock keeps no request log). It reads fixtures from the database and changes nothing. Run it on each shop:
+
+```
+docker exec -u www-data -e PS_ROOT=/var/www/html ifirma_prestashop php /var/www/html/modules/ifirma/tests/smoke/order-grid-check.php
+docker exec -u www-data -e PS_ROOT=/var/www/html ifirma91_prestashop php /var/www/html/modules/ifirma/tests/smoke/order-grid-check.php
+```
+
+On PrestaShop 8.1 and 9.1 the service ids are the same and the factory is public on the kernel container. The script keeps its output buffered and pushes a request with an array-backed session onto the request stack, because the grid's filter form needs a session that a CLI run does not have.
