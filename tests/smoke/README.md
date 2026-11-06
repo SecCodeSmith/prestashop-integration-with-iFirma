@@ -97,22 +97,30 @@ and list every failed assertion. `[SKIP]` lines do not affect the exit code.
   (302), so that sub-check is skipped. Run it from the host instead with a wrong token (expect HTTP 403) and with
   the real token from the module configuration page (expect HTTP 200 and a JSON summary).
 
-## Upgrade test 1.0.x -> 1.1.0
+## Upgrade test from 1.0.0
 
-`upgrade-phase1.php` and `upgrade-phase2.php` reproduce the upgrade on the Docker stack:
+`upgrade-phase1.php`, `upgrade-cleanup.php` and `upgrade-phase2.php` prove the upgrade path on the Docker stack. The real 1.0.0 code issues a document while the mock's legacy switch is on; the cleanup makes the database look like a 1.0.0 shop; phase 2 upgrades to the current version the way PrestaShop does and checks the result.
 
-1. Check out the 1.0.0 code next to the repo: `git worktree add ../ifirma-1.0.0 6565eab`.
-2. Start the stack with the 1.0.0 tree mounted instead of the working tree (a compose override replacing the
-   `prestashop` volumes with `ps_data:/var/www/html` and `<path to ifirma-1.0.0>:/var/www/html/modules/ifirma`),
-   then run `docker compose exec -T -u www-data prestashop php modules/ifirma/tests/smoke/upgrade-phase1.php`.
-   It reinstalls the module as 1.0.0 and issues one document against the mock.
-3. Because the 1.0.0 uninstaller does not know the 1.1.0 table and settings, drop `ps_ifirma_data_request` and
-   delete the `IFIRMA_*` settings that 1.0.0 does not define before continuing.
-4. Recreate the container with the normal mount and run `docker compose exec -T -u www-data prestashop php
-   modules/ifirma/tests/smoke/upgrade-phase2.php <id_order>`. It drives PrestaShop's own upgrade runner
-   (`Module::needUpgrade` / `initUpgradeModule` / `runUpgradeModule`, after setting `installed` and
-   `database_version` as the back office does) and asserts the schema, defaults, the old receipt and the guard.
-5. `git worktree remove ../ifirma-1.0.0` when done.
+Run from `test-stack/`, with the module repo at `..`:
+
+```
+git -C .. worktree add ../ifirma-1.0.0 6565eab
+IFIRMA_1_0_0_DIR=$(cd ../../ifirma-1.0.0 && pwd) docker compose -f docker-compose.yml -f docker-compose.upgrade-1.0.0.yml up -d --no-deps --force-recreate prestashop
+docker compose cp ../tests/smoke/upgrade-phase1.php prestashop:/tmp/upgrade-phase1.php
+docker compose exec -T -u www-data -e PS_ROOT=/var/www/html prestashop php /tmp/upgrade-phase1.php   # ends PHASE1_OK order=<id>
+docker compose up -d --no-deps --force-recreate prestashop                                           # the normal mount again
+docker compose exec -T -u www-data prestashop php modules/ifirma/tests/smoke/upgrade-cleanup.php     # ends CLEANUP_OK
+docker compose exec -T -u www-data prestashop php modules/ifirma/tests/smoke/upgrade-phase2.php <id> # ends PHASE2_OK
+git -C .. worktree remove ../ifirma-1.0.0
+```
+
+Notes:
+
+- A local compose override (image tag, ports, `PS_DOMAIN`) goes on every `up` command as another `-f`.
+- Under WSL the worktree path must be the `/mnt/c/...` one, because `IFIRMA_1_0_0_DIR` is the path as Docker sees it.
+- Phase 1 is copied into the container, because the 1.0.0 tree mounted at that point has no `tests/` folder; `PS_ROOT` tells the copy where PrestaShop is.
+- The mock must have been rebuilt with the legacy switch: `docker compose up -d --build --no-deps ifirma-mock`.
+- After the run the shop holds the upgraded module and the settings phase 1 wrote. Restore the settings you need, or run `run.php`, which writes its own.
 
 ## Verified runs
 

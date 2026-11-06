@@ -9,8 +9,10 @@
  * See the LICENCE file distributed with this module for the full terms.
  */
 
-// Upgrade test, phase 2: runs with the 1.1.0 module mounted over a 1.0.0 installation.
-// Triggers PrestaShop's module upgrade and verifies schema, the old receipt and the guard.
+// Upgrade test, phase 2: runs with the current module mounted over a 1.0.0 installation.
+// Drives PrestaShop's upgrade runner, then finishes the upgrade as ModuleDataUpdater / ModuleManager
+// do (Module::upgradeModuleVersion) and verifies the recorded version, the number of upgrade scripts
+// run, the schema, the old receipt and the guard.
 $psRoot = getenv('PS_ROOT') ? rtrim(getenv('PS_ROOT'), '/\\') : dirname(__DIR__, 4);
 require $psRoot . '/config/config.inc.php';
 // Boot the Symfony kernel: PrestaShop 8/9 resolve hooks and services through the
@@ -54,19 +56,31 @@ check($before === '1.0.0', 'database still records 1.0.0 before the upgrade');
 // Mimic the back-office module manager, which sets these before running upgrades.
 $m->installed = 1;
 $m->database_version = $before;
-echo "installed=" . var_export($m->installed, true) . " database_version=" . var_export($m->database_version, true) . "
-";
+echo "installed=" . var_export($m->installed, true) . " database_version=" . var_export($m->database_version, true) . "\n";
 $needs = Module::needUpgrade($m);
 check($needs, 'PrestaShop detects that an upgrade is needed');
 if ($needs) {
     Module::initUpgradeModule($m);
     $ok = $m->runUpgradeModule();
-    echo "upgrade cache: " . json_encode(isset(Module::$modules_cache['ifirma']['upgrade']) ? Module::$modules_cache['ifirma']['upgrade'] : null) . "
-";
+    echo "upgrade cache: " . json_encode(isset(Module::$modules_cache['ifirma']['upgrade']) ? Module::$modules_cache['ifirma']['upgrade'] : null) . "\n";
     check(is_array($ok) ? !empty($ok['success']) : (bool) $ok, 'runUpgradeModule reports success', is_array($ok) ? json_encode(array('success' => $ok['success'], 'version_fail' => $ok['version_fail'], 'number_upgraded' => $ok['number_upgraded'])) : var_export($ok, true));
+    // The back office and the module manager record the code version after the runner has run the
+    // upgrade scripts (ModuleDataUpdater::upgrade / ModuleManager::upgradeMigration), so do the same.
+    Module::upgradeModuleVersion('ifirma', $m->version);
+    if (is_array($ok)) {
+        // One upgrade script per version above 1.0.0 up to the module version must have run.
+        $expected = 0;
+        foreach (glob(dirname(__DIR__, 2) . '/upgrade/upgrade-*.php') as $script) {
+            if (preg_match('/upgrade-(\d+\.\d+\.\d+)\.php$/', $script, $match)
+                && version_compare($match[1], '1.0.0', '>') && version_compare($match[1], $m->version, '<=')) {
+                $expected++;
+            }
+        }
+        check((int) $ok['number_upgraded'] === $expected, 'one upgrade script ran for every version above 1.0.0 up to ' . $m->version, 'number_upgraded ' . $ok['number_upgraded'] . ', scripts ' . $expected);
+    }
 }
 $after = $db->getValue("SELECT version FROM " . _DB_PREFIX_ . "module WHERE name='ifirma'");
-check($after === '1.1.0', 'database records 1.1.0 after the upgrade', 'got ' . $after);
+check($after === (string) $m->version, 'database records the module version after the upgrade', 'got ' . $after . ', expected ' . $m->version);
 
 $cols = array();
 foreach ($db->executeS("SHOW COLUMNS FROM " . _DB_PREFIX_ . "ifirma_receipt") as $row) {

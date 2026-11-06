@@ -11,6 +11,9 @@
 
 // Upgrade test, phase 1: runs with the 1.0.0 module mounted. Reinstalls the module as 1.0.0
 // and issues one document against the mock so phase 2 can upgrade and verify it survives.
+// The mock's legacy switch is turned on around the issue, so unchanged 1.0.0 can issue its
+// document (BRK recipient signing, 4-decimal VAT rate, e-mail as the contractor identifier),
+// which the mock otherwise rejects like the live API.
 $psRoot = getenv('PS_ROOT') ? rtrim(getenv('PS_ROOT'), '/\\') : dirname(__DIR__, 4);
 require $psRoot . '/config/config.inc.php';
 // Boot the Symfony kernel: PrestaShop 8/9 resolve hooks and services through the
@@ -35,6 +38,16 @@ Shop::setContext(Shop::CONTEXT_SHOP, 1);
 Context::getContext()->employee = new Employee(1);
 $db = Db::getInstance();
 
+// POSTs a JSON body to the mock and returns the response body.
+function smokeMockPost($path, $json)
+{
+    $ch = curl_init((getenv('IFIRMA_MOCK_HOST') ?: 'http://ifirma-mock:8001') . $path);
+    curl_setopt_array($ch, array(CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_POSTFIELDS => $json, CURLOPT_HTTPHEADER => array('Content-Type: application/json')));
+    $body = curl_exec($ch);
+    curl_close($ch);
+    return (string) $body;
+}
+
 $m = Module::getInstanceByName('ifirma');
 echo "loaded code version: " . $m->version . "\n";
 if ($m->version !== '1.0.0') {
@@ -58,14 +71,18 @@ foreach (array(
     Configuration::updateValue($k, $v);
 }
 
-$ch = curl_init((getenv('IFIRMA_MOCK_HOST') ?: 'http://ifirma-mock:8001') . '/__mock/reset');
-curl_setopt_array($ch, array(CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_POSTFIELDS => '{}', CURLOPT_HTTPHEADER => array('Content-Type: application/json')));
-curl_exec($ch);
-curl_close($ch);
+smokeMockPost('/__mock/reset', '{}');
+echo "legacy mode on: " . smokeMockPost('/__mock/legacy-mode', '{"enabled":true}') . "\n";
 
 $idOrder = (int) $db->getValue("SELECT MAX(id_order) FROM " . _DB_PREFIX_ . "orders");
 $order = new Order($idOrder);
 $service = IfirmaReceiptService::build($m);
-$receipt = $service->createReceipt($order);
+try {
+    $receipt = $service->createReceipt($order);
+} finally {
+    // Turned off even when the issue throws; the exception then propagates as before.
+    $legacyOff = smokeMockPost('/__mock/legacy-mode', '{"enabled":false}');
+}
 echo "issued with 1.0.0: id_order=" . $idOrder . " id_customer=" . $order->id_customer . " ifirma_id=" . $receipt->ifirma_id . " number=" . $receipt->ifirma_number . " status=" . $receipt->status . "\n";
+echo "legacy mode off: " . $legacyOff . "\n";
 echo "PHASE1_OK order=" . $idOrder . "\n";
