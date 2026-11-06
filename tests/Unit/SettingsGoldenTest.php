@@ -156,6 +156,9 @@ class SettingsGoldenTest extends TestCase
      * shows the API limit box, which calls iFirma, and the API rate guard stamps the current minute and
      * the number of calls in it into IFIRMA_RATE_WINDOW. That one write belongs to the page and not to
      * the settings, and its value is the clock, so it is expected after the settings as "<minute>:1".
+     * That holds for an even-length hex abonent key only: IfirmaApiClient::buildAuthHeader() returns false
+     * for any other key before the guard runs, so that save makes no stamp. A scenario with such a key
+     * sets 'page_writes' in golden.json instead.
      *
      * @param array[] $settingWrites the [key, value] calls the save must make
      * @return array[] the calls the page makes after it
@@ -236,7 +239,7 @@ class SettingsGoldenTest extends TestCase
         $page = $this->module->getContent();
 
         $this->assertSame(
-            array_merge($writes, self::pageWrites($writes)),
+            array_merge($writes, array_key_exists('page_writes', $scenario) ? $scenario['page_writes'] : self::pageWrites($writes)),
             self::withoutTheClock(Configuration::$writes),
             'Configuration writes'
         );

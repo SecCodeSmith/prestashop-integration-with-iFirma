@@ -14,7 +14,7 @@ class Configuration
     /** @var array key => value */
     public static $values = [];
 
-    /** @var array[] every updateValue() call since the last reset(), oldest first, as [key, value] */
+    /** @var array[] every updateValue() call since the last reset(), oldest first, with every argument it was given: [key, value] for a two-argument call */
     public static $writes = [];
 
     public static function reset()
@@ -30,7 +30,7 @@ class Configuration
 
     public static function updateValue($key, $values, $html = false, $idShopGroup = null, $idShop = null)
     {
-        self::$writes[] = [$key, $values];
+        self::$writes[] = func_get_args();
         self::$values[$key] = $values;
 
         return true;
