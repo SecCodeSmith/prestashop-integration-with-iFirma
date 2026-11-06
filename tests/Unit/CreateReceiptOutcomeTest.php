@@ -423,6 +423,37 @@ class CreateReceiptOutcomeTest extends TestCase
         $this->assertNull($row['ifirma_number']);
     }
 
+    /**
+     * @return array answer node, whose short number is empty or 0
+     */
+    public function emptyShortNumbers()
+    {
+        return array(
+            'an empty short number is no number' => array('{"Kod":0,"Identyfikator":"77","Numer":""}'),
+            'a short number of 0 is no number' => array('{"Kod":0,"Identyfikator":"77","Numer":"0"}'),
+        );
+    }
+
+    /**
+     * @dataProvider emptyShortNumbers
+     */
+    public function testAnEmptyOrZeroShortNumberIsNoNumberWhenTheLookupFails($node)
+    {
+        $this->answerDocument('{"response":' . $node . '}');
+        $this->t->queue('GET', '#faktury\.json#', array('status' => 0, 'error' => 'timeout'));
+
+        $this->create();
+
+        $row = $this->onlyWrite('add')['row'];
+        $this->assertSame('created', $row['status']);
+        $this->assertSame('77', $row['ifirma_id']);
+        $this->assertNull($row['ifirma_number']);
+        $requests = $this->requests();
+        $this->assertCount(2, $requests);
+        $this->assertSame('POST fakturakraj.json', $requests[0]);
+        $this->assertStringStartsWith('GET faktury.json?', $requests[1]);
+    }
+
     public function testAnAnswerWithoutAnIdentifierIsRecordedWithoutLookingAnythingUp()
     {
         $this->answerDocument('{"response":{"Kod":0}}');
