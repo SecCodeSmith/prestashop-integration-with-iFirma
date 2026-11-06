@@ -25,62 +25,11 @@ class CreateReceiptGoldenTest extends TestCase
 {
     use IfirmaContractorMapDb;
     use IfirmaGoldenPayloads;
-
-    /** @var ScriptedTransport */
-    private $t;
-
-    /** @var IfirmaReceiptService */
-    private $service;
+    use IfirmaCreateReceiptScenario;
 
     protected function setUp(): void
     {
-        IfirmaTestState::resetAll();
-        $this->scriptContractorMapDb();
-        Configuration::updateValue('IFIRMA_CONTRACTOR_SYNC', 0);
-        $this->t = new ScriptedTransport();
-        $client = new IfirmaApiClient('u@example.com', array('faktura' => str_repeat('1', 64)), 'http://ifirma-mock:8001/iapi/', 30, $this->t);
-        $this->service = new IfirmaReceiptService($client, new Module());
-
-        $c = new Customer();
-        $c->id = 5;
-        $c->email = 'a@example.test';
-        Customer::register($c);
-        $a = new Address();
-        $a->id = 7;
-        $a->firstname = 'Jan';
-        $a->lastname = 'K';
-        $a->id_country = 14;
-        Address::register($a);
-    }
-
-    private function order()
-    {
-        $o = new Order();
-        $o->id = 15;
-        $o->id_customer = 5;
-        $o->id_address_invoice = 7;
-        $o->reference = 'ABCDEFGHI';
-        $o->date_add = '2026-03-04 10:00:00';
-        $o->total_paid_tax_incl = 10;
-        $o->details = array(array(
-            'product_name' => 'W',
-            'product_quantity' => 1,
-            'unit_price_tax_incl' => 10,
-            'unit_price_tax_excl' => 10,
-            'tax_rate' => 0,
-        ));
-
-        return $o;
-    }
-
-    private function enableSync()
-    {
-        Configuration::updateValue('IFIRMA_CONTRACTOR_SYNC', 1);
-        $country = new Country();
-        $country->id = 14;
-        $country->iso_code = 'pl';
-        $country->name = 'Polska';
-        Country::register($country);
+        $this->setUpCreateReceiptScenario();
     }
 
     private function docOk()
