@@ -72,8 +72,11 @@ Seven findings against the snapshot taken at launch time:
   and `'error'`; it now uses `IfirmaReceipt::STATUS_PAID` and `STATUS_ERROR`. Re-verified: affected
   tests OK (145 tests), full suite 3551, gate 100%, smoke check OK on both shops, panel geometry
   unchanged (same left edge as the first card, label widths equal).
-- Accepted as is: two correlated subselects per listed order. Both are lookups on `idx_order`
-  bounded by the page size; merging them would need a join or a packed string split in PHP.
+- Fixed on request after the first push: the two correlated subselects per listed order became one
+  `LEFT JOIN` on the newest record (`MAX(id_ifirma_receipt)` per order) with the two values selected
+  from the joined row (`joinSql()` + `selectSql()`; the count query is still untouched). Re-verified:
+  97 indicator/hook tests OK, full suite 3552, gate 100%, smoke check OK on both shops (totals 347
+  and 66 unchanged), Orders list renders with the icons on PS 8.1.
 
 ## Release note
 

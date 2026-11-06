@@ -35,11 +35,11 @@ Observed in the running PrestaShop 8.1 and 9.2 images of the test stack:
 
 *Alternative:* a `DataColumn` with the number as text. Rejected: the merchant asked for an icon; a number column is wider and says less at a glance.
 
-### D2. One correlated subquery for the latest issued record
+### D2. One LEFT JOIN on the newest record of each order
 
-New class `classes/IfirmaOrderGridIndicator.php` (framework-free). `selectSql($orderAlias)` returns two selects: `ifirma_document_number` and `ifirma_document_status`, each a subquery `SELECT ... FROM ps_ifirma_receipt r WHERE r.id_order = o.id_order ORDER BY r.id_ifirma_receipt DESC LIMIT 1`, with the number falling back to the identifier (`IF(r.ifirma_number <> '', r.ifirma_number, r.ifirma_id)`) and an "issued" guard mirroring `isIssued()` (`r.ifirma_id <> '' AND r.status <> 'error'`). Both subqueries read the newest record of the order, so an older `error` record under a newer issued one shows the icon ("Latest record wins"), and a newest record that is held or failed shows nothing. The `idx_order` index on `ifirma_receipt` makes each subquery an index lookup.
+New class `classes/IfirmaOrderGridIndicator.php` (framework-free). `joinSql($orderAlias)` describes one `LEFT JOIN ps_ifirma_receipt ifr ON ifr.id_ifirma_receipt = (SELECT MAX(r.id_ifirma_receipt) FROM ps_ifirma_receipt r WHERE r.id_order = o.id_order)` for the search query only (the count query is untouched, so the total and the paging do not change). `selectSql()` returns two selects on that row: `ifirma_document_number` (the number falling back to the identifier, `IF(ifr.ifirma_number <> '', ifr.ifirma_number, ifr.ifirma_id)`) and `ifirma_document_status`, both guarded by the same "issued" rule as `isIssued()` (`ifr.ifirma_id <> '' AND ifr.status <> 'error'`) and both `''` when no row joined or the newest record is not issued. The newest record decides, so an older `error` record under a newer issued one shows the icon ("Latest record wins"), and a newest record that is held or failed shows nothing. The `MAX` lookup uses `idx_order`; the join itself is a primary-key lookup.
 
-*Alternative:* `LEFT JOIN ifirma_receipt` with `MAX(id_ifirma_receipt)` grouping. Rejected: the orders query already has joins and no `GROUP BY`; adding one changes the count query semantics and every other module's join.
+*First version:* two correlated subselects (one per value), each repeating the same newest-record lookup. Replaced after review: one join halves the lookups per listed row and keeps the record keys identical. A `GROUP BY` join was rejected from the start: the orders query has no grouping and other modules join it too.
 
 ### D3. Cell HTML built in PHP, escaped, translated through the module
 

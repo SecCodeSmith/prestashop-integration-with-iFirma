@@ -60,9 +60,9 @@
     "semantic_hash": ""
   },
   "ifirma.php": {
-    "mtime": 1793984791.7342763,
-    "seen": 1793984991.8936162,
-    "ast_hash": "9c227d7cee0c4ab97c1abacce55b8e84",
+    "mtime": 1793996844.3223577,
+    "seen": 1793997013.7361994,
+    "ast_hash": "4b88f4387d06f4a633554ce802a49de2",
     "semantic_hash": ""
   },
   "index.php": {
@@ -720,9 +720,9 @@
     "semantic_hash": ""
   },
   "tests/Unit/ModuleHooksTest.php": {
-    "mtime": 1793984792.2587616,
-    "seen": 1793984991.8937366,
-    "ast_hash": "0f7136d35af92bc73699ee1c516575d2",
+    "mtime": 1793996825.573488,
+    "seen": 1793997013.7363997,
+    "ast_hash": "d8a6f965f70609fa50476cf25aba250b",
     "semantic_hash": ""
   },
   "tests/Unit/PayloadBuilderTest.php": {
@@ -2310,9 +2310,9 @@
     "semantic_hash": ""
   },
   "classes/IfirmaOrderGridIndicator.php": {
-    "mtime": 1793995982.6882908,
-    "seen": 1793996139.5767508,
-    "ast_hash": "e87cd7802729b535fc5028df1fd75853",
+    "mtime": 1793996825.4856908,
+    "seen": 1793997013.7361653,
+    "ast_hash": "c38448ba2925b9815556a386342c7678",
     "semantic_hash": ""
   },
   "tests/Stubs/GridColumn.php": {
@@ -2322,9 +2322,9 @@
     "semantic_hash": ""
   },
   "tests/Unit/OrderGridIndicatorTest.php": {
-    "mtime": 1793983775.9510171,
-    "seen": 1793984991.8937376,
-    "ast_hash": "d717463e88f5b2b01849b96ffa43377e",
+    "mtime": 1793996844.5121024,
+    "seen": 1793997013.7364013,
+    "ast_hash": "bf85dac53d73f3659a02ade5edf5edfd",
     "semantic_hash": ""
   },
   "tests/smoke/order-grid-check.php": {
@@ -2346,9 +2346,9 @@
     "semantic_hash": ""
   },
   "openspec/changes/admin-ui-cleanup/design.md": {
-    "mtime": 1793984792.6529903,
-    "seen": 1793984991.894148,
-    "ast_hash": "39cb912205f2fc6cb308710464dc155e",
+    "mtime": 1793996825.6697648,
+    "seen": 1793997013.7365878,
+    "ast_hash": "a1d6b9a7f65abb7a14a674b91729f5b2",
     "semantic_hash": ""
   },
   "openspec/changes/admin-ui-cleanup/proposal.md": {
@@ -2400,9 +2400,9 @@
     "semantic_hash": ""
   },
   "openspec/changes/admin-ui-cleanup/verification.md": {
-    "mtime": 1793985022.8709078,
-    "seen": 1793996139.576996,
-    "ast_hash": "6aff1fbfcdb4ef266a441d903a981fad",
+    "mtime": 1793997004.4225953,
+    "seen": 1793997013.7365952,
+    "ast_hash": "b12cf2a793655b3784c3f6e63a98d1da",
     "semantic_hash": ""
   }
 }
