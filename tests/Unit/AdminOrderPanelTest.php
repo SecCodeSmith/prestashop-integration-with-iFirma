@@ -342,6 +342,21 @@ class AdminOrderPanelTest extends TestCase
         $this->assertSame(array(), Address::$loads, 'no address is read for a diff that is not built');
     }
 
+    public function testTheLinkShownIsTheOneOfTheCustomerOfTheOrder()
+    {
+        $order = $this->wiringOrder();
+        $order->id = 16;
+        $order->id_customer = 6;
+        Order::register($order);
+        IfirmaContractorMap::link(5, 'FIVE-05', 'nip', 'Jan Kowalski');
+        IfirmaContractorMap::link(6, 'SIX-06', 'name', 'Ewa Nowak');
+
+        $this->assertSame(
+            array('identifier' => 'SIX-06', 'matched_by' => 'name', 'matched_by_label' => 'name', 'name' => 'Ewa Nowak'),
+            $this->panel(16)['ifirma_contractor_map']
+        );
+    }
+
     public function testAnOrderThatCarriesFiguresButDoesNotLoadIsTreatedAsMissing()
     {
         $order = $this->wiringOrder();

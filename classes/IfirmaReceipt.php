@@ -304,6 +304,78 @@ class IfirmaReceipt extends ObjectModel
     }
 
     /**
+     * @return bool whether the admin panel offers to issue the document: nothing is issued yet and the record
+     *              is not held by a pending data change request
+     */
+    public function canCreate()
+    {
+        return !$this->isIssued() && (string) $this->status !== self::STATUS_HELD;
+    }
+
+    /**
+     * @return bool whether the admin panel offers to issue the document anyway: nothing is issued yet and the
+     *              last run ended in a suspected duplicate, an unknown outcome or an error
+     */
+    public function canIssueAnyway()
+    {
+        return !$this->isIssued() && in_array((string) $this->status, array(
+            self::STATUS_DUPLICATE_SUSPECTED,
+            self::STATUS_UNKNOWN,
+            self::STATUS_ERROR,
+        ), true);
+    }
+
+    /**
+     * @return string the payment method (SposobZaplaty) of the stored request payload; '' when there is none
+     */
+    public function sentPaymentMethod()
+    {
+        $sent = $this->sentPayload();
+
+        return isset($sent['SposobZaplaty']) ? (string) $sent['SposobZaplaty'] : '';
+    }
+
+    /**
+     * The contractor note the stored request payload carries (its _contractor entry), for the admin panel. Only
+     * what the entry holds: the wording belongs to the module class, which translates it.
+     *
+     * @return array|null action (string), message (the raw sentence of an older record, '' when none), note (the
+     *                    structured note: code and params, or null) and attached (the contractor iFirma attached
+     *                    to the document when the module could not reference one (D14), else ''); null when the
+     *                    payload records no contractor action
+     */
+    public function contractorNote()
+    {
+        $sent = $this->sentPayload();
+        if (!isset($sent['_contractor']['action'])) {
+            return null;
+        }
+        $step = $sent['_contractor'];
+        $attached = isset($step['document_identifier']) ? trim((string) $step['document_identifier']) : '';
+        $referenced = isset($step['identifier']) ? trim((string) $step['identifier']) : '';
+
+        return array(
+            'action' => (string) $step['action'],
+            'message' => isset($step['message']) ? (string) $step['message'] : '',
+            'note' => isset($step['note']) && is_array($step['note']) ? $step['note'] : null,
+            'attached' => $attached !== $referenced ? $attached : '',
+        );
+    }
+
+    /**
+     * @return array the stored request payload, decoded; empty when there is none or it is not a JSON object or list
+     */
+    private function sentPayload()
+    {
+        if (!$this->request_payload) {
+            return array();
+        }
+        $sent = json_decode((string) $this->request_payload, true);
+
+        return is_array($sent) ? $sent : array();
+    }
+
+    /**
      * @return array decoded duplicate candidates (empty when none/invalid)
      */
     public function getDuplicateCandidates()

@@ -26,6 +26,8 @@ require_once __DIR__ . '/classes/IfirmaDataRequestNotifier.php';
 require_once __DIR__ . '/classes/IfirmaDataRequestService.php';
 require_once __DIR__ . '/classes/IfirmaIssuancePipeline.php';
 require_once __DIR__ . '/classes/IfirmaCustomerView.php';
+require_once __DIR__ . '/classes/IfirmaAdminPanelPresenter.php';
+require_once __DIR__ . '/classes/IfirmaAdminOrderPanelView.php';
 require_once __DIR__ . '/classes/IfirmaCustomerContractorService.php';
 require_once __DIR__ . '/classes/IfirmaAdminActions.php';
 
@@ -250,32 +252,6 @@ class Ifirma extends Module
         ));
 
         return $this->display(__FILE__, 'views/templates/admin/contractors.tpl');
-    }
-
-    /**
-     * @param int $idCustomer
-     * @return array|null identifier, matched_by, matched_by_label, name
-     */
-    private function contractorMapFor($idCustomer)
-    {
-        if ($idCustomer <= 0) {
-            return null;
-        }
-        try {
-            $map = IfirmaContractorMap::getByCustomer($idCustomer);
-        } catch (Exception $e) {
-            return null;
-        }
-        if (!$map) {
-            return null;
-        }
-
-        return array(
-            'identifier' => (string) $map->ifirma_identifier,
-            'matched_by' => (string) $map->matched_by,
-            'matched_by_label' => $this->matchLabels()->label((string) $map->matched_by),
-            'name' => (string) $map->ifirma_name,
-        );
     }
 
     /**
@@ -994,61 +970,36 @@ class Ifirma extends Module
     }
 
     /**
-     * @param IfirmaReceipt|null $receipt
-     * @return string one of not_issued, held, suspected, unknown, error, missing, paid, issued
+     * The words of the admin order panel in the back-office language. The translation scanner only finds the
+     * l() calls in this file, so the literals stay here and the panel classes receive them translated.
+     *
+     * @return array state, request_status, request_fields and contractor words, as IfirmaAdminPanelPresenter takes them
      */
-    private function adminState($receipt)
+    private function adminPanelLabels()
     {
-        if (!$receipt) {
-            return 'not_issued';
-        }
-        if ($receipt->status === IfirmaReceipt::STATUS_HELD) {
-            return 'held';
-        }
-        if ($receipt->status === IfirmaReceipt::STATUS_DUPLICATE_SUSPECTED) {
-            return 'suspected';
-        }
-        if ($receipt->status === IfirmaReceipt::STATUS_UNKNOWN) {
-            return 'unknown';
-        }
-        if ($receipt->status === IfirmaReceipt::STATUS_ERROR) {
-            return 'error';
-        }
-        if ($receipt->isIssued()) {
-            if ($receipt->remote_missing) {
-                return 'missing';
-            }
-
-            return $receipt->status === IfirmaReceipt::STATUS_PAID ? 'paid' : 'issued';
-        }
-
-        return 'not_issued';
+        return array(
+            'state' => $this->adminStateLabels(),
+            'request_status' => $this->requestStatusLabels(),
+            'request_fields' => $this->requestFieldLabels(),
+            'contractor' => $this->contractorNoteLabels(),
+        );
     }
 
     /**
-     * @param string $state
-     * @return string
+     * @return string[] IfirmaAdminPanelPresenter::STATE_* => label
      */
-    private function adminStateLabel($state)
+    private function adminStateLabels()
     {
-        switch ($state) {
-            case 'held':
-                return $this->l('On hold (data change request pending)');
-            case 'suspected':
-                return $this->l('Suspected duplicate');
-            case 'unknown':
-                return $this->l('Outcome unknown - verify in iFirma');
-            case 'error':
-                return $this->l('Error');
-            case 'missing':
-                return $this->l('Missing in iFirma');
-            case 'paid':
-                return $this->l('Paid');
-            case 'issued':
-                return $this->l('Issued');
-        }
-
-        return $this->l('Not issued');
+        return array(
+            IfirmaAdminPanelPresenter::STATE_HELD => $this->l('On hold (data change request pending)'),
+            IfirmaAdminPanelPresenter::STATE_SUSPECTED => $this->l('Suspected duplicate'),
+            IfirmaAdminPanelPresenter::STATE_UNKNOWN => $this->l('Outcome unknown - verify in iFirma'),
+            IfirmaAdminPanelPresenter::STATE_ERROR => $this->l('Error'),
+            IfirmaAdminPanelPresenter::STATE_MISSING => $this->l('Missing in iFirma'),
+            IfirmaAdminPanelPresenter::STATE_PAID => $this->l('Paid'),
+            IfirmaAdminPanelPresenter::STATE_ISSUED => $this->l('Issued'),
+            IfirmaAdminPanelPresenter::STATE_NOT_ISSUED => $this->l('Not issued'),
+        );
     }
 
     /**
@@ -1072,41 +1023,22 @@ class Ifirma extends Module
     }
 
     /**
-     * @param int $idEmployee
-     * @return string
+     * @return string[] data request status => label
      */
-    private function employeeName($idEmployee)
+    private function requestStatusLabels()
     {
-        $idEmployee = (int) $idEmployee;
-        if ($idEmployee <= 0) {
-            return '';
-        }
-        $employee = new Employee($idEmployee);
-        $name = trim($employee->firstname . ' ' . $employee->lastname);
-
-        return $name !== '' ? $name : '#' . $idEmployee;
+        return array(
+            IfirmaDataRequest::STATUS_PENDING => $this->l('Pending'),
+            IfirmaDataRequest::STATUS_APPROVED => $this->l('Approved'),
+            IfirmaDataRequest::STATUS_REJECTED => $this->l('Rejected'),
+            IfirmaDataRequest::STATUS_CANCELLED => $this->l('Cancelled'),
+        );
     }
 
     /**
-     * @param string $status
-     * @return string
+     * @param int $idOrder
+     * @return string HTML; '' for no order or when the panel was rendered already on this request
      */
-    private function requestStatusLabel($status)
-    {
-        switch ($status) {
-            case IfirmaDataRequest::STATUS_PENDING:
-                return $this->l('Pending');
-            case IfirmaDataRequest::STATUS_APPROVED:
-                return $this->l('Approved');
-            case IfirmaDataRequest::STATUS_REJECTED:
-                return $this->l('Rejected');
-            case IfirmaDataRequest::STATUS_CANCELLED:
-                return $this->l('Cancelled');
-        }
-
-        return (string) $status;
-    }
-
     private function renderAdminOrderPanel($idOrder)
     {
         if (self::$adminOrderRendered || !$idOrder) {
@@ -1114,204 +1046,48 @@ class Ifirma extends Module
         }
         self::$adminOrderRendered = true;
 
-        $ksef = IfirmaKsefService::build($this);
-        $receipt = IfirmaReceipt::getByOrder($idOrder);
         $token = Tools::getAdminTokenLite('AdminIfirma');
-        $order = new Order($idOrder);
-        $requests = IfirmaDataRequestService::build($this);
-        $delivery = IfirmaDeliveryService::build($this);
-
-        $paymentMethod = '';
-        $contractorNote = '';
-        if ($receipt && $receipt->request_payload) {
-            $sent = json_decode((string) $receipt->request_payload, true);
-            if (is_array($sent) && isset($sent['SposobZaplaty'])) {
-                $paymentMethod = (string) $sent['SposobZaplaty'];
-            }
-            if (is_array($sent) && isset($sent['_contractor']['action'])) {
-                $contractorNote = $this->contractorActionLabel(
-                    (string) $sent['_contractor']['action'],
-                    isset($sent['_contractor']['message']) ? (string) $sent['_contractor']['message'] : '',
-                    isset($sent['_contractor']['note']) && is_array($sent['_contractor']['note']) ? $sent['_contractor']['note'] : null
-                );
-                // the contractor iFirma attached when the module could not reference one (D14)
-                $attached = isset($sent['_contractor']['document_identifier']) ? trim((string) $sent['_contractor']['document_identifier']) : '';
-                $referenced = isset($sent['_contractor']['identifier']) ? trim((string) $sent['_contractor']['identifier']) : '';
-                if ($attached !== '' && $attached !== $referenced) {
-                    $contractorNote = trim($contractorNote . ' ' . sprintf($this->l('iFirma attached contractor %s'), $attached));
-                }
-            }
-        }
-
-        $state = $this->adminState($receipt);
-        $isIssued = (bool) ($receipt && $receipt->isIssued());
-        $status = $receipt ? (string) $receipt->status : '';
-
-        // duplicate candidates
-        $candidates = array();
-        $resolution = null;
-        if ($receipt) {
-            $stored = $receipt->getDuplicateCandidates();
-            if (isset($stored['candidates']) && is_array($stored['candidates'])) {
-                $candidates = $stored['candidates'];
-                $resolution = isset($stored['resolution']) ? $stored['resolution'] : null;
-            }
-        }
-
-        // data change requests
-        $pending = $requests->getPendingForOrder($idOrder);
-        $pendingSummary = null;
-        $diff = array();
-        $fields = array();
-        if ($pending) {
-            $pendingSummary = $requests->summarize($pending);
-            $pendingSummary['customer_note'] = (string) $pending->customer_note;
-            if (Validate::isLoadedObject($order)) {
-                $diff = $requests->buildDiff($pending->getRequestedData(), new Address((int) $order->id_address_invoice));
-            }
-            $labels = $this->requestFieldLabels();
-            $requested = $pending->getRequestedData();
-            foreach ($requests->fields() as $name) {
-                $fields[] = array(
-                    'name' => $name,
-                    'label' => isset($labels[$name]) ? $labels[$name] : $name,
-                    'value' => isset($requested[$name]) && !is_array($requested[$name]) ? (string) $requested[$name] : '',
-                    'type' => $name === 'want_invoice_for_company' ? 'checkbox' : 'text',
-                );
-            }
-        }
-        $history = array();
-        foreach (IfirmaDataRequest::getByOrder($idOrder) as $row) {
-            $request = IfirmaDataRequest::getById((int) $row['id_ifirma_data_request']);
-            if (!$request) {
-                continue;
-            }
-            $entry = $requests->summarize($request);
-            $entry['status_label'] = $this->requestStatusLabel($request->status);
-            $entry['employee'] = $this->employeeName($request->resolved_by);
-            $history[] = $entry;
-        }
-
-        $contractorMap = null;
-        if ($order && Validate::isLoadedObject($order)) {
-            $contractorMap = $this->contractorMapFor((int) $order->id_customer);
-        }
-
-        $this->context->smarty->assign(array(
-            'ifirma_contractor_map' => $contractorMap,
-            'ifirma_id_order' => $idOrder,
-            'ifirma_receipt' => $receipt,
-            'ifirma_payment_method' => $paymentMethod,
-            'ifirma_contractor_note' => $contractorNote,
-            'ifirma_request_payload' => $receipt ? (string) $receipt->request_payload : '',
-            'ifirma_response_payload' => $receipt ? (string) $receipt->response_payload : '',
-            'ifirma_module_version' => (string) $this->version,
+        $view = new IfirmaAdminOrderPanelView(
+            new IfirmaAdminPanelPresenter($this->adminPanelLabels()),
+            $this->matchLabels(),
+            IfirmaDataRequestService::build($this),
+            IfirmaDeliveryService::build($this),
+            IfirmaKsefService::build($this)
+        );
+        $this->context->smarty->assign($view->build($idOrder, array(
+            'version' => (string) $this->version,
             // tells a merchant (and us) which build is installed when the version number did not change
-            'ifirma_build_stamp' => date('Y-m-d H:i', (int) filemtime(__FILE__)),
-            'ifirma_has_receipt' => (bool) $receipt,
-            'ifirma_is_issued' => $isIssued,
-            'ifirma_is_external' => (bool) ($receipt && $receipt->isExternal()),
-            'ifirma_configured' => $this->isConfigured(),
-            'ifirma_state' => $state,
-            'ifirma_state_label' => $this->adminStateLabel($state),
-            'ifirma_can_create' => !$isIssued && $status !== IfirmaReceipt::STATUS_HELD,
-            'ifirma_can_issue_anyway' => !$isIssued && in_array($status, array(
-                IfirmaReceipt::STATUS_DUPLICATE_SUSPECTED,
-                IfirmaReceipt::STATUS_UNKNOWN,
-                IfirmaReceipt::STATUS_ERROR,
-            ), true),
-            'ifirma_has_pending_request' => (bool) $pending,
-            'ifirma_candidates' => $candidates,
-            'ifirma_resolution' => $resolution,
-            'ifirma_delivery_text' => $receipt ? $delivery->describeDelivery($receipt) : '',
-            'ifirma_ksef_text' => ($receipt && $isIssued) ? $ksef->describe($receipt, $order) : '',
-            'ifirma_gross' => Validate::isLoadedObject($order) ? (float) $order->total_paid_tax_incl : 0.0,
-            'ifirma_pending_request' => $pendingSummary,
-            'ifirma_request_diff' => $diff,
-            'ifirma_request_fields' => $fields,
-            'ifirma_request_history' => $history,
-            'ifirma_ajax_url' => $this->context->link->getAdminLink('AdminIfirma', false)
-                . '&token=' . $token,
-            'ifirma_token' => $token,
-        ));
+            'build_stamp' => date('Y-m-d H:i', (int) filemtime(__FILE__)),
+            'configured' => $this->isConfigured(),
+            'ajax_url' => $this->context->link->getAdminLink('AdminIfirma', false) . '&token=' . $token,
+            'token' => $token,
+        )));
 
         return $this->display(__FILE__, 'views/templates/hook/admin_order_panel.tpl');
     }
 
     /**
-     * @param string     $action
-     * @param string     $message raw (English) sentence stored with older records
-     * @param array|null $note    structured note (code, params) rendered in the back-office language
-     * @return string
+     * @return string[] the words of the contractor note of the admin order panel, by purpose: the actions, the
+     *                  sentences of the structured notes and the words of the read-back search
      */
-    private function contractorActionLabel($action, $message, $note = null)
+    private function contractorNoteLabels()
     {
-        switch ($action) {
-            case 'created':
-                $label = $this->l('created');
-                break;
-            case 'updated':
-                $label = $this->l('updated');
-                break;
-            case 'kept':
-                $label = $this->l('kept');
-                break;
-            case 'fallback':
-                $label = $this->l('fallback');
-                break;
-            default:
-                return '';
-        }
-
-        $params = is_array($note) && isset($note['params']) && is_array($note['params']) ? $note['params'] : array();
-        $code = is_array($note) && isset($note['code']) ? (string) $note['code'] : '';
-        $identifier = isset($params['identifier']) ? (string) $params['identifier'] : '';
-        $error = isset($params['error']) ? (string) $params['error'] : '';
-
-        if ($action === 'created' && $code === 'assigned') {
-            return sprintf($this->l('created (iFirma assigned identifier %s)'), $identifier);
-        }
-        if ($action !== 'fallback') {
-            return $label;
-        }
-
-        switch ($code) {
-            case 'lookup_failed':
-                return sprintf($this->l('fallback (lookup of %1$s failed: %2$s)'), $identifier, $error);
-            case 'update_failed':
-                return sprintf($this->l('fallback (update of %1$s failed: %2$s)'), $identifier, $error);
-            case 'create_rejected':
-                return sprintf($this->l('fallback (contractor create rejected: %s)'), $error);
-            case 'reference_rejected':
-                return sprintf($this->l('fallback (reference %1$s rejected: %2$s)'), $identifier, $error);
-            case 'readback_failed':
-                $tried = array();
-                $entries = isset($params['tried']) && is_array($params['tried']) ? $params['tried'] : array();
-                foreach ($entries as $entry) {
-                    if (!is_array($entry)) {
-                        continue;
-                    }
-                    $line = (isset($entry['identifier']) ? (string) $entry['identifier'] : '')
-                        . ': ' . (isset($entry['answer']) ? (string) $entry['answer'] : '');
-                    $tried[$line] = $line;
-                }
-                $search = isset($params['search']) ? (string) $params['search'] : 'none';
-                if ($search === 'ambiguous') {
-                    $searchLabel = $this->l('ambiguous');
-                } elseif ($search === 'error') {
-                    $searchLabel = sprintf($this->l('failed: %s'), isset($params['search_error']) ? (string) $params['search_error'] : '');
-                } else {
-                    $searchLabel = $this->l('found nothing');
-                }
-
-                return sprintf($this->l('fallback (contractor created but not found: %1$s; search: %2$s)'), implode('; ', $tried), $searchLabel);
-        }
-
-        if ($message !== '') {
-            $label .= ' (' . $message . ')';
-        }
-
-        return $label;
+        return array(
+            'created' => $this->l('created'),
+            'updated' => $this->l('updated'),
+            'kept' => $this->l('kept'),
+            'fallback' => $this->l('fallback'),
+            'assigned' => $this->l('created (iFirma assigned identifier %s)'),
+            'lookup_failed' => $this->l('fallback (lookup of %1$s failed: %2$s)'),
+            'update_failed' => $this->l('fallback (update of %1$s failed: %2$s)'),
+            'create_rejected' => $this->l('fallback (contractor create rejected: %s)'),
+            'reference_rejected' => $this->l('fallback (reference %1$s rejected: %2$s)'),
+            'readback_failed' => $this->l('fallback (contractor created but not found: %1$s; search: %2$s)'),
+            'ambiguous' => $this->l('ambiguous'),
+            'search_failed' => $this->l('failed: %s'),
+            'found_nothing' => $this->l('found nothing'),
+            'attached' => $this->l('iFirma attached contractor %s'),
+        );
     }
 
     public function hookHeader($params)
