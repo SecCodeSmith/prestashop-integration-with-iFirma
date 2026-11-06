@@ -155,8 +155,28 @@ Like `refactor-clean-code-tda`, the change lands straight on master: one commit 
   - The golden payloads are equal, and CreateReceiptTest is unchanged and green. The review approved it.
   - Gate against `bf196d8`: `OK (2714 tests)`, 41 changed lines, 100%.
 
-- [ ] 5.3 Extract `IfirmaPayloadBuilder` and `IfirmaDocumentSettings` (design D3), with temporary delegating static wrappers on ReceiptService. Retarget PayloadBuilderTest to the new class, keeping the assertions verbatim. Register the new files in the module loader. Verify that the golden payloads are equal, the suite is green, and diff-cover is at 100%.
-- [ ] 5.4 Point the DuplicateGuard, DeliveryService and other static callers at the new classes, then remove the wrappers. Verify that `git grep -n "IfirmaReceiptService::\(truncate\|buildOrderReference\|normalize\)"` is empty and the suite is green.
+- [x] 5.3 Extract `IfirmaPayloadBuilder` and `IfirmaDocumentSettings` (design D3), with temporary delegating static wrappers on ReceiptService. Retarget PayloadBuilderTest to the new class, keeping the assertions verbatim. Register the new files in the module loader. Verify that the golden payloads are equal, the suite is green, and diff-cover is at 100%.
+
+  Evidence:
+  - Characterisation `b290506` passes on unchanged code.
+  - Refactor `4ae2968`:
+    - `IfirmaPayloadBuilder` takes the payload, contractor, product line, buyer name, field limit, truncation and order reference code.
+    - `IfirmaDocumentSettings` takes the document and signature type normalisers.
+    - Temporary wrappers stay on `IfirmaReceiptService`, and PayloadBuilderTest is retargeted with its assertions verbatim.
+  - The 'Shipping' label moved with an explicit domain, `$this->module->l('Shipping', 'ifirmareceiptservice')`, so its translation key is unchanged.
+  - The golden payloads are equal. The review approved it.
+  - Gate against `ebc58ea`: `OK (3181 tests)`, 185 changed lines, 100%.
+  - `buildInvoicePayload()` (76 lines) and `buildContractor()` (53 lines) moved verbatim. Before they are split, pins are needed for the price rounding, a shipping price of 0.5 and an order without detail rows.
+
+- [x] 5.4 Point the DuplicateGuard, DeliveryService and other static callers at the new classes, then remove the wrappers. Verify that `git grep -n "IfirmaReceiptService::\(truncate\|buildOrderReference\|normalize\)"` is empty and the suite is green.
+
+  Evidence:
+  - Characterisation `52dbaad` pins the callers.
+  - Refactor `8ee1c8e`: the duplicate guard, the delivery service, the pipeline's `ensureRow()`, `ifirma.php` (the normalisers) and the customer actions now call `IfirmaPayloadBuilder` and `IfirmaDocumentSettings` directly, each with its own `require_once`, and the wrappers are gone.
+  - Integration note: by the time 5.4 landed, 8.1 had already moved `registerContractor()` into `IfirmaCustomerActions`, so its `buildContractor()` call and require were retargeted there; the facade is unchanged.
+  - The task's grep is empty. `ClassFileRequiresTest` pins that each file requires the new classes it names.
+  - Gate against `4ae2968`: 17 changed lines, 100%.
+
 
 ## 6. Issuance pipeline
 
@@ -186,12 +206,36 @@ Like `refactor-clean-code-tda`, the change lands straight on master: one commit 
   - Gate against `87d3fd1`: `OK (2771 tests)`.
 
 - [ ] 7.2 Introduce the `IfirmaSettings` table plus `fromInput()` (design D5), and make `postProcessConfiguration` loop over it. Error-message literals stay in `ifirma.php`. Verify that the golden write set is equal, the ModuleHooksTest `getContent` tests and TranslationCoverageTest are green, and diff-cover is at 100%.
-- [ ] 7.3 Add a golden test of the full Smarty assignment array from `renderAdminOrderPanel` for the existing ModuleHooksTest admin-panel fixtures. Verify that it passes on unchanged code.
-- [ ] 7.4 Extract `IfirmaAdminOrderPanelView` and `IfirmaAdminPanelPresenter`. Move the request-payload digging into `IfirmaReceipt::sentPaymentMethod()` / `contractorNote()` and the `canCreate()` / `canIssueAnyway()` decisions onto the receipt. Verify that the Smarty array is equal to golden, TranslationCoverageTest is green, `ifirma.php` loses those helpers, and diff-cover is at 100%.
+- [x] 7.3 Add a golden test of the full Smarty assignment array from `renderAdminOrderPanel` for the existing ModuleHooksTest admin-panel fixtures. Verify that it passes on unchanged code.
+
+  Evidence: commit `18e8107`, passing on unchanged code. AdminOrderPanelGoldenTest pins the full Smarty array of every ModuleHooksTest admin-panel fixture. Its fixture list is kept by hand.
+
+- [x] 7.4 Extract `IfirmaAdminOrderPanelView` and `IfirmaAdminPanelPresenter`. Move the request-payload digging into `IfirmaReceipt::sentPaymentMethod()` / `contractorNote()` and the `canCreate()` / `canIssueAnyway()` decisions onto the receipt. Verify that the Smarty array is equal to golden, TranslationCoverageTest is green, `ifirma.php` loses those helpers, and diff-cover is at 100%.
+
+  Evidence:
+  - Refactor `fc9e74a`, plus the pin `ebc58ea`:
+    - `IfirmaAdminOrderPanelView::build()` (40 lines) builds the Smarty array, and `IfirmaAdminPanelPresenter` formats it.
+    - `IfirmaReceipt` gained `sentPaymentMethod()`, `contractorNote()`, `canCreate()` and `canIssueAnyway()`.
+    - `renderAdminOrderPanel()` is 26 lines.
+  - The Smarty array is equal to the golden. Every `$this->l()` literal stays in `ifirma.php`: the same 156 calls. No new class reads `$module->context`.
+  - The review approved it, with one observable difference, for corrupt stored notes only: a note parameter the sentence does not use is no longer cast to a string, so one PHP warning less.
+  - Gate against `18e8107`: `OK (3108 tests)`, 249 changed lines, 100%.
+
 
 ## 8. Admin actions split
 
-- [ ] 8.1 Split `IfirmaAdminActions` into receipt, customer and data-request action classes plus `IfirmaActionSupport`, behind the existing facade (design D4). Remove the `customerRegister` alias and its existence test after confirming that the controller and templates do not call it (`git grep -n customerRegister`). Verify that AdminActionsTest and AdminControllerCustomerTest are green and diff-cover is at 100%.
+- [x] 8.1 Split `IfirmaAdminActions` into receipt, customer and data-request action classes plus `IfirmaActionSupport`, behind the existing facade (design D4). Remove the `customerRegister` alias and its existence test after confirming that the controller and templates do not call it (`git grep -n customerRegister`). Verify that AdminActionsTest and AdminControllerCustomerTest are green and diff-cover is at 100%.
+
+  Evidence:
+  - Characterisation `1a9abea`, then refactor `8d1569f`:
+    - `IfirmaAdminActions` stays the class the controller instantiates. It keeps every public method, signature and answer, and the `setCustomerService()` seam.
+    - The work moved to `IfirmaReceiptActions`, `IfirmaCustomerActions` and `IfirmaDataRequestActions`. They share `IfirmaActionSupport`: the module, the result envelope, the error guard and the order lookup.
+    - The reviewer compared the methods as bytes. 24 moved unchanged, and the 4 shared helpers changed only from private to protected. Every message keeps its `ifirmaadminactions` translation domain.
+    - `customerRegister` had no caller in a controller, template or script. It and its existence test are gone.
+  - The review asked for one change: the new `AdminActionClassLoadingTest` scanned `require_once` lines with a pattern that fails on CRLF line endings, so it would fail on this Windows checkout. It now normalises CRLF first. On CRLF copies of the class files the old pattern fails 5 of 10 cases and the new one passes all 10.
+  - The fix is folded into the refactor commit, together with an explicit `?Type` for `setCustomerService()` (PHP 8.4 deprecates implicitly nullable parameters), so every commit is green on Windows.
+  - `IfirmaCustomerActions::registerContractor()` is still 79 lines; it moved verbatim. Splitting it is a recorded follow-up.
+  - Gate against `c2829b4`: `OK (2888 tests)`, 371 changed lines, 100%.
 
 ## 9. Runtime schema checks (gated)
 
@@ -203,6 +247,17 @@ Like `refactor-clean-code-tda`, the change lands straight on master: one commit 
   - Gate against `b91c90c`: `OK (2786 tests)`.
 
 - [ ] 9.2 If 9.1 proves every path, remove the runtime `ensure*()` calls from IfirmaContractorMap, IfirmaIssuancePipeline and IfirmaKsefService. Otherwise replace them with one cached check per request at the entry points, and record which path failed in this task's notes. Verify that the suite is green and diff-cover is at 100%.
+
+  Status, not ticked yet because it needs the owner's confirmation:
+  - 9.1 could not prove two paths: 1.1.0 to 1.2.0, and an install that predates the contractor map table. So the runtime checks stay, as D7 requires.
+  - They are already one check per request. `IfirmaSchema` caches each one in a static flag (`$contractorMapEnsured`, `$receiptKsefEnsured`), so after the first call a model method only reads a boolean. `ContractorMapTest::testTableIsCreatedLazilyExactlyOnce` and `SchemaTest::testEnsureReceiptKsefColumnsAddsBothColumnsOnce` pin this.
+  - Proposed: keep the calls in the model methods instead of moving them to entry points.
+    - Moving them saves no query.
+    - It risks a missed entry point, which would fail on an un-upgraded shop.
+    - The only single entry point, the module constructor, would run the checks on every shop page.
+    - No code change.
+    - The pin that every model method still calls the check is `e6a2ceb`. Removing the call from any of the four `IfirmaContractorMap` methods fails its data set.
+  - Alternatively, the owner may confirm that no shop ever ran a development build recorded as 1.1.0 from 2026-11-02 to 2026-11-04. Paths 3 and 4 would then be empty, and the checks could be removed.
 
 ## 10. Integration check
 
@@ -220,6 +275,13 @@ Like `refactor-clean-code-tda`, the change lands straight on master: one commit 
   - End-to-end smoke: 90 passed and 1 skipped, and all 91 check lines are identical to the run before this change.
   - The PDF download check passes for the front office and the back office.
   - On 2026-11-05 the account's usage limit stopped the agents twice. The work was resumed from the worktrees, and every killed worker's leftovers were treated as an unverified draft. One stopped worker had left a mutated production line behind, uncommitted; it was restored before anything was integrated.
+- Then 5.3, 5.4, 7.3, 7.4 and 8.1, plus three rounds of review follow-ups:
+  - test pins that kill the reviewers' surviving mutants;
+  - truthful docblocks and README;
+  - `registerContractor()` split into steps;
+  - the Module stub keeps `$context` protected, as PrestaShop does.
+
+  Gate over the range against `345476b`: `OK (3192 tests, 13291 assertions)`, 812 changed lines, 100%. The PHP 7.2 lint passes on 18 files, and the licence check on 202. The smoke's 91 check lines are identical to the run before this change, and the PDF download check passes in the front and back office.
 
 ## Workflow follow-up
 
