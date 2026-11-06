@@ -551,6 +551,7 @@ class CustomerRemoteCountTest extends TestCase
         return array(
             'Kod 201 naming the contractor' => array(201, 'Nie znaleziono kontrahenta o podanym identyfikatorze', null),
             'the same in capitals' => array(201, 'NIE ZNALEZIONO KONTRAHENTA', null),
+            'Kod 201 naming the contractor in the nominative' => array(201, 'Kontrahent nie istnieje', null),
             'Kod 201 about something else' => array(201, 'Nieprawidlowa wartosc NIP', 'Validation error in document data (Kod 201): Nieprawidlowa wartosc NIP'),
             'Kod 201 without a text' => array(201, '', 'Validation error in document data (Kod 201)'),
             'another Kod naming the contractor' => array(202, 'Nie znaleziono kontrahenta', 'Wrong service or account settings (Kod 202): Nie znaleziono kontrahenta'),

@@ -36,11 +36,11 @@ class IfirmaRemoteDocumentCollector
     const WINDOW_DAYS = 365;
 
     /** How reading a window or a filter ended: every page of it was read. */
-    private const READ = 'read';
+    const READ = 'read';
     /** The call budget ran out before the next list call. */
-    private const OUT_OF_CALLS = 'out_of_calls';
+    const OUT_OF_CALLS = 'out_of_calls';
     /** A list call failed; $error says why. */
-    private const FAILED = 'failed';
+    const FAILED = 'failed';
 
     /** @var IfirmaApiClient */
     private $client;

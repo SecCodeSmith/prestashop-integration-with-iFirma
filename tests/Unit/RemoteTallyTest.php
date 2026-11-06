@@ -13,8 +13,10 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * IfirmaCustomerContractorService::tally(): the counting half of a remote count, on its own. It takes the
- * rows of the list answers and needs no API client, Db, Configuration or clock, so no service is built,
- * no transport scripted and no database prepared here, and a test fails if the tally touches any of them.
+ * rows of the list answers, so no service is built, no transport scripted and no database prepared here.
+ * tearDown() asserts exactly three things: tally() runs no Db query, loads no customer and changes no
+ * Configuration value. Configuration reads, the clock and the API client are not observed; that part of
+ * the purity is structural: tally() is static, takes only the rows and no client is built in this test.
  */
 class RemoteTallyTest extends TestCase
 {
