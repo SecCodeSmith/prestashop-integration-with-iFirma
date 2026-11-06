@@ -24,7 +24,12 @@ use PHPUnit\Framework\TestCase;
  *  - the half-point edge of snapVatRate() and the list of documented rates;
  *  - the translation of the shipping line, which stays in the domain of the receipt service, and the
  *    module the service hands to the builder for it;
- *  - the names a buyer is looked up by, and the cut of a long order reference.
+ *  - the names a buyer is looked up by, and the cut of a long order reference;
+ *  - the 2-decimal rounding of the gross unit price of a product line;
+ *  - the VAT rate of a product line after snapVatRate() and the 4-decimal rounding, near each snap
+ *    boundary and for a rate that does not snap;
+ *  - a shipping price of 0.5 that adds the shipping line with all its fields, and 0.004 that adds none;
+ *  - an order without detail rows, with and without shipping.
  */
 class PayloadBuilderEdgesTest extends TestCase
 {
@@ -530,5 +535,108 @@ class PayloadBuilderEdgesTest extends TestCase
             array(str_repeat('C', 150), str_repeat('J', 150)),
             IfirmaPayloadBuilder::buyerNames($this->order())
         );
+    }
+
+    // ---- pins of refactor srp-splits-followups 2.1 --------------------------------------------
+
+    public function testTheGrossUnitPriceIsRoundedToTwoDecimals()
+    {
+        $o = $this->order();
+        $o->details = array(array(
+            'product_name' => 'Gross price',
+            'product_quantity' => 1,
+            'unit_price_tax_incl' => 123.456789,
+            'unit_price_tax_excl' => 100.37,
+            'tax_rate' => 23,
+        ));
+
+        $p = $this->builder->buildInvoicePayload($o);
+
+        $this->assertSame(123.46, $p['Pozycje'][0]['CenaJednostkowa']);
+    }
+
+    public function storedVatRates()
+    {
+        return array(
+            'just below 0 snaps to 0' => array(0.4, 0.0),
+            'just above 5 snaps to 5' => array(4.6, 0.05),
+            'just above 8 snaps to 8' => array(7.6, 0.08),
+            'just below 23 snaps to 23' => array(22.6, 0.23),
+            'a rate that does not snap is only rounded' => array(12.3456, 0.1235),
+        );
+    }
+
+    /**
+     * @dataProvider storedVatRates
+     */
+    public function testTheVatRateOfAProductLineIsSnappedAndThenRoundedToFourDecimals($stored, $expected)
+    {
+        $o = $this->order();
+        $o->details = array(array(
+            'product_name' => 'Stored rate',
+            'product_quantity' => 1,
+            'unit_price_tax_incl' => 123.00,
+            'unit_price_tax_excl' => 100.00,
+            'tax_rate' => $stored,
+        ));
+
+        $p = $this->builder->buildInvoicePayload($o);
+
+        $this->assertSame($expected, $p['Pozycje'][0]['StawkaVat']);
+    }
+
+    public function testAShippingPriceOfHalfAZlotyAddsTheShippingLineWithAllItsFields()
+    {
+        $builder = IfirmaPayloadBuilder::build($this->recordingModule());
+        $o = $this->order();
+        $o->total_shipping_tax_incl = 0.5;
+        $o->total_shipping_tax_excl = 0.41;
+        $o->carrier_tax_rate = 23;
+
+        $p = $builder->buildInvoicePayload($o);
+
+        $this->assertCount(2, $p['Pozycje']);
+        $this->assertSame(array(
+            'StawkaVat' => 0.23,
+            'Ilosc' => 1,
+            'CenaJednostkowa' => 0.5,
+            'NazwaPelna' => '[pl] Shipping',
+            'Jednostka' => 'usł.',
+            'TypStawkiVat' => 'PRC',
+        ), $p['Pozycje'][1]);
+    }
+
+    public function testAShippingPriceBelowOneGroszAddsNoLine()
+    {
+        $o = $this->order();
+        $o->total_shipping_tax_incl = 0.004;
+        $o->total_shipping_tax_excl = 0.00;
+
+        $p = $this->builder->buildInvoicePayload($o);
+
+        $this->assertCount(1, $p['Pozycje']);
+    }
+
+    public function testAnOrderWithoutRowsHasNoPositions()
+    {
+        $o = $this->order();
+        $o->details = array();
+
+        $p = $this->builder->buildInvoicePayload($o);
+
+        $this->assertSame(array(), $p['Pozycje']);
+    }
+
+    public function testAnOrderWithoutRowsKeepsOnlyTheShippingPosition()
+    {
+        $o = $this->order();
+        $o->details = array();
+        $o->total_shipping_tax_incl = 5.0;
+
+        $p = $this->builder->buildInvoicePayload($o);
+
+        $this->assertCount(1, $p['Pozycje']);
+        $this->assertSame(5.0, $p['Pozycje'][0]['CenaJednostkowa']);
+        $this->assertSame(1, $p['Pozycje'][0]['Ilosc']);
     }
 }
