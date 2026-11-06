@@ -324,53 +324,106 @@ class IfirmaPayloadBuilder
      */
     public function buildContractor(Order $order, $override = null)
     {
-        $limits = self::fieldLimits();
         $customer = new Customer((int) $order->id_customer);
+        $buyer = is_array($override) ? $this->buyerFromRequest($override) : $this->buyerFromInvoiceAddress($order);
 
-        if (is_array($override)) {
-            $get = function ($key) use ($override) {
-                return isset($override[$key]) ? (string) $override[$key] : '';
-            };
-            $idCountry = isset($override['id_country']) ? (int) $override['id_country'] : 0;
-            $isBusiness = !empty($override['want_invoice_for_company']);
-            $company = trim($get('company'));
-            $vatNumber = trim($get('vat_number'));
-            $firstname = $get('firstname');
-            $lastname = $get('lastname');
-            $street = trim($get('address1') . ' ' . $get('address2'));
-            $postcode = $get('postcode');
-            $city = $get('city');
-        } else {
-            $invoiceAddress = new Address((int) $order->id_address_invoice);
-            $idCountry = (int) $invoiceAddress->id_country;
-            $vatNumber = trim((string) $invoiceAddress->vat_number . $invoiceAddress->dni);
-            $company = trim((string) $invoiceAddress->company);
-            $isBusiness = ($company !== '' && $vatNumber !== '');
-            $firstname = (string) $invoiceAddress->firstname;
-            $lastname = (string) $invoiceAddress->lastname;
-            $street = trim($invoiceAddress->address1 . ' ' . $invoiceAddress->address2);
-            $postcode = (string) $invoiceAddress->postcode;
-            $city = (string) $invoiceAddress->city;
-        }
+        return $this->contractorNode($order, $customer, $buyer, $this->contractorCountry($buyer['id_country'], (int) $order->id_lang));
+    }
 
+    /**
+     * The buyer's fields as the approved request carries them.
+     *
+     * @param array $override See buildContractor()
+     * @return array is_business, company, vat_number, firstname, lastname, street, postcode, city, id_country
+     */
+    private function buyerFromRequest(array $override)
+    {
+        $get = function ($key) use ($override) {
+            return isset($override[$key]) ? (string) $override[$key] : '';
+        };
+
+        return array(
+            'id_country' => isset($override['id_country']) ? (int) $override['id_country'] : 0,
+            'is_business' => !empty($override['want_invoice_for_company']),
+            'company' => trim($get('company')),
+            'vat_number' => trim($get('vat_number')),
+            'firstname' => $get('firstname'),
+            'lastname' => $get('lastname'),
+            'street' => trim($get('address1') . ' ' . $get('address2')),
+            'postcode' => $get('postcode'),
+            'city' => $get('city'),
+        );
+    }
+
+    /**
+     * The buyer's fields as the invoice address of the order carries them.
+     *
+     * @param Order $order
+     * @return array Same keys as buyerFromRequest()
+     */
+    private function buyerFromInvoiceAddress(Order $order)
+    {
+        $invoiceAddress = new Address((int) $order->id_address_invoice);
+        $vatNumber = trim((string) $invoiceAddress->vat_number . $invoiceAddress->dni);
+        $company = trim((string) $invoiceAddress->company);
+
+        return array(
+            'id_country' => (int) $invoiceAddress->id_country,
+            'is_business' => ($company !== '' && $vatNumber !== ''),
+            'company' => $company,
+            'vat_number' => $vatNumber,
+            'firstname' => (string) $invoiceAddress->firstname,
+            'lastname' => (string) $invoiceAddress->lastname,
+            'street' => trim($invoiceAddress->address1 . ' ' . $invoiceAddress->address2),
+            'postcode' => (string) $invoiceAddress->postcode,
+            'city' => (string) $invoiceAddress->city,
+        );
+    }
+
+    /**
+     * The buyer's country: the upper-case ISO code ('PL' when unknown) and the name in the order language
+     * (the ISO code when the country has no name).
+     *
+     * @param int $idCountry
+     * @param int $idLang
+     * @return array iso, name
+     */
+    private function contractorCountry($idCountry, $idLang)
+    {
         $country = new Country($idCountry);
         $countryIso = $country->iso_code ? mb_strtoupper($country->iso_code) : 'PL';
-        $countryName = trim((string) Country::getNameById((int) $order->id_lang, $idCountry));
+        $countryName = trim((string) Country::getNameById($idLang, $idCountry));
         if ($countryName === '') {
             $countryName = $countryIso;
         }
 
-        $name = $isBusiness ? $company : trim($firstname . ' ' . $lastname);
+        return array('iso' => $countryIso, 'name' => $countryName);
+    }
+
+    /**
+     * The Kontrahent array, with every field cut to its iFirma limit.
+     *
+     * @param Order    $order
+     * @param Customer $customer
+     * @param array    $buyer    See buyerFromRequest()
+     * @param array    $country  See contractorCountry()
+     * @return array
+     */
+    private function contractorNode(Order $order, Customer $customer, array $buyer, array $country)
+    {
+        $limits = self::fieldLimits();
+        $isBusiness = $buyer['is_business'];
+        $name = $isBusiness ? $buyer['company'] : trim($buyer['firstname'] . ' ' . $buyer['lastname']);
 
         return array(
             'Nazwa' => self::truncate($name, $limits['Nazwa']),
             'Identyfikator' => self::truncate(self::CONTRACTOR_ID_PREFIX . (int) $order->id_customer, $limits['Identyfikator']),
-            'NIP' => $isBusiness ? self::truncate(preg_replace('/[^0-9A-Za-z]/', '', $vatNumber), $limits['NIP']) : '',
-            'Ulica' => self::truncate($street, $limits['Ulica']),
-            'KodPocztowy' => self::truncate($postcode, $limits['KodPocztowy']),
-            'Kraj' => self::truncate($countryName, $limits['Kraj']),
-            'KodKraju' => self::truncate($countryIso, 2),
-            'Miejscowosc' => self::truncate($city, $limits['Miejscowosc']),
+            'NIP' => $isBusiness ? self::truncate(preg_replace('/[^0-9A-Za-z]/', '', $buyer['vat_number']), $limits['NIP']) : '',
+            'Ulica' => self::truncate($buyer['street'], $limits['Ulica']),
+            'KodPocztowy' => self::truncate($buyer['postcode'], $limits['KodPocztowy']),
+            'Kraj' => self::truncate($country['name'], $limits['Kraj']),
+            'KodKraju' => self::truncate($country['iso'], 2),
+            'Miejscowosc' => self::truncate($buyer['city'], $limits['Miejscowosc']),
             'Email' => self::truncate($customer->email, $limits['Email']),
             'OsobaFizyczna' => !$isBusiness,
         );
