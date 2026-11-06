@@ -16,7 +16,8 @@ use PHPUnit\Framework\TestCase;
  * do the work behind it:
  * - every public method, with its signature;
  * - every argument reaching the code that uses it, and every answer coming back unchanged;
- * - the customer service seam, and the service that is built once per instance.
+ * - the customer service seam, and the service that is built once per instance;
+ * - the module and the translation domain behind every message.
  *
  * The answers of the single actions are pinned in AdminActionsTest, AdminControllerCustomerTest and
  * ErrorGuardTest; this class adds what those leave open.
@@ -52,11 +53,6 @@ class AdminActionsFacadeTest extends TestCase
                 'resolution' => null,
             )),
         ));
-    }
-
-    private function notFound()
-    {
-        return array('body' => '{"response":{"Kod":208,"Informacja":"Nie znaleziono kontrahenta"}}');
     }
 
     private function found($identifier)
@@ -168,14 +164,36 @@ class AdminActionsFacadeTest extends TestCase
         $this->assertSame('ifirmaissuancepipeline:Document issued: 7/2026', $actions->createReceipt(15, 3)['message']);
     }
 
+    /**
+     * The messages of the actions are translated under the domain they always had, whichever class of the family
+     * now holds them. TranslationCoverageTest only needs the pair of domain and text to exist in the translation
+     * file, which another domain can satisfy too.
+     */
     public function testEveryTranslatedStringOfTheActionsKeepsTheTranslationDomainOfTheFacade()
     {
-        $source = file_get_contents(dirname(__DIR__, 2) . '/classes/IfirmaAdminActions.php');
-
-        $calls = preg_match_all('/->l\(\s*\'(?:[^\'\\\\]|\\\\.)*\'(?:\s*,\s*\'([A-Za-z0-9_]+)\')?/', $source, $found);
+        $calls = 0;
+        $domains = array();
+        foreach (array('IfirmaAdminActions', 'IfirmaActionSupport', 'IfirmaReceiptActions', 'IfirmaCustomerActions', 'IfirmaDataRequestActions') as $class) {
+            $source = file_get_contents(dirname(__DIR__, 2) . '/classes/' . $class . '.php');
+            $calls += preg_match_all('/->l\(\s*\'(?:[^\'\\\\]|\\\\.)*\'(?:\s*,\s*\'([A-Za-z0-9_]+)\')?/', $source, $found);
+            $domains = array_merge($domains, $found[1]);
+        }
 
         $this->assertSame(47, $calls);
-        $this->assertSame(array('ifirmaadminactions'), array_values(array_unique($found[1])));
+        $this->assertSame(array('ifirmaadminactions'), array_values(array_unique($domains)));
+    }
+
+    public function testTheFacadeOffersExactlyTheMethodsOfTheCallers()
+    {
+        $public = array();
+        foreach ((new ReflectionClass('IfirmaAdminActions'))->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
+            $public[] = $method->getName();
+        }
+        $expected = array_keys($this->publicMethods());
+        sort($public);
+        sort($expected);
+
+        $this->assertSame($expected, $public);
     }
 
     // ---- the document row --------------------------------------------------------------------------

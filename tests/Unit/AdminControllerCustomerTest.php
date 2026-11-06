@@ -141,7 +141,6 @@ class AdminControllerCustomerTest extends TestCase
         $this->assertSame('PS-C5', $r['data']['contractor']['identifier']);
         $this->assertSame('PS-C5', $r['data']['link_state']['identifier']);
         $this->assertSame(array('GET', 'GET', 'POST', 'GET'), array_column($this->t->calls, 'method'));
-        $this->assertTrue(method_exists($this->actions, 'customerRegister'));
     }
 
     public function testRegisterCustomerWithoutOrders()
