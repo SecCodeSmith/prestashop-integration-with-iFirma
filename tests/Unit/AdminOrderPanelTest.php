@@ -212,6 +212,7 @@ class AdminOrderPanelTest extends TestCase
             'a numeric action' => array('{"_contractor":{"action":1}}', '', ''),
             'an action without a message' => array('{"_contractor":{"action":"created"}}', '', 'created'),
             'a note that is not an object' => array('{"_contractor":{"action":"created","note":"text"}}', '', 'created'),
+            'a fallback whose note code is a boolean' => array('{"_contractor":{"action":"fallback","message":"raw","note":{"code":true,"params":{}}}}', '', 'fallback (raw)'),
             'the attached contractor is the referenced one' => array('{"_contractor":{"action":"updated","identifier":" A-1 ","document_identifier":"A-1 "}}', '', 'updated'),
             'the attached contractor is a number' => array('{"_contractor":{"action":"kept","document_identifier":5,"identifier":"5"}}', '', 'kept'),
             'a blank attached contractor' => array('{"_contractor":{"action":"kept","document_identifier":"   "}}', '', 'kept'),

@@ -345,6 +345,7 @@ class AdminPanelPresenterTest extends TestCase
         $this->assertSame('L:fallback (old sentence)', $this->note('fallback', array('message' => 'old sentence', 'note' => array('code' => 'future_code', 'params' => array()))));
         $this->assertSame('L:fallback (old sentence)', $this->note('fallback', array('message' => 'old sentence', 'note' => array('params' => array('error' => 'x')))));
         $this->assertSame('L:fallback (old sentence)', $this->note('fallback', array('message' => 'old sentence', 'note' => 'lookup_failed')));
+        $this->assertSame('L:fallback (old sentence)', $this->note('fallback', array('message' => 'old sentence', 'note' => array('code' => true, 'params' => array()))), 'the code is read as a string, so a boolean is no code');
         $this->assertSame('L:fallback', $this->note('fallback', array('note' => array('code' => 'future_code'))));
     }
 
