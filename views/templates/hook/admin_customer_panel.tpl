@@ -16,8 +16,9 @@
  * Values coming from iFirma are only ever written with jQuery .text(), never as HTML.
  *}
 <link rel="stylesheet" href="{$ifirma_customer_css_url|escape:'html':'UTF-8'}" type="text/css" media="all">
+<div class="col-12">
 
-<div class="card mt-2 ifirma-cp" id="ifirma-cp" data-id-customer="{$ifirma_customer_id|intval}">
+<div class="card ifirma-cp" id="ifirma-cp" data-id-customer="{$ifirma_customer_id|intval}">
     <div class="card-header">
         <h3 class="card-header-title">
             <i class="material-icons">receipt_long</i> {l s='iFirma' mod='ifirma'}
@@ -37,7 +38,7 @@
     <table class="table ifirma-cp-table" id="ifirma-cp-link">
         <tbody>
             <tr>
-                <th style="width:35%">{l s='Identifier' mod='ifirma'}</th>
+                <th>{l s='Identifier' mod='ifirma'}</th>
                 <td><code id="ifirma-cp-identifier">{$ifirma_customer_link.identifier|escape:'html':'UTF-8'}</code></td>
             </tr>
             <tr>
@@ -66,7 +67,7 @@
     <h4>{l s='Documents recorded by the module' mod='ifirma'}</h4>
     <table class="table ifirma-cp-table" id="ifirma-cp-counts">
         <tbody>
-            <tr><th style="width:35%">{l s='Issued' mod='ifirma'}</th><td>{$ifirma_customer_counts.issued|intval}</td></tr>
+            <tr><th>{l s='Issued' mod='ifirma'}</th><td>{$ifirma_customer_counts.issued|intval}</td></tr>
             <tr><th>{l s='Receipts' mod='ifirma'}</th><td>{$ifirma_customer_counts.by_type.receipt|intval}</td></tr>
             <tr><th>{l s='Domestic invoices' mod='ifirma'}</th><td>{$ifirma_customer_counts.by_type.invoice|intval}</td></tr>
             <tr><th>{l s='Other' mod='ifirma'}</th><td>{$ifirma_customer_counts.by_type.other|intval}</td></tr>
@@ -420,3 +421,4 @@
 })();
 </script>
 {/if}
+</div>

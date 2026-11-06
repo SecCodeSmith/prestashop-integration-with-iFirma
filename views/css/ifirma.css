@@ -107,6 +107,8 @@
 /* iFirma module – back-office customer page panel */
 
 .ifirma-cp-table th {
+    width: 35%;
+    white-space: nowrap;
     font-weight: 600;
 }
 

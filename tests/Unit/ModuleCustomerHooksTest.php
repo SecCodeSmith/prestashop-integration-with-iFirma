@@ -433,4 +433,35 @@ class ModuleCustomerHooksTest extends TestCase
         $this->assertSame($paid, $view['document']['paid']);
         $this->assertSame(array(), $this->t->calls, 'the receipt is fresh, so nothing is synced');
     }
+
+    /**
+     * PrestaShop renders displayAdminCustomers straight into a Bootstrap 4 row, so the
+     * panel needs its own column to span it; the card on its own has no column width.
+     */
+    public function testTheCustomerPanelTemplateFillsTheHookRow()
+    {
+        $root = dirname(__DIR__, 2);
+        $template = file_get_contents($root . '/views/templates/hook/admin_customer_panel.tpl');
+        $css = file_get_contents($root . '/views/css/ifirma.css');
+
+        $wrapper = strpos($template, '<div class="col-12">');
+        $card = strpos($template, 'class="card ifirma-cp"');
+        $this->assertNotFalse($wrapper, 'the panel is wrapped in a column');
+        $this->assertNotFalse($card, 'the card keeps its ifirma-cp class');
+        $this->assertLessThan($card, $wrapper, 'the column opens before the card');
+
+        $this->assertSame(false, strpos($template, 'style="width'), 'the column widths live in the stylesheet');
+        $this->assertSame(false, strpos($template, 'card mt-2'), 'the card has no top margin');
+        $this->assertSame(
+            substr_count($template, '<div'),
+            substr_count($template, '</div>'),
+            'every div of the panel, the column included, is closed'
+        );
+
+        $start = strpos($css, '.ifirma-cp-table th {');
+        $this->assertNotFalse($start, 'the stylesheet styles the table headers');
+        $body = substr($css, $start, strpos($css, '}', $start) - $start);
+        $this->assertNotFalse(strpos($body, 'width: 35%'));
+        $this->assertNotFalse(strpos($body, 'white-space: nowrap'));
+    }
 }
