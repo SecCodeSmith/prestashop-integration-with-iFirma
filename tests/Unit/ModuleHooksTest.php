@@ -355,6 +355,158 @@ class ModuleHooksTest extends TestCase
         });
     }
 
+    public function testGridHooksIgnoreACallWithoutTheirParameter()
+    {
+        $this->assertNull($this->module->hookActionOrderGridDefinitionModifier(array()));
+        $this->assertNull($this->module->hookActionOrderGridDefinitionModifier(array('definition' => 'x')));
+        $this->assertNull($this->module->hookActionOrderGridQueryBuilderModifier(array()));
+        $params = array('presented_grid' => array());
+        $this->module->hookActionOrderGridPresenterModifier($params);
+        $this->assertSame(array('presented_grid' => array()), $params);
+    }
+
+    public function testDefinitionHookAddsTheIfirmaColumnBeforeTheActions()
+    {
+        $columns = new class {
+            public $calls = array();
+
+            public function addBefore($id, $column)
+            {
+                $this->calls[] = array($id, $column);
+
+                return $this;
+            }
+        };
+        $definition = new class($columns) {
+            private $columns;
+
+            public function __construct($columns)
+            {
+                $this->columns = $columns;
+            }
+
+            public function getColumns()
+            {
+                return $this->columns;
+            }
+        };
+
+        $this->module->hookActionOrderGridDefinitionModifier(array('definition' => $definition));
+
+        $this->assertCount(1, $columns->calls);
+        $this->assertSame('actions', $columns->calls[0][0]);
+        $column = $columns->calls[0][1];
+        $this->assertInstanceOf('PrestaShop\PrestaShop\Core\Grid\Column\Type\Common\HtmlColumn', $column);
+        $this->assertSame('ifirma_document', $column->id);
+        $this->assertSame('iFirma', $column->name);
+        $this->assertSame(array('field' => 'ifirma_document', 'sortable' => false, 'clickable' => true), $column->options);
+    }
+
+    public function testQueryBuilderHookAddsTheTwoSelectsToTheSearchQueryOnly()
+    {
+        $search = new class {
+            public $selects = array();
+
+            public function addSelect($s)
+            {
+                $this->selects[] = $s;
+
+                return $this;
+            }
+        };
+        $count = clone $search;
+
+        $this->module->hookActionOrderGridQueryBuilderModifier(array(
+            'search_query_builder' => $search,
+            'count_query_builder' => $count,
+            'search_criteria' => null,
+        ));
+
+        $this->assertSame(IfirmaOrderGridIndicator::selectSql('o'), $search->selects);
+        $this->assertSame(array(), $count->selects);
+    }
+
+    public function testPresenterHookFillsTheIconCellOfEveryRecord()
+    {
+        $grid = array('data' => array('records' => array(
+            array('id_order' => 42, 'ifirma_document_number' => 'FP 7/2026', 'ifirma_document_status' => 'created'),
+            array('id_order' => 43),
+            array('id_order' => 44, 'ifirma_document_number' => 'FP 8/2026', 'ifirma_document_status' => 'paid'),
+        )));
+        $params = array('presented_grid' => &$grid);
+
+        $this->module->hookActionOrderGridPresenterModifier($params);
+
+        $records = $grid['data']['records'];
+        $this->assertStringContainsString('receipt_long', $records[0]['ifirma_document']);
+        $this->assertStringContainsString('title="iFirma: FP 7/2026 (Issued)"', $records[0]['ifirma_document']);
+        $this->assertStringContainsString('text-info', $records[0]['ifirma_document']);
+        $this->assertSame('', $records[1]['ifirma_document']);
+        $this->assertStringContainsString('(Paid)', $records[2]['ifirma_document']);
+        $this->assertStringContainsString('text-success', $records[2]['ifirma_document']);
+    }
+
+    public function testPresenterHookLeavesAGridWithoutRecordsAlone()
+    {
+        $grid = array('data' => array());
+        $params = array('presented_grid' => &$grid);
+
+        $this->module->hookActionOrderGridPresenterModifier($params);
+
+        $this->assertSame(array('data' => array()), $grid);
+
+        $grid = array('data' => array('records' => 'not rows'));
+        $params = array('presented_grid' => &$grid);
+        $this->module->hookActionOrderGridPresenterModifier($params);
+        $this->assertSame(array('data' => array('records' => 'not rows')), $grid);
+    }
+
+    /**
+     * PrestaShop 8 and 9 present the records as a RecordCollection object (all() gives the rows, the constructor
+     * takes them back), not as an array; the Orders list returned a 500 ("Key ifirma_document does not exist")
+     * until the hook took the rows out of the collection and handed a filled collection back.
+     */
+    public function testPresenterHookFillsARecordCollectionAndHandsOneBack()
+    {
+        $collection = new class(array(
+            array('id_order' => 42, 'ifirma_document_number' => 'FP 7/2026', 'ifirma_document_status' => 'created'),
+            array('id_order' => 43),
+        )) {
+            private $rows;
+
+            public function __construct(array $rows)
+            {
+                $this->rows = $rows;
+            }
+
+            public function all()
+            {
+                return $this->rows;
+            }
+        };
+        $grid = array('data' => array('records' => $collection));
+        $params = array('presented_grid' => &$grid);
+
+        $this->module->hookActionOrderGridPresenterModifier($params);
+
+        $this->assertInstanceOf(get_class($collection), $grid['data']['records']);
+        $this->assertNotSame($collection, $grid['data']['records'], 'a new collection carries the filled rows');
+        $rows = $grid['data']['records']->all();
+        $this->assertStringContainsString('title="iFirma: FP 7/2026 (Issued)"', $rows[0]['ifirma_document']);
+        $this->assertSame('', $rows[1]['ifirma_document']);
+        $this->assertSame(42, $rows[0]['id_order'], 'the other keys of a row are untouched');
+    }
+
+    public function testInstallRegistersTheGridHooks()
+    {
+        Module::reset();
+        $this->assertTrue($this->module->install());
+
+        $this->assertContains('actionOrderGridDefinitionModifier', Module::$hooks);
+        $this->assertContains('actionOrderGridQueryBuilderModifier', Module::$hooks);
+        $this->assertContains('actionOrderGridPresenterModifier', Module::$hooks);
+    }
+
     public function testPanelShownOnAFreshInstall()
     {
         Module::reset();

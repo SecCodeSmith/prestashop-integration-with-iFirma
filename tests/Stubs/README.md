@@ -52,6 +52,7 @@ Note: controllers use `exit`/`die`/`header()`; those paths cannot be unit-tested
 | `ModuleAdminController` | `module`, `bootstrap`, `context`, `ajax`, `errors`; `checkToken()` (request `token` == `Tools::getAdminTokenLite("AdminIfirma")`), `dispatchAjax($action)` (token gate then `ajaxProcess<Action>()`, false on bad token); ctor: `module=Module::getInstanceByName('ifirma')` |
 | `ModuleFrontController` | `module`, `context`, `ajax`, `errors`, `success`, `template`/`templates` (via `setTemplate`), `initContent()` no-op |
 | `Hook` | `exec()` returns '' |
+| `PrestaShop\PrestaShop\Core\Grid\Column\Type\Common\HtmlColumn` (`GridColumn.php`) | public `$id`, `$name`, `$options`; `__construct($id)`, `getId()`, `setName($name)` and `setOptions(array)` (both return `$this`). Its presence makes `Ifirma::hasGrid()` true in the harness, so the grid hooks run |
 
 ## Transport contract
 

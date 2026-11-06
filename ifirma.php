@@ -70,6 +70,9 @@ class Ifirma extends Module
             && $this->registerHook('displayOrderDetail')
             && $this->registerHook('actionOrderStatusPostUpdate')
             && $this->registerHook('header')
+            && $this->registerHook('actionOrderGridDefinitionModifier')
+            && $this->registerHook('actionOrderGridQueryBuilderModifier')
+            && $this->registerHook('actionOrderGridPresenterModifier')
             && $this->installDefaultConfiguration();
     }
 
@@ -1022,6 +1025,71 @@ class Ifirma extends Module
         } else {
             $this->context->controller->addCSS($this->_path . 'views/css/ifirma.css', 'all');
         }
+    }
+
+    /**
+     * Orders list: the "iFirma" column (an HtmlColumn before the actions). No-op without the Symfony grid.
+     */
+    public function hookActionOrderGridDefinitionModifier($params)
+    {
+        if (!$this->hasGrid() || !isset($params['definition']) || !is_object($params['definition'])) {
+            return;
+        }
+        $columnClass = 'PrestaShop\\PrestaShop\\Core\\Grid\\Column\\Type\\Common\\HtmlColumn';
+        $column = new $columnClass(IfirmaOrderGridIndicator::FIELD);
+        $column->setName($this->l('iFirma'))->setOptions(array(
+            'field' => IfirmaOrderGridIndicator::FIELD,
+            'sortable' => false,
+            'clickable' => true,
+        ));
+        $params['definition']->getColumns()->addBefore('actions', $column);
+    }
+
+    /** Orders list: the newest module record of each order joins the search query (never the count query). */
+    public function hookActionOrderGridQueryBuilderModifier($params)
+    {
+        if (!$this->hasGrid() || !isset($params['search_query_builder']) || !is_object($params['search_query_builder'])) {
+            return;
+        }
+        foreach (IfirmaOrderGridIndicator::selectSql('o') as $select) {
+            $params['search_query_builder']->addSelect($select);
+        }
+    }
+
+    /**
+     * Orders list: the icon cell of every presented record, built from the two selected values. PrestaShop 8 and 9
+     * present the records as a RecordCollection (an object with all()), so the rows are taken out, filled and handed
+     * back in a collection of the same class; a plain array (older presenters, tests) is filled in place.
+     */
+    public function hookActionOrderGridPresenterModifier($params)
+    {
+        if (!isset($params['presented_grid']['data']['records'])) {
+            return;
+        }
+        $records = $params['presented_grid']['data']['records'];
+        $collection = is_object($records) && method_exists($records, 'all');
+        if (!$collection && !is_array($records)) {
+            return;
+        }
+        $rows = $collection ? (array) $records->all() : $records;
+        $labels = array(
+            'paid' => $this->l('Paid'),
+            'issued' => $this->l('Issued'),
+        );
+        foreach ($rows as $i => $record) {
+            $rows[$i][IfirmaOrderGridIndicator::FIELD] = IfirmaOrderGridIndicator::cell((array) $record, $labels);
+        }
+        if ($collection) {
+            $class = get_class($records);
+            $rows = new $class($rows);
+        }
+        $params['presented_grid']['data']['records'] = $rows;
+    }
+
+    /** @return bool whether the Symfony grid classes are loaded (PrestaShop 8/9 back office) */
+    private function hasGrid()
+    {
+        return class_exists('PrestaShop\\PrestaShop\\Core\\Grid\\Column\\Type\\Common\\HtmlColumn');
     }
 
     public function hookDisplayCustomerAccount($params)
