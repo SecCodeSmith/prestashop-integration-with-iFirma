@@ -177,12 +177,26 @@ class IfirmaPayloadBuilder
      */
     public function buildInvoicePayload(Order $order, $override = null, array $options = array())
     {
-        $limits = self::fieldLimits();
+        $positions = $this->productPositions($order);
+        $shipping = $this->shippingPosition($order);
+        if ($shipping !== null) {
+            $positions[] = $shipping;
+        }
 
-        $paid = $this->getPaidAmount($order);
-        $today = date('Y-m-d');
-        $saleDate = self::orderSaleDate($order);
+        $payload = $this->documentHeader($order, $this->buildContractor($order, $override), $positions);
+        $payload = $this->withBuyerNip($payload);
 
+        return $this->withOrderNumberNote($payload, $options, self::buildOrderReference($order));
+    }
+
+    /**
+     * One position per product line of the order, priced gross, with the configured default unit.
+     *
+     * @param Order $order
+     * @return array
+     */
+    private function productPositions(Order $order)
+    {
         $unit = Configuration::get('IFIRMA_DEFAULT_UNIT') ?: 'szt.';
 
         $positions = array();
@@ -202,46 +216,94 @@ class IfirmaPayloadBuilder
             );
         }
 
+        return $positions;
+    }
+
+    /**
+     * The shipping position of the order, or null when the order has no shipping to charge.
+     *
+     * @param Order $order
+     * @return array|null
+     */
+    private function shippingPosition(Order $order)
+    {
         $shippingIncl = round((float) $order->total_shipping_tax_incl, 2);
-        if ($shippingIncl > 0) {
-            $shipRate = $this->deriveTaxRate($shippingIncl, (float) $order->total_shipping_tax_excl, isset($order->carrier_tax_rate) ? $order->carrier_tax_rate : null);
-            $positions[] = array(
-                'StawkaVat' => round($shipRate / 100, 4),
-                'Ilosc' => 1,
-                'CenaJednostkowa' => $shippingIncl,
-                // The label keeps the translation domain of the receipt service this code came from.
-                'NazwaPelna' => self::truncate($this->module->l('Shipping', 'ifirmareceiptservice'), $limits['NazwaPelna']),
-                'Jednostka' => 'usł.',
-                'TypStawkiVat' => 'PRC',
-            );
+        if ($shippingIncl <= 0) {
+            return null;
         }
 
-        $reference = self::buildOrderReference($order);
+        $limits = self::fieldLimits();
+        $shipRate = $this->deriveTaxRate($shippingIncl, (float) $order->total_shipping_tax_excl, isset($order->carrier_tax_rate) ? $order->carrier_tax_rate : null);
 
-        $payload = array(
+        return array(
+            'StawkaVat' => round($shipRate / 100, 4),
+            'Ilosc' => 1,
+            'CenaJednostkowa' => $shippingIncl,
+            // The label keeps the translation domain of the receipt service this code came from.
+            'NazwaPelna' => self::truncate($this->module->l('Shipping', 'ifirmareceiptservice'), $limits['NazwaPelna']),
+            'Jednostka' => 'usł.',
+            'TypStawkiVat' => 'PRC',
+        );
+    }
+
+    /**
+     * The document header: payment, dates, notes, the contractor and the positions.
+     *
+     * @param Order $order
+     * @param array $contractor The Kontrahent node (see buildContractor())
+     * @param array $positions  The Pozycje node
+     * @return array
+     */
+    private function documentHeader(Order $order, array $contractor, array $positions)
+    {
+        $limits = self::fieldLimits();
+        $paid = $this->getPaidAmount($order);
+
+        return array(
             'Zaplacono' => $paid,
             'ZaplaconoNaDokumencie' => $paid,
             'LiczOd' => 'BRT',
-            'DataWystawienia' => $today,
-            'DataSprzedazy' => $saleDate,
+            'DataWystawienia' => date('Y-m-d'),
+            'DataSprzedazy' => self::orderSaleDate($order),
             'FormatDatySprzedazy' => 'DZN',
             'SposobZaplaty' => IfirmaPaymentMethodResolver::build()->resolve($order),
             'RodzajPodpisuOdbiorcy' => IfirmaDocumentSettings::normalizeSignatureType(Configuration::get('IFIRMA_SIGNATURE_TYPE')),
             'WidocznyNumerBdo' => false,
             'Numer' => null,
-            'Uwagi' => self::truncate($reference, $limits['Uwagi']),
+            'Uwagi' => self::truncate(self::buildOrderReference($order), $limits['Uwagi']),
             'IdentyfikatorKontrahenta' => null,
             'NIPKontrahenta' => null,
-            'Kontrahent' => $this->buildContractor($order, $override),
+            'Kontrahent' => $contractor,
             'Pozycje' => $positions,
         );
+    }
 
-        // Documented second lookup step: an existing contractor with this (Polish) NIP is reused.
+    /**
+     * Documented second lookup step: an existing contractor with this (Polish) NIP is reused.
+     *
+     * @param array $payload The document with its Kontrahent node
+     * @return array
+     */
+    private function withBuyerNip(array $payload)
+    {
         $nip = preg_replace('/\D/', '', (string) $payload['Kontrahent']['NIP']);
         if (strlen($nip) === 10 && strlen($nip) === strlen((string) $payload['Kontrahent']['NIP'])) {
             $payload['NIPKontrahenta'] = $nip;
         }
 
+        return $payload;
+    }
+
+    /**
+     * Add the DodatkoweUwagi note carrying the order reference, unless skip_dodatkowe_uwagi is set.
+     *
+     * @param array  $payload
+     * @param array  $options   skip_dodatkowe_uwagi (bool)
+     * @param string $reference The full (untruncated) order reference
+     * @return array
+     */
+    private function withOrderNumberNote(array $payload, array $options, $reference)
+    {
         if (empty($options['skip_dodatkowe_uwagi'])) {
             $payload['DodatkoweUwagi'] = array(
                 'Typ' => 'NUMER_ZAMOWIENIA',
