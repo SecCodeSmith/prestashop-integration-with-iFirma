@@ -1045,6 +1045,18 @@ class IssuancePipelineStepsTest extends TestCase
         $this->assertSame('held', $this->dbRow()['status']);
     }
 
+    public function testAHeldRunNamesAZeroPaddedRequestIdAsItsInteger()
+    {
+        $req = new IfirmaDataRequest();
+        $req->id = '08';
+        $pipeline = $this->scripted(array('pending' => true, 'pendingRequest' => $req));
+
+        $r = $pipeline->run($this->order());
+
+        $this->assertSame('held: data request #8 pending', $r->message);
+        $this->assertSame(array('hold:stopped:held: data request #8 pending'), $this->stepLines($r));
+    }
+
     public function testAHeldRunUpdatesTheExistingUnissuedRowInsteadOfAddingOne()
     {
         $old = new IfirmaReceipt();
@@ -1702,6 +1714,14 @@ class IssuancePipelineStepsTest extends TestCase
 
         $this->assertSame('ksef:failed:', $this->stepLines($r)[4]);
         $this->assertSame('document issued KSeF: KSeF submission failed', $r->message);
+    }
+
+    public function testARefusalWhoseMessageIsZeroFailsTheStepWithTheZeroAndEndsTheMessageWithIt()
+    {
+        $r = $this->scripted(array('submit' => array('ok' => false, 'message' => '0')))->run($this->order());
+
+        $this->assertSame('ksef:failed:0', $this->stepLines($r)[4]);
+        $this->assertSame('document issued KSeF: 0', $r->message);
     }
 
     public function testAnAdoptedRunKeepsItsMessageBeforeTheKsefError()
