@@ -1674,9 +1674,9 @@
     "semantic_hash": ""
   },
   "tests/Unit/ModuleCustomerHooksTest.php": {
-    "mtime": 1793983788.658661,
-    "seen": 1793984991.893736,
-    "ast_hash": "54ab020b444b85d9f41eeede35aeac01",
+    "mtime": 1793995982.323522,
+    "seen": 1793996139.5768805,
+    "ast_hash": "b84c08b91f719886d50d8faaf5ebdf68",
     "semantic_hash": ""
   },
   "tests/Unit/PayloadBuilderGoldenTest.php": {
@@ -2310,9 +2310,9 @@
     "semantic_hash": ""
   },
   "classes/IfirmaOrderGridIndicator.php": {
-    "mtime": 1793983775.9462106,
-    "seen": 1793984991.8935952,
-    "ast_hash": "bfb67c9d5b0e5ed9c325bdd618c943f8",
+    "mtime": 1793995982.6882908,
+    "seen": 1793996139.5767508,
+    "ast_hash": "e87cd7802729b535fc5028df1fd75853",
     "semantic_hash": ""
   },
   "tests/Stubs/GridColumn.php": {
@@ -2370,9 +2370,9 @@
     "semantic_hash": ""
   },
   "openspec/changes/admin-ui-cleanup/tasks.md": {
-    "mtime": 1793984923.6485093,
-    "seen": 1793984991.894151,
-    "ast_hash": "cc21bc239f2bec090734dc571254e66e",
+    "mtime": 1793985023.569621,
+    "seen": 1793996139.5769951,
+    "ast_hash": "de7f0819b572b728268129ef881e5c00",
     "semantic_hash": ""
   },
   "openspec/changes/archive/2026-11-06-srp-splits-followups/.openspec.yaml": {
@@ -2397,6 +2397,12 @@
     "mtime": 1793982105.1495976,
     "seen": 1793984991.894201,
     "ast_hash": "ecad106520ba6f60e0366f717be51830",
+    "semantic_hash": ""
+  },
+  "openspec/changes/admin-ui-cleanup/verification.md": {
+    "mtime": 1793985022.8709078,
+    "seen": 1793996139.576996,
+    "ast_hash": "6aff1fbfcdb4ef266a441d903a981fad",
     "semantic_hash": ""
   }
 }

@@ -59,6 +59,22 @@ Logged into the back office of both shops with puppeteer and measured the DOM:
   equals the row's inner right edge; all eleven `th` cells share one width; every `td` of the link
   table starts on the same line as its `th` (offset 0 px).
 
+## Ultrareview (cloud review of the branch, launched mid-apply)
+
+Seven findings against the snapshot taken at launch time:
+
+- Already fixed before the review finished (the snapshot predated commits dcc2f21, 48f1129, 1bafa2b):
+  presenter hook and `RecordCollection`; missing `tests/Stubs/GridColumn.php`; missing
+  `tests/smoke/order-grid-check.php`; graph not updated.
+- Fixed after the review: the `width: 35%; white-space: nowrap` rule applied to every
+  `.ifirma-cp-table th`, including the 9 header cells of the JS-built search results table; it is
+  now scoped to `#ifirma-cp-link th, #ifirma-cp-counts th`. The indicator class hard-coded `'paid'`
+  and `'error'`; it now uses `IfirmaReceipt::STATUS_PAID` and `STATUS_ERROR`. Re-verified: affected
+  tests OK (145 tests), full suite 3551, gate 100%, smoke check OK on both shops, panel geometry
+  unchanged (same left edge as the first card, label widths equal).
+- Accepted as is: two correlated subselects per listed order. Both are lookups on `idx_order`
+  bounded by the page size; merging them would need a join or a packed string split in PHP.
+
 ## Release note
 
 Release this change as `npm version minor` (1.4.0); `upgrade/upgrade-1.4.0.php` runs only when the
