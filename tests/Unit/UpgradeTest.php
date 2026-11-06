@@ -220,6 +220,11 @@ class UpgradeTest extends TestCase
     {
         $this->startPath($this->schemaOf10x());
         $this->assertSame(array(self::RECEIPT), array_keys($this->schema));
+        $this->assertSame(array(
+            'id_ifirma_receipt', 'id_order', 'id_customer', 'id_shop', 'document_type', 'ifirma_id', 'ifirma_number',
+            'status', 'paid_amount', 'security_token', 'request_payload', 'response_payload', 'last_error', 'date_add',
+            'date_upd',
+        ), array_keys($this->schema[self::RECEIPT]), 'the 15 receipt columns sql/install.php of 1.0.0 creates');
         $this->assertArrayNotHasKey('ksef_sent_at', $this->schema[self::RECEIPT]);
         $this->assertArrayNotHasKey('ksef_error', $this->schema[self::RECEIPT]);
 
@@ -392,7 +397,11 @@ class UpgradeTest extends TestCase
         return $schema;
     }
 
-    /** A contractor map created before its identifier column was widened (see widenContractorMapIdentifier()). */
+    /**
+     * A hypothetical start state, not a build that shipped: a hand-made or uncommitted development table whose
+     * identifier column is still 15 characters wide. It exercises the widening step (widenContractorMapIdentifier()).
+     * 4452d02, the commit that added the table, created the column as VARCHAR(64).
+     */
     private function schemaWithANarrowContractorMap()
     {
         $schema = $this->expectedSchema();
@@ -416,11 +425,18 @@ class UpgradeTest extends TestCase
         $this->assertSame(array(), $this->sentQueries(), 'the runtime checks must send nothing');
     }
 
-    /** Starts a path on a database holding $schema, with the runtime checks switched off. */
+    /**
+     * Starts a path on a database holding $schema, with the runtime checks switched off. The checks must then answer
+     * from what they remember and send nothing, so a path that the checks would complete cannot pass unnoticed.
+     */
     private function startPath(array $schema)
     {
         $this->switchOffTheRuntimeChecks();
         $this->startFrom($schema);
+
+        $this->assertTrue(IfirmaSchema::ensureContractorMapTable());
+        $this->assertTrue(IfirmaSchema::ensureReceiptKsefColumns());
+        $this->assertSame(array(), $this->sentQueries(), 'the switched-off runtime checks must send nothing');
     }
 
     /**
