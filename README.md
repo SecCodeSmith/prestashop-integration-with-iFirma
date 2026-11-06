@@ -136,6 +136,10 @@ A failure never breaks the PrestaShop status change: exceptions are logged
 | `held` | A customer data-change request is pending (stopped at the **hold** step). | Approve or reject the request under the order; the pipeline then runs automatically when the trigger status was already reached, or click **Create Receipt**. |
 | `error` | iFirma rejected the document or could not be reached before anything was sent; the reason is in the last error. | Fix the cause (data, credentials, limits) and click **Create Receipt**. |
 
+### Orders list
+
+The back-office Orders list has an **iFirma** column, placed before the Actions column. An order whose newest module record is an issued document (it has an iFirma identifier and is not in `error`) shows a receipt icon: green when the document is paid, blue otherwise. The tooltip reads `iFirma: <number> (<state>)`, where the number falls back to the iFirma identifier until a number is stored, and the state is "Paid" or "Issued". Orders without an issued document have an empty cell. The column is not sortable or filterable and does not change paging or totals; a click on the cell opens the order like the rest of the row. The column reads the module's own `ifirma_receipt` table and makes no iFirma API call.
+
 ## Monitoring
 
 The module keeps its view of every issued document in line with iFirma. One
@@ -390,6 +394,16 @@ unregisters the legacy `displayAdminOrder` hook.
 
 1.2.0 drops PrestaShop 1.7: the minimum version is 8.0.0. Shops still on 1.7 stay on 1.1.x.
 
+## Upgrading to 1.4.0
+
+Upload the 1.4.0 module over the existing one and run the upgrade from the Module Manager.
+There is no schema or configuration change. `upgrade/upgrade-1.4.0.php` registers the three
+order-grid hooks (`actionOrderGridDefinitionModifier`, `actionOrderGridQueryBuilderModifier` and
+`actionOrderGridPresenterModifier`) that add the iFirma column to the Orders list, and it can be run
+more than once. PrestaShop runs an upgrade file only when its version is not above the module's, so
+this release must be published as a `minor` version bump: a patch release would leave the hooks
+unregistered on upgraded shops.
+
 ## Customer page
 
 The module adds an **iFirma** panel to the back-office customer view (hook `displayAdminCustomers`). Existing installs get it through the 1.2.0 upgrade
@@ -432,6 +446,8 @@ Buttons:
 
 Link, Unlink and Register require the employee's edit permission on Customers. Check, search and
 count need only back-office access with the module token.
+
+The panel is wrapped in a full-width column (`col-12`), so it spans the hook row and lines up with the other cards of the page; no data or action changed.
 
 ## Linking existing contractors
 
