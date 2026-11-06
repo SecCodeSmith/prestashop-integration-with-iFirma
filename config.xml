@@ -2,7 +2,7 @@
 <module>
     <name>ifirma</name>
     <displayName><![CDATA[iFirma &ndash; Receipts &amp; Invoices]]></displayName>
-    <version><![CDATA[1.3.1]]></version>
+    <version><![CDATA[1.3.2]]></version>
     <description><![CDATA[Issue iFirma receipts/invoices from the order page, register payments and let customers download their document.]]></description>
     <author><![CDATA[SCM Jakub Berechowski]]></author>
     <tab><![CDATA[billing_invoicing]]></tab>
