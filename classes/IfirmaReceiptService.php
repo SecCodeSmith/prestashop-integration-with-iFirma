@@ -12,6 +12,7 @@ require_once dirname(__FILE__) . '/IfirmaApiClient.php';
 require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaPaymentMethodResolver.php';
 require_once dirname(__FILE__) . '/IfirmaContractorService.php';
+require_once dirname(__FILE__) . '/IfirmaCreateResponse.php';
 
 class IfirmaReceiptService
 {
@@ -162,6 +163,9 @@ class IfirmaReceiptService
     }
 
     /**
+     * Issues the document of the order: registers the contractor, posts the payload (postWithRetries()),
+     * reads the answer (parseCreateResponse()) and records it on the receipt (applyCreateResponse()).
+     *
      * @param Order $order
      * @param array $options override (array|null), skip_dodatkowe_uwagi (bool), skip_contractor_sync (bool)
      * @return IfirmaReceipt
@@ -198,9 +202,33 @@ class IfirmaReceiptService
         }
         $payload = $this->referenceContractor($payload, $contractorInfo);
 
-        $receipt->request_payload = $this->encodeRequest($payload, $contractorInfo);
+        list($response, $payload, $contractorInfo) = $this->postWithRetries($receipt, $order, $options, $payload, $contractorInfo);
+        if ($response === null) {
+            throw $this->unreachable($receipt);
+        }
+        $created = $this->parseCreateResponse($response);
+        $this->applyCreateResponse($receipt, $order, $created, $payload, $contractorInfo);
 
-        $response = $this->client->post($docType . '.json', 'faktura', $this->sendable($payload));
+        return $receipt;
+    }
+
+    /**
+     * Posts the document and, while iFirma refuses it for a reason the module can remove, posts it
+     * again, once for each reason: DodatkoweUwagi first, then the contractor reference. The receipt
+     * keeps the exchange: the request_payload of the last round and the response_payload of the last
+     * answer (none when iFirma gave none).
+     *
+     * @param IfirmaReceipt                   $receipt
+     * @param Order                           $order
+     * @param array                           $options        see createReceipt()
+     * @param array                           $payload        the payload to send first
+     * @param IfirmaContractorResolution|null $contractorInfo ensure() result; null when the contractor step was skipped
+     * @return array the decoded last response (null when iFirma gave none), the payload sent last, and
+     *               the contractor resolution it went out with, which the fallback retry replaces
+     */
+    private function postWithRetries(IfirmaReceipt $receipt, Order $order, array $options, array $payload, $contractorInfo)
+    {
+        $response = $this->sendDocument($receipt, $payload, $contractorInfo);
 
         // Kod 201 naming DodatkoweUwagi: retry exactly once without that object.
         if ($response !== null && empty($options['skip_dodatkowe_uwagi']) && $this->dodatkoweUwagiRejected($response, $payload)) {
@@ -211,8 +239,7 @@ class IfirmaReceiptService
                 $options
             );
             $payload = $this->referenceContractor($payload, $contractorInfo);
-            $receipt->request_payload = $this->encodeRequest($payload, $contractorInfo);
-            $response = $this->client->post($docType . '.json', 'faktura', $this->sendable($payload));
+            $response = $this->sendDocument($receipt, $payload, $contractorInfo);
         }
 
         // Kod 201 about the contractor reference: retry exactly once without IdentyfikatorKontrahenta,
@@ -228,38 +255,96 @@ class IfirmaReceiptService
                 )
             );
             $payload = $this->referenceContractor($payload, $contractorInfo);
-            $receipt->request_payload = $this->encodeRequest($payload, $contractorInfo);
-            $response = $this->client->post($docType . '.json', 'faktura', $this->sendable($payload));
+            $response = $this->sendDocument($receipt, $payload, $contractorInfo);
         }
 
-        if ($response === null) {
-            // Unknown outcome when the request reached the transport: the document may exist.
-            if ($this->client->lastRequestWasSent()) {
-                $receipt->markUnknown($this->client->getLastError());
-            } else {
-                $receipt->markError($this->client->getLastError());
-            }
-            $receipt->save();
-            throw new Exception($this->l('Could not reach iFirma: %s', $this->client->getLastError()));
+        if ($response !== null) {
+            $receipt->response_payload = json_encode($response, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
         }
 
-        $receipt->response_payload = json_encode($response, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        return array($response, $payload, $contractorInfo);
+    }
 
+    /**
+     * One request that creates the document: stores on the receipt what is about to be sent (the
+     * payload plus the private _contractor note), then sends it.
+     *
+     * @param IfirmaReceipt                   $receipt
+     * @param array                           $payload
+     * @param IfirmaContractorResolution|null $contractorInfo
+     * @return array|null decoded response; null when iFirma gave none
+     */
+    private function sendDocument(IfirmaReceipt $receipt, array $payload, $contractorInfo)
+    {
+        $receipt->request_payload = $this->encodeRequest($payload, $contractorInfo);
+
+        return $this->client->post($receipt->document_type . '.json', 'faktura', $this->sendable($payload));
+    }
+
+    /**
+     * iFirma gave no answer. Records that on the receipt and saves it.
+     *
+     * @param IfirmaReceipt $receipt
+     * @return Exception the one to throw
+     */
+    private function unreachable(IfirmaReceipt $receipt)
+    {
+        // Unknown outcome when the request reached the transport: the document may exist.
+        if ($this->client->lastRequestWasSent()) {
+            $receipt->markUnknown($this->client->getLastError());
+        } else {
+            $receipt->markError($this->client->getLastError());
+        }
+        $receipt->save();
+
+        return new Exception($this->l('Could not reach iFirma: %s', $this->client->getLastError()));
+    }
+
+    /**
+     * @param array $response decoded create response
+     * @return IfirmaCreateResponse
+     */
+    private function parseCreateResponse(array $response)
+    {
         $node = isset($response['response']) ? $response['response'] : $response;
         $code = isset($node['Kod']) ? (int) $node['Kod'] : -1;
 
         if ($code !== 0) {
-            $message = isset($node['Informacja']) ? $node['Informacja'] : $this->l('Unknown iFirma error.');
+            return IfirmaCreateResponse::rejected(isset($node['Informacja']) ? $node['Informacja'] : null);
+        }
+
+        $number = null;
+        if (!empty($node['PelnyNumer'])) {
+            $number = $node['PelnyNumer'];
+        } elseif (!empty($node['Numer'])) {
+            $number = $node['Numer'];
+        }
+
+        return IfirmaCreateResponse::accepted(isset($node['Identyfikator']) ? $node['Identyfikator'] : '', $number);
+    }
+
+    /**
+     * Records the answer on the receipt and saves it. A rejection is recorded as an error and thrown.
+     *
+     * @param IfirmaReceipt                   $receipt
+     * @param Order                           $order
+     * @param IfirmaCreateResponse            $created
+     * @param array                           $payload        the payload sent last
+     * @param IfirmaContractorResolution|null $contractorInfo the resolution it went out with
+     * @throws Exception when iFirma rejected the document
+     */
+    private function applyCreateResponse(IfirmaReceipt $receipt, Order $order, IfirmaCreateResponse $created, array $payload, $contractorInfo)
+    {
+        if (!$created->isAccepted()) {
+            $message = $created->getMessage() !== null ? $created->getMessage() : $this->l('Unknown iFirma error.');
             $receipt->markError($message);
             $receipt->save();
             throw new Exception($this->l('iFirma rejected the document: %s', $message));
         }
 
-        $receipt->ifirma_id = isset($node['Identyfikator']) ? (string) $node['Identyfikator'] : '';
-        if (!empty($node['PelnyNumer'])) {
-            $receipt->ifirma_number = (string) $node['PelnyNumer'];
-        } elseif (!empty($node['Numer'])) {
-            $receipt->ifirma_number = (string) $node['Numer'];
+        $receipt->ifirma_id = $created->getIdentifier();
+        if ($created->getNumber() !== null) {
+            $receipt->ifirma_number = $created->getNumber();
         }
         if (empty($receipt->ifirma_number) && $receipt->ifirma_id !== '') {
             $number = $this->fetchDocumentNumber($receipt->ifirma_id, $payload['DataWystawienia']);
@@ -281,8 +366,6 @@ class IfirmaReceiptService
         $this->learnDocumentContractor($receipt, $payload, $contractorInfo);
 
         $receipt->save();
-
-        return $receipt;
     }
 
     /**
