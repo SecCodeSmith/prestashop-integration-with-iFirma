@@ -572,7 +572,7 @@ class AdminActionsTest extends TestCase
 
     public function testRegisterContractorKeepsAnUpToDateRecord()
     {
-        $contractor = IfirmaReceiptService::build($this->module)->buildContractor(Order::$instances[15]);
+        $contractor = IfirmaPayloadBuilder::build($this->module)->buildContractor(Order::$instances[15]);
         $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('body' => json_encode(array(
             'response' => array('Kod' => 0, 'Informacja' => '', 'Wynik' => array($contractor)),
         ))));
@@ -615,7 +615,7 @@ class AdminActionsTest extends TestCase
         Address::$instances[7]->company = 'ACME Sp. z o.o.';
         Address::$instances[7]->vat_number = '525-224-84-81';
         $row = array_merge(
-            IfirmaReceiptService::build($this->module)->buildContractor(Order::$instances[15]),
+            IfirmaPayloadBuilder::build($this->module)->buildContractor(Order::$instances[15]),
             array('Identyfikator' => 'ACME-02')
         );
         $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('body' => '{"response":{"Kod":208,"Informacja":"Nie znaleziono kontrahenta"}}'));
@@ -690,7 +690,7 @@ class AdminActionsTest extends TestCase
     public function testRegisterContractorAnswersTheWholeEnvelopeOfAnUpdatedRecord()
     {
         $outdated = array_merge(
-            IfirmaReceiptService::build($this->module)->buildContractor(Order::$instances[15]),
+            IfirmaPayloadBuilder::build($this->module)->buildContractor(Order::$instances[15]),
             array('Miejscowosc' => 'Stare Miasto')
         );
         $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('body' => json_encode(array(
@@ -719,7 +719,7 @@ class AdminActionsTest extends TestCase
 
     public function testRegisterContractorAnswersTheWholeEnvelopeOfAKeptRecord()
     {
-        $contractor = IfirmaReceiptService::build($this->module)->buildContractor(Order::$instances[15]);
+        $contractor = IfirmaPayloadBuilder::build($this->module)->buildContractor(Order::$instances[15]);
         $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('body' => json_encode(array(
             'response' => array('Kod' => 0, 'Informacja' => '', 'Wynik' => array($contractor)),
         ))));
@@ -771,7 +771,7 @@ class AdminActionsTest extends TestCase
         Address::$instances[7]->company = 'ACME Sp. z o.o.';
         Address::$instances[7]->vat_number = '525-224-84-81';
         $row = array_merge(
-            IfirmaReceiptService::build($this->module)->buildContractor(Order::$instances[15]),
+            IfirmaPayloadBuilder::build($this->module)->buildContractor(Order::$instances[15]),
             array('Identyfikator' => 'ACME-02')
         );
         $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('body' => '{"response":{"Kod":208,"Informacja":"Nie znaleziono kontrahenta"}}'));
@@ -804,7 +804,7 @@ class AdminActionsTest extends TestCase
     {
         IfirmaContractorMap::link(5, 'KOWALSKI-01', '', 'Jan K');
         $mapped = array_merge(
-            IfirmaReceiptService::build($this->module)->buildContractor(Order::$instances[15]),
+            IfirmaPayloadBuilder::build($this->module)->buildContractor(Order::$instances[15]),
             array('Identyfikator' => 'KOWALSKI-01')
         );
         $this->t->queue('GET', '#kontrahenci/id/KOWALSKI-01\.json#', array('body' => json_encode(array(

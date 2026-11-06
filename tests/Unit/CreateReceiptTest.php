@@ -21,6 +21,9 @@ class CreateReceiptTest extends TestCase
     /** @var IfirmaReceiptService */
     private $service;
 
+    /** @var IfirmaPayloadBuilder */
+    private $builder;
+
     protected function setUp(): void
     {
         IfirmaTestState::resetAll();
@@ -29,6 +32,7 @@ class CreateReceiptTest extends TestCase
         $this->t = new ScriptedTransport();
         $client = new IfirmaApiClient('u@example.com', array('faktura' => str_repeat('1', 64)), 'http://ifirma-mock:8001/iapi/', 30, $this->t);
         $this->service = new IfirmaReceiptService($client, new Module());
+        $this->builder = IfirmaPayloadBuilder::build(new Module());
 
         $c = new Customer();
         $c->id = 5;
@@ -351,7 +355,7 @@ class CreateReceiptTest extends TestCase
     public function testContractorPayloadCarriesCountryNameAndCode()
     {
         $this->enableSync();
-        $contractor = $this->service->buildContractor($this->order());
+        $contractor = $this->builder->buildContractor($this->order());
         $this->assertSame('PL', $contractor['KodKraju']);
         $this->assertSame('Polska', $contractor['Kraj']);
         $this->assertSame('PS-C5', $contractor['Identyfikator']);
@@ -364,7 +368,7 @@ class CreateReceiptTest extends TestCase
         $country->iso_code = 'de';
         $country->name = '';
         Country::register($country);
-        $contractor = $this->service->buildContractor($this->order());
+        $contractor = $this->builder->buildContractor($this->order());
         $this->assertSame('DE', $contractor['KodKraju']);
         $this->assertSame('DE', $contractor['Kraj']);
     }
@@ -399,7 +403,7 @@ class CreateReceiptTest extends TestCase
     public function testExistingUnchangedContractorIsKept()
     {
         $this->enableSync();
-        $row = $this->service->buildContractor($this->order());
+        $row = $this->builder->buildContractor($this->order());
         $this->t->queue('GET', '#kontrahenci/id/#', array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array($row))))));
         $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
 
@@ -514,7 +518,7 @@ class CreateReceiptTest extends TestCase
     {
         $this->enableSync();
         IfirmaContractorMap::link(5, 'KOWALSKI-01', 'import-nip', 'Jan K');
-        $row = array_merge($this->service->buildContractor($this->order()), array('Identyfikator' => 'KOWALSKI-01'));
+        $row = array_merge($this->builder->buildContractor($this->order()), array('Identyfikator' => 'KOWALSKI-01'));
         $this->t->queue('GET', '#kontrahenci/id/KOWALSKI-01\.json#', array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array($row))))));
         $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
 
@@ -536,7 +540,7 @@ class CreateReceiptTest extends TestCase
         $address = Address::$instances[7];
         $address->company = 'ACME Sp. z o.o.';
         $address->vat_number = '525-224-84-81';
-        $row = array_merge($this->service->buildContractor($this->order()), array('Identyfikator' => 'ACME-02'));
+        $row = array_merge($this->builder->buildContractor($this->order()), array('Identyfikator' => 'ACME-02'));
         $this->assertSame('5252248481', $row['NIP']);
         $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', $this->notFound());
         $this->t->queue('GET', '#kontrahenci/5252248481\.json#', array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array($row))))));
@@ -578,7 +582,7 @@ class CreateReceiptTest extends TestCase
     {
         Address::$instances[7]->vat_number = 'PL 525-224-84-81';
         Address::$instances[7]->postcode = '00-950';
-        $contractor = $this->service->buildContractor($this->order());
+        $contractor = $this->builder->buildContractor($this->order());
 
         $hints = $this->service->contractorHints($this->order(), $contractor);
         $this->assertSame('5252248481', $hints['nip']);

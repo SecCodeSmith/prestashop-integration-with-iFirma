@@ -16,6 +16,7 @@ if (!defined('_PS_VERSION_')) {
 require_once dirname(__FILE__) . '/IfirmaApiClient.php';
 require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaReceiptService.php';
+require_once dirname(__FILE__) . '/IfirmaPayloadBuilder.php';
 require_once dirname(__FILE__) . '/IfirmaDuplicateMatcher.php';
 require_once dirname(__FILE__) . '/IfirmaGuardResult.php';
 require_once dirname(__FILE__) . '/IfirmaGuardSettings.php';
@@ -259,7 +260,7 @@ class IfirmaDuplicateGuard
         $r->document_type = $type ?: 'fakturakraj';
         $r->source = IfirmaReceipt::SOURCE_EXTERNAL;
         $r->issue_date = isset($row['DataWystawienia']) ? $row['DataWystawienia'] : null;
-        $r->order_reference = IfirmaReceiptService::buildOrderReference($order);
+        $r->order_reference = IfirmaPayloadBuilder::buildOrderReference($order);
         $r->paid_amount = $paid;
         $r->remote_paid_amount = $paid;
         $r->remote_sent = !empty($row['CzyWyslano']) ? 1 : 0;
@@ -308,7 +309,7 @@ class IfirmaDuplicateGuard
             $summaries[] = IfirmaDuplicateMatcher::summarize($row);
         }
         $r->markSuspected('Suspected duplicate: ' . count($summaries) . ' matching document(s) found in iFirma');
-        $r->order_reference = IfirmaReceiptService::buildOrderReference($order);
+        $r->order_reference = IfirmaPayloadBuilder::buildOrderReference($order);
         $r->duplicate_candidates = json_encode(array('candidates' => $summaries, 'resolution' => null));
         $r->save();
 
@@ -399,7 +400,7 @@ class IfirmaDuplicateGuard
         $buyer = array(
             'identifier' => $this->contractorFilter($order),
             'nip' => $this->orderNip($order),
-            'names' => IfirmaReceiptService::buyerNames($order),
+            'names' => IfirmaPayloadBuilder::buyerNames($order),
         );
         $rows = $this->listWindow($window, $buyer, $settings, $result);
         if ($rows === null) {
@@ -417,9 +418,9 @@ class IfirmaDuplicateGuard
             'lines' => array(),
         );
         if (!empty($scan['candidates'])) {
-            $scan['reference'] = IfirmaReceiptService::buildOrderReference($order);
-            $scan['sale_date'] = IfirmaReceiptService::orderSaleDate($order);
-            $scan['lines'] = IfirmaReceiptService::orderProductLines($order);
+            $scan['reference'] = IfirmaPayloadBuilder::buildOrderReference($order);
+            $scan['sale_date'] = IfirmaPayloadBuilder::orderSaleDate($order);
+            $scan['lines'] = IfirmaPayloadBuilder::orderProductLines($order);
             $scan['reads'] = $this->readDetails($scan, $settings);
         }
 
@@ -587,7 +588,7 @@ class IfirmaDuplicateGuard
         $r->id_order = (int) $order->id;
         $r->id_customer = (int) $order->id_customer;
         $r->id_shop = (int) $order->id_shop;
-        $r->order_reference = IfirmaReceiptService::buildOrderReference($order);
+        $r->order_reference = IfirmaPayloadBuilder::buildOrderReference($order);
 
         return $r;
     }
@@ -616,7 +617,7 @@ class IfirmaDuplicateGuard
      */
     private function contractorLimit()
     {
-        $limits = IfirmaReceiptService::fieldLimits();
+        $limits = IfirmaPayloadBuilder::fieldLimits();
 
         return isset($limits['Identyfikator']) ? (int) $limits['Identyfikator'] : 15;
     }
@@ -640,8 +641,8 @@ class IfirmaDuplicateGuard
             // mapping unavailable: fall back to the module identifier
         }
 
-        return IfirmaReceiptService::truncate(
-            IfirmaReceiptService::CONTRACTOR_ID_PREFIX . $idCustomer,
+        return IfirmaPayloadBuilder::truncate(
+            IfirmaPayloadBuilder::CONTRACTOR_ID_PREFIX . $idCustomer,
             $this->contractorLimit()
         );
     }

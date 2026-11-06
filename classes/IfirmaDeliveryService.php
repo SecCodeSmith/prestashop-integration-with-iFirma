@@ -32,6 +32,7 @@ if (!defined('_PS_VERSION_')) {
 require_once dirname(__FILE__) . '/IfirmaApiClient.php';
 require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaReceiptService.php';
+require_once dirname(__FILE__) . '/IfirmaPayloadBuilder.php';
 require_once dirname(__FILE__) . '/IfirmaDeliveryResult.php';
 
 class IfirmaDeliveryService
@@ -230,7 +231,7 @@ class IfirmaDeliveryService
     {
         $customer = $order->getCustomer();
         $body = array(
-            'Tekst' => IfirmaReceiptService::truncate((string) Configuration::get('IFIRMA_SEND_TEXT'), self::TEXT_MAX),
+            'Tekst' => IfirmaPayloadBuilder::truncate((string) Configuration::get('IFIRMA_SEND_TEXT'), self::TEXT_MAX),
             'SkrzynkaEmailOdbiorcy' => is_object($customer) ? (string) $customer->email : '',
         );
 

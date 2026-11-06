@@ -18,6 +18,7 @@ require_once __DIR__ . '/classes/IfirmaMatchLabels.php';
 require_once __DIR__ . '/classes/IfirmaContractorService.php';
 require_once __DIR__ . '/classes/IfirmaContractorImport.php';
 require_once __DIR__ . '/classes/IfirmaReceiptService.php';
+require_once __DIR__ . '/classes/IfirmaDocumentSettings.php';
 require_once __DIR__ . '/classes/IfirmaDuplicateGuard.php';
 require_once __DIR__ . '/classes/IfirmaDeliveryService.php';
 require_once __DIR__ . '/classes/IfirmaKsefService.php';
@@ -389,8 +390,8 @@ class Ifirma extends Module
         Configuration::updateValue('IFIRMA_KEY_FAKTURA', $keyFaktura);
         Configuration::updateValue('IFIRMA_KEY_ABONENT', trim(Tools::getValue('IFIRMA_KEY_ABONENT')));
         Configuration::updateValue('IFIRMA_KEY_RACHUNEK', trim(Tools::getValue('IFIRMA_KEY_RACHUNEK')));
-        Configuration::updateValue('IFIRMA_DOC_TYPE', IfirmaReceiptService::normalizeDocumentType(Tools::getValue('IFIRMA_DOC_TYPE')));
-        Configuration::updateValue('IFIRMA_SIGNATURE_TYPE', IfirmaReceiptService::normalizeSignatureType(Tools::getValue('IFIRMA_SIGNATURE_TYPE')));
+        Configuration::updateValue('IFIRMA_DOC_TYPE', IfirmaDocumentSettings::normalizeDocumentType(Tools::getValue('IFIRMA_DOC_TYPE')));
+        Configuration::updateValue('IFIRMA_SIGNATURE_TYPE', IfirmaDocumentSettings::normalizeSignatureType(Tools::getValue('IFIRMA_SIGNATURE_TYPE')));
         Configuration::updateValue('IFIRMA_PAYMENT_METHOD', $paymentCode);
         Configuration::updateValue('IFIRMA_PAYMENT_METHOD_MODE', $paymentMode);
         Configuration::updateValue('IFIRMA_PAYMENT_METHOD_MAP', $paymentMap);
@@ -879,8 +880,8 @@ class Ifirma extends Module
             'IFIRMA_USER' => Configuration::get('IFIRMA_USER'),
             'IFIRMA_KEY_FAKTURA' => Configuration::get('IFIRMA_KEY_FAKTURA'),
             'IFIRMA_KEY_ABONENT' => Configuration::get('IFIRMA_KEY_ABONENT'),
-            'IFIRMA_DOC_TYPE' => IfirmaReceiptService::normalizeDocumentType(Configuration::get('IFIRMA_DOC_TYPE')),
-            'IFIRMA_SIGNATURE_TYPE' => IfirmaReceiptService::normalizeSignatureType(Configuration::get('IFIRMA_SIGNATURE_TYPE')),
+            'IFIRMA_DOC_TYPE' => IfirmaDocumentSettings::normalizeDocumentType(Configuration::get('IFIRMA_DOC_TYPE')),
+            'IFIRMA_SIGNATURE_TYPE' => IfirmaDocumentSettings::normalizeSignatureType(Configuration::get('IFIRMA_SIGNATURE_TYPE')),
             'IFIRMA_PAYMENT_METHOD' => Configuration::get('IFIRMA_PAYMENT_METHOD'),
             'IFIRMA_PAYMENT_METHOD_MODE' => Configuration::get('IFIRMA_PAYMENT_METHOD_MODE'),
             'IFIRMA_PAYMENT_METHOD_MAP' => Configuration::get('IFIRMA_PAYMENT_METHOD_MAP'),

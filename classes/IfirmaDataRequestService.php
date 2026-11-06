@@ -29,7 +29,7 @@ require_once dirname(__FILE__) . '/IfirmaDataRequestNotifier.php';
  *  - defaultsFromAddress(Address): array, the form values to start from (the invoice address)
  *  - submit / cancel / approve / reject: state machine pending -> approved|rejected|cancelled,
  *    refused transitions throw IfirmaDataRequestException (see code_name)
- *  - getOverrideForOrder(idOrder): array|null in the IfirmaReceiptService::buildContractor override format
+ *  - getOverrideForOrder(idOrder): array|null in the IfirmaPayloadBuilder::buildContractor override format
  *  - buildDiff, notifyMerchant, notifyCustomer, summarize, isValidToken
  *
  * notifyMerchant() and notifyCustomer() compose the e-mails (subject, template variables); the
@@ -460,7 +460,7 @@ class IfirmaDataRequestService
 
     /**
      * @param int $idOrder
-     * @return array|null override for IfirmaReceiptService::buildContractor()
+     * @return array|null override for IfirmaPayloadBuilder::buildContractor()
      */
     public function getOverrideForOrder($idOrder)
     {

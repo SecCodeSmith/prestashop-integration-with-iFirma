@@ -16,6 +16,7 @@ if (!defined('_PS_VERSION_')) {
 require_once dirname(__FILE__) . '/IfirmaApiClient.php';
 require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaReceiptService.php';
+require_once dirname(__FILE__) . '/IfirmaPayloadBuilder.php';
 require_once dirname(__FILE__) . '/IfirmaDuplicateGuard.php';
 require_once dirname(__FILE__) . '/IfirmaDeliveryService.php';
 require_once dirname(__FILE__) . '/IfirmaKsefService.php';
@@ -617,7 +618,7 @@ class IfirmaIssuancePipeline
         $row->id_order = (int) $order->id;
         $row->id_customer = (int) $order->id_customer;
         $row->id_shop = (int) $order->id_shop;
-        $row->order_reference = IfirmaReceiptService::buildOrderReference($order);
+        $row->order_reference = IfirmaPayloadBuilder::buildOrderReference($order);
 
         return $row;
     }

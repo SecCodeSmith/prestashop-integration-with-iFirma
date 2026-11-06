@@ -243,7 +243,7 @@ class ErrorGuardTest extends TestCase
 
     public function testRegisterContractorReportsAnUpdatedRecord()
     {
-        $contractor = IfirmaReceiptService::build($this->module)->buildContractor(Order::$instances[15]);
+        $contractor = IfirmaPayloadBuilder::build($this->module)->buildContractor(Order::$instances[15]);
         $stale = array_merge($contractor, array('Ulica' => 'Stara 2'));
         $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('body' => json_encode(array(
             'response' => array('Kod' => 0, 'Informacja' => '', 'Wynik' => array($stale)),

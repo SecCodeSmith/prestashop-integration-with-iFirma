@@ -31,6 +31,9 @@ class CreateReceiptOutcomeTest extends TestCase
     /** @var IfirmaReceiptService */
     private $service;
 
+    /** @var IfirmaPayloadBuilder */
+    private $builder;
+
     /** @var string[] the dates today may have been while createReceipt() ran */
     private $days = array();
 
@@ -42,6 +45,7 @@ class CreateReceiptOutcomeTest extends TestCase
         $this->t = new ScriptedTransport();
         $client = new IfirmaApiClient('u@example.com', array('faktura' => str_repeat('1', 64)), 'http://ifirma-mock:8001/iapi/', 30, $this->t);
         $this->service = new IfirmaReceiptService($client, new Module());
+        $this->builder = IfirmaPayloadBuilder::build(new Module());
 
         $c = new Customer();
         $c->id = 5;
@@ -88,7 +92,7 @@ class CreateReceiptOutcomeTest extends TestCase
     /** The contractor record iFirma holds for the buyer, stored under $identifier. */
     private function foundContractor($identifier)
     {
-        $row = array_merge($this->service->buildContractor($this->order()), array('Identyfikator' => $identifier));
+        $row = array_merge($this->builder->buildContractor($this->order()), array('Identyfikator' => $identifier));
 
         return array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array($row)))));
     }

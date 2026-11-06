@@ -198,7 +198,7 @@ class ContractorLabelWordingTest extends TestCase
     {
         IfirmaContractorMap::link(5, $identifier, $code, 'ACME');
         $record = array_merge(
-            IfirmaReceiptService::build($this->module)->buildContractor(Order::$instances[15]),
+            IfirmaPayloadBuilder::build($this->module)->buildContractor(Order::$instances[15]),
             array('Identyfikator' => $identifier)
         );
         $this->t->queue('GET', '#kontrahenci/id/' . preg_quote($identifier, '#') . '\.json#', array('body' => json_encode(array(

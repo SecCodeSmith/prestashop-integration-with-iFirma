@@ -18,6 +18,7 @@ require_once dirname(__FILE__) . '/IfirmaMatchLabels.php';
 require_once dirname(__FILE__) . '/IfirmaContractorService.php';
 require_once dirname(__FILE__) . '/IfirmaCustomerContractorService.php';
 require_once dirname(__FILE__) . '/IfirmaReceiptService.php';
+require_once dirname(__FILE__) . '/IfirmaPayloadBuilder.php';
 require_once dirname(__FILE__) . '/IfirmaDataRequestService.php';
 
 /**
@@ -51,7 +52,7 @@ class IfirmaCustomerActions extends IfirmaActionSupport
                 );
             }
 
-            $contractor = IfirmaReceiptService::build($this->module)->buildContractor(
+            $contractor = IfirmaPayloadBuilder::build($this->module)->buildContractor(
                 $order,
                 IfirmaDataRequestService::build($this->module)->getOverrideForOrder($idOrder)
             );

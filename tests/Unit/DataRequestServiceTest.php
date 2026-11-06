@@ -1324,11 +1324,8 @@ class DataRequestServiceTest extends TestCase
     public function testOverrideDrivesContractorAndLeavesAddressUntouched()
     {
         $this->approvedRequest();
-        $receiptService = new IfirmaReceiptService(
-            new IfirmaApiClient('u@example.com', array('faktura' => str_repeat('1', 64)), 'http://ifirma-mock:8001/iapi/', 30, new ScriptedTransport()),
-            new Module()
-        );
-        $contractor = $receiptService->buildContractor($this->order, $this->service->getOverrideForOrder(15));
+        $builder = IfirmaPayloadBuilder::build(new Module());
+        $contractor = $builder->buildContractor($this->order, $this->service->getOverrideForOrder(15));
 
         $this->assertSame('ACME Sp. z o.o.', $contractor['Nazwa']);
         $this->assertSame('5250001234', $contractor['NIP']);
@@ -1342,11 +1339,8 @@ class DataRequestServiceTest extends TestCase
         $request = $this->submitPending($this->privateInput());
         $this->service->approve($request, 4);
         Db::getInstance()->whenGetValue('/SELECT id_ifirma_data_request.*status = "approved"/s', (int) $request->id);
-        $receiptService = new IfirmaReceiptService(
-            new IfirmaApiClient('u@example.com', array('faktura' => str_repeat('1', 64)), 'http://ifirma-mock:8001/iapi/', 30, new ScriptedTransport()),
-            new Module()
-        );
-        $contractor = $receiptService->buildContractor($this->order, $this->service->getOverrideForOrder(15));
+        $builder = IfirmaPayloadBuilder::build(new Module());
+        $contractor = $builder->buildContractor($this->order, $this->service->getOverrideForOrder(15));
         $this->assertSame('Anna Nowak', $contractor['Nazwa']);
         $this->assertSame('', $contractor['NIP']);
         $this->assertTrue($contractor['OsobaFizyczna']);

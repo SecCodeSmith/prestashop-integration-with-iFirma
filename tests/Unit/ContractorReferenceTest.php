@@ -25,6 +25,9 @@ class ContractorReferenceTest extends TestCase
     /** @var IfirmaReceiptService */
     private $service;
 
+    /** @var IfirmaPayloadBuilder */
+    private $builder;
+
     protected function setUp(): void
     {
         IfirmaTestState::resetAll();
@@ -33,6 +36,7 @@ class ContractorReferenceTest extends TestCase
         $this->t = new ScriptedTransport();
         $client = new IfirmaApiClient('u@example.com', array('faktura' => str_repeat('1', 64)), 'http://ifirma-mock:8001/iapi/', 30, $this->t);
         $this->service = new IfirmaReceiptService($client, new Module());
+        $this->builder = IfirmaPayloadBuilder::build(new Module());
 
         $c = new Customer();
         $c->id = 5;
@@ -104,7 +108,7 @@ class ContractorReferenceTest extends TestCase
     /** Contractor record iFirma returns for the buyer, stored under $identifier. */
     private function foundContractor($identifier)
     {
-        $row = array_merge($this->service->buildContractor($this->order()), array('Identyfikator' => $identifier));
+        $row = array_merge($this->builder->buildContractor($this->order()), array('Identyfikator' => $identifier));
 
         return array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array($row)))));
     }
@@ -215,7 +219,7 @@ class ContractorReferenceTest extends TestCase
             $waits[] = $seconds;
         }));
         $notFound = array('body' => '{"response":{"Kod":208,"Informacja":"Nie znaleziono kontrahenta"}}');
-        $assigned = array_merge($this->service->buildContractor($this->order()), array('Identyfikator' => 'IFI1909556979', 'NIP' => '5252248481'));
+        $assigned = array_merge($this->builder->buildContractor($this->order()), array('Identyfikator' => 'IFI1909556979', 'NIP' => '5252248481'));
 
         $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', $notFound);
         $this->t->queue('GET', '#kontrahenci/5252248481\.json#', $notFound);
@@ -535,7 +539,7 @@ class ContractorReferenceTest extends TestCase
     public function testStoredRecordOfAnUpdatedContractor()
     {
         $this->enableSync();
-        $outdated = array_merge($this->service->buildContractor($this->order()), array('Identyfikator' => 'PS-C5', 'Miejscowosc' => 'Stare Miasto'));
+        $outdated = array_merge($this->builder->buildContractor($this->order()), array('Identyfikator' => 'PS-C5', 'Miejscowosc' => 'Stare Miasto'));
         $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array($outdated))))));
         $this->t->queue('PUT', '#kontrahenci/PS-C5\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"Zaktualizowano kontrahenta"}}'));
         $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());
@@ -661,7 +665,7 @@ class ContractorReferenceTest extends TestCase
     public function testStoredRecordOfAnUpdateIFirmaRejected()
     {
         $this->enableSync();
-        $outdated = array_merge($this->service->buildContractor($this->order()), array('Identyfikator' => 'PS-C5', 'Miejscowosc' => 'Stare Miasto'));
+        $outdated = array_merge($this->builder->buildContractor($this->order()), array('Identyfikator' => 'PS-C5', 'Miejscowosc' => 'Stare Miasto'));
         $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array($outdated))))));
         $this->t->queue('PUT', '#kontrahenci/PS-C5\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"Zly kod pocztowy"}}'));
         $this->t->queue('POST', '#fakturakraj\.json#', $this->docOk());

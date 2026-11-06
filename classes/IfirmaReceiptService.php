@@ -17,9 +17,6 @@ require_once dirname(__FILE__) . '/IfirmaPayloadBuilder.php';
 
 class IfirmaReceiptService
 {
-    /** Moved to IfirmaPayloadBuilder; this alias goes with the wrappers below in task 5.4. */
-    const CONTRACTOR_ID_PREFIX = IfirmaPayloadBuilder::CONTRACTOR_ID_PREFIX;
-
     /** Longest contractor identifier the document endpoints accept in IdentyfikatorKontrahenta. */
     const DOCUMENT_IDENTIFIER_MAX = 15;
 
@@ -52,67 +49,6 @@ class IfirmaReceiptService
 
         return new self($client, $module);
     }
-
-    // ---- temporary delegating wrappers (refactor-srp-splits 5.3) -----------------------------------
-    // The payload helpers moved to IfirmaPayloadBuilder and the document settings to
-    // IfirmaDocumentSettings. These forward to them for the callers that still name this class;
-    // task 5.4 points those callers at the new classes and deletes this block.
-
-    /** @see IfirmaPayloadBuilder::fieldLimits() */
-    public static function fieldLimits()
-    {
-        return IfirmaPayloadBuilder::fieldLimits();
-    }
-
-    /** @see IfirmaPayloadBuilder::truncate() */
-    public static function truncate($value, $max)
-    {
-        return IfirmaPayloadBuilder::truncate($value, $max);
-    }
-
-    /** @see IfirmaPayloadBuilder::buildOrderReference() */
-    public static function buildOrderReference(Order $order)
-    {
-        return IfirmaPayloadBuilder::buildOrderReference($order);
-    }
-
-    /** @see IfirmaPayloadBuilder::orderSaleDate() */
-    public static function orderSaleDate(Order $order)
-    {
-        return IfirmaPayloadBuilder::orderSaleDate($order);
-    }
-
-    /** @see IfirmaPayloadBuilder::orderProductLines() */
-    public static function orderProductLines(Order $order)
-    {
-        return IfirmaPayloadBuilder::orderProductLines($order);
-    }
-
-    /** @see IfirmaPayloadBuilder::buyerNames() */
-    public static function buyerNames(Order $order)
-    {
-        return IfirmaPayloadBuilder::buyerNames($order);
-    }
-
-    /** @see IfirmaPayloadBuilder::buildContractor() */
-    public function buildContractor(Order $order, $override = null)
-    {
-        return $this->payloadBuilder->buildContractor($order, $override);
-    }
-
-    /** @see IfirmaDocumentSettings::normalizeDocumentType() */
-    public static function normalizeDocumentType($value)
-    {
-        return IfirmaDocumentSettings::normalizeDocumentType($value);
-    }
-
-    /** @see IfirmaDocumentSettings::normalizeSignatureType() */
-    public static function normalizeSignatureType($value)
-    {
-        return IfirmaDocumentSettings::normalizeSignatureType($value);
-    }
-
-    // ---- end of the temporary wrappers --------------------------------------------------------------
 
     /**
      * Issues the document of the order: registers the contractor, posts the payload (postWithRetries()),

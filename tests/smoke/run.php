@@ -428,7 +428,7 @@ if (!Module::isInstalled('ifirma')) {
 assertTrue(Module::isInstalled('ifirma'), 'module installed');
 
 // The module classes are normally loaded by the module file / controllers.
-foreach (array('IfirmaApiClient', 'IfirmaReceipt', 'IfirmaDataRequest', 'IfirmaReceiptService', 'IfirmaIssuancePipeline',
+foreach (array('IfirmaApiClient', 'IfirmaReceipt', 'IfirmaDataRequest', 'IfirmaReceiptService', 'IfirmaPayloadBuilder', 'IfirmaIssuancePipeline',
     'IfirmaDuplicateGuard', 'IfirmaDeliveryService', 'IfirmaStatusSyncService', 'IfirmaDataRequestService', 'IfirmaAdminActions') as $class) {
     if (!class_exists($class)) {
         require_once _PS_MODULE_DIR_ . 'ifirma/classes/' . $class . '.php';
@@ -475,7 +475,7 @@ function seedPositionsFor(Order $order)
 {
     $positions = array();
     $sum = 0.0;
-    foreach (IfirmaReceiptService::orderProductLines($order) as $line) {
+    foreach (IfirmaPayloadBuilder::orderProductLines($order) as $line) {
         $unit = round($line['unit_price_tax_incl'], 2);
         $positions[] = array(
             'NazwaPelna' => $line['name'],
@@ -534,7 +534,7 @@ function scenarioA($module, $actions)
         'doc_type' => 'fakturakraj',
         'contractor' => array('Nazwa' => 'Smoke Customer', 'Identyfikator' => guardIdentifierFor($order)),
         'currency' => currencyIso($order),
-        'sale_date' => IfirmaReceiptService::orderSaleDate($order),
+        'sale_date' => IfirmaPayloadBuilder::orderSaleDate($order),
         'Pozycje' => seedPositionsFor($order),
         'created_by' => 'external',
     ));
@@ -557,7 +557,7 @@ function scenarioA($module, $actions)
     assertSame(array($seedId), candidateIds($receipt), 'only the buyer\'s document is recorded as a candidate');
     $data = $receipt ? $receipt->getDuplicateCandidates() : array();
     assertSame(
-        IfirmaReceiptService::orderSaleDate($order),
+        IfirmaPayloadBuilder::orderSaleDate($order),
         isset($data['candidates'][0]['sale_date']) ? $data['candidates'][0]['sale_date'] : null,
         'recorded candidate carries the sale date read from its detail'
     );
@@ -584,7 +584,7 @@ function scenarioA2($module)
         'contractor' => array('Nazwa' => 'Other Buyer', 'Identyfikator' => 'OTHER-1'),
         'gross' => round((float) $order->total_paid_tax_incl, 2),
         'currency' => currencyIso($order),
-        'sale_date' => IfirmaReceiptService::orderSaleDate($order),
+        'sale_date' => IfirmaPayloadBuilder::orderSaleDate($order),
         'created_by' => 'external',
     ));
     assertTrue($otherId !== '', 'same-amount document of another buyer seeded', 'id=' . $otherId);
@@ -615,7 +615,7 @@ function scenarioB($module)
         'contractor' => array('Nazwa' => trim($address->firstname . ' ' . $address->lastname), 'Identyfikator' => 'EXT1'),
         'gross' => round((float) $order->total_paid_tax_incl, 2),
         'currency' => currencyIso($order),
-        'uwagi' => IfirmaReceiptService::buildOrderReference($order),
+        'uwagi' => IfirmaPayloadBuilder::buildOrderReference($order),
         'created_by' => 'external',
     ));
     assertTrue($seedId !== '', 'external document with order reference seeded', 'id=' . $seedId);
@@ -670,7 +670,7 @@ function scenarioC($module, $actions, $triggerState)
     assertTrue($receipt && $receipt->isIssued(), 'receipt isIssued');
     assertSame('module', $receipt ? $receipt->source : null, 'receipt source is module');
     $payload = $receipt ? (string) $receipt->request_payload : '';
-    $reference = IfirmaReceiptService::buildOrderReference($order);
+    $reference = IfirmaPayloadBuilder::buildOrderReference($order);
     assertTrue(strpos($payload, 'Smoke Sp. z o.o.') !== false, 'request_payload carries the override company name');
     assertTrue(strpos($payload, '5250001234') !== false, 'request_payload carries the override NIP');
     assertTrue(strpos($payload, $reference) !== false, 'request_payload carries the order reference');
