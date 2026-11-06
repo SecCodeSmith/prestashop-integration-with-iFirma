@@ -164,6 +164,21 @@ class SettingsSaveTest extends TestCase
         $this->assertSame(8, $this->stored('IFIRMA_SEND_COPY_EMPLOYEE'));
     }
 
+    public function testTheEmployeeEveryShopStartsWithIsFound()
+    {
+        // PrestaShop creates the first employee with id 1 at install; the boundary of "an id above zero" is 1
+        $first = new Employee();
+        $first->id = 1;
+        $first->firstname = 'Admin';
+        $first->lastname = 'Shop';
+        Employee::register($first);
+
+        $page = $this->save(array('IFIRMA_SEND_COPY_MODE' => 'employee', 'IFIRMA_SEND_COPY_EMPLOYEE' => '1'));
+
+        $this->assertSaved($page);
+        $this->assertSame(1, $this->stored('IFIRMA_SEND_COPY_EMPLOYEE'));
+    }
+
     public function testAnEmployeeWhoIsNotActiveIsNotFound()
     {
         $inactive = new Employee();
