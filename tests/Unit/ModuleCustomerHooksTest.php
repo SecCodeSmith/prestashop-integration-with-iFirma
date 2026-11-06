@@ -458,7 +458,11 @@ class ModuleCustomerHooksTest extends TestCase
             'every div of the panel, the column included, is closed'
         );
 
-        $start = strpos($css, '.ifirma-cp-table th {');
+        // the width rule is scoped to the two label/value tables, not to the 9-column search results table
+        $start = strpos($css, "#ifirma-cp-link th,\n#ifirma-cp-counts th {");
+        if ($start === false) {
+            $start = strpos($css, "#ifirma-cp-link th,\r\n#ifirma-cp-counts th {");
+        }
         $this->assertNotFalse($start, 'the stylesheet styles the table headers');
         $body = substr($css, $start, strpos($css, '}', $start) - $start);
         $this->assertNotFalse(strpos($body, 'width: 35%'));

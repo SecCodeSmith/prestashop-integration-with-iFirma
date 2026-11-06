@@ -31,10 +31,13 @@ class IfirmaOrderGridIndicator
         }
         $a = $orderAlias;
         $t = '`' . _DB_PREFIX_ . 'ifirma_receipt`';
+        // the same "issued" rule as IfirmaReceipt::isIssued(): an identifier and not the error state
+        $issued = "r.ifirma_id <> '' AND r.status <> '" . pSQL(IfirmaReceipt::STATUS_ERROR) . "'";
+        $newest = "FROM {$t} r WHERE r.id_order = {$a}.id_order ORDER BY r.id_ifirma_receipt DESC LIMIT 1";
 
         return array(
-            "(SELECT IF(r.ifirma_id <> '' AND r.status <> 'error', IF(r.ifirma_number <> '', r.ifirma_number, r.ifirma_id), '') FROM {$t} r WHERE r.id_order = {$a}.id_order ORDER BY r.id_ifirma_receipt DESC LIMIT 1) AS " . self::FIELD_NUMBER,
-            "(SELECT IF(r.ifirma_id <> '' AND r.status <> 'error', r.status, '') FROM {$t} r WHERE r.id_order = {$a}.id_order ORDER BY r.id_ifirma_receipt DESC LIMIT 1) AS " . self::FIELD_STATUS,
+            "(SELECT IF({$issued}, IF(r.ifirma_number <> '', r.ifirma_number, r.ifirma_id), '') {$newest}) AS " . self::FIELD_NUMBER,
+            "(SELECT IF({$issued}, r.status, '') {$newest}) AS " . self::FIELD_STATUS,
         );
     }
 
@@ -50,7 +53,7 @@ class IfirmaOrderGridIndicator
             return '';
         }
         $status = isset($record[self::FIELD_STATUS]) ? (string) $record[self::FIELD_STATUS] : '';
-        $paid = ($status === 'paid');
+        $paid = ($status === IfirmaReceipt::STATUS_PAID);
         $word = $paid ? (isset($labels['paid']) ? $labels['paid'] : 'Paid') : (isset($labels['issued']) ? $labels['issued'] : 'Issued');
         $title = 'iFirma: ' . $number . ' (' . $word . ')';
 

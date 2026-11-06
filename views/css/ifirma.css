@@ -107,9 +107,14 @@
 /* iFirma module – back-office customer page panel */
 
 .ifirma-cp-table th {
+    font-weight: 600;
+}
+
+/* the two label/value tables only: the search results table shares the class but has 9 header cells */
+#ifirma-cp-link th,
+#ifirma-cp-counts th {
     width: 35%;
     white-space: nowrap;
-    font-weight: 600;
 }
 
 .ifirma-cp-ok {
