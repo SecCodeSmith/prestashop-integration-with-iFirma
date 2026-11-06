@@ -38,11 +38,11 @@ The mock is guarded by its pytest suite instead, and the upgrade scripts by runn
   - an order without detail rows gives the positions it gives today.
 
   Verify that the new tests pass on unchanged code and kill a mutant of each line. Commit them alone.
-- [ ] 2.2 Split `buildInvoicePayload()` into private steps: product positions, shipping position, document header, the buyer's NIP and DodatkoweUwagi. Verify:
+- [x] 2.2 Split `buildInvoicePayload()` into private steps: product positions, shipping position, document header, the buyer's NIP and DodatkoweUwagi. Verify:
   - the method and every new step are 40 lines or fewer;
   - the 56 golden payloads and the 2.1 pins are equal;
   - the suite is green, the PHP 7.2 lint passes, and diff-cover is at 100%.
-- [ ] 2.3 Split `buildContractor()` into the buyer source (the approved request or the invoice address), the country, and the contractor array. Verify the same as 2.2, plus the ContractorServiceTest and AdminActionsTest cases that use the contractor array.
+- [x] 2.3 Split `buildContractor()` into the buyer source (the approved request or the invoice address), the country, and the contractor array. Verify the same as 2.2, plus the ContractorServiceTest and AdminActionsTest cases that use the contractor array.
 
 ## 3. Test infrastructure
 
@@ -52,7 +52,7 @@ The mock is guarded by its pytest suite instead, and the upgrade scripts by runn
 
 ## 4. Integration check
 
-- [ ] 4.1 Run the gate over the whole change against its base, the PHP 7.2 lint, the licence check, the mock suite, `tests/smoke/run.php` (the 91 lines equal to the pre-change run) and the PDF download check. Then run `graphify update .` and `openspec validate srp-splits-followups --strict`, commit, push, and confirm that all six CI jobs pass with the coverage job at 100%.
+- [x] 4.1 Run the gate over the whole change against its base, the PHP 7.2 lint, the licence check, the mock suite, `tests/smoke/run.php` (the 91 lines equal to the pre-change run) and the PDF download check. Then run `graphify update .` and `openspec validate srp-splits-followups --strict`, commit, push, and confirm that all six CI jobs pass with the coverage job at 100%.
 
 ## Workflow follow-up
 
