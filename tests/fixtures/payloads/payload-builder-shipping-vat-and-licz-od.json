@@ -1,0 +1,126 @@
+{
+    "from": "PayloadBuilderTest::testShippingVatAndLiczOd",
+    "requests": [
+        {
+            "method": "POST",
+            "path": "/iapi/fakturakraj.json",
+            "body": {
+                "Zaplacono": 0,
+                "ZaplaconoNaDokumencie": 0,
+                "LiczOd": "BRT",
+                "DataWystawienia": "{today}",
+                "DataSprzedazy": "2026-03-04",
+                "FormatDatySprzedazy": "DZN",
+                "SposobZaplaty": "PRZ",
+                "RodzajPodpisuOdbiorcy": "BPO",
+                "WidocznyNumerBdo": false,
+                "Numer": null,
+                "Uwagi": "PS-ORDER-15-ABCDEFGHI",
+                "Kontrahent": {
+                    "Nazwa": "Jan Kowalski",
+                    "NIP": "",
+                    "Ulica": "Długa 1 m. 2",
+                    "KodPocztowy": "00-001",
+                    "Kraj": "PL",
+                    "KodKraju": "PL",
+                    "Miejscowosc": "Warszawa",
+                    "Email": "jan@example.test",
+                    "OsobaFizyczna": true
+                },
+                "Pozycje": [
+                    {
+                        "StawkaVat": 0.23,
+                        "Ilosc": 2,
+                        "CenaJednostkowa": 123,
+                        "NazwaPelna": "Widget",
+                        "Jednostka": "szt.",
+                        "TypStawkiVat": "PRC"
+                    },
+                    {
+                        "StawkaVat": 0,
+                        "Ilosc": 1,
+                        "CenaJednostkowa": 10,
+                        "NazwaPelna": "Book",
+                        "Jednostka": "szt.",
+                        "TypStawkiVat": "PRC"
+                    },
+                    {
+                        "StawkaVat": 0,
+                        "Ilosc": 1,
+                        "CenaJednostkowa": 12.3,
+                        "NazwaPelna": "Shipping",
+                        "Jednostka": "usł.",
+                        "TypStawkiVat": "PRC"
+                    }
+                ],
+                "DodatkoweUwagi": {
+                    "Typ": "NUMER_ZAMOWIENIA",
+                    "Info": "PS-ORDER-15-ABCDEFGHI"
+                }
+            }
+        }
+    ],
+    "stored": [
+        {
+            "Zaplacono": 0,
+            "ZaplaconoNaDokumencie": 0,
+            "LiczOd": "BRT",
+            "DataWystawienia": "{today}",
+            "DataSprzedazy": "2026-03-04",
+            "FormatDatySprzedazy": "DZN",
+            "SposobZaplaty": "PRZ",
+            "RodzajPodpisuOdbiorcy": "BPO",
+            "WidocznyNumerBdo": false,
+            "Numer": null,
+            "Uwagi": "PS-ORDER-15-ABCDEFGHI",
+            "Kontrahent": {
+                "Nazwa": "Jan Kowalski",
+                "NIP": "",
+                "Ulica": "Długa 1 m. 2",
+                "KodPocztowy": "00-001",
+                "Kraj": "PL",
+                "KodKraju": "PL",
+                "Miejscowosc": "Warszawa",
+                "Email": "jan@example.test",
+                "OsobaFizyczna": true
+            },
+            "Pozycje": [
+                {
+                    "StawkaVat": 0.23,
+                    "Ilosc": 2,
+                    "CenaJednostkowa": 123,
+                    "NazwaPelna": "Widget",
+                    "Jednostka": "szt.",
+                    "TypStawkiVat": "PRC"
+                },
+                {
+                    "StawkaVat": 0,
+                    "Ilosc": 1,
+                    "CenaJednostkowa": 10,
+                    "NazwaPelna": "Book",
+                    "Jednostka": "szt.",
+                    "TypStawkiVat": "PRC"
+                },
+                {
+                    "StawkaVat": 0,
+                    "Ilosc": 1,
+                    "CenaJednostkowa": 12.3,
+                    "NazwaPelna": "Shipping",
+                    "Jednostka": "usł.",
+                    "TypStawkiVat": "PRC"
+                }
+            ],
+            "DodatkoweUwagi": {
+                "Typ": "NUMER_ZAMOWIENIA",
+                "Info": "PS-ORDER-15-ABCDEFGHI"
+            },
+            "_contractor": {
+                "action": "disabled",
+                "message": "",
+                "matched_by": "",
+                "identifier": ""
+            }
+        }
+    ],
+    "threw": null
+}

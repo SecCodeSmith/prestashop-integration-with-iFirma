@@ -1,0 +1,160 @@
+{
+    "from": "CreateReceiptTest::testMissingContractorKodRetriesOnceWithNullIdentifier",
+    "requests": [
+        {
+            "method": "PUT",
+            "path": "/iapi/kontrahenci/PS-C5.json",
+            "body": {
+                "Nazwa": "Jan K",
+                "Identyfikator": "PS-C5",
+                "NIP": "",
+                "Ulica": "",
+                "KodPocztowy": "",
+                "Kraj": "Polska",
+                "KodKraju": "PL",
+                "Miejscowosc": "Nowe Miasto",
+                "Email": "a@example.test",
+                "OsobaFizyczna": true
+            }
+        },
+        {
+            "method": "POST",
+            "path": "/iapi/fakturakraj.json",
+            "body": {
+                "Zaplacono": 0,
+                "ZaplaconoNaDokumencie": 0,
+                "LiczOd": "BRT",
+                "DataWystawienia": "{today}",
+                "DataSprzedazy": "2026-03-04",
+                "FormatDatySprzedazy": "DZN",
+                "SposobZaplaty": "PRZ",
+                "RodzajPodpisuOdbiorcy": "BPO",
+                "WidocznyNumerBdo": false,
+                "Numer": null,
+                "Uwagi": "PS-ORDER-15-ABCDEFGHI",
+                "IdentyfikatorKontrahenta": "PS-C5",
+                "Kontrahent": {
+                    "Nazwa": "Jan K",
+                    "NIP": "",
+                    "Ulica": "",
+                    "KodPocztowy": "",
+                    "Kraj": "Polska",
+                    "KodKraju": "PL",
+                    "Miejscowosc": "Nowe Miasto",
+                    "Email": "a@example.test",
+                    "OsobaFizyczna": true
+                },
+                "Pozycje": [
+                    {
+                        "StawkaVat": 0,
+                        "Ilosc": 1,
+                        "CenaJednostkowa": 10,
+                        "NazwaPelna": "W",
+                        "Jednostka": "szt.",
+                        "TypStawkiVat": "PRC"
+                    }
+                ],
+                "DodatkoweUwagi": {
+                    "Typ": "NUMER_ZAMOWIENIA",
+                    "Info": "PS-ORDER-15-ABCDEFGHI"
+                }
+            }
+        },
+        {
+            "method": "POST",
+            "path": "/iapi/fakturakraj.json",
+            "body": {
+                "Zaplacono": 0,
+                "ZaplaconoNaDokumencie": 0,
+                "LiczOd": "BRT",
+                "DataWystawienia": "{today}",
+                "DataSprzedazy": "2026-03-04",
+                "FormatDatySprzedazy": "DZN",
+                "SposobZaplaty": "PRZ",
+                "RodzajPodpisuOdbiorcy": "BPO",
+                "WidocznyNumerBdo": false,
+                "Numer": null,
+                "Uwagi": "PS-ORDER-15-ABCDEFGHI",
+                "Kontrahent": {
+                    "Nazwa": "Jan K",
+                    "NIP": "",
+                    "Ulica": "",
+                    "KodPocztowy": "",
+                    "Kraj": "Polska",
+                    "KodKraju": "PL",
+                    "Miejscowosc": "Nowe Miasto",
+                    "Email": "a@example.test",
+                    "OsobaFizyczna": true
+                },
+                "Pozycje": [
+                    {
+                        "StawkaVat": 0,
+                        "Ilosc": 1,
+                        "CenaJednostkowa": 10,
+                        "NazwaPelna": "W",
+                        "Jednostka": "szt.",
+                        "TypStawkiVat": "PRC"
+                    }
+                ],
+                "DodatkoweUwagi": {
+                    "Typ": "NUMER_ZAMOWIENIA",
+                    "Info": "PS-ORDER-15-ABCDEFGHI"
+                }
+            }
+        }
+    ],
+    "stored": [
+        {
+            "Zaplacono": 0,
+            "ZaplaconoNaDokumencie": 0,
+            "LiczOd": "BRT",
+            "DataWystawienia": "{today}",
+            "DataSprzedazy": "2026-03-04",
+            "FormatDatySprzedazy": "DZN",
+            "SposobZaplaty": "PRZ",
+            "RodzajPodpisuOdbiorcy": "BPO",
+            "WidocznyNumerBdo": false,
+            "Numer": null,
+            "Uwagi": "PS-ORDER-15-ABCDEFGHI",
+            "Kontrahent": {
+                "Nazwa": "Jan K",
+                "NIP": "",
+                "Ulica": "",
+                "KodPocztowy": "",
+                "Kraj": "Polska",
+                "KodKraju": "PL",
+                "Miejscowosc": "Nowe Miasto",
+                "Email": "a@example.test",
+                "OsobaFizyczna": true
+            },
+            "Pozycje": [
+                {
+                    "StawkaVat": 0,
+                    "Ilosc": 1,
+                    "CenaJednostkowa": 10,
+                    "NazwaPelna": "W",
+                    "Jednostka": "szt.",
+                    "TypStawkiVat": "PRC"
+                }
+            ],
+            "DodatkoweUwagi": {
+                "Typ": "NUMER_ZAMOWIENIA",
+                "Info": "PS-ORDER-15-ABCDEFGHI"
+            },
+            "_contractor": {
+                "action": "fallback",
+                "message": "Validation error in document data (Kod 201): Nie znaleziono kontrahenta o zadanym identyfikatorze",
+                "matched_by": "",
+                "identifier": "",
+                "note": {
+                    "code": "reference_rejected",
+                    "params": {
+                        "identifier": "PS-C5",
+                        "error": "Validation error in document data (Kod 201): Nie znaleziono kontrahenta o zadanym identyfikatorze"
+                    }
+                }
+            }
+        }
+    ],
+    "threw": null
+}
