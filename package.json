@@ -1,6 +1,6 @@
 {
   "name": "scm-ifirma",
-  "version": "1.3.2",
+  "version": "1.4.0",
   "private": true,
   "description": "iFirma – Receipts & Invoices integration module for PrestaShop.",
   "author": "SCM Jakub Berechowski <admin@seccodesmith.pl>",
