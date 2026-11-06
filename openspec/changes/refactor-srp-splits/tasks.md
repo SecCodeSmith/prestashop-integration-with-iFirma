@@ -272,8 +272,44 @@ Like `refactor-clean-code-tda`, the change lands straight on master: one commit 
 
 ## 10. Integration check
 
-- [ ] 10.1 Run the full CI on master after the last task, install the build on the test-stack shop, and run `php tests/smoke/run.php` plus the upgrade smoke (`upgrade-phase1.php` then `upgrade-phase2.php`) in the container. Exercise issue, adopt, deliver, KSeF submit, data-request approve, and the contractor import. Verify that the behaviour matches the pre-change build and that the mock API reports no signature or payload errors.
-- [ ] 10.2 Run `graphify update .` and `openspec validate refactor-srp-splits`. Verify that both succeed.
+- [x] 10.1 Run the full CI on master after the last task, install the build on the test-stack shop, and run `php tests/smoke/run.php` plus the upgrade smoke (`upgrade-phase1.php` then `upgrade-phase2.php`) in the container. Exercise issue, adopt, deliver, KSeF submit, data-request approve, and the contractor import. Verify that the behaviour matches the pre-change build and that the mock API reports no signature or payload errors.
+
+  Evidence, on the final master `369e979`:
+  - **CI.** Run #30 passed all six jobs:
+    - PHP 7.2 syntax on 71 shipped files;
+    - PHPUnit;
+    - changed-line coverage: 124 lines, 100%;
+    - mock tests: 130 passed;
+    - test build `ifirma-1.3.1+build.30`.
+  - **The build is the tested code.**
+    - Both test shops bind-mount the checkout, so uploading the zip would overwrite it.
+    - Instead, the CI zip was compared with the commit: it holds exactly its 98 tracked runtime files plus `BUILD`, each byte-identical to its blob, and `BUILD` names `369e979`.
+    - The checkout the shop runs differs from those files only by CRLF line endings in 51 of them (`core.autocrlf`).
+  - **Behaviour matches the pre-change build.** `tests/smoke/run.php` in the PrestaShop 8.1 container passed 90 with 1 skipped (the in-container cron HTTP check). Its 91 check lines are identical to the run before this change:
+    - before the upgrade test;
+    - on the upgraded install;
+    - after the restore;
+    - in the lead's own last run.
+
+    The smoke covers issuing, adopting a duplicate, delivery with PDF retries, the KSeF submission, approving a data request, status sync and cron, and the customer panels.
+  - **Upgrade from 1.0.0.**
+    - The shop was reinstalled as 1.0.0 and one document issued, then PrestaShop's own upgrade runner upgraded it.
+    - Both upgrade scripts ran (`number_upgraded` 2), and every schema, default, old-receipt and guard check passed.
+    - Afterwards the shop was restored from a snapshot and checked to equal it.
+  - Two parts of the upgrade test tooling are out of date. Neither is a module defect, and both are listed under the workflow follow-up:
+    - `upgrade-phase2.php` still asserts that the database records 1.1.0. Since `upgrade-1.2.0.php` exists, it records 1.2.0, so the run ends `PHASE2_FAILED 1` on that single stale check.
+    - Unchanged 1.0.0 can no longer issue against the mock, which now validates like the live API: it rejects the BRK signature type, a four-decimal VAT rate and an e-mail used as the contractor identifier. Phase 1 therefore ran with those three literals patched in a throwaway 1.0.0 copy.
+  - **Contractor import.**
+    - Parse, match and apply on a two-row CSV: one row was linked by e-mail and one stayed unmatched. A second pass reported it unchanged.
+    - The mock resolved the linked identifier through the module's signed client.
+    - The test link was removed afterwards.
+  - **Mock.** The mock checks signatures strictly. Its log over all these runs holds 471 requests, every one HTTP 200: no 401, 403, 422 or other error, and no line about a signature, authorisation or validation failure. Kod rejections from iFirma come back as HTTP 200; in this window the only ones came from the unpatched 1.0.0 attempts.
+  - **PDF.** The download check passes in the front office and the back office.
+
+- [x] 10.2 Run `graphify update .` and `openspec validate refactor-srp-splits`. Verify that both succeed.
+
+  Evidence: `graphify update .` finds the graph current, and `cost.json` and all 18 `cache/semantic` files are unchanged and tracked. `openspec validate refactor-srp-splits --strict` passes.
+
 
 ## Progress notes
 
@@ -298,3 +334,12 @@ Like `refactor-clean-code-tda`, the change lands straight on master: one commit 
 ## Workflow follow-up
 
 - Archive the change after review.
+- Upgrade test tooling, found by 10.1, outside this change:
+  - `upgrade-phase2.php` should assert the version of the last upgrade script, or finish the upgrade and assert the module version.
+  - Phase 1 needs a way to issue its old document against the stricter mock.
+  - The README cleanup step should also drop `ps_ifirma_contractor_map` and list every setting 1.0.0 does not define.
+- Optional pins and splits that reviewers suggested:
+  - `buildInvoicePayload()` (76 lines) and `buildContractor()` (53 lines), with pins for price rounding first;
+  - deriving the admin-panel golden fixture list from ModuleHooksTest;
+  - a single setUp trait for the receipt-creation tests;
+  - a check for stale payload fixtures.
