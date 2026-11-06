@@ -17,8 +17,8 @@ require_once dirname(__FILE__) . '/IfirmaPaymentMethodResolver.php';
 require_once dirname(__FILE__) . '/IfirmaDocumentSettings.php';
 
 /**
- * What the module sends to iFirma for an order, and the values the duplicate guard and the delivery
- * service compare a remote document with.
+ * What the module sends to iFirma for an order. The duplicate guard compares remote documents with values
+ * from the static helpers below; the delivery service only uses truncate().
  *
  * Contract:
  *  - buildInvoicePayload(order, override, options) returns the document payload; options:

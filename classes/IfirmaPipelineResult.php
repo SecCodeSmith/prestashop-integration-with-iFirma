@@ -26,10 +26,11 @@ if (!defined('_PS_VERSION_')) {
  * steps       list of array('step', 'status' => ok|skipped|stopped|failed, 'message')
  * trigger     status | manual | resume | issue_anyway
  *
- * The pipeline records a step with addStep() and what happened to the run with the intent methods
- * markIssued(), markAdopted() and alreadyIssued(), which set ok, outcome and message; stopAt(), which
- * sets the same three and also names the step in stoppedAt and logs it as stopped; and stopStep(),
- * which only names the step and logs it, keeping ok, outcome and message.
+ * The pipeline records each step and the outcome through the result's methods, while the KSeF error suffix
+ * of the message, the failure path (IfirmaIssuancePipeline::fail()) and the receipt, guard and delivery are set
+ * directly on the result. addStep() logs a step; markIssued(), markAdopted() and alreadyIssued() set ok, outcome
+ * and message; stopAt() sets the same three, names the step in stoppedAt and logs it as stopped; stopStep() only
+ * names the step and logs it, keeping ok, outcome and message.
  */
 class IfirmaPipelineResult
 {

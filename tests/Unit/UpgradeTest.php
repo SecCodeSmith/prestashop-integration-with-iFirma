@@ -184,7 +184,9 @@ class UpgradeTest extends TestCase
     // answers the information_schema probes from the result.
 
     /**
-     * Schemas that a shop recorded as 1.1.0 can have, none of them complete.
+     * Incomplete schemas for the 1.1.0 tests, none of them complete. The first two are the states that the earlier
+     * 1.1.0 builds left (see the notes above); the third is hypothetical, no build left it (see
+     * schemaWithANarrowContractorMap()).
      *
      * @return array description => array(name of the method that returns the schema)
      */
@@ -193,7 +195,7 @@ class UpgradeTest extends TestCase
         return array(
             'the first 1.1.0 build, before the contractor map' => array('schemaOfTheFirst110Build'),
             'a 1.1.0 build with the contractor map, before the KSeF sent and error columns' => array('schemaOfTheBuildWithTheContractorMap'),
-            'a contractor map whose identifier column is still 15 characters wide' => array('schemaWithANarrowContractorMap'),
+            'a hypothetical contractor map whose identifier column is still 15 characters wide' => array('schemaWithANarrowContractorMap'),
         );
     }
 
@@ -278,9 +280,10 @@ class UpgradeTest extends TestCase
     }
 
     /**
-     * What the previous test means for a shop that stopped at an earlier 1.1.0 build: the upgrade to 1.2.0 (and
-     * from there to 1.3.1) leaves it as it found it. If this fails, an upgrade script now completes these
-     * shops: re-read task 9.2 of refactor-srp-splits, the runtime checks may then go.
+     * What the previous test means for the incomplete 1.1.0 schemas: the upgrade to 1.2.0 (and from there to
+     * 1.3.1) leaves each as it found it. The first two are what a shop that stopped at an earlier 1.1.0 build
+     * has; the third is hypothetical. If this fails, an upgrade script now completes these shops: re-read task
+     * 9.2 of refactor-srp-splits, the runtime checks may then go.
      *
      * @dataProvider incomplete110Schemas
      */

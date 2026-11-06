@@ -59,8 +59,10 @@ counter (`IFIRMA_RATE_WINDOW`) and refuses to start a request once the local cap
 the customer-page sync. A shop-mail delivery may add up to 10 s of waiting when the PDF is not ready yet. With the optional `abonent` key the used/granted daily limit can be read.
 
 All calls go through [`classes/IfirmaApiClient.php`](classes/IfirmaApiClient.php);
-the order → payload mapping and business rules live in
-[`classes/IfirmaReceiptService.php`](classes/IfirmaReceiptService.php).
+the order → payload mapping lives in
+[`classes/IfirmaPayloadBuilder.php`](classes/IfirmaPayloadBuilder.php), the document and signature type
+normalisers in [`classes/IfirmaDocumentSettings.php`](classes/IfirmaDocumentSettings.php), and
+[`classes/IfirmaReceiptService.php`](classes/IfirmaReceiptService.php) keeps the API calls.
 
 ## Installation
 
