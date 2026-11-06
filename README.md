@@ -62,7 +62,7 @@ All calls go through [`classes/IfirmaApiClient.php`](classes/IfirmaApiClient.php
 the order → payload mapping lives in
 [`classes/IfirmaPayloadBuilder.php`](classes/IfirmaPayloadBuilder.php), the document and signature type
 normalisers in [`classes/IfirmaDocumentSettings.php`](classes/IfirmaDocumentSettings.php), and
-[`classes/IfirmaReceiptService.php`](classes/IfirmaReceiptService.php) keeps the API calls.
+[`classes/IfirmaReceiptService.php`](classes/IfirmaReceiptService.php) keeps the document API calls (create, paid status, number lookup, PDF).
 
 ## Installation
 
