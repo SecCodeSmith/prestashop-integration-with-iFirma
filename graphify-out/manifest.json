@@ -60,9 +60,9 @@
     "semantic_hash": ""
   },
   "ifirma.php": {
-    "mtime": 1793996844.3223577,
-    "seen": 1793997013.7361994,
-    "ast_hash": "4b88f4387d06f4a633554ce802a49de2",
+    "mtime": 1793997040.1991453,
+    "seen": 1793997180.0035653,
+    "ast_hash": "cc690414abbc8c5aa1a9520de018c8cb",
     "semantic_hash": ""
   },
   "index.php": {
@@ -72,9 +72,9 @@
     "semantic_hash": ""
   },
   "package.json": {
-    "mtime": 1793980932.8457236,
-    "seen": 1793982077.4648533,
-    "ast_hash": "64d5e74a2c6fae25738429e6f4d0cdd0",
+    "mtime": 1793997040.153608,
+    "seen": 1793997180.0035696,
+    "ast_hash": "d65f5c31f33f02fa0894dcd9884f6be2",
     "semantic_hash": ""
   },
   "scripts/build-zip.mjs": {
@@ -720,8 +720,8 @@
     "semantic_hash": ""
   },
   "tests/Unit/ModuleHooksTest.php": {
-    "mtime": 1793996825.573488,
-    "seen": 1793997013.7363997,
+    "mtime": 1793997040.2006526,
+    "seen": 1793997180.0036757,
     "ast_hash": "d8a6f965f70609fa50476cf25aba250b",
     "semantic_hash": ""
   },
@@ -1506,9 +1506,9 @@
     "semantic_hash": ""
   },
   "openspec/specs/customer-contractor-panel/spec.md": {
-    "mtime": 1793879671.0885623,
-    "seen": 1793885015.246292,
-    "ast_hash": "c82f9831c39ebe06c6e18e08be8fb859",
+    "mtime": 1793997147.758674,
+    "seen": 1793997180.0038395,
+    "ast_hash": "13fc8da2916a980d8e1b5707aa591a66",
     "semantic_hash": ""
   },
   "classes/IfirmaContractorMatcher.php": {
@@ -2310,8 +2310,8 @@
     "semantic_hash": ""
   },
   "classes/IfirmaOrderGridIndicator.php": {
-    "mtime": 1793996825.4856908,
-    "seen": 1793997013.7361653,
+    "mtime": 1793997040.1991453,
+    "seen": 1793997180.003547,
     "ast_hash": "c38448ba2925b9815556a386342c7678",
     "semantic_hash": ""
   },
@@ -2322,8 +2322,8 @@
     "semantic_hash": ""
   },
   "tests/Unit/OrderGridIndicatorTest.php": {
-    "mtime": 1793996844.5121024,
-    "seen": 1793997013.7364013,
+    "mtime": 1793997040.2006526,
+    "seen": 1793997180.0036764,
     "ast_hash": "bf85dac53d73f3659a02ade5edf5edfd",
     "semantic_hash": ""
   },
@@ -2337,42 +2337,6 @@
     "mtime": 1793983766.316238,
     "seen": 1793984991.8938198,
     "ast_hash": "b10c5972bfbd07aa99a1c3e518425023",
-    "semantic_hash": ""
-  },
-  "openspec/changes/admin-ui-cleanup/.openspec.yaml": {
-    "mtime": 1793983167.734788,
-    "seen": 1793984991.8941472,
-    "ast_hash": "a510889d41a0da0bc16f9dd0a03505b8",
-    "semantic_hash": ""
-  },
-  "openspec/changes/admin-ui-cleanup/design.md": {
-    "mtime": 1793996825.6697648,
-    "seen": 1793997013.7365878,
-    "ast_hash": "a1d6b9a7f65abb7a14a674b91729f5b2",
-    "semantic_hash": ""
-  },
-  "openspec/changes/admin-ui-cleanup/proposal.md": {
-    "mtime": 1793983270.327921,
-    "seen": 1793984991.8941486,
-    "ast_hash": "2d59bf95fb1e33d512466e3c6665c474",
-    "semantic_hash": ""
-  },
-  "openspec/changes/admin-ui-cleanup/specs/customer-contractor-panel/spec.md": {
-    "mtime": 1793983297.1033213,
-    "seen": 1793984991.8941493,
-    "ast_hash": "41280f03b896033d91758481a4481ec3",
-    "semantic_hash": ""
-  },
-  "openspec/changes/admin-ui-cleanup/specs/order-list-receipt-indicator/spec.md": {
-    "mtime": 1793983296.9471192,
-    "seen": 1793984991.8941503,
-    "ast_hash": "102497b87f3b1df916b373a804c39f0b",
-    "semantic_hash": ""
-  },
-  "openspec/changes/admin-ui-cleanup/tasks.md": {
-    "mtime": 1793985023.569621,
-    "seen": 1793996139.5769951,
-    "ast_hash": "de7f0819b572b728268129ef881e5c00",
     "semantic_hash": ""
   },
   "openspec/changes/archive/2026-11-06-srp-splits-followups/.openspec.yaml": {
@@ -2399,10 +2363,52 @@
     "ast_hash": "ecad106520ba6f60e0366f717be51830",
     "semantic_hash": ""
   },
-  "openspec/changes/admin-ui-cleanup/verification.md": {
-    "mtime": 1793997004.4225953,
-    "seen": 1793997013.7365952,
-    "ast_hash": "b12cf2a793655b3784c3f6e63a98d1da",
+  "openspec/changes/archive/2026-11-06-admin-ui-cleanup/.openspec.yaml": {
+    "mtime": 1793983167.734788,
+    "seen": 1793997180.0038195,
+    "ast_hash": "a510889d41a0da0bc16f9dd0a03505b8",
+    "semantic_hash": ""
+  },
+  "openspec/changes/archive/2026-11-06-admin-ui-cleanup/design.md": {
+    "mtime": 1793997040.3299696,
+    "seen": 1793997180.0038202,
+    "ast_hash": "0d1896ce60a6d251baec4fe7a28f5f42",
+    "semantic_hash": ""
+  },
+  "openspec/changes/archive/2026-11-06-admin-ui-cleanup/proposal.md": {
+    "mtime": 1793983270.327921,
+    "seen": 1793997180.003821,
+    "ast_hash": "2d59bf95fb1e33d512466e3c6665c474",
+    "semantic_hash": ""
+  },
+  "openspec/changes/archive/2026-11-06-admin-ui-cleanup/specs/customer-contractor-panel/spec.md": {
+    "mtime": 1793983297.1033213,
+    "seen": 1793997180.0038216,
+    "ast_hash": "41280f03b896033d91758481a4481ec3",
+    "semantic_hash": ""
+  },
+  "openspec/changes/archive/2026-11-06-admin-ui-cleanup/specs/order-list-receipt-indicator/spec.md": {
+    "mtime": 1793983296.9471192,
+    "seen": 1793997180.0038223,
+    "ast_hash": "102497b87f3b1df916b373a804c39f0b",
+    "semantic_hash": ""
+  },
+  "openspec/changes/archive/2026-11-06-admin-ui-cleanup/tasks.md": {
+    "mtime": 1793985023.569621,
+    "seen": 1793997180.003823,
+    "ast_hash": "de7f0819b572b728268129ef881e5c00",
+    "semantic_hash": ""
+  },
+  "openspec/changes/archive/2026-11-06-admin-ui-cleanup/verification.md": {
+    "mtime": 1793997040.3299696,
+    "seen": 1793997180.0038235,
+    "ast_hash": "3a901645ee47cd85f82f24f90e4db36c",
+    "semantic_hash": ""
+  },
+  "openspec/specs/order-list-receipt-indicator/spec.md": {
+    "mtime": 1793997147.570209,
+    "seen": 1793997180.0038445,
+    "ast_hash": "26d30b90052539e344e9ba510edf2ce7",
     "semantic_hash": ""
   }
 }

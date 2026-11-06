@@ -6,7 +6,7 @@ Shows the merchant, on the back-office customer page, how a shop customer relate
 ## Requirements
 
 ### Requirement: Panel on the customer page
-The back-office customer view SHALL show an iFirma panel for the viewed customer on every supported PrestaShop version, including installations upgraded from an earlier module version. The panel SHALL render without calling the iFirma API, and any API-backed part SHALL load after the page.
+The back-office customer view SHALL show an iFirma panel for the viewed customer on every supported PrestaShop version, including installations upgraded from an earlier module version. The panel SHALL render without calling the iFirma API, and any API-backed part SHALL load after the page. The panel SHALL take the full width of the area PrestaShop gives to the hook and align with the page's own cards, and its contractor and count tables SHALL keep each value beside its label.
 
 #### Scenario: Panel shown on a fresh install
 - **WHEN** an employee opens the customer page of customer 7 on a shop where the module was just installed
@@ -19,6 +19,14 @@ The back-office customer view SHALL show an iFirma panel for the viewed customer
 #### Scenario: Page does not wait for iFirma
 - **WHEN** iFirma does not answer within the request timeout
 - **THEN** the customer page and the panel's local information are still displayed, and only the API-backed parts show that they could not be loaded
+
+#### Scenario: Panel spans the hook row
+- **WHEN** an employee opens the customer page on PrestaShop 8.1 or 9.x
+- **THEN** the iFirma panel is as wide as the cards above it, with the same left and right edges
+
+#### Scenario: Contractor fields stay on one line
+- **WHEN** the panel shows a linked contractor with identifier `KOWALSKI-01`, name "Jan Kowalski" and the match type
+- **THEN** each of the identifier, name, link type and "In iFirma" values is shown beside its label, not under it
 
 ### Requirement: Contractor link state
 The panel SHALL show which iFirma contractor the module would reference for the customer. That is the stored link with its identifier, name and match type, or else the module identifier `PS-C{id_customer}` marked as "not linked".
