@@ -649,6 +649,17 @@ class ModuleHooksTest extends TestCase
         $this->assertSame('fakturakraj', Configuration::get('IFIRMA_DOC_TYPE'));
     }
 
+    public function testTheFormShowsTheStoredDocumentAndSignatureTypeNormalised()
+    {
+        Configuration::updateValue('IFIRMA_DOC_TYPE', 'fakturaparagon');
+        Configuration::updateValue('IFIRMA_SIGNATURE_TYPE', ' oup ');
+
+        $this->module->getContent();
+
+        $this->assertSame('fakturakraj', HelperForm::$lastHelper->fields_value['IFIRMA_DOC_TYPE']);
+        $this->assertSame('OUP', HelperForm::$lastHelper->fields_value['IFIRMA_SIGNATURE_TYPE']);
+    }
+
     public function testInvalidNotifyEmailIsRejectedAndNothingSaved()
     {
         Configuration::updateValue('IFIRMA_NOTIFY_EMAIL', 'old@example.test');

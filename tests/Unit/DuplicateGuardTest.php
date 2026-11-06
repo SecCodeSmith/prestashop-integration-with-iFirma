@@ -759,6 +759,36 @@ class DuplicateGuardTest extends TestCase
         $this->assertStringNotContainsString('PS-C', $u[0]);
     }
 
+    public function testAnUnreadableMappingFallsBackToTheModuleIdentifier()
+    {
+        // Replaces the finder scripted by scriptContractorMapDb(): the read throws, as a broken table would.
+        Db::getInstance()->whenGetValue('/SELECT id_ifirma_contractor_map FROM `ps_ifirma_contractor_map`\s+WHERE id_customer = (\d+)/', function () {
+            throw new RuntimeException('the mapping table is unavailable');
+        });
+        $this->queueList(array());
+        $this->queueList(array());
+
+        $res = $this->guard->check($this->order());
+
+        $this->assertSame(IfirmaGuardResult::OUTCOME_PROCEED, $res->outcome);
+        $u = $this->urls();
+        $this->assertStringContainsString('kontrahent=PS-C5', $u[0]);
+    }
+
+    public function testALongCustomerIdIsCutToTheIdentifierLimitOfTheDocumentEndpoints()
+    {
+        $o = $this->order();
+        $o->id_customer = 123456789012345;
+        $this->queueList(array());
+        $this->queueList(array());
+
+        $res = $this->guard->check($o);
+
+        $this->assertSame(IfirmaGuardResult::OUTCOME_PROCEED, $res->outcome);
+        // 'PS-C' and fifteen digits make 19 characters; the identifier the module sends is cut to 15
+        $this->assertStringContainsString('kontrahent=PS-C12345678901&', $this->urls()[0] . '&');
+    }
+
     public function testStoredMappingWithSpaceIsUrlEncoded()
     {
         IfirmaContractorMap::link(5, 'EC_JACEK ORZECHO', IfirmaContractorMap::BY_NAME);

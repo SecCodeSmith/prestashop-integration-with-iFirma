@@ -530,6 +530,46 @@ class AdminActionsTest extends TestCase
         $this->assertSame('/iapi/kontrahenci/id/PS-C5.json', parse_url($this->t->calls[3]['url'], PHP_URL_PATH));
     }
 
+    public function testRegisterContractorUsesTheBuyerDataOfAnApprovedRequest()
+    {
+        $request = $this->makeRequest('approved', array(
+            'want_invoice_for_company' => true,
+            'company' => 'ACME Sp. z o.o.',
+            'vat_number' => '5260250274',
+            'firstname' => 'Jan',
+            'lastname' => 'Kowalski',
+            'address1' => 'Nowa 2',
+            'postcode' => '00-002',
+            'city' => 'Warszawa',
+            'id_country' => 14,
+        ));
+        $request->setApprovedData($request->getRequestedData());
+        $request->save();
+        $created = false;
+        $this->t->queue('POST', '#kontrahenci\.json#', function () use (&$created) {
+            $created = true;
+
+            return array('body' => '{"response":{"Kod":0,"Informacja":"Dodano kontrahenta","Wynik":"124451232"}}');
+        });
+        $this->t->queue('GET', '#kontrahenci/#', function () use (&$created) {
+            return array('body' => $created
+                ? '{"response":{"Kod":0,"Informacja":"","Wynik":[{"Identyfikator":"PS-C5","Nazwa":"ACME Sp. z o.o."}]}}'
+                : '{"response":{"Kod":208,"Informacja":"Nie znaleziono kontrahenta"}}');
+        });
+
+        $r = $this->actions->registerContractor(15);
+
+        $this->assertTrue($r['success'], $r['message']);
+        $this->assertSame('created', $r['data']['action']);
+        $posts = $this->posts();
+        $this->assertCount(1, $posts);
+        $sent = json_decode($posts[0]['body'], true);
+        $this->assertSame('ACME Sp. z o.o.', $sent['Nazwa']);
+        $this->assertSame('5260250274', $sent['NIP']);
+        $this->assertSame('Nowa 2', $sent['Ulica']);
+        $this->assertFalse($sent['OsobaFizyczna']);
+    }
+
     public function testRegisterContractorKeepsAnUpToDateRecord()
     {
         $contractor = IfirmaReceiptService::build($this->module)->buildContractor(Order::$instances[15]);
