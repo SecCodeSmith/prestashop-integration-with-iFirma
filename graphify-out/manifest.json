@@ -18,9 +18,9 @@
     "semantic_hash": ""
   },
   "classes/IfirmaReceiptService.php": {
-    "mtime": 1793883915.494795,
-    "seen": 1793885015.2460935,
-    "ast_hash": "d4d7e1300341df9cbfe42b4eb0a05552",
+    "mtime": 1793925992.0144794,
+    "seen": 1793926438.7057753,
+    "ast_hash": "e5618f219fe8504c73fbd67c1db46188",
     "semantic_hash": ""
   },
   "classes/index.php": {
@@ -60,9 +60,9 @@
     "semantic_hash": ""
   },
   "ifirma.php": {
-    "mtime": 1793893780.9665813,
-    "seen": 1793894526.5481312,
-    "ast_hash": "ac2903e94708d8a2fb46bdbdb01c964a",
+    "mtime": 1793913303.3184583,
+    "seen": 1793926438.7057943,
+    "ast_hash": "bebc653d091d8bcd25237f91fd2bd4ac",
     "semantic_hash": ""
   },
   "index.php": {
@@ -312,9 +312,9 @@
     "semantic_hash": ""
   },
   "classes/IfirmaCustomerView.php": {
-    "mtime": 1793879370.9275813,
-    "seen": 1793879481.1155574,
-    "ast_hash": "b5a517c6fd63a7f527fa638d48f67681",
+    "mtime": 1793913303.3184583,
+    "seen": 1793926438.7057443,
+    "ast_hash": "8451c7b55f077050771a9f9d99162800",
     "semantic_hash": ""
   },
   "classes/IfirmaDataRequest.php": {
@@ -360,15 +360,15 @@
     "semantic_hash": ""
   },
   "classes/IfirmaIssuancePipeline.php": {
-    "mtime": 1793879370.9298327,
-    "seen": 1793879481.115568,
-    "ast_hash": "ceea53372c252b7f760af2cc34da6d01",
+    "mtime": 1793913305.3384366,
+    "seen": 1793926438.705766,
+    "ast_hash": "e01f9e2986fe0afed44d75d8ab2652fe",
     "semantic_hash": ""
   },
   "classes/IfirmaPipelineResult.php": {
-    "mtime": 1793879370.934036,
-    "seen": 1793879481.1155713,
-    "ast_hash": "98c7fdfdef4377f36038c441b0871106",
+    "mtime": 1793913304.5243852,
+    "seen": 1793926438.705772,
+    "ast_hash": "a88dc6df235487989ccabb3f1f6d9e37",
     "semantic_hash": ""
   },
   "classes/IfirmaSchema.php": {
@@ -438,9 +438,9 @@
     "semantic_hash": ""
   },
   "tests/Stubs/Configuration.php": {
-    "mtime": 1793558552.7700362,
-    "seen": 1793561917.31632,
-    "ast_hash": "98986b9a8758682b930090227187ebaf",
+    "mtime": 1793925992.345495,
+    "seen": 1793926438.7058372,
+    "ast_hash": "e7c477748416b6d5d379447334fcee6d",
     "semantic_hash": ""
   },
   "tests/Stubs/Context.php": {
@@ -546,9 +546,9 @@
     "semantic_hash": ""
   },
   "tests/Stubs/OrderState.php": {
-    "mtime": 1793558552.7795477,
-    "seen": 1793561917.3163326,
-    "ast_hash": "5c933650239fe96e2e9fde7c2c763949",
+    "mtime": 1793913302.6045938,
+    "seen": 1793926438.7058616,
+    "ast_hash": "622fd064520ea82d0771ef5b38fa7ecb",
     "semantic_hash": ""
   },
   "tests/Stubs/PrestaShopLogger.php": {
@@ -672,9 +672,9 @@
     "semantic_hash": ""
   },
   "tests/Unit/CustomerViewTest.php": {
-    "mtime": 1793879370.9696941,
-    "seen": 1793879481.1156514,
-    "ast_hash": "5b78c49633e44098bf74843cab4ab69b",
+    "mtime": 1793913303.3265226,
+    "seen": 1793926438.7059238,
+    "ast_hash": "aeeefd84ecf2fbc9bac934abdb224d28",
     "semantic_hash": ""
   },
   "tests/Unit/DataRequestServiceTest.php": {
@@ -756,9 +756,9 @@
     "semantic_hash": ""
   },
   "tests/Unit/UpgradeTest.php": {
-    "mtime": 1793879370.9798703,
-    "seen": 1793879481.115675,
-    "ast_hash": "d690f9e7be43c5de137c3c2af85d3c6a",
+    "mtime": 1793925992.7019527,
+    "seen": 1793926438.7059796,
+    "ast_hash": "ae1f42d34df0cb1fc84d746f8e85dc5e",
     "semantic_hash": ""
   },
   "tests/bootstrap.php": {
@@ -912,15 +912,15 @@
     "semantic_hash": ""
   },
   "tests/Stubs/README.md": {
-    "mtime": 1793894479.8478794,
-    "seen": 1793894526.548372,
-    "ast_hash": "f88c082ccb591e86c5268b2a6ab79a99",
+    "mtime": 1793925992.3464887,
+    "seen": 1793926438.706222,
+    "ast_hash": "d03a16b5299261bbcb50d74a2d0f8457",
     "semantic_hash": ""
   },
   "tests/fixtures/README.md": {
-    "mtime": 1793560801.1303716,
-    "seen": 1793561917.3163981,
-    "ast_hash": "00e28b380f06130edcc16abf1cd582dc",
+    "mtime": 1793925990.9043186,
+    "seen": 1793926438.7062237,
+    "ast_hash": "d1aadda330bfb8c7c3d229a8dd129c2e",
     "semantic_hash": ""
   },
   "tests/smoke/README.md": {
@@ -1122,9 +1122,9 @@
     "semantic_hash": ""
   },
   "classes/IfirmaCustomerContractorService.php": {
-    "mtime": 1793890167.235317,
-    "seen": 1793894526.5480928,
-    "ast_hash": "933ae4ab3df46597c8cec98aacdbd64e",
+    "mtime": 1793913304.1113632,
+    "seen": 1793926438.7057388,
+    "ast_hash": "26552697194ca8f12843870a546065a9",
     "semantic_hash": ""
   },
   "tests/Stubs/Access.php": {
@@ -1314,9 +1314,9 @@
     "semantic_hash": ""
   },
   "openspec/changes/refactor-srp-splits/tasks.md": {
-    "mtime": 1793894501.965891,
-    "seen": 1793894526.5483499,
-    "ast_hash": "25f87c4d2ddeead8311de1ddf9c41f08",
+    "mtime": 1793926425.3101633,
+    "seen": 1793926438.7061925,
+    "ast_hash": "273b1699418ba34d1bedaf864416957e",
     "semantic_hash": ""
   },
   "openspec/changes/archive/2026-11-04-ci-test-builds-and-housekeeping/.openspec.yaml": {
@@ -1434,9 +1434,9 @@
     "semantic_hash": ""
   },
   "tests/Unit/PipelineResultTest.php": {
-    "mtime": 1793879370.9794703,
-    "seen": 1793879481.1156707,
-    "ast_hash": "0c13a17e9eae32fa83d86c9c93e1c72c",
+    "mtime": 1793913304.525323,
+    "seen": 1793926438.7059672,
+    "ast_hash": "5fea44a6afba68a1fa10cee7bc4c8f87",
     "semantic_hash": ""
   },
   "classes/IfirmaContractorResolution.php": {
@@ -1689,6 +1689,432 @@
     "mtime": 1793892299.4366074,
     "seen": 1793894526.5482519,
     "ast_hash": "e3cf9ae94df348c378917b6f4e3e039c",
+    "semantic_hash": ""
+  },
+  "classes/IfirmaCreateResponse.php": {
+    "mtime": 1793925992.0144794,
+    "seen": 1793926438.7057362,
+    "ast_hash": "178acfadb96eadfe03020b9ab5d84831",
+    "semantic_hash": ""
+  },
+  "classes/IfirmaRemoteDocumentCollector.php": {
+    "mtime": 1793913304.1132355,
+    "seen": 1793926438.7057767,
+    "ast_hash": "4ce159d21a15b5a5880abfeaa9f109b0",
+    "semantic_hash": ""
+  },
+  "tests/Support/IfirmaGoldenPayloads.php": {
+    "mtime": 1793925990.900022,
+    "seen": 1793926438.7058754,
+    "ast_hash": "078f1d6fc8725e2d5a9c4843b0dc1206",
+    "semantic_hash": ""
+  },
+  "tests/Unit/CreateReceiptGoldenTest.php": {
+    "mtime": 1793925990.9010224,
+    "seen": 1793926438.705914,
+    "ast_hash": "d95645d7bf43d92bd3ed98387da029a9",
+    "semantic_hash": ""
+  },
+  "tests/Unit/CreateReceiptOutcomeTest.php": {
+    "mtime": 1793925991.6698527,
+    "seen": 1793926438.7059157,
+    "ast_hash": "3d7859e01ba16ac087700c6b290423af",
+    "semantic_hash": ""
+  },
+  "tests/Unit/CustomerRegisterAvailabilityTest.php": {
+    "mtime": 1793913303.3258593,
+    "seen": 1793926438.7059212,
+    "ast_hash": "c127c4e86d64ad705f5f51d20070ed2a",
+    "semantic_hash": ""
+  },
+  "tests/Unit/CustomerRemoteCountTest.php": {
+    "mtime": 1793913303.7140784,
+    "seen": 1793926438.7059224,
+    "ast_hash": "46fe995a136608476cd8e79e5faa25a7",
+    "semantic_hash": ""
+  },
+  "tests/Unit/IfirmaCreateResponseTest.php": {
+    "mtime": 1793925992.0163603,
+    "seen": 1793926438.7059453,
+    "ast_hash": "3feb1a0ac85b1b5c714b9c9bf6af3f47",
+    "semantic_hash": ""
+  },
+  "tests/Unit/IssuancePipelineStepsTest.php": {
+    "mtime": 1793913304.9234047,
+    "seen": 1793926438.7059567,
+    "ast_hash": "ce16d36ae4a061c4817b53aa2c81ea8f",
+    "semantic_hash": ""
+  },
+  "tests/Unit/ModuleCustomerHooksTest.php": {
+    "mtime": 1793913302.9667377,
+    "seen": 1793926438.7059608,
+    "ast_hash": "2a2bf52f64c867df6b299d1b644c1245",
+    "semantic_hash": ""
+  },
+  "tests/Unit/PayloadBuilderGoldenTest.php": {
+    "mtime": 1793925990.9020228,
+    "seen": 1793926438.7059634,
+    "ast_hash": "338493d95253c8d8ad5d2ea87f042d10",
+    "semantic_hash": ""
+  },
+  "tests/Unit/RemoteDocumentCollectorTest.php": {
+    "mtime": 1793913304.1157956,
+    "seen": 1793926438.7059684,
+    "ast_hash": "b02a0a1e6f295d65584d3d4a9ce6874d",
+    "semantic_hash": ""
+  },
+  "tests/Unit/RemoteTallyTest.php": {
+    "mtime": 1793913304.1174018,
+    "seen": 1793926438.7059696,
+    "ast_hash": "9ce5c5cda611fad08e94ad7af4d15322",
+    "semantic_hash": ""
+  },
+  "tests/Unit/SettingsGoldenTest.php": {
+    "mtime": 1793925992.3475015,
+    "seen": 1793926438.705974,
+    "ast_hash": "3a20e69dfcc2aaf68eacedc03821de99",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-business-customer-without-mapping-is-matched-by-nip-search.json": {
+    "mtime": 1793925990.9053183,
+    "seen": 1793926438.705985,
+    "ast_hash": "4adcf1eab92a901f8740930daa25ea47",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-changed-address-updates-contractor-first.json": {
+    "mtime": 1793925990.9068203,
+    "seen": 1793926438.705986,
+    "ast_hash": "9d08b1e2c13dfa729f698512fe2f0111",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-contractor-country-name-falls-back-to-iso.json": {
+    "mtime": 1793925990.9078226,
+    "seen": 1793926438.705987,
+    "ast_hash": "a731fb2bac9b14b68ce0426b218b60d5",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-contractor-lookup-failure-falls-back-to-null-identifier.json": {
+    "mtime": 1793925990.9088223,
+    "seen": 1793926438.7059884,
+    "ast_hash": "e71d42ec86dc80cd5a6073656ffc5a2c",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-contractor-payload-carries-country-name-and-code.json": {
+    "mtime": 1793925990.9088223,
+    "seen": 1793926438.7059894,
+    "ast_hash": "068f1acdbd9dfb640d517758318d94a2",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-created-contractor-is-stored-as-the-module-link.json": {
+    "mtime": 1793925990.909824,
+    "seen": 1793926438.7059903,
+    "ast_hash": "1d35ceed8dddab79295050217ead6624",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-existing-unchanged-contractor-is-kept.json": {
+    "mtime": 1793925990.9113278,
+    "seen": 1793926438.7059917,
+    "ast_hash": "f609e1c52698d3aaab91095f9ef45bf9",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-kod200-with-dodatkowe-uwagi-retries-once-without-it.json": {
+    "mtime": 1793925990.9123323,
+    "seen": 1793926438.7059927,
+    "ast_hash": "f1c34d12816ee719d43364583906a81e",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-kod200-without-dodatkowe-uwagi-is-an-error.json": {
+    "mtime": 1793925990.9123323,
+    "seen": 1793926438.7059937,
+    "ast_hash": "33352c1ef9a568150616dc765c5384be",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-mapped-customer-uses-the-mapped-identifier-without-searching.json": {
+    "mtime": 1793925990.9133322,
+    "seen": 1793926438.7059948,
+    "ast_hash": "f94f268c552b20e503aa030b2e90caaa",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-missing-contractor-kod-is-not-retried-when-identifier-already-null.json": {
+    "mtime": 1793925990.914332,
+    "seen": 1793926438.7059958,
+    "ast_hash": "5a8df04e04b0bc27c7e08b070f3fe0d0",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-missing-contractor-kod-retries-once-with-null-identifier.json": {
+    "mtime": 1793925990.9153342,
+    "seen": 1793926438.705997,
+    "ast_hash": "c59b4c746615ace1333d7ef8b0fbeb69",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-new-contractor-is-created-before-the-document.json": {
+    "mtime": 1793925990.9163816,
+    "seen": 1793926438.7059982,
+    "ast_hash": "b74993e1b726973a751783e6c45ec29b",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-no-answer-after-the-request-was-sent-is-unknown.json": {
+    "mtime": 1793925990.917886,
+    "seen": 1793926438.7059991,
+    "ast_hash": "7b22d592868a8c42960219be103f2a3e",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-numer-names-the-document-when-pelny-numer-is-missing.json": {
+    "mtime": 1793925990.917886,
+    "seen": 1793926438.7060003,
+    "ast_hash": "21f0f3ab326e13002a57df5e2dbf6638",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-rejection-records-the-informacja-in-one-write.json": {
+    "mtime": 1793925990.9204023,
+    "seen": 1793926438.7060015,
+    "ast_hash": "7d5861ea4f6f05b7d087e3e1e9eca9fc",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-rejection-sets-error-status.json": {
+    "mtime": 1793925990.9229143,
+    "seen": 1793926438.7060025,
+    "ast_hash": "1482f5c61b90f08f6aa3e94e8ef4bd0c",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-rejection-updates-an-existing-unissued-record-in-one-write.json": {
+    "mtime": 1793925990.9249656,
+    "seen": 1793926438.7060037,
+    "ast_hash": "ff5bc583d091270e9809dd9b7360133c",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-rejection-without-informacja-records-the-generic-message.json": {
+    "mtime": 1793925990.9269648,
+    "seen": 1793926438.7060046,
+    "ast_hash": "4bb449ff71db30493fa3df4180ecc4b9",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-request-refused-locally-is-an-error-and-not-unknown.json": {
+    "mtime": 1793925990.9269648,
+    "seen": 1793926438.7060058,
+    "ast_hash": "3264560528a4f1ff14ed3334ebac8833",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-skip-contractor-sync-option-sends-no-reference-and-makes-no-contractor-call.json": {
+    "mtime": 1793925990.9284692,
+    "seen": 1793926438.7060068,
+    "ast_hash": "bdc3fd17a8399e29c9cb26142eea8244",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-skip-option-reaches-request.json": {
+    "mtime": 1793925990.929473,
+    "seen": 1793926438.7060077,
+    "ast_hash": "60f5eb4f88726c6c3b62c205b1b1813d",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-success-stamps-reference.json": {
+    "mtime": 1793925990.9304738,
+    "seen": 1793926438.7060091,
+    "ast_hash": "84bc80b60a3764b8604eaaf068203562",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/create-receipt-sync-disabled-skips-contractor-calls.json": {
+    "mtime": 1793925990.9304738,
+    "seen": 1793926438.70601,
+    "ast_hash": "a9115569dd65dae6ee2766ada2a3471e",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-configured-default-unit-is-sent.json": {
+    "mtime": 1793925990.9319773,
+    "seen": 1793926438.706011,
+    "ast_hash": "1f784be07ce34dd0d106243c38db9d04",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-configured-signature-type-is-normalised.json": {
+    "mtime": 1793925990.9329817,
+    "seen": 1793926438.7060122,
+    "ast_hash": "181632abe3417a38c0d877b533ac23c9",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-diacritics-truncation-counts-characters.json": {
+    "mtime": 1793925990.9334853,
+    "seen": 1793926438.7060132,
+    "ast_hash": "54f78e0d0ec14c9ad4b0162eff9e5f35",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-eight-percent-line-is-percentage-rate.json": {
+    "mtime": 1793925990.93449,
+    "seen": 1793926438.7060142,
+    "ast_hash": "3f8bd11c07272dca526ae9ad4af2ccaa",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-fixed-mode-uses-configured-code.json": {
+    "mtime": 1793925990.93549,
+    "seen": 1793926438.7060153,
+    "ast_hash": "946b67cf6a69bdab5be03f96f3bc5c38",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-guest-customer-same-scheme.json": {
+    "mtime": 1793925990.93549,
+    "seen": 1793926438.7060163,
+    "ast_hash": "0f22f1ac29bc1648846ab99f4d287ba1",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-identifier-capped-at15.json": {
+    "mtime": 1793925990.9364903,
+    "seen": 1793926438.7060173,
+    "ast_hash": "353584ad9d975a3a04905517a6a4f9cd",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-identifier-scheme.json": {
+    "mtime": 1793925990.93749,
+    "seen": 1793926438.7060182,
+    "ast_hash": "f9a15fc3cd7b58807ef8d9e3ee2fbdb6",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-long-names-truncated.json": {
+    "mtime": 1793925990.9386182,
+    "seen": 1793926438.7060194,
+    "ast_hash": "4008f2b85d8c4d51fcdf6c5aa85ba654",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-no-override-uses-invoice-address.company.json": {
+    "mtime": 1793925990.939618,
+    "seen": 1793926438.7060204,
+    "ast_hash": "a683b30425a8556a2bc0e603678e4975",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-no-override-uses-invoice-address.private.json": {
+    "mtime": 1793925990.939618,
+    "seen": 1793926438.7060213,
+    "ast_hash": "a6b13e4479c1f47f8dc0ddfd2e32309a",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-order-product-lines-carry-truncated-name-and-float-quantity.json": {
+    "mtime": 1793925990.9406183,
+    "seen": 1793926438.7060225,
+    "ast_hash": "afde648966d34852a43a505a05723a8d",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-order-reference-stamping.json": {
+    "mtime": 1793925990.9416184,
+    "seen": 1793926438.7060235,
+    "ast_hash": "4c88c8b278e1a3f208cbb23708ae3a72",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-order-sale-date-is-the-order-date.dated.json": {
+    "mtime": 1793925990.9425397,
+    "seen": 1793926438.7060246,
+    "ast_hash": "d59ab8a764fd200b37b535751f7d3e5a",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-order-sale-date-is-the-order-date.undated.json": {
+    "mtime": 1793925990.9435444,
+    "seen": 1793926438.7060258,
+    "ast_hash": "7ba78d7e7951ad23780d027bbd4d8382",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-override-company.json": {
+    "mtime": 1793925990.944549,
+    "seen": 1793926438.706027,
+    "ast_hash": "90269ea5fde9871b3c67acdfeb97ab56",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-override-private.json": {
+    "mtime": 1793925990.944549,
+    "seen": 1793926438.7060277,
+    "ast_hash": "bf37ca79f228c8f931341861c83a0870",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-paid-amount-is-the-order-total-when-marked-paid-on-create.json": {
+    "mtime": 1793925990.944549,
+    "seen": 1793926438.706029,
+    "ast_hash": "dbe797a6978a600eaf63ac77b7460474",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-paid-amount-is-what-the-customer-has-paid-otherwise.json": {
+    "mtime": 1793925990.9460533,
+    "seen": 1793926438.7060301,
+    "ast_hash": "2f4e856116efb7f3e5b5a50521b6031a",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-payment-method-follows-order-module.json": {
+    "mtime": 1793925990.9470582,
+    "seen": 1793926438.706031,
+    "ast_hash": "026d36828bcf822b30f06b50eebe92c7",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-rate-off-the-documented-ones-is-sent-unchanged.json": {
+    "mtime": 1793925990.9480574,
+    "seen": 1793926438.706032,
+    "ast_hash": "812808b4787f96c271bd017f6b712c04",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-rates-derived-from-the-prices-snap-to-the-documented-ones.json": {
+    "mtime": 1793925990.9492948,
+    "seen": 1793926438.7060332,
+    "ast_hash": "097c7a5aeee2c004d48e52720ae18ba8",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-removed-brk-value-falls-back-to-bpo.json": {
+    "mtime": 1793925990.9502945,
+    "seen": 1793926438.7060456,
+    "ast_hash": "9963a926e5113909c4f22d33a81adac7",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-shipping-vat-and-licz-od.json": {
+    "mtime": 1793925990.950797,
+    "seen": 1793926438.706047,
+    "ast_hash": "6dd22a6b8fd27030ee27ed4fd9e5c016",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-shipping-with-zero-tax-is-percentage-rate.json": {
+    "mtime": 1793925990.9518,
+    "seen": 1793926438.706048,
+    "ast_hash": "42ae1092f2b4a270c415cb0010619545",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-signature-type-defaults-to-bpo.json": {
+    "mtime": 1793925990.9528003,
+    "seen": 1793926438.706049,
+    "ast_hash": "84977cf9ed1b0ce545ad102329cab61d",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-skip-dodatkowe-uwagi.json": {
+    "mtime": 1793925990.9538007,
+    "seen": 1793926438.7060502,
+    "ast_hash": "aeb431ba17cb74f9776e3dcfa56dc350",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-slashes-in-the-street-and-the-product-name-are-sent-unescaped.json": {
+    "mtime": 1793925990.9548006,
+    "seen": 1793926438.706051,
+    "ast_hash": "7f43f35b50cd8dc5c08d60e55f3f16aa",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-stored-line-rate-beats-rounding-noise.json": {
+    "mtime": 1793925990.955657,
+    "seen": 1793926438.706052,
+    "ast_hash": "2e1d6e0355a206431501a42477d0fc4e",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-stored-paragon-setting-reads-as-fakturakraj.json": {
+    "mtime": 1793925990.95666,
+    "seen": 1793926438.706053,
+    "ast_hash": "78096a0c989beaab1fd7bc9a40667ce7",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-within-limit-unchanged.json": {
+    "mtime": 1793925990.9576647,
+    "seen": 1793926438.7060542,
+    "ast_hash": "f141d6180864c965dc0b6ea12a2d6d09",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/payloads/payload-builder-zero-percent-line-is-percentage-rate.json": {
+    "mtime": 1793925990.9591684,
+    "seen": 1793926438.7060552,
+    "ast_hash": "1115898d47e3f273ddd118bb8c89dc66",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/settings/golden.json": {
+    "mtime": 1793925992.3475015,
+    "seen": 1793926438.706056,
+    "ast_hash": "aeb6fd736de6ed29881b6eb0aaf0fa02",
     "semantic_hash": ""
   }
 }

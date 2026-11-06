@@ -37,7 +37,16 @@ Like `refactor-clean-code-tda`, the change lands straight on master: one commit 
   - Review follow-up `30a2355`:
     - The profile test no longer loads the profile class itself, so the suite now fails if the service loses its `require_once` line.
     - `customerNip()`'s customer argument is pinned.
-- [ ] 1.3 Move the register-availability decision from `ifirma.php::hookDisplayAdminCustomers` into `IfirmaCustomerContractorService::registerAvailability($idCustomer)`, and the order-detail options assembly into `IfirmaCustomerView`. Verify that the ModuleHooksTest panel and order-detail tests are green and diff-cover is at 100%.
+- [x] 1.3 Move the register-availability decision from `ifirma.php::hookDisplayAdminCustomers` into `IfirmaCustomerContractorService::registerAvailability($idCustomer)`, and the order-detail options assembly into `IfirmaCustomerView`. Verify that the ModuleHooksTest panel and order-detail tests are green and diff-cover is at 100%.
+
+  Evidence:
+  - Characterisation `1d02a68` and `9de3b31` pin `can_register` and `register_reason` for a switched-off registration, a customer without orders and an available one, every order-detail option, and a language with an empty state name.
+  - Refactor `2c9d23a`:
+    - `IfirmaCustomerContractorService::registerAvailability()` (11 lines) returns a reason code. `ifirma.php` maps that code to its two `l()` literals, which stay in the module file.
+    - `IfirmaCustomerView::orderOptions()` (12 lines) reads the configuration and names the trigger state in the shop's language. It goes through `Context::getContext()` because PrestaShop's `Module::$context` is protected. `Ifirma::orderStateName()` is gone.
+  - A differential run compared old and new over 194,040 option combinations and 576 register cases: no difference. 51 of 52 mutants are killed; the survivor drops a redundant cast.
+  - Gate against `d708c46`: `OK (2296 tests)`, 27 changed lines, 100%.
+
 - [x] 1.4 Add `IfirmaDataRequestService::defaultsFromAddress(Address)` and `collectInput()`, with unit tests. Make `controllers/front/datarequest.php` use them, and cache the service locally. Verify that DataRequestServiceTest is green and diff-cover is at 100% on the service.
 
   `collectInput()` takes no argument, although the plan wrote `collectInput(array)`. It reads every field of `fields()` through `Tools::getValue()`, which sanitises each value; the raw request array would not.
@@ -84,7 +93,17 @@ Like `refactor-clean-code-tda`, the change lands straight on master: one commit 
 
 ## 3. Pure cores for counting and import
 
-- [ ] 3.1 Extract `IfirmaRemoteDocumentCollector` and a pure `tally()` from `remoteCount`, and add direct tally tests (empty, mixed types, filter fallback). Verify that the ~10 `remoteCount` tests are green, unchanged, and diff-cover is at 100%.
+- [x] 3.1 Extract `IfirmaRemoteDocumentCollector` and a pure `tally()` from `remoteCount`, and add direct tally tests (empty, mixed types, filter fallback). Verify that the ~10 `remoteCount` tests are green, unchanged, and diff-cover is at 100%.
+
+  Evidence:
+  - Characterisation `7ab3482`, then refactor `8ec1c5a`:
+    - `IfirmaRemoteDocumentCollector` makes every API call: the date windows, the paging and the call budget. It returns the documents with their coverage.
+    - The pure static `tally()` (26 lines) counts them.
+    - `remoteCount()` shrank from about 125 lines to 24.
+    - The `REMOTE_*` constants moved to the collector, as `CALL_BUDGET`, `PAGE_SIZE`, `MAX_YEARS` and `WINDOW_DAYS`, with the same values.
+  - The existing remoteCount tests are unchanged and green. The reviewer's seeded comparison of old and new over 3000 scenarios found no difference.
+  - Gate against `2c9d23a`: `OK (2456 tests)`, 113 changed lines, 100%.
+
 - [x] 3.2 Extract the `CustomerIndex` loader and a pure matcher from `IfirmaContractorImport::match`, and add matcher tests that need no Db stub. Verify that ContractorImportTest (22) is green, the import report output equals the golden output for the existing fixtures, and diff-cover is at 100%.
 
   Evidence:
@@ -118,19 +137,54 @@ Like `refactor-clean-code-tda`, the change lands straight on master: one commit 
 
 ## 5. Receipt creation
 
-- [ ] 5.1 Add golden payload tests: capture the encoded request payloads for every CreateReceiptTest and PayloadBuilderTest scenario on unchanged code, and store them as fixtures under `tests/fixtures/payloads/`. Verify that they pass on unchanged code.
-- [ ] 5.2 Split `createReceipt` into `postWithRetries()` (returns the response and the final payload) and `parseCreateResponse()` (returns a small value object), then apply. Verify that the golden payloads are equal, CreateReceiptTest is green, `createReceipt` is 40 lines or fewer, and diff-cover is at 100%.
+- [x] 5.1 Add golden payload tests: capture the encoded request payloads for every CreateReceiptTest and PayloadBuilderTest scenario on unchanged code, and store them as fixtures under `tests/fixtures/payloads/`. Verify that they pass on unchanged code.
+
+  Evidence: commit `bf196d8`, passing on unchanged code:
+  - 56 fixtures under `tests/fixtures/payloads/` hold the encoded request bodies of every CreateReceiptTest and PayloadBuilderTest scenario.
+  - CreateReceiptGoldenTest and PayloadBuilderGoldenTest compare each scenario with its fixture, through the `IfirmaGoldenPayloads` helper.
+  - Gate against `a916d1c`: `OK (2665 tests)`.
+
+- [x] 5.2 Split `createReceipt` into `postWithRetries()` (returns the response and the final payload) and `parseCreateResponse()` (returns a small value object), then apply. Verify that the golden payloads are equal, CreateReceiptTest is green, `createReceipt` is 40 lines or fewer, and diff-cover is at 100%.
+
+  Evidence:
+  - Characterisation `8f72950` and `2c9a01c` pin the receipt-creation outcomes and the reason of a rejection.
+  - Refactor `87d3fd1`:
+    - `postWithRetries()` (38 lines) posts the document with the contractor and DodatkoweUwagi retries, and returns the response and the final payload.
+    - `parseCreateResponse()` (18 lines) returns the new value object `IfirmaCreateResponse`.
+    - `createReceipt()` applies them in 40 lines.
+  - The golden payloads are equal, and CreateReceiptTest is unchanged and green. The review approved it.
+  - Gate against `bf196d8`: `OK (2714 tests)`, 41 changed lines, 100%.
+
 - [ ] 5.3 Extract `IfirmaPayloadBuilder` and `IfirmaDocumentSettings` (design D3), with temporary delegating static wrappers on ReceiptService. Retarget PayloadBuilderTest to the new class, keeping the assertions verbatim. Register the new files in the module loader. Verify that the golden payloads are equal, the suite is green, and diff-cover is at 100%.
 - [ ] 5.4 Point the DuplicateGuard, DeliveryService and other static callers at the new classes, then remove the wrappers. Verify that `git grep -n "IfirmaReceiptService::\(truncate\|buildOrderReference\|normalize\)"` is empty and the suite is green.
 
 ## 6. Issuance pipeline
 
-- [ ] 6.1 Add intent methods `markIssued`, `markAdopted`, `stopAt` and `alreadyIssued` to `IfirmaPipelineResult`, with unit tests. Verify that they pass.
-- [ ] 6.2 Split `IfirmaIssuancePipeline::execute` into the step methods `stepHold`, `stepGuard`, `stepCreate`, `stepNumber`, `stepKsef` and `stepDeliver`, which return a stop or null (design D2). Remove the outcome switch and the `$adopted` flag. Verify that IssuancePipelineTest (40) is green, unchanged, step names and messages are identical, `execute` is 40 lines or fewer, and diff-cover is at 100%.
+- [x] 6.1 Add intent methods `markIssued`, `markAdopted`, `stopAt` and `alreadyIssued` to `IfirmaPipelineResult`, with unit tests. Verify that they pass.
+
+  Evidence: refactor `11de148` adds `markIssued()`, `markAdopted()`, `alreadyIssued()` and `stopAt()`, plus `stopStep()` for a step that names where a run stopped without changing its outcome, each with unit tests. Gate against `8ec1c5a`: 16 changed lines, 100%.
+
+- [x] 6.2 Split `IfirmaIssuancePipeline::execute` into the step methods `stepHold`, `stepGuard`, `stepCreate`, `stepNumber`, `stepKsef` and `stepDeliver`, which return a stop or null (design D2). Remove the outcome switch and the `$adopted` flag. Verify that IssuancePipelineTest (40) is green, unchanged, step names and messages are identical, `execute` is 40 lines or fewer, and diff-cover is at 100%.
+
+  Evidence:
+  - Characterisation `478eb8a`: 133 cases pin `ok`, `outcome`, `stoppedAt`, `message` and the step log of every outcome.
+  - Refactor `a916d1c`: `execute()` is 17 lines, and the outcome switch and the `$adopted` flag are gone.
+    - `stepHold`, `stepGuard` and `stepCreate` follow D2's `if ($stop = ...) { return $stop; }`.
+    - `stepNumber`, `stepKsef` and `stepDeliver` are plain calls, because they never end a run: a failed KSeF send or delivery is logged, not terminal. A `return $stop` after them would be dead code that the 100% gate cannot cover.
+    - Two direct writes remain on the result, because none of the four intents can express them without changing the step log: the KSeF error suffix on the message, and `fail()`.
+  - IssuancePipelineTest has 63 methods (68 cases), not the 40 the plan counted. It is unchanged and green.
+  - Gate against `11de148`: `OK (2609 tests)`, 107 changed lines, 100%.
+
 
 ## 7. Module class extractions
 
-- [ ] 7.1 Add a golden test of the full Configuration write set from `postProcessConfiguration` for one fully valid input and one input per validation error. Verify that it passes on unchanged code.
+- [x] 7.1 Add a golden test of the full Configuration write set from `postProcessConfiguration` for one fully valid input and one input per validation error. Verify that it passes on unchanged code.
+
+  Evidence: commit `b91c90c`, passing on unchanged code:
+  - SettingsGoldenTest compares the full, ordered Configuration write set and the page's messages of 53 scenarios with `tests/fixtures/settings/golden.json`. The scenarios are one fully valid save and one input per validation branch.
+  - The Configuration stub now also records the order of its writes.
+  - Gate against `87d3fd1`: `OK (2771 tests)`.
+
 - [ ] 7.2 Introduce the `IfirmaSettings` table plus `fromInput()` (design D5), and make `postProcessConfiguration` loop over it. Error-message literals stay in `ifirma.php`. Verify that the golden write set is equal, the ModuleHooksTest `getContent` tests and TranslationCoverageTest are green, and diff-cover is at 100%.
 - [ ] 7.3 Add a golden test of the full Smarty assignment array from `renderAdminOrderPanel` for the existing ModuleHooksTest admin-panel fixtures. Verify that it passes on unchanged code.
 - [ ] 7.4 Extract `IfirmaAdminOrderPanelView` and `IfirmaAdminPanelPresenter`. Move the request-payload digging into `IfirmaReceipt::sentPaymentMethod()` / `contractorNote()` and the `canCreate()` / `canIssueAnyway()` decisions onto the receipt. Verify that the Smarty array is equal to golden, TranslationCoverageTest is green, `ifirma.php` loses those helpers, and diff-cover is at 100%.
@@ -141,7 +195,13 @@ Like `refactor-clean-code-tda`, the change lands straight on master: one commit 
 
 ## 9. Runtime schema checks (gated)
 
-- [ ] 9.1 Extend UpgradeTest to prove that fresh install, upgrade 1.1.0 to 1.2.0, and an install that predates the contractor map table all end with the contractor map table (identifier length 64) and the KSeF receipt columns. Verify that it is green.
+- [x] 9.1 Extend UpgradeTest to prove that fresh install, upgrade 1.1.0 to 1.2.0, and an install that predates the contractor map table all end with the contractor map table (identifier length 64) and the KSeF receipt columns. Verify that it is green.
+
+  Evidence: commit `9f7c529`. Each path is checked without the runtime checks doing the work.
+  - Proven: a fresh install, and 1.0.x to 1.1.0 to 1.2.0. Both end with the contractor map table (identifier VARCHAR(64)) and the four KSeF receipt columns.
+  - Not proven: 1.1.0 to 1.2.0, and an install that predates the contractor map table. Development builds recorded as 1.1.0, made between 2026-11-02 and 2026-11-04 (before `882f929` and `4452d02`), lack the KSeF columns or the map table, and `upgrade-1.2.0.php` does not create them. Only the owner knows whether any shop ran such a build.
+  - Gate against `b91c90c`: `OK (2786 tests)`.
+
 - [ ] 9.2 If 9.1 proves every path, remove the runtime `ensure*()` calls from IfirmaContractorMap, IfirmaIssuancePipeline and IfirmaKsefService. Otherwise replace them with one cached check per request at the entry points, and record which path failed in this task's notes. Verify that the suite is green and diff-cover is at 100%.
 
 ## 10. Integration check
@@ -155,6 +215,11 @@ Like `refactor-clean-code-tda`, the change lands straight on master: one commit 
   - Gate over the whole wave against `3f6dfd2`: `OK (2203 tests, 8334 assertions)`, 372 changed lines, 100%. The PHP 7.2 lint passes on 17 files, and the licence check on 167.
   - End-to-end smoke on the test-stack shop: 90 passed and 1 skipped. All 91 check lines are identical to the run before this change.
   - The PDF download check passes for the front office and the back office.
+- Wave 2 and the first half of wave 3 are on master: tasks 1.3, 3.1, 5.1, 5.2, 6.1, 6.2, 7.1 and 9.1.
+  - Gate over the range against `d708c46`: `OK (2786 tests, 10860 assertions)`, 304 changed lines, 100%. The PHP 7.2 lint passes on 8 files, and the licence check on 181.
+  - End-to-end smoke: 90 passed and 1 skipped, and all 91 check lines are identical to the run before this change.
+  - The PDF download check passes for the front office and the back office.
+  - On 2026-11-05 the account's usage limit stopped the agents twice. The work was resumed from the worktrees, and every killed worker's leftovers were treated as an unverified draft. One stopped worker had left a mutated production line behind, uncommitted; it was restored before anything was integrated.
 
 ## Workflow follow-up
 
