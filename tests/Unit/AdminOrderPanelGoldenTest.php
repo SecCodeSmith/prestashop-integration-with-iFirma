@@ -411,33 +411,36 @@ class AdminOrderPanelGoldenTest extends TestCase
         }
     }
 
+    /**
+     * The panel tests are read from the source of ModuleHooksTest, minus the exempt ones, which are
+     * listed with the reason each has no golden scenario.
+     */
     public function testTheGoldenCoversEveryAdminPanelFixtureOfModuleHooksTest()
     {
+        $exempt = array(
+            'testAdminPanelRendersOncePerRequest' => 'renders twice to check the render guard, assigns no fixture',
+            'testAdminPanelTemplateShowsTheLinkedContractorRow' => 'reads the template file, renders nothing',
+        );
         $covered = array();
         foreach ($this->scenarios() as $case) {
             $covered = array_merge($covered, $case[1]);
         }
         $source = file_get_contents(__DIR__ . '/ModuleHooksTest.php');
+        preg_match_all('/public function (testAdminPanel\w*)\(/', $source, $matches);
+        $tests = $matches[1];
 
-        foreach (array(
-            'testAdminPanelForSuspectedReceipt',
-            'testAdminPanelForIssuedReceipt',
-            'testAdminPanelAssignsTheKsefText',
-            'testAdminPanelKsefTextForAPrivateBuyer',
-            'testAdminPanelStateDerivation',
-            'testAdminPanelWithoutReceiptOffersCreate',
-            'testAdminPanelHeldWithPendingRequest',
-            'testAdminPanelAssignsTheLinkedContractor',
-            'testAdminPanelHasNoLinkedContractorForAnUnmappedCustomer',
-            'testAdminPanelShowsTheReadbackFailureNoteOnceAndTheEmptySearch',
-            'testAdminPanelShowsTheAmbiguousAndFailedSearchWords',
-            'testAdminPanelShowsTheAssignedIdentifierOfACreatedContractor',
-            'testAdminPanelShowsTheOtherFallbackNotes',
-            'testAdminPanelKeepsTheRawMessageForALegacyFallbackRecord',
-            'testAdminPanelAppendsTheAttachedContractorAfterTheFallbackNote',
-        ) as $test) {
-            $this->assertContains($test, $covered, $test . ' has no scenario');
-            $this->assertStringContainsString('function ' . $test . '()', $source, $test . ' is not a test of ModuleHooksTest any more');
+        $this->assertNotEmpty($tests);
+        foreach ($tests as $test) {
+            if (!isset($exempt[$test])) {
+                $this->assertContains($test, $covered, $test . ' has no scenario: add one, or list it as exempt with its reason');
+            }
+        }
+        foreach (array_keys($exempt) as $test) {
+            $this->assertContains($test, $tests, $test . ' is exempt but is not a testAdminPanel test of ModuleHooksTest any more');
+            $this->assertNotContains($test, $covered, $test . ' is exempt and also has a scenario: drop one of the two');
+        }
+        foreach ($covered as $test) {
+            $this->assertContains($test, $tests, $test . ' is covered but is not a testAdminPanel test of ModuleHooksTest any more');
         }
     }
 
