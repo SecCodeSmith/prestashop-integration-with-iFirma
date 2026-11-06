@@ -257,9 +257,9 @@ Like `refactor-clean-code-tda`, the change lands straight on master: one commit 
   - Not proven: 1.1.0 to 1.2.0, and an install that predates the contractor map table. Development builds recorded as 1.1.0, made between 2026-11-02 and 2026-11-04 (before `882f929` and `4452d02`), lack the KSeF columns or the map table, and `upgrade-1.2.0.php` does not create them. Only the owner knows whether any shop ran such a build.
   - Gate against `b91c90c`: `OK (2786 tests)`.
 
-- [ ] 9.2 If 9.1 proves every path, remove the runtime `ensure*()` calls from IfirmaContractorMap, IfirmaIssuancePipeline and IfirmaKsefService. Otherwise replace them with one cached check per request at the entry points, and record which path failed in this task's notes. Verify that the suite is green and diff-cover is at 100%.
+- [x] 9.2 If 9.1 proves every path, remove the runtime `ensure*()` calls from IfirmaContractorMap, IfirmaIssuancePipeline and IfirmaKsefService. Otherwise replace them with one cached check per request at the entry points, and record which path failed in this task's notes. Verify that the suite is green and diff-cover is at 100%.
 
-  Status, not ticked yet because it needs the owner's confirmation:
+  Closed on 2026-11-06 by the owner's decision: keep the cached checks in the model methods. The reasoning:
   - 9.1 could not prove two paths: 1.1.0 to 1.2.0, and an install that predates the contractor map table. So the runtime checks stay, as D7 requires.
   - They are already one check per request. `IfirmaSchema` caches each one in a static flag (`$contractorMapEnsured`, `$receiptKsefEnsured`), so after the first call a model method only reads a boolean. `ContractorMapTest::testTableIsCreatedLazilyExactlyOnce` and `SchemaTest::testEnsureReceiptKsefColumnsAddsBothColumnsOnce` pin this.
   - Proposed: keep the calls in the model methods instead of moving them to entry points.
