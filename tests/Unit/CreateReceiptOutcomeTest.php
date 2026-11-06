@@ -671,6 +671,22 @@ class CreateReceiptOutcomeTest extends TestCase
         $this->assertNull($row['response_payload']);
     }
 
+    public function testKod201NamingDodatkoweUwagiIsNotRetriedWhenTheObjectIsSkipped()
+    {
+        $this->answerDocument('{"response":{"Kod":201,"Informacja":"Pole DodatkoweUwagi jest nieprawidłowe"}}');
+
+        $message = $this->createFailing(array('skip_dodatkowe_uwagi' => true));
+
+        $this->assertSame('iFirma rejected the document: Pole DodatkoweUwagi jest nieprawidłowe', $message);
+        $this->assertSame(array('POST fakturakraj.json'), $this->requests());
+        $docs = $this->docCalls();
+        $this->assertCount(1, $docs);
+        $this->assertArrayNotHasKey('DodatkoweUwagi', json_decode($docs[0]['body'], true));
+        $row = $this->onlyWrite('add')['row'];
+        $this->assertSame('error', $row['status']);
+        $this->assertSame('Pole DodatkoweUwagi jest nieprawidłowe', $row['last_error']);
+    }
+
     // ---- the contractor retry, alone and after the DodatkoweUwagi retry --------------------
 
     public function testTheContractorTheDocumentCarriesIsLearnedAfterTheFallbackRetry()
@@ -703,6 +719,44 @@ class CreateReceiptOutcomeTest extends TestCase
         $this->assertSame('IdentyfikatorKontrahenta: wartość nieprawidłowa', $stored['_contractor']['note']['params']['error']);
         $this->assertSame('AUTO-77', $stored['_contractor']['document_identifier']);
         $this->assertArrayNotHasKey('IdentyfikatorKontrahenta', $stored);
+        $docs = $this->docCalls();
+        $this->assertCount(2, $docs);
+        $last = end($docs);
+        unset($stored['_contractor']);
+        $this->assertSame(json_decode($last['body'], true), $stored);
+    }
+
+    public function testFallbackAnswerWithoutANumberIsLookedUpBeforeTheContractorIsLearned()
+    {
+        $this->enableSync();
+        $this->t->queue('GET', '#kontrahenci/id/PS-C5\.json#', $this->foundContractor('PS-C5'));
+        $this->answerDocument('{"response":{"Kod":201,"Informacja":"IdentyfikatorKontrahenta: wartość nieprawidłowa"}}');
+        $this->answerDocument('{"response":{"Kod":0,"Informacja":"ok","Identyfikator":"555"}}');
+        $this->t->queue('GET', '#faktury\.json#', array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array(
+            array('FakturaId' => 555, 'PelnyNumer' => '555/2026'),
+        ))))));
+        $this->t->queue('GET', '#fakturakraj/555\.json#', array('body' => json_encode(array('response' => array(
+            'Kod' => 0,
+            'Identyfikator' => 555,
+            'Kontrahent' => array('Nazwa' => 'Jan K', 'Identyfikator' => 'AUTO-77'),
+        )))));
+
+        $this->create();
+
+        $requests = $this->requests();
+        $this->assertCount(5, $requests);
+        $this->assertSame('GET kontrahenci/id/PS-C5.json', $requests[0]);
+        $this->assertSame('POST fakturakraj.json', $requests[1]);
+        $this->assertSame('POST fakturakraj.json', $requests[2]);
+        $matches = array();
+        $this->assertSame(1, preg_match('/^GET faktury\.json\?dataOd=([0-9-]+)&dataDo=([0-9-]+)&iloscNaStronie=100$/', $requests[3], $matches));
+        $this->assertSame($matches[1], $matches[2]);
+        $this->assertContains($matches[1], $this->days);
+        $this->assertSame('GET fakturakraj/555.json', $requests[4]);
+        $row = $this->onlyWrite('add')['row'];
+        $this->assertSame('created', $row['status']);
+        $this->assertSame('555', $row['ifirma_id']);
+        $this->assertSame('555/2026', $row['ifirma_number']);
     }
 
     public function testBothRetriesRunInOrderAndTheSecondOneBuildsOnTheFirst()
