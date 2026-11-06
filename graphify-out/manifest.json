@@ -60,9 +60,9 @@
     "semantic_hash": ""
   },
   "ifirma.php": {
-    "mtime": 1793980932.8431706,
-    "seen": 1793982077.4648457,
-    "ast_hash": "81c81d4e63efbacd3aa5f6fd2ea49e37",
+    "mtime": 1793984791.7342763,
+    "seen": 1793984991.8936162,
+    "ast_hash": "9c227d7cee0c4ab97c1abacce55b8e84",
     "semantic_hash": ""
   },
   "index.php": {
@@ -258,9 +258,9 @@
     "semantic_hash": "67d88e9d0760c3ba54c75dfd9551c1c5"
   },
   "README.md": {
-    "mtime": 1793937029.60278,
-    "seen": 1793937209.8288627,
-    "ast_hash": "927786d77ae23b7a961bcdfca2aa1879",
+    "mtime": 1793984102.338166,
+    "seen": 1793984991.8941329,
+    "ast_hash": "2dc14e21450f54a6d948f950aee4e5e1",
     "semantic_hash": ""
   },
   "openspec/config.yaml": {
@@ -720,9 +720,9 @@
     "semantic_hash": ""
   },
   "tests/Unit/ModuleHooksTest.php": {
-    "mtime": 1793932179.4612474,
-    "seen": 1793937209.8287096,
-    "ast_hash": "65329479564dd1e4aede1c64bd6cdfc4",
+    "mtime": 1793984792.2587616,
+    "seen": 1793984991.8937366,
+    "ast_hash": "0f7136d35af92bc73699ee1c516575d2",
     "semantic_hash": ""
   },
   "tests/Unit/PayloadBuilderTest.php": {
@@ -756,15 +756,15 @@
     "semantic_hash": ""
   },
   "tests/Unit/UpgradeTest.php": {
-    "mtime": 1793937007.602424,
-    "seen": 1793937209.8287303,
-    "ast_hash": "29fb8c4aa6db027ec21636a5dbc0a371",
+    "mtime": 1793983785.0517688,
+    "seen": 1793984991.8937523,
+    "ast_hash": "ab20dd151607aeba648b0768c581b437",
     "semantic_hash": ""
   },
   "tests/bootstrap.php": {
-    "mtime": 1793879370.9798703,
-    "seen": 1793879481.1156757,
-    "ast_hash": "8c8bb3cdd9ebf0a0802ff82adb3944e6",
+    "mtime": 1793983804.7187064,
+    "seen": 1793984991.893753,
+    "ast_hash": "d6fb8be87bb6f5a8ac111efdfc9b233a",
     "semantic_hash": ""
   },
   "tests/fixtures/detail-response.json": {
@@ -792,9 +792,9 @@
     "semantic_hash": ""
   },
   "translations/pl.php": {
-    "mtime": 1793812632.4371998,
-    "seen": 1793812916.0659003,
-    "ast_hash": "bdd759ef1cefbf18bea3afcfff434e24",
+    "mtime": 1793984106.807137,
+    "seen": 1793984991.8938165,
+    "ast_hash": "0c2e68d4e72ba9093c61bf390a9537db",
     "semantic_hash": ""
   },
   "upgrade/index.php": {
@@ -912,9 +912,9 @@
     "semantic_hash": ""
   },
   "tests/Stubs/README.md": {
-    "mtime": 1793938611.5622704,
-    "seen": 1793938806.636536,
-    "ast_hash": "d67059f6255077c5a65c41ba9a423425",
+    "mtime": 1793984482.151474,
+    "seen": 1793984991.8942173,
+    "ast_hash": "3ba496f20224b6865fea0749e302a358",
     "semantic_hash": ""
   },
   "tests/fixtures/README.md": {
@@ -924,9 +924,9 @@
     "semantic_hash": ""
   },
   "tests/smoke/README.md": {
-    "mtime": 1793981708.862205,
-    "seen": 1793982077.4654877,
-    "ast_hash": "b61b1b4d91b974c815f5e6d5532c6e57",
+    "mtime": 1793984632.305804,
+    "seen": 1793984991.894219,
+    "ast_hash": "59cd86a23dacc63cade6f1e186168a2f",
     "semantic_hash": ""
   },
   "tests/smoke/upgrade-phase1.php": {
@@ -1674,9 +1674,9 @@
     "semantic_hash": ""
   },
   "tests/Unit/ModuleCustomerHooksTest.php": {
-    "mtime": 1793928276.1989017,
-    "seen": 1793937209.8287084,
-    "ast_hash": "6e6715750bcae53f71c05f3e664435c6",
+    "mtime": 1793983788.658661,
+    "seen": 1793984991.893736,
+    "ast_hash": "54ab020b444b85d9f41eeede35aeac01",
     "semantic_hash": ""
   },
   "tests/Unit/PayloadBuilderGoldenTest.php": {
@@ -2303,34 +2303,100 @@
     "ast_hash": "e32d58dcbb4de893d68bd227d71e89e5",
     "semantic_hash": ""
   },
-  "openspec/changes/srp-splits-followups/.openspec.yaml": {
-    "mtime": 1793947149.0860777,
-    "seen": 1793982077.465392,
-    "ast_hash": "cb41634e0c4b0aade2819858a9c9676e",
-    "semantic_hash": ""
-  },
-  "openspec/changes/srp-splits-followups/design.md": {
-    "mtime": 1793947831.0662105,
-    "seen": 1793982077.4653933,
-    "ast_hash": "dbace20f8036e0af649650dda6a3a610",
-    "semantic_hash": ""
-  },
-  "openspec/changes/srp-splits-followups/proposal.md": {
-    "mtime": 1793947791.9335856,
-    "seen": 1793982077.4653947,
-    "ast_hash": "bcb6d47f4e22752daf194a6c07d58f33",
-    "semantic_hash": ""
-  },
-  "openspec/changes/srp-splits-followups/tasks.md": {
-    "mtime": 1793982067.2651646,
-    "seen": 1793982077.465396,
-    "ast_hash": "2bb3e3a7fca71a54252d43c87a3b3e2e",
-    "semantic_hash": ""
-  },
   "test-stack/docker-compose.upgrade-1.0.0.yml": {
     "mtime": 1793981215.6022992,
     "seen": 1793982077.4654202,
     "ast_hash": "d680dbbcfcf2e46cfc5d62ca7bb2ea95",
+    "semantic_hash": ""
+  },
+  "classes/IfirmaOrderGridIndicator.php": {
+    "mtime": 1793983775.9462106,
+    "seen": 1793984991.8935952,
+    "ast_hash": "bfb67c9d5b0e5ed9c325bdd618c943f8",
+    "semantic_hash": ""
+  },
+  "tests/Stubs/GridColumn.php": {
+    "mtime": 1793984482.073752,
+    "seen": 1793984991.8936508,
+    "ast_hash": "d742fe4080602be8113268b69e553779",
+    "semantic_hash": ""
+  },
+  "tests/Unit/OrderGridIndicatorTest.php": {
+    "mtime": 1793983775.9510171,
+    "seen": 1793984991.8937376,
+    "ast_hash": "d717463e88f5b2b01849b96ffa43377e",
+    "semantic_hash": ""
+  },
+  "tests/smoke/order-grid-check.php": {
+    "mtime": 1793984631.9804592,
+    "seen": 1793984991.8938088,
+    "ast_hash": "6eafae331bb9704036ef100eaf2ac1f2",
+    "semantic_hash": ""
+  },
+  "upgrade/upgrade-1.4.0.php": {
+    "mtime": 1793983766.316238,
+    "seen": 1793984991.8938198,
+    "ast_hash": "b10c5972bfbd07aa99a1c3e518425023",
+    "semantic_hash": ""
+  },
+  "openspec/changes/admin-ui-cleanup/.openspec.yaml": {
+    "mtime": 1793983167.734788,
+    "seen": 1793984991.8941472,
+    "ast_hash": "a510889d41a0da0bc16f9dd0a03505b8",
+    "semantic_hash": ""
+  },
+  "openspec/changes/admin-ui-cleanup/design.md": {
+    "mtime": 1793984792.6529903,
+    "seen": 1793984991.894148,
+    "ast_hash": "39cb912205f2fc6cb308710464dc155e",
+    "semantic_hash": ""
+  },
+  "openspec/changes/admin-ui-cleanup/proposal.md": {
+    "mtime": 1793983270.327921,
+    "seen": 1793984991.8941486,
+    "ast_hash": "2d59bf95fb1e33d512466e3c6665c474",
+    "semantic_hash": ""
+  },
+  "openspec/changes/admin-ui-cleanup/specs/customer-contractor-panel/spec.md": {
+    "mtime": 1793983297.1033213,
+    "seen": 1793984991.8941493,
+    "ast_hash": "41280f03b896033d91758481a4481ec3",
+    "semantic_hash": ""
+  },
+  "openspec/changes/admin-ui-cleanup/specs/order-list-receipt-indicator/spec.md": {
+    "mtime": 1793983296.9471192,
+    "seen": 1793984991.8941503,
+    "ast_hash": "102497b87f3b1df916b373a804c39f0b",
+    "semantic_hash": ""
+  },
+  "openspec/changes/admin-ui-cleanup/tasks.md": {
+    "mtime": 1793984923.6485093,
+    "seen": 1793984991.894151,
+    "ast_hash": "cc21bc239f2bec090734dc571254e66e",
+    "semantic_hash": ""
+  },
+  "openspec/changes/archive/2026-11-06-srp-splits-followups/.openspec.yaml": {
+    "mtime": 1793947149.0860777,
+    "seen": 1793984991.894199,
+    "ast_hash": "cb41634e0c4b0aade2819858a9c9676e",
+    "semantic_hash": ""
+  },
+  "openspec/changes/archive/2026-11-06-srp-splits-followups/design.md": {
+    "mtime": 1793947831.0662105,
+    "seen": 1793984991.8941998,
+    "ast_hash": "dbace20f8036e0af649650dda6a3a610",
+    "semantic_hash": ""
+  },
+  "openspec/changes/archive/2026-11-06-srp-splits-followups/proposal.md": {
+    "mtime": 1793947791.9335856,
+    "seen": 1793984991.8942003,
+    "ast_hash": "bcb6d47f4e22752daf194a6c07d58f33",
+    "semantic_hash": ""
+  },
+  "openspec/changes/archive/2026-11-06-srp-splits-followups/tasks.md": {
+    "mtime": 1793982105.1495976,
+    "seen": 1793984991.894201,
+    "ast_hash": "ecad106520ba6f60e0366f717be51830",
     "semantic_hash": ""
   }
 }
