@@ -27,6 +27,12 @@ class AdminActionsTest extends TestCase
         $this->wiringSetUp();
         $this->scriptContractorMapDb();
         $this->actions = new IfirmaAdminActions($this->module);
+        // the edited data of the approve tests names country 14; the request validator needs it active
+        $country = new Country();
+        $country->id = 14;
+        $country->iso_code = 'PL';
+        $country->active = true;
+        Country::register($country);
     }
 
     protected function tearDown(): void

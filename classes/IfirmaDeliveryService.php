@@ -281,11 +281,14 @@ class IfirmaDeliveryService
             : $this->module->l('Receipt', 'ifirmadeliveryservice');
         $subject = $shopName . ': ' . $label . ' ' . ($number !== '' ? $number : $receipt->ifirma_id);
 
+        // Mail::Send() (PrestaShop 8 and 9) puts the values into the HTML and the text template as they are and
+        // escapes only {shop_name} and {color}, so the values a customer controls are escaped here; the text
+        // version shows an entity for the rare quote or ampersand
         $vars = array(
-            '{firstname}' => (string) $customer->firstname,
-            '{lastname}' => (string) $customer->lastname,
+            '{firstname}' => htmlspecialchars((string) $customer->firstname, ENT_QUOTES, 'UTF-8'),
+            '{lastname}' => htmlspecialchars((string) $customer->lastname, ENT_QUOTES, 'UTF-8'),
             '{document_number}' => $number,
-            '{order_reference}' => (string) $order->reference,
+            '{order_reference}' => htmlspecialchars((string) $order->reference, ENT_QUOTES, 'UTF-8'),
             '{shop_name}' => $shopName,
             '{issue_date}' => (string) $receipt->issue_date,
         );
@@ -418,8 +421,11 @@ class IfirmaDeliveryService
             try {
                 return $this->service->fetchPdf($receipt);
             } catch (Exception $e) {
+                // A call the client refused locally (rate guard, credentials cool-down) was never sent, and a
+                // rejected login (HTTP 401/403, with or without a Kod) will not get better in a few seconds.
                 $retryable = $this->client->lastRequestWasSent()
-                    && !in_array((int) $this->client->getLastKod(), self::PDF_PERMANENT_KODS, true);
+                    && !in_array((int) $this->client->getLastKod(), self::PDF_PERMANENT_KODS, true)
+                    && !in_array((int) $this->client->getLastHttpCode(), array(401, 403), true);
                 if (!$retryable && $attempt === 1) {
                     throw $e;
                 }

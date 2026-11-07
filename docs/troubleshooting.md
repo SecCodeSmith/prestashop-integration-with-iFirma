@@ -64,5 +64,63 @@ anyway** in the order's iFirma panel; it bypasses the duplicate guard once for t
 
 **`KSeF: <error>` (after issuing a document).** The document was issued and delivery ran, but the KSeF submission failed. The receipt shows state error (`BLAD`) with the same message. Check: (1) the iFirma account is authorised to send invoices to KSeF (the KSeF authorisation is configured in iFirma, not in the module); (2) the buyer data on the invoice is complete, since a B2B invoice needs a valid NIP; (3) retry with **Send to KSeF** in the order panel; if the same error returns, copy the diagnostics block and the message. Then refresh the status in the order panel: once iFirma reports `PRZYJETA`, the number appears on the receipt and the customer page.
 
+### Calls paused after a rejected key
+
+**Message:** `iFirma rejected the credentials at <time>: <message>; calls are paused until <time>`. It is shown as a
+warning on the module settings page, as the error of a create or refresh attempt, and as "not attempted (credentials
+rejected)" in a bulk summary.
+
+**Meaning:** iFirma answered with HTTP 401 or 403, or with `Kod` 400, 401, 402, 403 or 499. The module then makes no call
+to iFirma for 15 minutes, so the same wrong key is not sent again and again. The refused calls are not sent: a document
+whose create was refused this way ends in state *error*, not *unknown*. `Kod` 500 does not start a pause, because it can
+come from a single endpoint.
+
+**What to do:** check the *faktura* key and the login in iFirma (*Konfiguracja → Abonent → API → Klucze*). `Kod` 402
+means that no API key exists for the account, and `Kod` 499 that the iFirma terms of service are not accepted. Then save
+the module settings: a successful save ends the pause at once. If the same message comes back after the pause, iFirma still
+rejects the credentials.
+
+### "Not attempted (rate limited)" in a bulk summary
+
+**Meaning:** during a bulk run the module's per-minute rate guard refused a request (the default cap is 80 requests a
+minute, see [Rate limits](configuration.md#rate-limits)). The run stopped there. The records it did not reach keep their
+previous state and are not errors. The records already handled keep their outcome.
+
+**What to do:** wait a minute, select the records that were not attempted in the [documents list](usage.md#ifirma-documents-list)
+and run the action again. The cap is shared with every other client of the same iFirma account, so a busy account may need
+the bulk runs at quiet times.
+
+### Permission messages (HTTP 403)
+
+**Messages:** "You do not have permission to issue iFirma documents.", "You do not have permission to manage iFirma
+documents." and "You do not have permission to see iFirma documents." They come from the panel, the list, the bulk
+summary or the PDF download when the employee's profile lacks the level the action needs.
+
+**Meaning:** the level is read from the roles of the module's tab (see [Permissions](configuration.md#permissions)). SuperAdmin
+and the profile of the employee who installed the module hold all levels; any other profile holds none until it is granted
+them. After an upgrade from an earlier version, profiles other than these have no panel until an administrator grants them.
+
+**What to do:** open **Advanced Parameters > Team > Permissions**, choose the profile and grant *View*, *Add* and *Edit* for
+**Orders > iFirma documents**, as needed (see the table in [Permissions](configuration.md#permissions)). Then reload the page.
+
+### Internal error on the iFirma panel or in a download
+
+**Message:** "Internal error; details are in the PrestaShop log." Only a module error shows its own text; any other failure
+(a PHP error, a database error) is replaced by this text so that no internal detail reaches the browser.
+
+**What to do:** open **Advanced Parameters > Logs** and look for the lines that start with "iFirma". They hold the original
+class and message of the failure.
+
+### HTTP 429 on the customer's PDF download
+
+**Message:** "Please wait a moment before downloading the document again."
+
+**Meaning:** the customer's download was refused by the download limit: the same document was fetched less than 30 seconds
+ago, or the customer has already downloaded 10 documents in the last 60 seconds (see [Download limits](usage.md#download-limits)).
+The document itself is fine.
+
+**What to do:** wait a few seconds and reload. If customers hit the limit routinely, look for something that downloads the
+PDF repeatedly, such as a link preview or a script.
+
 **Reporting a problem.** Copy the diagnostics block (request, response, contractor step, last error) and the
 relevant lines from Advanced Parameters > Logs (messages start with "iFirma"). Neither contains API keys.

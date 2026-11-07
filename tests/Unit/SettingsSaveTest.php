@@ -347,10 +347,12 @@ class SettingsSaveTest extends TestCase
      */
     public function testAZeroIsATextAndNotAnEmptyField($field)
     {
-        $page = $this->save(array($field => '0'));
+        // the base URL must be an address (IfirmaSettings::TYPE_URL), so its "zero" is a URL with a path of 0
+        $zero = $field === 'IFIRMA_BASE_URL' ? 'https://example.test/0/' : '0';
+        $page = $this->save(array($field => $zero));
 
         $this->assertSaved($page);
-        $this->assertSame('0', $this->stored($field));
+        $this->assertSame($zero, $this->stored($field));
     }
 
     /**
@@ -373,7 +375,8 @@ class SettingsSaveTest extends TestCase
      */
     public function testOnlyTheSendTextIsCut($field)
     {
-        $long = str_repeat('a', 1500);
+        // the base URL must be an address (IfirmaSettings::TYPE_URL): a URL with a 1500 character path
+        $long = $field === 'IFIRMA_BASE_URL' ? 'https://example.test/' . str_repeat('a', 1500) . '/' : str_repeat('a', 1500);
 
         $page = $this->save(array($field => $long));
 
@@ -506,5 +509,231 @@ class SettingsSaveTest extends TestCase
 
         $this->assertSaved($page);
         $this->assertSame($stored, $this->stored('IFIRMA_DEFAULT_UNIT'));
+    }
+
+    // ---- the pause after a rejected credential (admin-receipt-ops-and-hardening 7.2) ------------
+
+    public function testBannerShownWhileThePauseRuns()
+    {
+        Configuration::updateValue('IFIRMA_AUTH_FAILURE', time() . '|Bad hash');
+        Tools::$values = array();
+
+        $page = $this->module->getContent();
+
+        $this->assertStringStartsWith('<warning>iFirma rejected the credentials at ', $page);
+        $this->assertStringContainsString('Bad hash; calls are paused until ', $page);
+    }
+
+    public function testNoBannerWithoutTheMarkOrAfterThePause()
+    {
+        Tools::$values = array();
+        $this->assertStringNotContainsString('<warning>', $this->module->getContent());
+
+        Configuration::updateValue('IFIRMA_AUTH_FAILURE', (time() - 3600) . '|Bad hash');
+        $this->assertStringNotContainsString('<warning>', $this->module->getContent());
+    }
+
+    public function testSaveClearsTheMarkAndARefusedSaveKeepsIt()
+    {
+        $mark = time() . '|Bad hash';
+        Configuration::updateValue('IFIRMA_AUTH_FAILURE', $mark);
+
+        $page = $this->save(array('IFIRMA_USER' => ''));
+        $this->assertStringContainsString('<error>', $page);
+        $this->assertSame($mark, Configuration::get('IFIRMA_AUTH_FAILURE'), 'a refused save keeps the mark');
+        $this->assertStringContainsString('<warning>', $page);
+
+        $page = $this->save();
+        $this->assertSaved($page);
+        $this->assertFalse(Configuration::get('IFIRMA_AUTH_FAILURE'), 'a valid save removes the mark');
+        $this->assertStringNotContainsString('<warning>', $page, 'and the banner is gone with it');
+    }
+
+    public function testARefusedBaseUrlShowsItsMessage()
+    {
+        IfirmaSettings::$devMode = false;
+        try {
+            $page = $this->save(array('IFIRMA_BASE_URL' => 'http://api.example.com/iapi/'));
+        } finally {
+            IfirmaSettings::$devMode = null;
+        }
+
+        $this->assertRejected($page, 'The API base URL must be an absolute https URL; http is accepted only for a local host or a shop in developer mode.');
+    }
+
+    // ---- the API keys never reach the page (D12) ----------------------------------------------
+
+    /**
+     * @param string $name
+     * @return array the form input of the name
+     */
+    private function formInput($name)
+    {
+        foreach (HelperForm::$lastForm[0]['form']['input'] as $input) {
+            if ($input['name'] === $name) {
+                return $input;
+            }
+        }
+        $this->fail('The form has no input ' . $name);
+    }
+
+    public function testPageSourceCarriesNoStoredKey()
+    {
+        Configuration::updateValue('IFIRMA_KEY_ABONENT', 'fedcba9876543210fedcba9876543210');
+        Tools::$values = array();
+
+        $this->module->getContent();
+
+        $values = HelperForm::$lastHelper->fields_value;
+        $this->assertSame('', $values['IFIRMA_KEY_FAKTURA']);
+        $this->assertSame('', $values['IFIRMA_KEY_ABONENT']);
+        $source = json_encode(array(HelperForm::$lastForm, $values));
+        $this->assertStringNotContainsString(str_repeat('1', 64), $source);
+        $this->assertStringNotContainsString('fedcba9876543210fedcba9876543210', $source);
+
+        $faktura = $this->formInput('IFIRMA_KEY_FAKTURA');
+        $this->assertSame('password', $faktura['type']);
+        $this->assertArrayNotHasKey('required', $faktura, 'a stored key needs no new one');
+        $this->assertStringContainsString('A key is stored; leave the field empty to keep it.', $faktura['desc']);
+        $this->assertSame('password', $this->formInput('IFIRMA_KEY_ABONENT')['type']);
+    }
+
+    public function testWithoutAStoredKeyTheFakturaInputIsRequiredAndSaysNothingAboutAStoredKey()
+    {
+        Configuration::deleteByName('IFIRMA_KEY_FAKTURA');
+        Tools::$values = array();
+
+        $this->module->getContent();
+
+        $faktura = $this->formInput('IFIRMA_KEY_FAKTURA');
+        $this->assertTrue($faktura['required']);
+        $this->assertStringNotContainsString('A key is stored', $faktura['desc']);
+        $this->assertStringNotContainsString('A key is stored', $this->formInput('IFIRMA_KEY_ABONENT')['desc']);
+    }
+
+    public function testEveryKeyInputHasARemoveBox()
+    {
+        Tools::$values = array();
+        $this->module->getContent();
+
+        foreach (array('IFIRMA_KEY_FAKTURA', 'IFIRMA_KEY_ABONENT') as $key) {
+            $box = $this->formInput('clear_' . $key);
+            $this->assertSame('checkbox', $box['type']);
+            // HelperForm names the posted field <name>_<value id>
+            $this->assertSame('on', $box['values']['query'][0]['id']);
+            $this->assertSame('Remove the stored key', $box['values']['query'][0]['name']);
+        }
+    }
+
+    public function testAnEmptyFieldKeepsTheStoredKeys()
+    {
+        Configuration::updateValue('IFIRMA_KEY_ABONENT', 'fedcba9876543210fedcba9876543210');
+        Configuration::updateValue('IFIRMA_KEY_RACHUNEK', 'a1b2c3d4e5f60718293a4b5c6d7e8f90');
+
+        $page = $this->save(array('IFIRMA_KEY_FAKTURA' => '', 'IFIRMA_KEY_ABONENT' => '   '));
+
+        $this->assertSaved($page);
+        $this->assertSame(str_repeat('1', 64), $this->stored('IFIRMA_KEY_FAKTURA'));
+        $this->assertSame('fedcba9876543210fedcba9876543210', $this->stored('IFIRMA_KEY_ABONENT'));
+        $this->assertSame('a1b2c3d4e5f60718293a4b5c6d7e8f90', $this->stored('IFIRMA_KEY_RACHUNEK'), 'the form has no receipt key input: it must not wipe it');
+    }
+
+    public function testANewKeyReplacesTheStoredOne()
+    {
+        $page = $this->save(array('IFIRMA_KEY_FAKTURA' => ' 0123456789abcdef0123456789abcdef '));
+
+        $this->assertSaved($page);
+        $this->assertSame('0123456789abcdef0123456789abcdef', $this->stored('IFIRMA_KEY_FAKTURA'));
+    }
+
+    public function testTheRemoveBoxClearsTheStoredKeyOnlyWhenTheFieldIsEmpty()
+    {
+        Configuration::updateValue('IFIRMA_KEY_ABONENT', 'fedcba9876543210fedcba9876543210');
+
+        $page = $this->save(array('clear_IFIRMA_KEY_FAKTURA_on' => '1', 'clear_IFIRMA_KEY_ABONENT_on' => '1', 'IFIRMA_KEY_ABONENT' => 'aabbcc'));
+
+        $this->assertSaved($page);
+        $this->assertSame('', $this->stored('IFIRMA_KEY_FAKTURA'));
+        $this->assertSame('aabbcc', $this->stored('IFIRMA_KEY_ABONENT'), 'a typed key wins over the box');
+    }
+
+    public function testAMalformedAbonentKeyIsRefused()
+    {
+        $page = $this->save(array('IFIRMA_KEY_ABONENT' => 'not-hex!'));
+
+        $this->assertRejected($page, 'The abonent API key must be a hexadecimal string.');
+    }
+
+    public function testAnEmptyAbonentKeyIsSaved()
+    {
+        Configuration::deleteByName('IFIRMA_KEY_ABONENT');
+
+        $page = $this->save(array('IFIRMA_KEY_ABONENT' => ''));
+
+        $this->assertSaved($page);
+        $this->assertSame('', $this->stored('IFIRMA_KEY_ABONENT'));
+    }
+
+    public function testAnArrayLoginIsRefusedWithTheLoginMessage()
+    {
+        $page = $this->save(array('IFIRMA_USER' => array('x')));
+
+        $this->assertRejected($page, 'The iFirma login is required.');
+    }
+
+    public function testAnArrayInAnyScalarFieldIsRefusedOrIgnoredWithoutAWarning()
+    {
+        set_error_handler(function ($no, $message) {
+            throw new ErrorException($message);
+        });
+        try {
+            foreach (array('IFIRMA_DUPLICATE_WINDOW_DAYS', 'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE', 'IFIRMA_PAYMENT_METHOD', 'IFIRMA_PAYMENT_METHOD_MAP', 'IFIRMA_SEND_CHANNEL') as $field) {
+                $page = $this->save(array($field => array('x')));
+                $this->assertNotSame('', $page, $field);
+            }
+            $page = $this->save(array('IFIRMA_DEFAULT_UNIT' => array('x'), 'IFIRMA_DOC_TYPE' => array('x'), 'IFIRMA_KEY_FAKTURA' => array('x')));
+            $this->assertStringStartsWith('<error>The invoice API key must be a hexadecimal string.', $page);
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    // ---- the cron token comes from the secure generator only (8.3) ------------------------------
+
+    public function testRegenerationShowsAnErrorAndKeepsTheOldTokenWhenTheGeneratorIsUnavailable()
+    {
+        Configuration::updateValue('IFIRMA_CRON_TOKEN', 'cron-token-1');
+        IfirmaSchema::$randomBytes = function () {
+            throw new Exception('no entropy');
+        };
+        try {
+            Tools::$values = array('submitIfirmaRegenerateCron' => '1');
+            Configuration::$writes = array();
+            $page = $this->module->getContent();
+        } finally {
+            IfirmaSchema::$randomBytes = null;
+        }
+
+        $this->assertStringStartsWith('<error>The cron token could not be regenerated: the secure random generator is unavailable.</error>', $page);
+        $this->assertSame('cron-token-1', Configuration::get('IFIRMA_CRON_TOKEN'));
+        $this->assertSame(array(), Configuration::$writes);
+    }
+
+    public function testInstallFailsWhenTheCronTokenCannotBeGenerated()
+    {
+        Module::reset();
+        Configuration::deleteByName('IFIRMA_CRON_TOKEN');
+        IfirmaSchema::$randomBytes = function () {
+            return '';
+        };
+        try {
+            $installed = $this->module->install();
+        } finally {
+            IfirmaSchema::$randomBytes = null;
+        }
+
+        $this->assertFalse($installed);
+        $this->assertFalse(Configuration::get('IFIRMA_CRON_TOKEN'));
+        $this->assertStringContainsString('The secure random generator is unavailable', implode('|', array_column(PrestaShopLogger::$logs, 'message')));
     }
 }

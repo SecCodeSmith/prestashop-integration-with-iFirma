@@ -33,6 +33,9 @@ require_once __DIR__ . '/classes/IfirmaAdminOrderPanelView.php';
 require_once __DIR__ . '/classes/IfirmaCustomerContractorService.php';
 require_once __DIR__ . '/classes/IfirmaAdminActions.php';
 require_once __DIR__ . '/classes/IfirmaOrderGridIndicator.php';
+require_once __DIR__ . '/classes/IfirmaPermission.php';
+require_once __DIR__ . '/classes/IfirmaIssueFeed.php';
+require_once __DIR__ . '/classes/IfirmaBulkRunner.php';
 
 class Ifirma extends Module
 {
@@ -73,11 +76,14 @@ class Ifirma extends Module
             && $this->registerHook('actionOrderGridDefinitionModifier')
             && $this->registerHook('actionOrderGridQueryBuilderModifier')
             && $this->registerHook('actionOrderGridPresenterModifier')
+            && $this->registerHook('actionAdminControllerSetMedia')
             && $this->installDefaultConfiguration();
     }
 
     public function uninstall()
     {
+        Db::getInstance()->delete('configuration', "name LIKE 'IFIRMA\\_SEEN\\_%'");
+
         return $this->uninstallSql()
             && $this->uninstallTab()
             && $this->uninstallConfiguration()
@@ -98,7 +104,14 @@ class Ifirma extends Module
     {
         foreach (IfirmaSchema::configurationDefaults() as $key => $value) {
             if ($value === null) {
-                $value = IfirmaSchema::generateCronToken();
+                try {
+                    $value = IfirmaSchema::generateCronToken();
+                } catch (Exception $e) {
+                    // no cron token without a secure random generator: the module is not installed half way
+                    PrestaShopLogger::addLog('iFirma: ' . $e->getMessage() . '; the module was not installed', 3);
+
+                    return false;
+                }
             }
             Configuration::updateValue($key, $value);
         }
@@ -115,20 +128,62 @@ class Ifirma extends Module
         return true;
     }
 
+    /**
+     * The id of the Orders menu the iFirma tab goes under: AdminParentOrders, else the parent of AdminOrders.
+     * Returns -1 (the hidden tab) when neither exists.
+     *
+     * @return int
+     */
+    private function ordersTabParentId()
+    {
+        $idParent = (int) Tab::getIdFromClassName('AdminParentOrders');
+        if ($idParent) {
+            return $idParent;
+        }
+        $idOrders = (int) Tab::getIdFromClassName('AdminOrders');
+        if ($idOrders) {
+            $ordersTab = new Tab($idOrders);
+            if ((int) $ordersTab->id_parent) {
+                return (int) $ordersTab->id_parent;
+            }
+        }
+
+        return -1;
+    }
+
+    /**
+     * Adds the iFirma tab under the Orders menu (D2). Without an Orders menu it stays hidden and the
+     * shop log says so.
+     *
+     * @return bool
+     */
     private function installTab()
     {
         $tab = new Tab();
         $tab->class_name = 'AdminIfirma';
         $tab->module = $this->name;
         $tab->active = 1;
-        $tab->id_parent = -1;
+        $tab->id_parent = $this->ordersTabParentId();
 
         $tab->name = array();
         foreach (Language::getLanguages(false) as $lang) {
-            $tab->name[$lang['id_lang']] = 'iFirma';
+            $tab->name[$lang['id_lang']] = 'iFirma documents';
+        }
+        if ($tab->id_parent === -1) {
+            PrestaShopLogger::addLog('iFirma: Orders menu not found, tab installed hidden', 2);
         }
 
         return $tab->add();
+    }
+
+    /**
+     * Public entry for the 1.5.0 upgrade, which creates the tab on a shop where it is missing.
+     *
+     * @return bool
+     */
+    public function installVisibleTab()
+    {
+        return $this->installTab();
     }
 
     private function uninstallTab()
@@ -159,7 +214,24 @@ class Ifirma extends Module
             $output .= $this->resetContractorMap();
         }
 
-        return $output . $this->renderConfigForm() . $this->renderContractorsPanel($report, $errors);
+        return $this->authBlockBanner() . $output . $this->renderConfigForm() . $this->renderContractorsPanel($report, $errors);
+    }
+
+    /**
+     * The warning that says iFirma calls are paused after a rejected credential, while the pause runs.
+     *
+     * @return string HTML, '' when no pause runs
+     */
+    private function authBlockBanner()
+    {
+        try {
+            $client = IfirmaApiClient::fromConfiguration();
+            $message = method_exists($client, 'getAuthBlockMessage') ? (string) $client->getAuthBlockMessage() : '';
+        } catch (Throwable $e) {
+            return '';
+        }
+
+        return $message === '' ? '' : $this->displayWarning($this->esc($message));
     }
 
     /**
@@ -293,6 +365,9 @@ class Ifirma extends Module
         foreach (array_keys(IfirmaSettings::fields()) as $key) {
             $input[$key] = Tools::getValue($key);
         }
+        foreach (self::$secretKeys as $key) {
+            $input[$key] = $this->secretInput($key, $input[$key]);
+        }
 
         $settings = IfirmaSettings::fromInput($input, function () {
             return $this->activeEmployeeIds();
@@ -304,8 +379,34 @@ class Ifirma extends Module
         foreach ($settings['values'] as $key => $value) {
             Configuration::updateValue($key, $value);
         }
+        // new settings, new chance: the pause after a rejected credential ends with a successful save
+        Configuration::deleteByName('IFIRMA_AUTH_FAILURE');
 
         return $this->displayConfirmation($this->l('Settings updated.'));
+    }
+
+    /** @var string[] the settings that hold an API key: the form never shows them */
+    private static $secretKeys = array('IFIRMA_KEY_FAKTURA', 'IFIRMA_KEY_ABONENT', 'IFIRMA_KEY_RACHUNEK');
+
+    /**
+     * What an API key becomes on save. The form shows no stored key, so an empty field means "keep it", and
+     * only the "remove" box clears it; a value that was typed replaces it.
+     *
+     * @param string $key
+     * @param mixed  $posted
+     * @return mixed the value to validate
+     */
+    private function secretInput($key, $posted)
+    {
+        $empty = $posted === false || $posted === null || (is_string($posted) && trim($posted) === '');
+        if (!$empty) {
+            return $posted;
+        }
+        if (Tools::getValue('clear_' . $key . '_on')) {
+            return '';
+        }
+
+        return (string) Configuration::get($key);
     }
 
     /**
@@ -332,8 +433,11 @@ class Ifirma extends Module
     private function settingErrors(array $failed)
     {
         $messages = array(
+            'IFIRMA_BASE_URL' => $this->l('The API base URL must be an absolute https URL; http is accepted only for a local host or a shop in developer mode.'),
             'IFIRMA_USER' => $this->l('The iFirma login is required.'),
             'IFIRMA_KEY_FAKTURA' => $this->l('The invoice API key must be a hexadecimal string.'),
+            'IFIRMA_KEY_ABONENT' => $this->l('The abonent API key must be a hexadecimal string.'),
+            'IFIRMA_KEY_RACHUNEK' => $this->l('The receipt API key must be a hexadecimal string.'),
             'IFIRMA_SEND_COPY_EMPLOYEE' => $this->l('Choose an active employee for the delivery copy.'),
             'IFIRMA_DUPLICATE_WINDOW_DAYS' => $this->l('The duplicate-check window must be a whole number of days between 1 and 365.'),
             'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE' => $this->l('The amount tolerance must be a number greater than or equal to 0.'),
@@ -387,7 +491,12 @@ class Ifirma extends Module
      */
     private function regenerateCronToken()
     {
-        Configuration::updateValue('IFIRMA_CRON_TOKEN', IfirmaSchema::generateCronToken());
+        try {
+            $token = IfirmaSchema::generateCronToken();
+        } catch (Exception $e) {
+            return $this->displayError($this->l('The cron token could not be regenerated: the secure random generator is unavailable.'));
+        }
+        Configuration::updateValue('IFIRMA_CRON_TOKEN', $token);
 
         return $this->displayConfirmation($this->l('A new cron token was generated. Update the URL in your crontab.'));
     }
@@ -399,7 +508,11 @@ class Ifirma extends Module
     {
         $token = (string) Configuration::get('IFIRMA_CRON_TOKEN');
         if ($token === '') {
-            $token = IfirmaSchema::generateCronToken();
+            try {
+                $token = IfirmaSchema::generateCronToken();
+            } catch (Exception $e) {
+                return '';
+            }
             Configuration::updateValue('IFIRMA_CRON_TOKEN', $token);
         }
 
@@ -469,12 +582,16 @@ class Ifirma extends Module
     private function renderCronInfo()
     {
         $url = $this->cronUrl();
+        $plainUrl = $this->context->link->getModuleLink($this->name, 'cron', array(), true);
 
         return '<p><strong>' . $this->esc($this->l('Token:')) . '</strong> <code>'
             . $this->esc($this->cronToken()) . '</code></p>'
             . '<p><strong>' . $this->esc($this->l('URL:')) . '</strong> <code>' . $this->esc($url) . '</code></p>'
             . '<p>' . $this->esc($this->l('Example crontab entry (every 15 minutes):')) . '</p>'
             . '<pre>*/15 * * * * curl -fsS "' . $this->esc($url) . '" &gt;/dev/null</pre>'
+            . '<p>' . $this->esc($this->l('Or send the token in a header, so it stays out of web server logs:')) . '</p>'
+            . '<pre>*/15 * * * * curl -fsS -H "X-Ifirma-Token: ' . $this->esc($this->cronToken()) . '" "'
+            . $this->esc($plainUrl) . '" &gt;/dev/null</pre>'
             . '<p class="help-block">' . $this->esc($this->l('Anyone who knows the URL can start a synchronisation. Regenerate the token if it leaks.')) . '</p>';
     }
 
@@ -486,6 +603,47 @@ class Ifirma extends Module
         return array(
             array('id' => 'on', 'value' => 1, 'label' => $this->l('Yes')),
             array('id' => 'off', 'value' => 0, 'label' => $this->l('No')),
+        );
+    }
+
+    /**
+     * The password input of an API key and the box that removes the stored key. The input is always empty (the
+     * page never carries a key); the description says when a key is stored.
+     *
+     * @param string $key
+     * @param string $label
+     * @param string $desc
+     * @param bool   $required the key is needed to work: required only while none is stored
+     * @return array[] the two form inputs
+     */
+    private function secretInputs($key, $label, $desc, $required)
+    {
+        $stored = trim((string) Configuration::get($key)) !== '';
+        if ($stored) {
+            $desc .= ' ' . $this->l('A key is stored; leave the field empty to keep it.');
+        }
+        $input = array(
+            'type' => 'password',
+            'label' => $label,
+            'name' => $key,
+            'desc' => $desc,
+            'autocomplete' => false,
+        );
+        if ($required && !$stored) {
+            $input['required'] = true;
+        }
+
+        return array(
+            $input,
+            array(
+                'type' => 'checkbox',
+                'name' => 'clear_' . $key,
+                'values' => array(
+                    'query' => array(array('id' => 'on', 'name' => $this->l('Remove the stored key'))),
+                    'id' => 'id',
+                    'name' => 'name',
+                ),
+            ),
         );
     }
 
@@ -529,19 +687,24 @@ class Ifirma extends Module
                 'desc' => $this->l('Your iFirma account login (usually the e-mail address).'),
                 'required' => true,
             ),
-            array(
-                'type' => 'text',
-                'label' => $this->l('API key: faktura'),
-                'name' => 'IFIRMA_KEY_FAKTURA',
-                'desc' => $this->l('Hexadecimal "faktura" key from iFirma → Konfiguracja → Abonent → API.'),
-                'required' => true,
+            // never a stored key in the page: the password input is empty and an empty field keeps the key
+        ));
+        $inputs = array_merge(
+            $inputs,
+            $this->secretInputs(
+                'IFIRMA_KEY_FAKTURA',
+                $this->l('API key: faktura'),
+                $this->l('Hexadecimal "faktura" key from iFirma → Konfiguracja → Abonent → API.'),
+                true
             ),
-            array(
-                'type' => 'text',
-                'label' => $this->l('API key: abonent'),
-                'name' => 'IFIRMA_KEY_ABONENT',
-                'desc' => $this->l('Optional "abonent" key (subscriber data).'),
-            ),
+            $this->secretInputs(
+                'IFIRMA_KEY_ABONENT',
+                $this->l('API key: abonent'),
+                $this->l('Optional "abonent" key (subscriber data).'),
+                false
+            )
+        );
+        $inputs = array_merge($inputs, array(
             array(
                 'type' => 'select',
                 'label' => $this->l('Document type'),
@@ -801,8 +964,8 @@ class Ifirma extends Module
         $helper->fields_value = array(
             'IFIRMA_BASE_URL' => Configuration::get('IFIRMA_BASE_URL') ?: IfirmaApiClient::BASE_URL,
             'IFIRMA_USER' => Configuration::get('IFIRMA_USER'),
-            'IFIRMA_KEY_FAKTURA' => Configuration::get('IFIRMA_KEY_FAKTURA'),
-            'IFIRMA_KEY_ABONENT' => Configuration::get('IFIRMA_KEY_ABONENT'),
+            'IFIRMA_KEY_FAKTURA' => '',
+            'IFIRMA_KEY_ABONENT' => '',
             'IFIRMA_DOC_TYPE' => IfirmaDocumentSettings::normalizeDocumentType(Configuration::get('IFIRMA_DOC_TYPE')),
             'IFIRMA_SIGNATURE_TYPE' => IfirmaDocumentSettings::normalizeSignatureType(Configuration::get('IFIRMA_SIGNATURE_TYPE')),
             'IFIRMA_PAYMENT_METHOD' => Configuration::get('IFIRMA_PAYMENT_METHOD'),
@@ -846,6 +1009,9 @@ class Ifirma extends Module
      */
     public function hookDisplayAdminCustomers($params)
     {
+        if (!IfirmaPermission::canView($this->context->employee)) {
+            return '';
+        }
         $idCustomer = 0;
         if (is_array($params) && isset($params['id_customer'])) {
             $idCustomer = (int) $params['id_customer'];
@@ -968,6 +1134,9 @@ class Ifirma extends Module
         if (self::$adminOrderRendered || !$idOrder) {
             return '';
         }
+        if (!IfirmaPermission::canView($this->context->employee)) {
+            return '';
+        }
         self::$adminOrderRendered = true;
 
         $token = Tools::getAdminTokenLite('AdminIfirma');
@@ -985,6 +1154,8 @@ class Ifirma extends Module
             'configured' => $this->isConfigured(),
             'ajax_url' => $this->context->link->getAdminLink('AdminIfirma', false) . '&token=' . $token,
             'token' => $token,
+            'can_issue' => IfirmaPermission::canIssue($this->context->employee),
+            'can_manage' => IfirmaPermission::canManage($this->context->employee),
         )));
 
         return $this->display(__FILE__, 'views/templates/hook/admin_order_panel.tpl');
@@ -1032,6 +1203,9 @@ class Ifirma extends Module
      */
     public function hookActionOrderGridDefinitionModifier($params)
     {
+        if (!IfirmaPermission::canView($this->context->employee)) {
+            return;
+        }
         if (!$this->hasGrid() || !isset($params['definition']) || !is_object($params['definition'])) {
             return;
         }
@@ -1043,11 +1217,27 @@ class Ifirma extends Module
             'clickable' => true,
         ));
         $params['definition']->getColumns()->addBefore('actions', $column);
+
+        $bulkClass = 'PrestaShop\\PrestaShop\\Core\\Grid\\Action\\Bulk\\Type\\ButtonBulkAction';
+        if (IfirmaPermission::canIssue($this->context->employee)
+            && class_exists($bulkClass)
+            && method_exists($params['definition'], 'getBulkActions')
+        ) {
+            $bulk = new $bulkClass('ifirma_issue');
+            $bulk->setName($this->l('Issue iFirma documents'))->setOptions(array(
+                'class' => 'js-ifirma-bulk-issue',
+                'attributes' => array('data-kind' => 'issue'),
+            ));
+            $params['definition']->getBulkActions()->add($bulk);
+        }
     }
 
     /** Orders list: the newest module record of each order joins the search query (never the count query). */
     public function hookActionOrderGridQueryBuilderModifier($params)
     {
+        if (!IfirmaPermission::canView($this->context->employee)) {
+            return;
+        }
         if (!$this->hasGrid() || !isset($params['search_query_builder']) || !is_object($params['search_query_builder'])) {
             return;
         }
@@ -1065,6 +1255,9 @@ class Ifirma extends Module
      */
     public function hookActionOrderGridPresenterModifier($params)
     {
+        if (!IfirmaPermission::canView($this->context->employee)) {
+            return;
+        }
         if (!isset($params['presented_grid']['data']['records'])) {
             return;
         }
@@ -1074,18 +1267,160 @@ class Ifirma extends Module
             return;
         }
         $rows = $collection ? (array) $records->all() : $records;
-        $labels = array(
-            'paid' => $this->l('Paid'),
-            'issued' => $this->l('Issued'),
-        );
+        $labels = $this->gridCellLabels();
+        $canIssue = IfirmaPermission::canIssue($this->context->employee);
         foreach ($rows as $i => $record) {
-            $rows[$i][IfirmaOrderGridIndicator::FIELD] = IfirmaOrderGridIndicator::cell((array) $record, $labels);
+            $rows[$i][IfirmaOrderGridIndicator::FIELD] = IfirmaOrderGridIndicator::cell((array) $record, $labels, $canIssue);
         }
         if ($collection) {
             $class = get_class($records);
             $rows = new $class($rows);
         }
         $params['presented_grid']['data']['records'] = $rows;
+    }
+
+    /**
+     * The words of the iFirma cell in the Orders list.
+     *
+     * @return string[] paid, issued, issue, and the words of the states error, unknown, duplicate_suspected, held
+     */
+    public function gridCellLabels()
+    {
+        return array(
+            'paid' => $this->l('Paid'),
+            'issued' => $this->l('Issued'),
+            'issue' => $this->l('Issue iFirma document'),
+            'error' => $this->l('failed'),
+            'unknown' => $this->l('unknown outcome'),
+            'duplicate_suspected' => $this->l('suspected duplicate'),
+            'held' => $this->l('held'),
+        );
+    }
+
+    /**
+     * @return string[] IfirmaIssueFeed::KIND_* => the label of that kind of problem
+     */
+    public function issueKindLabels()
+    {
+        return self::decodeWords(array(
+            IfirmaIssueFeed::KIND_HELD => $this->l('Held by a data request'),
+            IfirmaIssueFeed::KIND_ERROR => $this->l('Issuance failed'),
+            IfirmaIssueFeed::KIND_UNKNOWN => $this->l('Unknown outcome'),
+            IfirmaIssueFeed::KIND_SUSPECTED => $this->l('Suspected duplicate'),
+            IfirmaIssueFeed::KIND_MISSING => $this->l('Missing in iFirma'),
+            IfirmaIssueFeed::KIND_KSEF_FAILED => $this->l('KSeF failed'),
+            IfirmaIssueFeed::KIND_DELIVERY_FAILED => $this->l('Delivery failed'),
+        ));
+    }
+
+    /**
+     * Module::l() HTML-escapes what it translates, the scripts render the words as text: decode them.
+     *
+     * @param mixed $words a string or a (nested) array of strings
+     *
+     * @return mixed the same shape with every string entity-decoded
+     */
+    private static function decodeWords($words)
+    {
+        if (is_array($words)) {
+            foreach ($words as $key => $word) {
+                $words[$key] = self::decodeWords($word);
+            }
+
+            return $words;
+        }
+
+        return is_string($words) ? html_entity_decode($words, ENT_QUOTES, 'UTF-8') : $words;
+    }
+
+    /**
+     * Back office: the stylesheet and the notification script for everyone who may view the module, the bulk
+     * script on the Orders list and the documents list for those who may issue or manage, and the
+     * `ifirmaAdmin` variable the scripts read (URL, levels, batch sizes, poll interval and every word).
+     */
+    public function hookActionAdminControllerSetMedia($params)
+    {
+        $employee = $this->context->employee;
+        if (!IfirmaPermission::canView($employee)) {
+            return;
+        }
+        $canIssue = IfirmaPermission::canIssue($employee);
+        $canManage = IfirmaPermission::canManage($employee);
+
+        $current = $this->context->controller;
+        $name = '';
+        if (is_object($current) && isset($current->controller_name) && is_string($current->controller_name)) {
+            $name = $current->controller_name;
+        }
+        if ($name === '') {
+            $given = Tools::getValue('controller');
+            $name = is_string($given) ? $given : '';
+        }
+
+        if (is_object($current) && method_exists($current, 'addCSS') && method_exists($current, 'addJS')) {
+            $current->addCSS($this->_path . 'views/css/ifirma-admin.css', 'all');
+            $current->addJS($this->_path . 'views/js/admin/ifirma-notifications.js');
+            if (($canIssue || $canManage) && in_array($name, array('AdminOrders', 'AdminIfirma'), true)) {
+                $current->addJS($this->_path . 'views/js/admin/ifirma-bulk.js');
+            }
+        }
+
+        $batchSizes = array();
+        foreach (IfirmaBulkRunner::kinds() as $kind) {
+            $batchSizes[$kind] = IfirmaBulkRunner::batchSize($kind);
+        }
+        Media::addJsDef(array('ifirmaAdmin' => array(
+            'ajaxUrl' => $this->context->link->getAdminLink('AdminIfirma', true),
+            'controller' => $name,
+            'canView' => true,
+            'canIssue' => $canIssue,
+            'canManage' => $canManage,
+            'batchSizes' => $batchSizes,
+            'pollInterval' => 120000,
+            'listUrl' => $this->context->link->getAdminLink('AdminIfirma', true, array(), array('ifirma_preset' => 'attention')),
+            'words' => self::decodeWords($this->adminScriptWords()),
+        )));
+    }
+
+    /**
+     * @return array the words of the back-office scripts, as `ifirmaAdmin.words` (the scripts hold no text of their own)
+     */
+    private function adminScriptWords()
+    {
+        return array(
+            'tab_title' => $this->l('iFirma'),
+            'no_issues' => $this->l('No document issues.'),
+            'see_all' => $this->l('All documents that need attention'),
+            'issue_action' => $this->l('Issue iFirma document'),
+            'issuing' => $this->l('Issuing…'),
+            'confirm_issue' => $this->l('Issue an iFirma document for this order?'),
+            'confirm_bulk_issue' => $this->l('Issue iFirma documents for the %d selected orders?'),
+            'confirm_bulk_retry' => $this->l('Retry the issuance of the %d selected documents?'),
+            'confirm_bulk_resend' => $this->l('Send the %d selected documents again?'),
+            'confirm_bulk_refresh' => $this->l('Refresh the %d selected documents from iFirma?'),
+            'nothing_selected' => $this->l('Select at least one row.'),
+            'running' => $this->l('Running… %1$d of %2$d'),
+            'stopped_rate_limited' => $this->l('Stopped: the rate guard refused a request. Run again in a minute for the remaining rows.'),
+            'stopped_auth_blocked' => $this->l('Stopped: iFirma rejected the credentials; see the module settings.'),
+            'request_failed' => $this->l('Request failed. Check the browser console and PrestaShop logs.'),
+            'summary_title' => $this->l('Bulk run summary'),
+            'col_order' => $this->l('Order'),
+            'col_outcome' => $this->l('Outcome'),
+            'col_message' => $this->l('Message'),
+            'close' => $this->l('Close'),
+            'outcomes' => array(
+                'issued' => $this->l('Issued'),
+                'adopted' => $this->l('Adopted'),
+                'suspected' => $this->l('Suspected duplicate'),
+                'held' => $this->l('Held'),
+                'failed' => $this->l('Failed'),
+                'sent' => $this->l('Sent'),
+                'refreshed' => $this->l('Refreshed'),
+                'skipped' => $this->l('Skipped'),
+                'not_attempted' => $this->l('Not attempted'),
+            ),
+            'kinds' => $this->issueKindLabels(),
+        );
     }
 
     /** @return bool whether the Symfony grid classes are loaded (PrestaShop 8/9 back office) */

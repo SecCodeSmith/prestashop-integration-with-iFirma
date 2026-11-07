@@ -309,6 +309,11 @@ class IfirmaCustomerView
      */
     protected function downloadUrl($token)
     {
+        // no token (the secure random generator was unavailable when the row was written): no link to offer
+        if ((string) $token === '') {
+            return null;
+        }
+
         return $this->link->getModuleLink('ifirma', 'receipt', array('token' => (string) $token), true);
     }
 

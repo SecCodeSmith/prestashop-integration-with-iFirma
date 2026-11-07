@@ -25,6 +25,10 @@ class Db
     public $deletes = [];
     /** @var array[] each: ['kind','regex','result'] */
     protected $scripts = [];
+    /** @var string[] statements on the IFIRMA_RATE_WINDOW row; kept apart from $queries so tests that assert the queries of a flow are not told about the guard */
+    public $rateQueries = [];
+    /** @var int rows the last execute() affected */
+    protected $affected = 1;
 
     public static function getInstance($master = true)
     {
@@ -81,6 +85,19 @@ class Db
         return $this;
     }
 
+    protected function record($sql, $executed)
+    {
+        if (strpos($sql, 'IFIRMA_RATE_WINDOW') !== false) {
+            $this->rateQueries[] = $sql;
+
+            return;
+        }
+        $this->queries[] = $sql;
+        if ($executed) {
+            $this->executed[] = $sql;
+        }
+    }
+
     /** @return array [found(bool), result] */
     protected function lookup($method, $sql)
     {
@@ -111,8 +128,12 @@ class Db
 
     public function getValue($sql, $useCache = true)
     {
-        $this->queries[] = $sql;
+        $this->record($sql, false);
         list($found, $r) = $this->lookup('getValue', $sql);
+        if (!$found && preg_match("/FROM `?\w*configuration`? WHERE `?name`? = '(\w+)'/", $sql, $m)) {
+            // an unscripted read of one configuration row answers from the Configuration stub
+            return Configuration::hasKey($m[1]) ? Configuration::get($m[1]) : false;
+        }
         if (!$found) {
             return false;
         }
@@ -142,11 +163,17 @@ class Db
 
     public function execute($sql, $useCache = true)
     {
-        $this->queries[] = $sql;
-        $this->executed[] = $sql;
+        $this->record($sql, true);
         list($found, $r) = $this->lookup('execute', $sql);
+        if ($found) {
+            // an integer scripts the number of affected rows (the statement itself succeeded)
+            $this->affected = is_int($r) ? $r : ((bool) $r ? 1 : 0);
 
-        return $found ? (bool) $r : true;
+            return is_int($r) ? true : (bool) $r;
+        }
+        $this->affected = $this->emulateRateWindow($sql);
+
+        return true;
     }
 
     public function insert($table, $data, $nullValues = false, $useCache = true, $type = 1, $addPrefix = true)
@@ -177,6 +204,35 @@ class Db
 
     public function Affected_Rows()
     {
+        return $this->affected;
+    }
+
+    /**
+     * Runs the atomic IFIRMA_RATE_WINDOW counter statement of IfirmaApiClient against the Configuration stub,
+     * the way MySQL would; any other statement affects one row.
+     *
+     * @return int affected rows
+     */
+    protected function emulateRateWindow($sql)
+    {
+        if (!preg_match("/SET `value` = IF\(.*CONCAT\('(\d{12}):'.*name` = 'IFIRMA_RATE_WINDOW'.*< (\d+)\)/s", $sql, $m)) {
+            return 1;
+        }
+        if (!Configuration::hasKey('IFIRMA_RATE_WINDOW')) {
+            return 0;
+        }
+        $parts = explode(':', (string) Configuration::get('IFIRMA_RATE_WINDOW'), 2);
+        $head = $parts[0];
+        $tail = count($parts) === 2 ? $parts[1] : $parts[0];
+        if ($head === $m[1]) {
+            if ((int) $tail >= (int) $m[2]) {
+                return 0;
+            }
+            Configuration::$values['IFIRMA_RATE_WINDOW'] = $m[1] . ':' . ((int) $tail + 1);
+        } else {
+            Configuration::$values['IFIRMA_RATE_WINDOW'] = $m[1] . ':1';
+        }
+
         return 1;
     }
 

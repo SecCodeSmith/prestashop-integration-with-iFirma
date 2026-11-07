@@ -49,7 +49,12 @@ function upgrade_module_1_1_0($module)
             continue;
         }
         if ($value === null) {
-            $value = IfirmaSchema::generateCronToken();
+            try {
+                $value = IfirmaSchema::generateCronToken();
+            } catch (Exception $e) {
+                // no secure random generator: the upgrade stops rather than store a guessable token
+                return false;
+            }
         }
         Configuration::updateValue($key, $value);
     }

@@ -931,17 +931,33 @@ class CustomerContractorServiceTest extends TestCase
     public function testSearchErrorsCarryTheExactMessageOfEachFailingPhrase()
     {
         $this->t->queue('GET', '#kontrahenci/ACME%20Sp\.%20z%20o\.o\.\.json#', array('status' => 0, 'error' => 'timeout'));
-        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->body(array('Kod' => 403, 'Informacja' => 'Bledny podpis')));
+        // a non-credential code: a Kod 403 would start the cool-down and refuse the next phrase (next test)
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->body(array('Kod' => 201, 'Informacja' => 'Blad walidacji')));
         $this->t->queue('GET', '#kontrahenci/Kowalski\.json#', $this->body(array('Kod' => 500, 'Informacja' => '')));
 
         $result = $this->svc->searchCandidates($this->criteria(array('firstname' => 'Jan', 'lastname' => 'Kowalski', 'company' => 'ACME Sp. z o.o.')));
 
         $this->assertSame(array('ACME Sp. z o.o.', 'Jan Kowalski', 'Kowalski'), $result['phrases']);
         $this->assertSame(
-            array('ACME Sp. z o.o.' => 'cURL error: timeout', 'Jan Kowalski' => 'Bledny podpis', 'Kowalski' => 'Kod 500'),
+            array('ACME Sp. z o.o.' => 'cURL error: timeout', 'Jan Kowalski' => 'Blad walidacji', 'Kowalski' => 'Kod 500'),
             $result['errors']
         );
         $this->assertSame(array(), $result['rows']);
+    }
+
+    public function testAKod403PhraseStartsTheCoolDownAndTheNextPhraseIsRefusedWithThePauseMessage()
+    {
+        $this->t->queue('GET', '#kontrahenci/ACME%20Sp\.%20z%20o\.o\.\.json#', array('status' => 0, 'error' => 'timeout'));
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', $this->body(array('Kod' => 403, 'Informacja' => 'Bledny podpis')));
+        $this->t->queue('GET', '#kontrahenci/Kowalski\.json#', $this->body(array('Kod' => 500, 'Informacja' => '')));
+
+        $result = $this->svc->searchCandidates($this->criteria(array('firstname' => 'Jan', 'lastname' => 'Kowalski', 'company' => 'ACME Sp. z o.o.')));
+
+        $this->assertSame('cURL error: timeout', $result['errors']['ACME Sp. z o.o.']);
+        $this->assertSame('Bledny podpis', $result['errors']['Jan Kowalski']);
+        $this->assertStringContainsString('iFirma rejected the credentials at', $result['errors']['Kowalski']);
+        $this->assertStringContainsString('Bledny podpis; calls are paused until', $result['errors']['Kowalski']);
+        $this->assertCount(2, $this->t->calls, 'the third phrase never reached the transport');
     }
 
     public function testAPhraseThatFailedDoesNotMarkTheNextOneAndTheOthersKeepTheirRows()

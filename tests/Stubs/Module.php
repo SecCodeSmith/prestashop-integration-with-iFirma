@@ -98,6 +98,11 @@ class Module
         return '<error>' . $error . '</error>';
     }
 
+    public function displayWarning($warning)
+    {
+        return '<warning>' . $warning . '</warning>';
+    }
+
     public function displayConfirmation($string)
     {
         return '<confirmation>' . $string . '</confirmation>';

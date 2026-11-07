@@ -47,11 +47,32 @@ abstract class IfirmaActionSupport
     }
 
     /**
-     * @param Exception|Throwable $e
+     * A failure the module raised on purpose, whose message may be shown: an Exception of exactly the
+     * class Exception, or any class whose name starts with Ifirma. Every other Throwable (Error,
+     * TypeError, PrestaShopException, PDOException ...) is a bug or an outage whose text stays in the log.
+     *
+     * @param Throwable $e
+     * @return bool
+     */
+    public static function isModuleException($e)
+    {
+        $class = get_class($e);
+
+        return $class === 'Exception' || strpos($class, 'Ifirma') === 0;
+    }
+
+    /**
+     * @param Throwable $e
      * @return array
      */
     protected function failure($e)
     {
+        if (!self::isModuleException($e)) {
+            PrestaShopLogger::addLog('iFirma: ' . get_class($e) . ': ' . $e->getMessage(), 3);
+
+            return $this->result(false, $this->module->l('Internal error; details are in the PrestaShop log.', 'ifirmaadminactions'));
+        }
+
         $data = array();
         if ($e instanceof IfirmaDataRequestException) {
             $data = array('errors' => $e->errors, 'code' => $e->code_name);

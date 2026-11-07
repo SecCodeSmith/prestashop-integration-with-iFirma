@@ -37,6 +37,15 @@ require_once dirname(__FILE__) . '/IfirmaDataRequestNotifier.php';
  */
 class IfirmaDataRequestService
 {
+    /** Seconds the customer waits between two requests for one order. */
+    const COOLDOWN = 600;
+
+    /** Requests one customer may create in 24 hours. */
+    const DAILY_CAP = 10;
+
+    /** Longest admin note and rejection reason, in characters. */
+    const ADMIN_TEXT_MAX = 1000;
+
     /** @var Module */
     private $module;
 
@@ -116,8 +125,48 @@ class IfirmaDataRequestService
         if ($this->hasPendingForOrder((int) $order->id)) {
             return $this->verdict('pending_exists');
         }
+        if ($this->inCooldown((int) $order->id, (int) $customer->id)) {
+            return $this->verdict('cooldown');
+        }
+        if ($this->dailyCapReached((int) $customer->id)) {
+            return $this->verdict('daily_cap');
+        }
 
         return $this->verdict('ok');
+    }
+
+    /**
+     * @param int $idOrder
+     * @param int $idCustomer
+     * @return bool true when the customer's newest request for the order, whatever its status, was
+     *              created or changed less than COOLDOWN seconds ago
+     */
+    private function inCooldown($idOrder, $idCustomer)
+    {
+        $newest = (string) Db::getInstance()->getValue(
+            'SELECT GREATEST(date_add, date_upd) FROM `' . _DB_PREFIX_ . 'ifirma_data_request`
+             WHERE id_order = ' . (int) $idOrder . ' AND id_customer = ' . (int) $idCustomer . '
+             ORDER BY GREATEST(date_add, date_upd) DESC'
+        );
+        $at = $newest !== '' ? strtotime($newest) : false;
+
+        return $at !== false && strtotime($this->now()) - $at < self::COOLDOWN;
+    }
+
+    /**
+     * @param int $idCustomer
+     * @return bool true when the customer created DAILY_CAP requests in the last 24 hours
+     */
+    private function dailyCapReached($idCustomer)
+    {
+        $since = date('Y-m-d H:i:s', strtotime($this->now()) - 86400);
+        $count = (int) Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'ifirma_data_request`
+             WHERE id_customer = ' . (int) $idCustomer . '
+             AND date_add >= "' . pSQL($since) . '"'
+        );
+
+        return $count >= self::DAILY_CAP;
     }
 
     /**
@@ -150,6 +199,10 @@ class IfirmaDataRequestService
                 return $this->module->l('A reason is required.', 'ifirmadatarequestservice');
             case 'invalid_token':
                 return $this->module->l('Invalid form token.', 'ifirmadatarequestservice');
+            case 'cooldown':
+                return $this->module->l('Please wait 10 minutes before sending another request for this order.', 'ifirmadatarequestservice');
+            case 'daily_cap':
+                return $this->module->l('You have reached the limit of requests for today.', 'ifirmadatarequestservice');
         }
 
         return $this->module->l('The request could not be processed.', 'ifirmadatarequestservice');
@@ -274,6 +327,27 @@ class IfirmaDataRequestService
             $errors['id_country'] = $this->module->l('Select a valid country.', 'ifirmadatarequestservice');
         }
 
+        $invalid = $this->module->l('This value contains characters that are not allowed.', 'ifirmadatarequestservice');
+        foreach (array('firstname' => 'isName', 'lastname' => 'isName', 'address1' => 'isAddress',
+            'address2' => 'isAddress', 'city' => 'isCityName') as $field => $check) {
+            if (!isset($errors[$field]) && $get($field) !== '' && !Validate::$check($get($field))) {
+                $errors[$field] = $invalid;
+            }
+        }
+
+        if (!isset($errors['id_country']) && $get('id_country') !== '') {
+            $country = new Country((int) $get('id_country'));
+            if (!Validate::isLoadedObject($country) || !$country->active) {
+                $errors['id_country'] = $this->module->l('Select a valid country.', 'ifirmadatarequestservice');
+            } elseif (!isset($errors['postcode']) && !empty($country->zip_code_format)
+                && !$country->checkZipCode($get('postcode'))) {
+                $errors['postcode'] = $this->module->l('The postcode does not match the format of the selected country.', 'ifirmadatarequestservice');
+            }
+        }
+        if (!isset($errors['postcode']) && $get('postcode') !== '' && !Validate::isPostCode($get('postcode'))) {
+            $errors['postcode'] = $invalid;
+        }
+
         $limits = array(
             'company' => 150, 'firstname' => 65, 'lastname' => 65, 'address1' => 65,
             'address2' => 65, 'postcode' => 16, 'city' => 65, 'customer_note' => 1000,
@@ -327,6 +401,21 @@ class IfirmaDataRequestService
         $e->errors = $errors;
 
         return $e;
+    }
+
+    /**
+     * @param mixed  $text  an admin note or a rejection reason
+     * @param string $field the key of the field-level message
+     * @throws IfirmaDataRequestException when the text is longer than ADMIN_TEXT_MAX characters
+     */
+    private function assertAdminText($text, $field)
+    {
+        if (is_array($text) || mb_strlen(trim((string) $text), 'UTF-8') <= self::ADMIN_TEXT_MAX) {
+            return;
+        }
+        $message = sprintf($this->module->l('Maximum length is %d characters.', 'ifirmadatarequestservice'), self::ADMIN_TEXT_MAX);
+
+        throw $this->fail('invalid', array($field => $message), $message);
     }
 
     /**
@@ -401,6 +490,7 @@ class IfirmaDataRequestService
         } catch (IfirmaDataRequestException $e) {
             throw $this->fail($e->code_name, $e->errors);
         }
+        $this->assertAdminText($adminNote, 'admin_note');
         if ($editedData !== null) {
             $errors = $this->validate($editedData);
             if (!empty($errors)) {
@@ -428,6 +518,12 @@ class IfirmaDataRequestService
      */
     public function reject(IfirmaDataRequest $request, $idEmployee, $reason)
     {
+        try {
+            $request->assertPending();
+        } catch (IfirmaDataRequestException $e) {
+            throw $this->fail($e->code_name, $e->errors);
+        }
+        $this->assertAdminText($reason, 'reason');
         try {
             $request->reject((int) $idEmployee, $reason, $this->now());
         } catch (IfirmaDataRequestException $e) {

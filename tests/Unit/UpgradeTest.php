@@ -11,6 +11,20 @@
 
 use PHPUnit\Framework\TestCase;
 
+/** Stands in for the module where upgrade-1.5.0 must create the missing tab: records the call. */
+class UpgradeTestModuleWithTab extends Module
+{
+    /** @var int */
+    public $tabsInstalled = 0;
+
+    public function installVisibleTab()
+    {
+        $this->tabsInstalled++;
+
+        return true;
+    }
+}
+
 class UpgradeTest extends TestCase
 {
     use IfirmaSentQueries;
@@ -21,6 +35,12 @@ class UpgradeTest extends TestCase
 
     /** @var array table => (column => DDL fragment): the database the install and upgrade paths run on */
     private $schema = array();
+
+    /** @var array table => (index name => true): the indexes of the simulated database */
+    private $indexes = array();
+
+    /** @var bool when set, the simulated database refuses every ADD KEY, as MySQL would for a failed ALTER */
+    private $refuseKeyAlters = false;
 
     /** @var array the KSeF receipt columns every shop needs, with their DDL */
     private static $ksefColumns = array(
@@ -36,6 +56,7 @@ class UpgradeTest extends TestCase
         require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.1.0.php';
         require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.2.0.php';
         require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.4.0.php';
+        require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.5.0.php';
     }
 
     protected function tearDown(): void
@@ -213,11 +234,13 @@ class UpgradeTest extends TestCase
     // ---- the schema each path ends with (refactor-srp-splits 9.1) ---------------------------------
     //
     // PrestaShop runs an upgrade file only when the version recorded for the shop is below the file's
-    // version and the file's version is not above the module's (1.4.0), oldest file first. So:
-    //   fresh install of 1.4.0  -> sql/install.php, through Ifirma::install()
-    //   1.0.x                   -> upgrade-1.1.0.php, then upgrade-1.2.0.php, then upgrade-1.4.0.php
-    //   1.1.0                   -> upgrade-1.2.0.php, then upgrade-1.4.0.php (1.2.0 changes hooks, not the schema)
-    //   1.2.0 .. 1.3.x -> upgrade-1.4.0.php only (it registers hooks, not the schema)
+    // version and the file's version is not above the module's (1.5.0), oldest file first. So:
+    //   fresh install of 1.5.0  -> sql/install.php, through Ifirma::install()
+    //   1.0.x                   -> upgrade-1.1.0.php, then upgrade-1.2.0.php, then upgrade-1.4.0.php, then upgrade-1.5.0.php
+    //   1.1.0                   -> upgrade-1.2.0.php, then upgrade-1.4.0.php, then upgrade-1.5.0.php
+    //                              (1.2.0 changes hooks, not the schema)
+    //   1.2.0 .. 1.4.1 -> upgrade-1.4.0.php, then upgrade-1.5.0.php (1.4.0 registers hooks; 1.5.0 adds the
+    //                     download column and the date index and moves the tab under the Orders menu)
     // The 1.1.0 build grew in place under one version number: the first build had no contractor map table,
     // the table came with 4452d02 and the KSeF sent/error receipt columns with 882f929. A shop recorded as
     // 1.1.0 by an earlier build never runs upgrade-1.1.0.php again.
@@ -260,12 +283,16 @@ class UpgradeTest extends TestCase
         $this->assertStringStartsWith('CREATE TABLE IF NOT EXISTS `ps_ifirma_contractor_map` (', $sent[2]);
         $this->assertStringContainsString('`ksef_sent_at` DATETIME NULL', $sent[0]);
         $this->assertStringContainsString('`ksef_error` TEXT NULL', $sent[0]);
+        $this->assertStringContainsString('`last_download_at` DATETIME NULL', $sent[0]);
+        $this->assertStringContainsString('KEY `idx_date_upd` (`date_upd`)', $sent[0]);
+        $this->assertTrue($this->indexes[self::RECEIPT]['idx_date_upd']);
         $this->assertStringContainsString('`ifirma_identifier` VARCHAR(64) NOT NULL', $sent[2]);
     }
 
     public function testTheUpgradeFrom10xCreatesTheContractorMapAndTheKsefColumnsWithoutTheRuntimeChecks()
     {
         $this->startPath($this->schemaOf10x());
+        $this->seedHiddenTabAndOrdersMenu();
         $this->assertSame(array(self::RECEIPT), array_keys($this->schema));
         $this->assertSame(array(
             'id_ifirma_receipt', 'id_order', 'id_customer', 'id_shop', 'document_type', 'ifirma_id', 'ifirma_number',
@@ -279,13 +306,20 @@ class UpgradeTest extends TestCase
         $this->assertTrue(upgrade_module_1_1_0($module));
         $this->assertTrue(upgrade_module_1_2_0($module));
         $this->assertTrue(upgrade_module_1_4_0($module));
+        $this->assertTrue(upgrade_module_1_5_0($module));
 
         $this->assertEndsWithTheContractorMapAndTheKsefColumns();
         $sent = $this->sentQueries();
         $alters = array_values(array_filter($sent, function ($sql) {
-            return strpos($sql, 'ALTER TABLE') === 0;
+            return strpos($sql, 'ALTER TABLE') === 0 && strpos($sql, 'ADD COLUMN') !== false;
         }));
-        $this->assertCount(20, $alters, 'the 20 receipt columns of 1.1.0, nothing else is altered');
+        $this->assertCount(21, $alters, 'the 20 receipt columns of 1.1.0 and last_download_at of 1.5.0, nothing else is added');
+        $this->assertContains('ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `last_download_at` DATETIME NULL', $alters);
+        $keys = array_values(array_filter($sent, function ($sql) {
+            return strpos($sql, 'ALTER TABLE') === 0 && strpos($sql, 'ADD KEY') !== false;
+        }));
+        $this->assertSame(array('ALTER TABLE `ps_ifirma_receipt` ADD KEY `idx_date_upd` (`date_upd`)'), $keys);
+        $this->assertTrue($this->indexes[self::RECEIPT]['idx_date_upd']);
         $this->assertContains('ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `ksef_sent_at` DATETIME NULL', $alters);
         $this->assertContains('ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `ksef_error` TEXT NULL', $alters);
         $maps = array_values(array_filter($sent, function ($sql) {
@@ -410,6 +444,134 @@ class UpgradeTest extends TestCase
         Db::getInstance()->getValue('SELECT COUNT(*) FROM information_schema.COLUMNS');
     }
 
+    // ---- upgrade-1.5.0.php: the visible tab, the hook, the download column and the date index -------------
+
+    /** What a 1.4.1 shop has: the tab row of 1.4.0 under no menu, no download column, no date index. */
+    private function schemaOf141()
+    {
+        $schema = $this->expectedSchema();
+        unset($schema[self::RECEIPT]['last_download_at']);
+
+        return $schema;
+    }
+
+    /** The hidden tab row of 1.4.1 (id 140) and the Orders menu it moves under (id 4). */
+    private function seedHiddenTabAndOrdersMenu()
+    {
+        Tab::$rows[140] = array(
+            'class_name' => 'AdminIfirma', 'module' => 'ifirma', 'id_parent' => -1,
+            'name' => array(1 => 'iFirma', 2 => 'iFirma'), 'position' => 0, 'active' => 1,
+        );
+        Tab::$rows[4] = array(
+            'class_name' => 'AdminParentOrders', 'module' => '', 'id_parent' => 0,
+            'name' => array(1 => 'Orders', 2 => 'Zamówienia'), 'position' => 0, 'active' => 1,
+        );
+    }
+
+    private function alterStatementsOf($sent)
+    {
+        return array_values(array_filter($sent, function ($sql) {
+            return strpos($sql, 'ALTER TABLE') === 0;
+        }));
+    }
+
+    public function testUpgrade150MovesTheHiddenTabUnderOrdersInPlaceAndIsIdempotent()
+    {
+        $this->seedHiddenTabAndOrdersMenu();
+        Access::grant('ROLE_VIEW', 1);
+        Access::grant('ROLE_ADD', 1);
+        $grants = Access::$grants;
+        $this->startFrom($this->schemaOf141());
+        $module = new Module();
+
+        $this->assertTrue(upgrade_module_1_5_0($module));
+
+        $this->assertSame(4, Tab::$rows[140]['id_parent']);
+        $this->assertSame(array(1 => 'iFirma documents', 2 => 'iFirma documents'), Tab::$rows[140]['name']);
+        $this->assertSame(array(), Tab::$deleted, 'the tab row is updated, never deleted');
+        $this->assertSame(array(), Tab::$added, 'the tab row is updated, never added again');
+        $this->assertSame(array('actionAdminControllerSetMedia'), Module::$hooks);
+        $this->assertSame(array(
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `last_download_at` DATETIME NULL',
+            'ALTER TABLE `ps_ifirma_receipt` ADD KEY `idx_date_upd` (`date_upd`)',
+        ), $this->alterStatementsOf($this->sentQueries()));
+        $this->assertSame('', Configuration::get('IFIRMA_AUTH_FAILURE'));
+        $this->assertSame($grants, Access::$grants, 'the permission rows of the tab are not touched');
+
+        // a second request: the checks ask the database again and find everything in place
+        IfirmaSchema::resetEnsureCache();
+        Db::getInstance()->queries = array();
+        Db::getInstance()->executed = array();
+        Configuration::$writes = array();
+
+        $this->assertTrue(upgrade_module_1_5_0($module));
+
+        $this->assertSame(array(), $this->alterStatementsOf($this->sentQueries()));
+        $this->assertSame(4, Tab::$rows[140]['id_parent']);
+        $this->assertSame(array(), Tab::$deleted);
+        $this->assertSame(array(), Tab::$added);
+        $this->assertSame(array('actionAdminControllerSetMedia'), Module::$hooks);
+        $this->assertSame(array(), Configuration::$writes, 'the default is not written again');
+        $this->assertSame($grants, Access::$grants);
+    }
+
+    public function testUpgrade150KeepsTheTabHiddenAndRegistersNoSecondHookWithoutAnOrdersMenu()
+    {
+        Tab::$rows[140] = array(
+            'class_name' => 'AdminIfirma', 'module' => 'ifirma', 'id_parent' => -1,
+            'name' => array(1 => 'iFirma', 2 => 'iFirma'), 'position' => 0, 'active' => 1,
+        );
+        $module = new Module();
+        $module->registerHook('actionAdminControllerSetMedia');
+        $this->startFrom($this->schemaOf141());
+
+        $this->assertTrue(upgrade_module_1_5_0($module));
+
+        $this->assertSame(-1, Tab::$rows[140]['id_parent']);
+        $this->assertSame('iFirma documents', Tab::$rows[140]['name'][1]);
+        $this->assertSame(array('actionAdminControllerSetMedia'), Module::$hooks, 'an already registered hook stays once');
+    }
+
+    public function testUpgrade150CreatesTheTabWhenItIsMissing()
+    {
+        $module = new UpgradeTestModuleWithTab();
+        $this->startFrom($this->schemaOf141());
+
+        $this->assertTrue(upgrade_module_1_5_0($module));
+
+        $this->assertSame(1, $module->tabsInstalled);
+        $this->assertSame(array(), Tab::$rows, 'the module creates the tab; the upgrade does not write rows itself');
+    }
+
+    public function testUpgrade150AddsOnlyWhatIsMissing()
+    {
+        $this->seedHiddenTabAndOrdersMenu();
+        $schema = $this->schemaOf141();
+        $schema[self::RECEIPT]['last_download_at'] = 'DATETIME NULL';
+        $this->startFrom($schema, array(self::RECEIPT => array('idx_date_upd' => true)));
+
+        $this->assertTrue(upgrade_module_1_5_0(new Module()));
+
+        $this->assertSame(array(), $this->alterStatementsOf($this->sentQueries()));
+    }
+
+    public function testUpgrade150ReportsAFailedAlterAndRetriesOnTheNextRun()
+    {
+        $this->seedHiddenTabAndOrdersMenu();
+        $this->startFrom($this->schemaOf141());
+        $this->refuseKeyAlters = true;
+
+        $this->assertFalse(upgrade_module_1_5_0(new Module()));
+
+        $this->refuseKeyAlters = false;
+        $this->assertTrue(upgrade_module_1_5_0(new Module()));
+        $this->assertSame(array(
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `last_download_at` DATETIME NULL',
+            'ALTER TABLE `ps_ifirma_receipt` ADD KEY `idx_date_upd` (`date_upd`)',
+            'ALTER TABLE `ps_ifirma_receipt` ADD KEY `idx_date_upd` (`date_upd`)',
+        ), $this->alterStatementsOf($this->sentQueries()));
+    }
+
     // ---- helpers: the database each path runs on ----------------------------------------------------
 
     /** What the module's own column lists say a complete install has. */
@@ -425,7 +587,11 @@ class UpgradeTest extends TestCase
     /** What sql/install.php of 1.0.0 created: the receipt table, without the columns 1.1.0 added. */
     private function schemaOf10x()
     {
-        return array(self::RECEIPT => array_diff_key(IfirmaSchema::receiptColumns(), IfirmaSchema::newReceiptColumnsFor110()));
+        return array(self::RECEIPT => array_diff_key(
+            IfirmaSchema::receiptColumns(),
+            IfirmaSchema::newReceiptColumnsFor110(),
+            IfirmaSchema::newReceiptColumnsFor150()
+        ));
     }
 
     /** The first 1.1.0 build: no contractor map yet, and not yet the KSeF sent and error columns. */
@@ -493,15 +659,20 @@ class UpgradeTest extends TestCase
      * refuse (an existing column added again, a column or table that is not there), makes execute() return
      * false, so that a path cannot pass by luck.
      */
-    private function startFrom(array $schema)
+    private function startFrom(array $schema, array $indexes = array())
     {
         $this->schema = $schema;
+        $this->indexes = $indexes;
+        $this->refuseKeyAlters = false;
         $db = Db::getInstance();
         $db->whenExecute('/^(CREATE|ALTER) TABLE/', function ($sql) {
             return $this->applyStatement($sql);
         });
         $db->whenGetValue('/FROM information_schema\.COLUMNS/', function ($sql) {
             return $this->answerProbe($sql);
+        });
+        $db->whenGetValue('/FROM information_schema\.STATISTICS/', function ($sql) {
+            return $this->answerIndexProbe($sql);
         });
     }
 
@@ -511,14 +682,27 @@ class UpgradeTest extends TestCase
         if (preg_match('/^CREATE TABLE IF NOT EXISTS `([^`]+)` \(\n(.*)\n\) ENGINE=/s', $sql, $m)) {
             if (!isset($this->schema[$m[1]])) {
                 $this->schema[$m[1]] = array();
+                $this->indexes[$m[1]] = isset($this->indexes[$m[1]]) ? $this->indexes[$m[1]] : array();
                 foreach (explode("\n", $m[2]) as $line) {
                     if (preg_match('/^\s+`([^`]+)` (.+?),?$/', $line, $column)) {
                         $this->schema[$m[1]][$column[1]] = $column[2];
+                    }
+                    if (preg_match('/^\s+KEY `([^`]+)` /', $line, $key)) {
+                        $this->indexes[$m[1]][$key[1]] = true;
                     }
                 }
             }
 
             return true;
+        }
+        if (preg_match('/^ALTER TABLE `([^`]+)` ADD KEY `([^`]+)` \(`[^`]+`\)$/', $sql, $m) && isset($this->schema[$m[1]])) {
+            if (!$this->refuseKeyAlters && !isset($this->indexes[$m[1]][$m[2]])) {
+                $this->indexes[$m[1]][$m[2]] = true;
+
+                return true;
+            }
+
+            return false;
         }
         if (preg_match('/^ALTER TABLE `([^`]+)` (ADD COLUMN|MODIFY) `([^`]+)` (.+)$/s', $sql, $m) && isset($this->schema[$m[1]])) {
             if (isset($this->schema[$m[1]][$m[3]]) === ($m[2] === 'MODIFY')) {
@@ -547,6 +731,20 @@ class UpgradeTest extends TestCase
         }
 
         return $ddl !== null && preg_match('/^VARCHAR\((\d+)\)/', $ddl, $length) ? $length[1] : false;
+    }
+
+    private function answerIndexProbe($sql)
+    {
+        if (!preg_match(
+            "/^SELECT COUNT\(\*\) FROM information_schema\.STATISTICS WHERE TABLE_SCHEMA = DATABASE\(\)"
+            . " AND TABLE_NAME = '([^']+)' AND INDEX_NAME = '([^']+)'$/",
+            $sql,
+            $m
+        )) {
+            throw new LogicException('The simulated database does not know this index probe: ' . $sql);
+        }
+
+        return isset($this->indexes[$m[1]][$m[2]]) ? '1' : '0';
     }
 
     /** The table order and the column order of a CREATE TABLE do not matter once a column was added later. */
@@ -582,5 +780,22 @@ class UpgradeTest extends TestCase
             $this->sortedSchema($this->schema),
             'the schema of a fresh install'
         );
+    }
+
+    public function testUpgradeStopsWhenTheCronTokenCannotBeGenerated()
+    {
+        $this->scriptColumnProbe();
+        Configuration::deleteByName('IFIRMA_CRON_TOKEN');
+        IfirmaSchema::$randomBytes = function () {
+            throw new Exception('no entropy');
+        };
+        try {
+            $result = upgrade_module_1_1_0(new Module());
+        } finally {
+            IfirmaSchema::$randomBytes = null;
+        }
+
+        $this->assertFalse($result);
+        $this->assertFalse(Configuration::get('IFIRMA_CRON_TOKEN'), 'no guessable token is stored');
     }
 }

@@ -30,6 +30,8 @@ class IfirmaTestState
         Module::reset();
         Tab::reset();
         Access::reset();
+        Media::reset();
+        IfirmaReceiptService::$randomBytes = null;
         Tools::reset();
         Mail::reset();
         PrestaShopLogger::reset();

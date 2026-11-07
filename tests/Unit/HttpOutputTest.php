@@ -25,7 +25,7 @@ class IfirmaTestHeadersSent extends RuntimeException
  * Under PHPUnit the native header() fails ("headers already sent") and exit would end the run, so
  * pdf() sends its header lines through IfirmaHttpOutput::useHeaderSink(). Both controllers end in
  * exit right after pdf(): their tests stop them with an exception thrown by the sink after the
- * fourth header, so the document is not echoed and exit is not reached.
+ * last header, so the document is not echoed and exit is not reached.
  */
 class HttpOutputTest extends TestCase
 {
@@ -33,6 +33,9 @@ class HttpOutputTest extends TestCase
 
     /** The document of the mocked iFirma API: 30 bytes, binary and multibyte (fewer characters). */
     const PDF = "%PDF-1.4\n%\xC4\x85\xFF\x00\nfake body\n%%EOF";
+
+    /** Number of header lines pdf() sends. */
+    const HEADER_COUNT = 5;
 
     /** @var string[] header lines the recording sink received, in order */
     private $lines = array();
@@ -110,22 +113,24 @@ class HttpOutputTest extends TestCase
         }
     }
 
+    /** The header lines pdf() sends for the given file name (the name the browser offers). */
     private function expectedHeaders($filename)
     {
         return array(
             'Content-Type: application/pdf',
-            'Content-Disposition: inline; filename="' . $filename . '"',
+            'Content-Disposition: attachment; filename="' . $filename . '"',
             'Content-Length: 30',
             'Cache-Control: private, must-revalidate',
+            'X-Content-Type-Options: nosniff',
         );
     }
 
     // ---- IfirmaHttpOutput::pdf() --------------------------------------------------------------
 
-    public function testSendsTheFourPdfHeadersInOrderAndThenTheDocument()
+    public function testSendsTheFivePdfHeadersInOrderAndThenTheDocument()
     {
         $this->withOwnBuffer(function () {
-            IfirmaHttpOutput::pdf(self::PDF, 'ifirma-7_2026.pdf');
+            IfirmaHttpOutput::pdf(self::PDF, '7_2026');
         });
 
         // the length is a byte count
@@ -133,26 +138,58 @@ class HttpOutputTest extends TestCase
         $this->expectOutputString(self::PDF);
     }
 
+    public function testHeadersPresent()
+    {
+        $this->withOwnBuffer(function () {
+            IfirmaHttpOutput::pdf(self::PDF, '7_2026');
+        });
+
+        $this->assertContains('X-Content-Type-Options: nosniff', $this->lines);
+        $this->assertContains('Content-Disposition: attachment; filename="ifirma-7_2026.pdf"', $this->lines);
+        $this->expectOutputString(self::PDF);
+    }
+
+    public function testIdentifierWithASlashIsSanitisedInTheFileName()
+    {
+        $this->withOwnBuffer(function () {
+            IfirmaHttpOutput::pdf(self::PDF, '12/ab');
+        });
+
+        $this->assertSame('Content-Disposition: attachment; filename="ifirma-12_ab.pdf"', $this->lines[1]);
+        $this->assertContains('X-Content-Type-Options: nosniff', $this->lines);
+        $this->expectOutputString(self::PDF);
+    }
+
+    public function testEveryCharacterOutsideTheSafeSetBecomesAnUnderscore()
+    {
+        $this->withOwnBuffer(function () {
+            IfirmaHttpOutput::pdf(self::PDF, "FV 7/2026\"\r\n;a.b-c_d");
+        });
+
+        $this->assertSame('Content-Disposition: attachment; filename="ifirma-FV_7_2026____a.b-c_d.pdf"', $this->lines[1]);
+        $this->expectOutputString(self::PDF);
+    }
+
     public function testTheHeadersGoOutBeforeAnyOfTheDocument()
     {
         $this->withOwnBuffer(function () {
-            IfirmaHttpOutput::pdf(self::PDF, 'ifirma-7_2026.pdf');
+            IfirmaHttpOutput::pdf(self::PDF, '7_2026');
         });
 
-        $this->assertSame(array(0, 0, 0, 0), $this->pendingAtHeader);
+        $this->assertSame(array_fill(0, self::HEADER_COUNT, 0), $this->pendingAtHeader);
         $this->expectOutputString(self::PDF);
     }
 
     public function testDiscardsTheOutputBufferedSoFar()
     {
         $this->withOwnBuffer(function () {
-            IfirmaHttpOutput::pdf(self::PDF, 'ifirma-7_2026.pdf');
+            IfirmaHttpOutput::pdf(self::PDF, '7_2026');
         }, 'half-rendered page');
 
         // Exactly the level of the call is closed, and its content is dropped, not flushed.
         $this->assertSame($this->baseLevel, ob_get_level());
-        // the four headers went out with nothing pending: the discard came before them
-        $this->assertSame(array(0, 0, 0, 0), $this->pendingAtHeader);
+        // the headers went out with nothing pending: the discard came before them
+        $this->assertSame(array_fill(0, self::HEADER_COUNT, 0), $this->pendingAtHeader);
         $this->expectOutputString(self::PDF);
     }
 
@@ -195,64 +232,60 @@ class HttpOutputTest extends TestCase
         $this->t->queue('GET', '#\.pdf#', array('body' => self::PDF));
     }
 
-    /** Runs a download request and stops it at the fourth header, before the echo and the exit. */
-    private function runUntilTheFourthHeader(callable $request)
+    /** Runs a download request and stops it at the last header, before the echo and the exit. */
+    private function runUntilTheLastHeader(callable $request)
     {
         $this->expectOutputString('');
-        $this->recordHeaders(4);
+        $this->recordHeaders(self::HEADER_COUNT);
         try {
             $this->withOwnBuffer($request);
         } catch (IfirmaTestHeadersSent $stop) {
             return;
         }
-        $this->fail('The download ended without sending four headers.');
+        $this->fail('The download ended without sending the PDF headers.');
     }
 
     /**
-     * The file name of the front controller sanitises the number, or the id when there is no
-     * number; the admin controller sanitises the number only and sends the id as it is.
+     * The file name of both controllers: the number, or the identifier when there is no number, and
+     * IfirmaHttpOutput::pdf() sanitises it.
      */
     public function filenames()
     {
         return array(
-            'the number, every character outside 0-9 A-Z a-z . _ - replaced' => array(
-                'FV 7/2026-A.b_c', '77', array('front' => 'ifirma-FV_7_2026-A.b_c.pdf', 'admin' => 'ifirma-FV_7_2026-A.b_c.pdf'),
-            ),
-            'no number: the id, sanitised by the front controller only' => array(
-                '', 'A/7', array('front' => 'ifirma-A_7.pdf', 'admin' => 'ifirma-A/7.pdf'),
-            ),
+            'the number, unsafe characters replaced' => array('FV 7/2026-A.b_c', '77', 'ifirma-FV_7_2026-A.b_c.pdf'),
+            'no number: the identifier' => array('', 'A/7', 'ifirma-A_7.pdf'),
         );
     }
 
     /**
      * @dataProvider filenames
      */
-    public function testFrontControllerSendsThePdfHeadersOfTheOwnersReceipt($number, $id, array $filenames)
+    public function testFrontControllerSendsThePdfHeadersOfTheOwnersReceipt($number, $id, $filename)
     {
         $this->prepareDownload($number, $id);
         Tools::$values = array('token' => 'tok123');
         $controller = IfirmaTestModuleLoader::loadFrontController('receipt');
 
-        $this->runUntilTheFourthHeader(function () use ($controller) {
+        $this->runUntilTheLastHeader(function () use ($controller) {
             $controller->initContent();
         });
 
-        $this->assertSame($this->expectedHeaders($filenames['front']), $this->lines);
+        $this->assertSame($this->expectedHeaders($filename), $this->lines);
     }
 
     /**
      * @dataProvider filenames
      */
-    public function testAdminControllerSendsThePdfHeadersOfTheOrdersReceipt($number, $id, array $filenames)
+    public function testAdminControllerSendsThePdfHeadersOfTheOrdersReceipt($number, $id, $filename)
     {
         $this->prepareDownload($number, $id);
         Tools::$values = array('id_order' => 15);
         $controller = IfirmaTestModuleLoader::loadAdminController();
 
-        $this->runUntilTheFourthHeader(function () use ($controller) {
+        $this->runUntilTheLastHeader(function () use ($controller) {
             $controller->ajaxProcessDownloadPdf();
         });
 
-        $this->assertSame($this->expectedHeaders($filenames['admin']), $this->lines);
+        $this->assertSame($this->expectedHeaders($filename), $this->lines);
     }
 }

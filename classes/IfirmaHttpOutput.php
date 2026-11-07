@@ -39,18 +39,25 @@ class IfirmaHttpOutput
     /**
      * Discards the pending output buffer, sends the PDF headers and echoes the document.
      *
-     * @param string $pdf      the PDF bytes
-     * @param string $filename file name offered to the browser, safe to put in quotes
+     * The file name is built here from the raw document number or identifier: ifirma-<name>.pdf with
+     * every character outside 0-9A-Za-z._- replaced by an underscore, so no caller can put a quote,
+     * a slash or a line break into the header.
+     *
+     * @param string $pdf  the PDF bytes
+     * @param string $name the document number or, when there is none, the identifier (raw)
      */
-    public static function pdf($pdf, $filename)
+    public static function pdf($pdf, $name)
     {
+        $filename = 'ifirma-' . preg_replace('/[^0-9A-Za-z._-]/', '_', (string) $name) . '.pdf';
+
         if (ob_get_level()) {
             ob_end_clean();
         }
         call_user_func(self::$sendHeader, 'Content-Type: application/pdf');
-        call_user_func(self::$sendHeader, 'Content-Disposition: inline; filename="' . $filename . '"');
+        call_user_func(self::$sendHeader, 'Content-Disposition: attachment; filename="' . $filename . '"');
         call_user_func(self::$sendHeader, 'Content-Length: ' . strlen($pdf));
         call_user_func(self::$sendHeader, 'Cache-Control: private, must-revalidate');
+        call_user_func(self::$sendHeader, 'X-Content-Type-Options: nosniff');
         echo $pdf;
     }
 }

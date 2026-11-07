@@ -39,6 +39,13 @@ require_once dirname(__FILE__) . '/IfirmaPaymentMethodResolver.php';
  */
 class IfirmaSettings
 {
+    /**
+     * Testability seam for the shop's developer mode: null reads _PS_MODE_DEV_, a boolean forces the answer.
+     *
+     * @var bool|null
+     */
+    public static $devMode = null;
+
     /** Trimmed text. An empty text becomes the default; with no default it is an error (a required field). */
     const TYPE_TEXT = 'text';
 
@@ -47,6 +54,11 @@ class IfirmaSettings
 
     /** Like TYPE_TEXT, and a text that is not empty must be an e-mail address. */
     const TYPE_EMAIL = 'email';
+
+    /**
+     * Like TYPE_TEXT, and a text that is not empty must be an address the module may call (isAcceptableBaseUrl()).
+     */
+    const TYPE_URL = 'url';
 
     /** Whatever was posted, not trimmed and not cast (false when nothing was posted). */
     const TYPE_RAW = 'raw';
@@ -88,11 +100,11 @@ class IfirmaSettings
         $paymentModes = array(IfirmaPaymentMethodResolver::MODE_ORDER, IfirmaPaymentMethodResolver::MODE_FIXED);
 
         return array(
-            'IFIRMA_BASE_URL' => array('type' => self::TYPE_TEXT, 'default' => IfirmaApiClient::BASE_URL),
+            'IFIRMA_BASE_URL' => array('type' => self::TYPE_URL, 'default' => IfirmaApiClient::BASE_URL),
             'IFIRMA_USER' => array('type' => self::TYPE_TEXT),
             'IFIRMA_KEY_FAKTURA' => array('type' => self::TYPE_HEX, 'default' => ''),
-            'IFIRMA_KEY_ABONENT' => array('type' => self::TYPE_TEXT, 'default' => ''),
-            'IFIRMA_KEY_RACHUNEK' => array('type' => self::TYPE_TEXT, 'default' => ''),
+            'IFIRMA_KEY_ABONENT' => array('type' => self::TYPE_HEX, 'default' => ''),
+            'IFIRMA_KEY_RACHUNEK' => array('type' => self::TYPE_HEX, 'default' => ''),
             'IFIRMA_DOC_TYPE' => array('type' => self::TYPE_NORMALISED, 'with' => array($documents, 'normalizeDocumentType')),
             'IFIRMA_SIGNATURE_TYPE' => array('type' => self::TYPE_NORMALISED, 'with' => array($documents, 'normalizeSignatureType')),
             'IFIRMA_PAYMENT_METHOD' => array('type' => self::TYPE_PAYMENT_CODE),
@@ -184,8 +196,10 @@ class IfirmaSettings
                 return self::text($row, $raw, 'ctype_xdigit');
             case self::TYPE_EMAIL:
                 return self::text($row, $raw, array('Validate', 'isEmail'));
+            case self::TYPE_URL:
+                return self::text($row, $raw, array('IfirmaSettings', 'isAcceptableBaseUrl'));
             case self::TYPE_RAW:
-                return $raw;
+                return is_scalar($raw) ? $raw : false;
             case self::TYPE_SWITCH:
                 return (int) (bool) $raw;
             case self::TYPE_INT:
@@ -197,13 +211,72 @@ class IfirmaSettings
             case self::TYPE_CHOICE:
                 return self::choice($row, $raw);
             case self::TYPE_NORMALISED:
-                return call_user_func($row['with'], $raw);
+                return call_user_func($row['with'], is_scalar($raw) ? $raw : false);
             case self::TYPE_PAYMENT_CODE:
                 return self::paymentCode($raw);
             case self::TYPE_PAYMENT_MAP:
                 // parseMap() throws an InvalidArgumentException that lists every bad line: that list is the detail
-                return IfirmaPaymentMethodResolver::formatMap(IfirmaPaymentMethodResolver::parseMap((string) $raw));
+                return IfirmaPaymentMethodResolver::formatMap(IfirmaPaymentMethodResolver::parseMap(self::scalarText($raw)));
         }
+    }
+
+    /**
+     * Whether the module may send its signed requests to this address: an absolute URL without credentials,
+     * over https, or over http when the shop is in developer mode or the host is local (localhost, loopback,
+     * private ranges, or a single-label name such as a Docker service).
+     *
+     * @param string $url
+     * @return bool
+     */
+    public static function isAcceptableBaseUrl($url)
+    {
+        $url = (string) $url;
+        if (method_exists('Validate', 'isAbsoluteUrl') && !Validate::isAbsoluteUrl($url)) {
+            return false;
+        }
+        if (filter_var($url, FILTER_VALIDATE_URL) === false) {
+            return false;
+        }
+
+        $parts = parse_url($url);
+        if (!is_array($parts) || empty($parts['host']) || isset($parts['user']) || isset($parts['pass'])) {
+            return false;
+        }
+
+        $scheme = isset($parts['scheme']) ? strtolower($parts['scheme']) : '';
+        if ($scheme === 'https') {
+            return true;
+        }
+
+        return $scheme === 'http' && (self::inDevMode() || self::isLocalHost($parts['host']));
+    }
+
+    /**
+     * @return bool
+     */
+    private static function inDevMode()
+    {
+        if (self::$devMode !== null) {
+            return (bool) self::$devMode;
+        }
+
+        return defined('_PS_MODE_DEV_') && _PS_MODE_DEV_;
+    }
+
+    /**
+     * @param string $host
+     * @return bool
+     */
+    private static function isLocalHost($host)
+    {
+        $host = strtolower(trim($host, '[]'));
+
+        return $host === 'localhost'
+            || $host === '::1'
+            || strpos($host, '.') === false
+            || (bool) preg_match('/^(127|10)\.\d{1,3}\.\d{1,3}\.\d{1,3}$/', $host)
+            || (bool) preg_match('/^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/', $host)
+            || (bool) preg_match('/^192\.168\.\d{1,3}\.\d{1,3}$/', $host);
     }
 
     /**
@@ -215,7 +288,7 @@ class IfirmaSettings
      */
     private static function text(array $row, $raw, $format)
     {
-        $text = trim($raw);
+        $text = trim(self::scalarText($raw));
         if ($text === '') {
             return self::defaultOf($row);
         }
@@ -234,7 +307,7 @@ class IfirmaSettings
      */
     private static function range(array $row, $raw)
     {
-        $text = trim((string) $raw);
+        $text = trim(self::scalarText($raw));
         $number = ($text !== '' && ctype_digit($text)) ? (int) $text : null;
         if ($number === null || $number < $row['min'] || $number > $row['max']) {
             throw new InvalidArgumentException('');
@@ -251,7 +324,7 @@ class IfirmaSettings
      */
     private static function decimal(array $row, $raw)
     {
-        $text = str_replace(',', '.', trim((string) $raw));
+        $text = str_replace(',', '.', trim(self::scalarText($raw)));
         if ($text === '' || !is_numeric($text) || (float) $text < $row['min']) {
             throw new InvalidArgumentException('');
         }
@@ -268,7 +341,8 @@ class IfirmaSettings
      */
     private static function choice(array $row, $raw)
     {
-        $text = (string) $raw;
+        // an array is no option: it reads as an unknown one, so the default (or the error of a row without one)
+        $text = is_scalar($raw) ? (string) $raw : '';
         if (!isset($row['trim']) || $row['trim']) {
             $text = trim($text);
         }
@@ -286,12 +360,26 @@ class IfirmaSettings
      */
     private static function paymentCode($raw)
     {
-        $code = strtoupper(trim((string) $raw));
+        $code = strtoupper(trim(self::scalarText($raw)));
         if (!isset(IfirmaPaymentMethodResolver::codes()[$code])) {
             throw new InvalidArgumentException('');
         }
 
         return $code;
+    }
+
+    /**
+     * @param mixed $raw what was posted
+     * @return string the text of a scalar (false, nothing posted, is the empty text)
+     * @throws InvalidArgumentException for an array or an object: a request can post `name[]=x`, and it is no text
+     */
+    private static function scalarText($raw)
+    {
+        if (!is_scalar($raw) && $raw !== null) {
+            throw new InvalidArgumentException('');
+        }
+
+        return (string) $raw;
     }
 
     /**

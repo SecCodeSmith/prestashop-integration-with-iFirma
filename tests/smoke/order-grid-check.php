@@ -84,6 +84,22 @@ $issuedOrder = $issued ? (int) $issued['id_order'] : 0;
 $issuedNumber = $issued ? ($issued['ifirma_number'] !== '' ? $issued['ifirma_number'] : $issued['ifirma_id']) : '';
 $issuedStatus = $issued ? $issued['status'] : '';
 $emptyOrder = (int) $db->getValue('SELECT o.id_order FROM ' . $t . 'orders o LEFT JOIN ' . $t . 'ifirma_receipt r ON r.id_order = o.id_order WHERE r.id_order IS NULL ORDER BY o.id_order DESC');
+// every order may already carry a record (the 9.1 shop does): then copy one order row as a throw-away order
+// without a record; it is deleted again at the end
+$tmpOrderCopy = 0;
+if ($emptyOrder === 0 && $issuedOrder > 0) {
+    $cols = array();
+    foreach ($db->executeS('SHOW COLUMNS FROM ' . $t . 'orders') as $c) {
+        if ($c['Field'] !== 'id_order') {
+            $cols[] = '`' . $c['Field'] . '`';
+        }
+    }
+    $list = implode(',', $cols);
+    $db->execute('INSERT INTO ' . $t . 'orders (' . $list . ') SELECT ' . $list . ' FROM ' . $t . 'orders WHERE id_order = ' . $issuedOrder);
+    $tmpOrderCopy = (int) $db->Insert_ID();
+    $emptyOrder = $tmpOrderCopy;
+    echo "throw-away order $tmpOrderCopy copied from $issuedOrder (no record)\n";
+}
 echo "fixtures: issued order $issuedOrder ($issuedNumber, $issuedStatus), order without a record $emptyOrder\n";
 check($issuedOrder > 0, 'an order with an issued document exists', (string) $issuedOrder);
 
@@ -173,7 +189,7 @@ if ($issuedOrder > 0) {
         'issued order cell has the icon, the number and ' . $word, (string) $cell);
 }
 if ($emptyOrder > 0) {
-    check(isset($records[$emptyOrder]['ifirma_document']) && $records[$emptyOrder]['ifirma_document'] === '', 'order without a record has an empty cell', $emptyOrder . ': ' . var_export(isset($records[$emptyOrder]['ifirma_document']) ? $records[$emptyOrder]['ifirma_document'] : 'key absent', true));
+    check(isset($records[$emptyOrder]['ifirma_document']) && strpos($records[$emptyOrder]['ifirma_document'], 'receipt_long') === false, 'order without a record has no issued icon in its cell', $emptyOrder . ': ' . var_export(isset($records[$emptyOrder]['ifirma_document']) ? $records[$emptyOrder]['ifirma_document'] : 'key absent', true));
 } else {
     skip('empty cell for an order without a record', 'every order already has a ps_ifirma_receipt row (receipts are not deleted by this check)');
 }
@@ -196,6 +212,70 @@ if ($before === null || $after === null) {
 } else {
     check($after - $before === 1, 'no request to the iFirma mock while building the grid', "mock counter $before -> $after (the second limit read is the only +1)");
 }
+
+// 4e. the third select (raw state) and the Issue anchor
+if ($issuedOrder > 0 && isset($records[$issuedOrder])) {
+    check(array_key_exists(IfirmaOrderGridIndicator::FIELD_STATE, $records[$issuedOrder]) && $records[$issuedOrder][IfirmaOrderGridIndicator::FIELD_STATE] === $issuedStatus,
+        'query builder hook selected the third value ifirma_document_state for the issued order', var_export(isset($records[$issuedOrder][IfirmaOrderGridIndicator::FIELD_STATE]) ? $records[$issuedOrder][IfirmaOrderGridIndicator::FIELD_STATE] : 'key absent', true) . ' expected ' . $issuedStatus);
+    check(strpos((string) $records[$issuedOrder]['ifirma_document'], 'js-ifirma-issue') === false, 'an order with an issued document gets the icon, not the Issue anchor');
+}
+if ($emptyOrder > 0 && isset($records[$emptyOrder])) {
+    $cellEmpty = (string) $records[$emptyOrder]['ifirma_document'];
+    check(array_key_exists(IfirmaOrderGridIndicator::FIELD_STATE, $records[$emptyOrder]) && $records[$emptyOrder][IfirmaOrderGridIndicator::FIELD_STATE] === '', 'an order without a record has an empty ifirma_document_state');
+    check(strpos($cellEmpty, 'js-ifirma-issue') !== false && strpos($cellEmpty, 'data-id-order="' . $emptyOrder . '"') !== false,
+        'SuperAdmin context employee: an order without a document presents the Issue anchor with its data-id-order', $cellEmpty);
+}
+
+// a throw-away profile without roles and an employee of it: the same grid then shows no anchor
+$tmpProfile = null;
+$tmpEmployee = null;
+try {
+    $tmpProfile = new Profile();
+    foreach (Language::getLanguages(false) as $l) {
+        $tmpProfile->name[$l['id_lang']] = 'ifirma-smoke-noroles';
+    }
+    $tmpProfile->add();
+    $tmpEmployee = new Employee();
+    $tmpEmployee->firstname = 'Smoke';
+    $tmpEmployee->lastname = 'Noroles';
+    $tmpEmployee->email = 'ifirma-smoke-noroles@example.com';
+    $tmpEmployee->passwd = Tools::hash('Passw0rd!x');
+    $tmpEmployee->id_profile = (int) $tmpProfile->id;
+    $tmpEmployee->id_lang = (int) Configuration::get('PS_LANG_DEFAULT');
+    $tmpEmployee->active = 1;
+    $tmpEmployee->add();
+    check((int) $tmpProfile->id > 0 && (int) $tmpEmployee->id > 0, 'throw-away profile and employee created', 'profile ' . $tmpProfile->id . ', employee ' . $tmpEmployee->id);
+    $ctx->employee = $tmpEmployee;
+    check(!IfirmaPermission::canIssue($tmpEmployee), 'the throw-away profile has no issue level');
+    $grid2 = $factory->getGrid($filters);
+    $presented2 = $presenter->present($grid2);
+    $recs2 = $presented2['data']['records'];
+    if (is_object($recs2) && method_exists($recs2, 'all')) {
+        $recs2 = $recs2->all();
+    }
+    $byId = array();
+    foreach ($recs2 as $rec) {
+        $byId[(int) $rec['id_order']] = $rec;
+    }
+    if ($emptyOrder > 0) {
+        $c2 = isset($byId[$emptyOrder]['ifirma_document']) ? (string) $byId[$emptyOrder]['ifirma_document'] : '';
+        check($c2 === '' && strpos(json_encode($byId[$emptyOrder]), 'js-ifirma-issue') === false, 'context employee of a profile without roles: no Issue anchor (cell is empty)', var_export($c2, true));
+    }
+} catch (Exception $e) {
+    check(false, 'the profile-without-roles part ran', $e->getMessage());
+}
+$ctx->employee = new Employee(1);
+if ($tmpEmployee && (int) $tmpEmployee->id) {
+    $tmpEmployee->delete();
+}
+if ($tmpProfile && (int) $tmpProfile->id) {
+    $tmpProfile->delete();
+}
+if ($tmpOrderCopy) {
+    $db->execute('DELETE FROM ' . $t . 'orders WHERE id_order = ' . $tmpOrderCopy);
+    check(!(bool) $db->getValue('SELECT COUNT(*) FROM ' . $t . 'orders WHERE id_order = ' . $tmpOrderCopy), 'throw-away order deleted');
+}
+check(!(bool) $db->getValue('SELECT COUNT(*) FROM ' . $t . "employee WHERE email = 'ifirma-smoke-noroles@example.com'"), 'throw-away employee deleted');
 
 echo "SUMMARY PrestaShop " . _PS_VERSION_ . ": $pass passed, $fail failed\n";
 echo ($fail ? 'ORDER_GRID_CHECK_FAILED ' . $fail : 'ORDER_GRID_CHECK_OK') . "\n";

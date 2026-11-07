@@ -11,6 +11,24 @@
 
 use PHPUnit\Framework\TestCase;
 
+/** A value whose first string conversion throws and whose later ones give a user name. */
+class ModuleHooksThrowsOnce
+{
+    /** @var bool */
+    private $thrown = false;
+
+    public function __toString()
+    {
+        if (!$this->thrown) {
+            $this->thrown = true;
+
+            throw new RuntimeException('configuration unreadable');
+        }
+
+        return 'u@example.test';
+    }
+}
+
 /**
  * Hooks, admin panel assignment and configuration form of the main module class,
  * exercised through the real classes on one ScriptedTransport.
@@ -439,6 +457,7 @@ class ModuleHooksTest extends TestCase
 
     public function testPresenterHookFillsTheIconCellOfEveryRecord()
     {
+        $this->employeeHolding(array(IfirmaPermission::ROLE_READ));
         $grid = array('data' => array('records' => array(
             array('id_order' => 42, 'ifirma_document_number' => 'FP 7/2026', 'ifirma_document_status' => 'created'),
             array('id_order' => 43),
@@ -479,6 +498,7 @@ class ModuleHooksTest extends TestCase
      */
     public function testPresenterHookFillsARecordCollectionAndHandsOneBack()
     {
+        $this->employeeHolding(array(IfirmaPermission::ROLE_READ));
         $collection = new class(array(
             array('id_order' => 42, 'ifirma_document_number' => 'FP 7/2026', 'ifirma_document_status' => 'created'),
             array('id_order' => 43),
@@ -516,6 +536,69 @@ class ModuleHooksTest extends TestCase
         $this->assertContains('actionOrderGridDefinitionModifier', Module::$hooks);
         $this->assertContains('actionOrderGridQueryBuilderModifier', Module::$hooks);
         $this->assertContains('actionOrderGridPresenterModifier', Module::$hooks);
+    }
+
+    public function testInstallAddsTheTabUnderTheOrdersParentWithTheName()
+    {
+        Module::reset();
+        Tab::$rows[4] = array(
+            'class_name' => 'AdminParentOrders', 'module' => '', 'id_parent' => 0,
+            'name' => array(1 => 'Orders', 2 => 'Zamówienia'), 'position' => 0, 'active' => 1,
+        );
+
+        $this->assertTrue($this->module->install());
+
+        $this->assertCount(1, Tab::$added);
+        $tab = Tab::$added[0];
+        $this->assertSame('AdminIfirma', $tab->class_name);
+        $this->assertSame(4, $tab->id_parent);
+        $this->assertSame(array(1 => 'iFirma documents', 2 => 'iFirma documents'), $tab->name);
+    }
+
+    public function testInstallFallsBackToTheParentOfTheOrdersTab()
+    {
+        Module::reset();
+        Tab::$rows[3] = array(
+            'class_name' => 'AdminOrders', 'module' => '', 'id_parent' => 4,
+            'name' => array(1 => 'Orders', 2 => 'Zamówienia'), 'position' => 0, 'active' => 1,
+        );
+
+        $this->assertTrue($this->module->install());
+
+        $this->assertSame(4, Tab::$added[0]->id_parent);
+        $this->assertSame(array(1 => 'iFirma documents', 2 => 'iFirma documents'), Tab::$added[0]->name);
+    }
+
+    public function testInstallKeepsTheTabHiddenAndLogsWithoutAnOrdersMenu()
+    {
+        Module::reset();
+
+        $this->assertTrue($this->module->install());
+
+        $this->assertSame(-1, Tab::$added[0]->id_parent);
+        $this->assertContains(
+            'iFirma: Orders menu not found, tab installed hidden',
+            array_column(PrestaShopLogger::$logs, 'message')
+        );
+    }
+
+    public function testInstallRegistersTheMediaHookOnce()
+    {
+        Module::reset();
+
+        $this->assertTrue($this->module->install());
+
+        $this->assertTrue($this->module->isRegisteredInHook('actionAdminControllerSetMedia'));
+        $this->assertSame(1, count(array_keys(Module::$hooks, 'actionAdminControllerSetMedia', true)));
+    }
+
+    public function testUninstallDeletesTheSeenMarks()
+    {
+        $this->assertTrue($this->module->uninstall());
+
+        $this->assertSame(array(
+            array('table' => 'configuration', 'where' => "name LIKE 'IFIRMA\\_SEEN\\_%'"),
+        ), Db::getInstance()->deletes);
     }
 
     public function testPanelShownOnAFreshInstall()
@@ -1333,5 +1416,516 @@ class ModuleHooksTest extends TestCase
         ));
 
         $this->assertSame('fallback (contractor create rejected: Zly kod) iFirma attached contractor AUTO-77', $note);
+    }
+
+    // ---- permission levels (spec: receipt-access-control) ----------------------------------------
+
+    /** Puts an employee of profile 4 holding exactly these roles into the context. */
+    private function employeeHolding(array $roles)
+    {
+        Access::reset();
+        Context::getContext()->employee->id_profile = 4;
+        foreach ($roles as $role) {
+            Access::grant($role, 4);
+        }
+    }
+
+    private function resetOrderPanelGuard()
+    {
+        $guard = new ReflectionProperty('Ifirma', 'adminOrderRendered');
+        $guard->setAccessible(true);
+        $guard->setValue(null, false);
+    }
+
+    private function columnsSpy()
+    {
+        return new class {
+            public $calls = array();
+
+            public function addBefore($id, $column)
+            {
+                $this->calls[] = array($id, $column);
+
+                return $this;
+            }
+        };
+    }
+
+    private function definitionOf($columns)
+    {
+        return new class($columns) {
+            private $columns;
+
+            public function __construct($columns)
+            {
+                $this->columns = $columns;
+            }
+
+            public function getColumns()
+            {
+                return $this->columns;
+            }
+        };
+    }
+
+    public function testNoOrderPanelWithoutTheViewLevel()
+    {
+        $this->makeReceipt(array('status' => 'paid'));
+        $this->employeeHolding(array(IfirmaPermission::ROLE_CREATE, IfirmaPermission::ROLE_UPDATE));
+
+        $out = $this->module->hookDisplayAdminOrderMainBottom(array('id_order' => 15));
+
+        $this->assertSame('', $out);
+        $this->assertSame(array(), $this->vars());
+        $this->assertSame(array(), Module::$displayed);
+    }
+
+    public function testNoOrderPanelWithoutAnEmployee()
+    {
+        Context::getContext()->employee = null;
+
+        $this->assertSame('', $this->module->hookDisplayAdminOrderMainBottom(array('id_order' => 15)));
+    }
+
+    public function testOrderPanelFlagsFollowTheLevelsOfTheEmployee()
+    {
+        $this->makeReceipt(array('status' => 'paid'));
+        $cases = array(
+            'view' => array(array(IfirmaPermission::ROLE_READ), false, false),
+            'view and issue' => array(array(IfirmaPermission::ROLE_READ, IfirmaPermission::ROLE_CREATE), true, false),
+            'view and manage' => array(array(IfirmaPermission::ROLE_READ, IfirmaPermission::ROLE_UPDATE), false, true),
+            'all three' => array(array(IfirmaPermission::ROLE_READ, IfirmaPermission::ROLE_CREATE, IfirmaPermission::ROLE_UPDATE), true, true),
+        );
+        foreach ($cases as $name => $case) {
+            Module::$displayed = array();
+            $this->resetOrderPanelGuard();
+            $this->employeeHolding($case[0]);
+
+            $out = $this->module->hookDisplayAdminOrderMainBottom(array('id_order' => 15));
+
+            $this->assertNotSame('', $out, $name);
+            $v = $this->vars();
+            $this->assertSame($case[1], $v['ifirma_can_issue'], $name . ': issue');
+            $this->assertSame($case[2], $v['ifirma_can_manage'], $name . ': manage');
+        }
+    }
+
+    public function testOrderPanelOfASuperAdminHasBothFlags()
+    {
+        $this->makeReceipt(array('status' => 'paid'));
+        Access::reset();
+
+        $this->module->hookDisplayAdminOrderMainBottom(array('id_order' => 15));
+
+        $this->assertTrue($this->vars()['ifirma_can_issue']);
+        $this->assertTrue($this->vars()['ifirma_can_manage']);
+    }
+
+    public function testGridHooksDoNothingWithoutTheViewLevel()
+    {
+        $this->employeeHolding(array(IfirmaPermission::ROLE_CREATE, IfirmaPermission::ROLE_UPDATE));
+
+        $columns = $this->columnsSpy();
+        $this->module->hookActionOrderGridDefinitionModifier(array('definition' => $this->definitionOf($columns)));
+        $this->assertSame(array(), $columns->calls, 'no column without the view level');
+
+        $search = new class {
+            public $selects = array();
+            public $joins = array();
+
+            public function addSelect($s)
+            {
+                $this->selects[] = $s;
+
+                return $this;
+            }
+
+            public function leftJoin($fromAlias, $join, $alias, $condition = null)
+            {
+                $this->joins[] = array($fromAlias, $join, $alias, $condition);
+
+                return $this;
+            }
+        };
+        $this->module->hookActionOrderGridQueryBuilderModifier(array('search_query_builder' => $search));
+        $this->assertSame(array(), $search->joins);
+        $this->assertSame(array(), $search->selects);
+
+        $records = array(
+            array('id_order' => 42, 'ifirma_document_number' => 'FP 7/2026', 'ifirma_document_status' => 'created'),
+        );
+        $grid = array('data' => array('records' => $records));
+        $params = array('presented_grid' => &$grid);
+        $this->module->hookActionOrderGridPresenterModifier($params);
+        $this->assertSame($records, $grid['data']['records'], 'the records stay untouched');
+    }
+
+    public function testGridHooksWorkWithTheViewLevelAlone()
+    {
+        $this->employeeHolding(array(IfirmaPermission::ROLE_READ));
+
+        $columns = $this->columnsSpy();
+        $this->module->hookActionOrderGridDefinitionModifier(array('definition' => $this->definitionOf($columns)));
+        $this->assertCount(1, $columns->calls);
+
+        $grid = array('data' => array('records' => array(
+            array('id_order' => 42, 'ifirma_document_number' => 'FP 7/2026', 'ifirma_document_status' => 'created'),
+        )));
+        $params = array('presented_grid' => &$grid);
+        $this->module->hookActionOrderGridPresenterModifier($params);
+        $this->assertStringContainsString('FP 7/2026', $grid['data']['records'][0]['ifirma_document']);
+    }
+
+    // ---- the bulk action and the issue anchor (admin-receipt-ops-and-hardening 5.2) --------------
+
+    /**
+     * @return object a grid definition with a bulk action collection that records what is added
+     */
+    private function definitionWithBulk($columns, &$bulk)
+    {
+        $bulk = new class {
+            public $added = array();
+
+            public function add($action)
+            {
+                $this->added[] = $action;
+
+                return $this;
+            }
+        };
+
+        return new class($columns, $bulk) {
+            private $columns;
+            private $bulk;
+
+            public function __construct($columns, $bulk)
+            {
+                $this->columns = $columns;
+                $this->bulk = $bulk;
+            }
+
+            public function getColumns()
+            {
+                return $this->columns;
+            }
+
+            public function getBulkActions()
+            {
+                return $this->bulk;
+            }
+        };
+    }
+
+    public function testBulkActionIsAddedWithTheIssueLevel()
+    {
+        $this->employeeHolding(array(IfirmaPermission::ROLE_READ, IfirmaPermission::ROLE_CREATE));
+
+        $this->module->hookActionOrderGridDefinitionModifier(array('definition' => $this->definitionWithBulk($this->columnsSpy(), $bulk)));
+
+        $this->assertCount(1, $bulk->added);
+        $action = $bulk->added[0];
+        $this->assertInstanceOf('PrestaShop\PrestaShop\Core\Grid\Action\Bulk\Type\ButtonBulkAction', $action);
+        $this->assertSame('ifirma_issue', $action->id);
+        $this->assertSame('Issue iFirma documents', $action->name);
+        $this->assertSame(
+            array('class' => 'js-ifirma-bulk-issue', 'attributes' => array('data-kind' => 'issue')),
+            $action->options
+        );
+    }
+
+    public function testBulkActionHiddenWithoutTheIssueLevel()
+    {
+        $this->employeeHolding(array(IfirmaPermission::ROLE_READ, IfirmaPermission::ROLE_UPDATE));
+        $columns = $this->columnsSpy();
+
+        $this->module->hookActionOrderGridDefinitionModifier(array('definition' => $this->definitionWithBulk($columns, $bulk)));
+
+        $this->assertCount(1, $columns->calls, 'the column is still there for the view level');
+        $this->assertSame(array(), $bulk->added);
+    }
+
+    public function testADefinitionWithoutBulkActionsStillGetsItsColumn()
+    {
+        $columns = $this->columnsSpy();
+
+        $this->module->hookActionOrderGridDefinitionModifier(array('definition' => $this->definitionOf($columns)));
+
+        $this->assertCount(1, $columns->calls);
+    }
+
+    public function testPresenterPassesTheIssueLevelToTheCell()
+    {
+        $records = array(
+            array('id_order' => 42, 'ifirma_document_number' => 'FP 7/2026', 'ifirma_document_status' => 'created', 'ifirma_document_state' => 'created'),
+            array('id_order' => 43, 'ifirma_document_number' => '', 'ifirma_document_status' => '', 'ifirma_document_state' => ''),
+            array('id_order' => 44, 'ifirma_document_number' => '', 'ifirma_document_status' => '', 'ifirma_document_state' => 'unknown'),
+        );
+
+        $this->employeeHolding(array(IfirmaPermission::ROLE_READ, IfirmaPermission::ROLE_CREATE));
+        $grid = array('data' => array('records' => $records));
+        $params = array('presented_grid' => &$grid);
+        $this->module->hookActionOrderGridPresenterModifier($params);
+        $rows = $grid['data']['records'];
+        $this->assertStringContainsString('receipt_long', $rows[0]['ifirma_document']);
+        $this->assertStringContainsString('class="js-ifirma-issue" data-id-order="43" title="Issue iFirma document"', $rows[1]['ifirma_document']);
+        $this->assertStringContainsString('title="Issue iFirma document (unknown outcome)"', $rows[2]['ifirma_document']);
+
+        $this->employeeHolding(array(IfirmaPermission::ROLE_READ));
+        $grid = array('data' => array('records' => $records));
+        $params = array('presented_grid' => &$grid);
+        $this->module->hookActionOrderGridPresenterModifier($params);
+        $rows = $grid['data']['records'];
+        $this->assertStringContainsString('receipt_long', $rows[0]['ifirma_document']);
+        $this->assertSame('', $rows[1]['ifirma_document']);
+        $this->assertSame('', $rows[2]['ifirma_document']);
+    }
+
+    public function testGridCellLabelsCarryEveryWordOfTheCell()
+    {
+        $labels = $this->module->gridCellLabels();
+
+        $this->assertSame(
+            array('paid', 'issued', 'issue', 'error', 'unknown', 'duplicate_suspected', 'held'),
+            array_keys($labels)
+        );
+        $this->assertSame('Issue iFirma document', $labels['issue']);
+        $this->assertSame('suspected duplicate', $labels['duplicate_suspected']);
+    }
+
+    public function testTheScriptWordsAndTheKindLabelsAreDecodedBecauseTheScriptsRenderThemAsText()
+    {
+        $module = new class extends Ifirma {
+            public function l($string, $specific = null, $locale = null)
+            {
+                return $string . ' &quot;q&quot;';
+            }
+        };
+        $this->employeeHolding(array(IfirmaPermission::ROLE_READ, IfirmaPermission::ROLE_CREATE));
+        $this->adminControllerNamed('AdminOrders');
+
+        $module->hookActionAdminControllerSetMedia(array());
+
+        $words = Media::$jsDefs['ifirmaAdmin']['words'];
+        $this->assertSame('Running… %1$d of %2$d "q"', $words['running']);
+        $this->assertSame('Held by a data request "q"', $words['kinds']['held']);
+        $this->assertSame($module->issueKindLabels(), $words['kinds']);
+
+        $decode = new ReflectionMethod('Ifirma', 'decodeWords');
+        $decode->setAccessible(true);
+        $this->assertSame(
+            array('a' => 'say "hi"', 'b' => array('c' => "it's"), 'd' => 5),
+            $decode->invoke(null, array('a' => 'say &quot;hi&quot;', 'b' => array('c' => 'it&#039;s'), 'd' => 5))
+        );
+    }
+
+    public function testIssueKindLabelsCoverEveryKindOfTheFeed()
+    {
+        $labels = $this->module->issueKindLabels();
+
+        $this->assertSame(IfirmaIssueFeed::kinds(), array_keys($labels));
+        $this->assertSame('Delivery failed', $labels['delivery_failed']);
+        $this->assertSame('Held by a data request', $labels['held']);
+    }
+
+    // ---- scripts and variables of the back office (6.3) ----------------------------------------
+
+    /**
+     * @param string|null $name controller_name of the current controller, null for none
+     * @return object a back-office controller that records its addJS()/addCSS() calls
+     */
+    private function adminControllerNamed($name)
+    {
+        $controller = new class {
+            public $controller_name;
+            public $js = array();
+            public $css = array();
+
+            public function addJS($path)
+            {
+                $this->js[] = $path;
+            }
+
+            public function addCSS($path, $media = 'all')
+            {
+                $this->css[] = array($path, $media);
+            }
+        };
+        if ($name !== null) {
+            $controller->controller_name = $name;
+        }
+        Context::getContext()->controller = $controller;
+
+        return $controller;
+    }
+
+    public function testEmployeeWithoutViewGetsNoFileAndNoVariables()
+    {
+        $this->employeeHolding(array(IfirmaPermission::ROLE_CREATE, IfirmaPermission::ROLE_UPDATE));
+        $controller = $this->adminControllerNamed('AdminOrders');
+
+        $this->module->hookActionAdminControllerSetMedia(array());
+
+        $this->assertSame(array(), $controller->js);
+        $this->assertSame(array(), $controller->css);
+        $this->assertSame(array(), Media::$jsDefs);
+    }
+
+    public function testViewEmployeeOnAnotherControllerGetsTheNotificationScriptAndTheStylesheetOnly()
+    {
+        $this->employeeHolding(array(IfirmaPermission::ROLE_READ, IfirmaPermission::ROLE_CREATE, IfirmaPermission::ROLE_UPDATE));
+        $controller = $this->adminControllerNamed('AdminCustomers');
+
+        $this->module->hookActionAdminControllerSetMedia(array());
+
+        $this->assertSame(array('views/js/admin/ifirma-notifications.js'), $this->relative($controller->js));
+        $this->assertSame(array('views/css/ifirma-admin.css'), $this->relative(array_column($controller->css, 0)));
+        $this->assertSame(array('all'), array_column($controller->css, 1));
+        $this->assertSame('AdminCustomers', Media::$jsDefs['ifirmaAdmin']['controller']);
+    }
+
+    public function testTheBulkScriptComesOnTheOrdersAndTheDocumentsListsForTheIssueOrManageLevel()
+    {
+        $cases = array(
+            'orders, issue' => array('AdminOrders', array(IfirmaPermission::ROLE_READ, IfirmaPermission::ROLE_CREATE), true),
+            'orders, manage' => array('AdminOrders', array(IfirmaPermission::ROLE_READ, IfirmaPermission::ROLE_UPDATE), true),
+            'documents, issue' => array('AdminIfirma', array(IfirmaPermission::ROLE_READ, IfirmaPermission::ROLE_CREATE), true),
+            'orders, view only' => array('AdminOrders', array(IfirmaPermission::ROLE_READ), false),
+            'products, issue' => array('AdminProducts', array(IfirmaPermission::ROLE_READ, IfirmaPermission::ROLE_CREATE), false),
+        );
+        foreach ($cases as $name => $case) {
+            Media::reset();
+            $this->employeeHolding($case[1]);
+            $controller = $this->adminControllerNamed($case[0]);
+
+            $this->module->hookActionAdminControllerSetMedia(array());
+
+            $js = $this->relative($controller->js);
+            $this->assertContains('views/js/admin/ifirma-notifications.js', $js, $name);
+            $this->assertSame($case[2], in_array('views/js/admin/ifirma-bulk.js', $js, true), $name);
+        }
+    }
+
+    public function testTheControllerNameFallsBackToTheRequest()
+    {
+        $this->employeeHolding(array(IfirmaPermission::ROLE_READ, IfirmaPermission::ROLE_CREATE));
+        $controller = $this->adminControllerNamed(null);
+        Tools::$values = array('controller' => 'AdminOrders');
+
+        $this->module->hookActionAdminControllerSetMedia(array());
+
+        $this->assertContains('views/js/admin/ifirma-bulk.js', $this->relative($controller->js));
+        $this->assertSame('AdminOrders', Media::$jsDefs['ifirmaAdmin']['controller']);
+    }
+
+    public function testAControllerThatCannotAddScriptsStillGetsTheVariables()
+    {
+        Context::getContext()->controller = new stdClass();
+
+        $this->module->hookActionAdminControllerSetMedia(array());
+
+        $this->assertArrayHasKey('ifirmaAdmin', Media::$jsDefs);
+    }
+
+    public function testTheVariablesCarryEveryKeyOfTheContract()
+    {
+        $this->employeeHolding(array(IfirmaPermission::ROLE_READ, IfirmaPermission::ROLE_CREATE));
+        $this->adminControllerNamed('AdminOrders');
+
+        $this->module->hookActionAdminControllerSetMedia(array());
+
+        $this->assertSame(array('ifirmaAdmin'), array_keys(Media::$jsDefs));
+        $admin = Media::$jsDefs['ifirmaAdmin'];
+        $this->assertSame(
+            array('ajaxUrl', 'controller', 'canView', 'canIssue', 'canManage', 'batchSizes', 'pollInterval', 'listUrl', 'words'),
+            array_keys($admin)
+        );
+        $this->assertSame('https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma', $admin['ajaxUrl']);
+        $this->assertSame('AdminOrders', $admin['controller']);
+        $this->assertSame(array(true, true, false), array($admin['canView'], $admin['canIssue'], $admin['canManage']));
+        $this->assertSame(array('issue' => 3, 'retry' => 3, 'resend' => 5, 'refresh' => 25), $admin['batchSizes']);
+        $this->assertSame(120000, $admin['pollInterval']);
+        $this->assertStringContainsString('controller=AdminIfirma', $admin['listUrl']);
+
+        $words = $admin['words'];
+        $this->assertSame(
+            array(
+                'tab_title', 'no_issues', 'see_all', 'issue_action', 'issuing', 'confirm_issue', 'confirm_bulk_issue',
+                'confirm_bulk_retry', 'confirm_bulk_resend', 'confirm_bulk_refresh', 'nothing_selected', 'running',
+                'stopped_rate_limited', 'stopped_auth_blocked', 'request_failed', 'summary_title', 'col_order',
+                'col_outcome', 'col_message', 'close', 'outcomes', 'kinds',
+            ),
+            array_keys($words)
+        );
+        $this->assertSame('iFirma', $words['tab_title']);
+        $this->assertSame('Running… %1$d of %2$d', $words['running']);
+        $this->assertSame('Issue iFirma documents for the %d selected orders?', $words['confirm_bulk_issue']);
+        $this->assertSame(
+            array('issued', 'adopted', 'suspected', 'held', 'failed', 'sent', 'refreshed', 'skipped', 'not_attempted'),
+            array_keys($words['outcomes'])
+        );
+        $this->assertSame('Suspected duplicate', $words['outcomes']['suspected']);
+        $this->assertSame(
+            array('held', 'error', 'unknown', 'suspected', 'missing', 'ksef_failed', 'delivery_failed'),
+            array_keys($words['kinds'])
+        );
+        $this->assertSame('KSeF failed', $words['kinds']['ksef_failed']);
+        foreach ($words as $key => $word) {
+            $this->assertNotSame('', $word, $key);
+        }
+    }
+
+    /**
+     * @param string[] $paths module-relative or absolute paths the hook enqueued
+     * @return string[] the same paths without the module URL path in front
+     */
+    private function relative(array $paths)
+    {
+        return array_map(function ($path) {
+            $at = strpos($path, 'views/');
+
+            return $at === false ? $path : substr($path, $at);
+        }, $paths);
+    }
+
+    public function testInstallVisibleTabAddsTheTabForTheUpgrade()
+    {
+        Module::reset();
+        Tab::$rows[4] = array(
+            'class_name' => 'AdminParentOrders', 'module' => '', 'id_parent' => 0,
+            'name' => array(1 => 'Orders', 2 => 'Zamówienia'), 'position' => 0, 'active' => 1,
+        );
+
+        $this->assertTrue($this->module->installVisibleTab());
+
+        $this->assertCount(1, Tab::$added);
+        $this->assertSame('AdminIfirma', Tab::$added[0]->class_name);
+        $this->assertSame(4, Tab::$added[0]->id_parent);
+    }
+
+    public function testTheConfigurationPageStillRendersWhenTheClientCannotBeBuilt()
+    {
+        Configuration::$values['IFIRMA_USER'] = new ModuleHooksThrowsOnce();
+
+        $html = $this->module->getContent();
+
+        $this->assertIsString($html);
+        $this->assertStringNotContainsString('calls are paused', $html);
+    }
+
+    public function testTheConfigurationPageStillRendersWhenNoCronTokenCanBeGenerated()
+    {
+        Configuration::deleteByName('IFIRMA_CRON_TOKEN');
+        IfirmaSchema::$randomBytes = function () {
+            return false;
+        };
+
+        try {
+            $html = $this->module->getContent();
+        } finally {
+            IfirmaSchema::$randomBytes = null;
+        }
+
+        $this->assertIsString($html);
+        $this->assertArrayNotHasKey('IFIRMA_CRON_TOKEN', Configuration::$values, 'nothing is stored when the generator fails');
     }
 }

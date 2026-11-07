@@ -697,10 +697,10 @@ class ContractorServiceTest extends TestCase
         $this->assertStringContainsString('connection reset', $this->svc->search('5252248481')->getError());
     }
 
-    public function testSearchKod403NeverBlocksCreation()
+    public function testANonCredentialSearchErrorNeverBlocksCreation()
     {
         $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
-        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', array('body' => '{"response":{"Kod":403,"Informacja":"Bledny podpis"}}'));
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"Blad walidacji"}}'));
         $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
         $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->verifiedGet('PS-C7'));
 
@@ -710,8 +710,23 @@ class ContractorServiceTest extends TestCase
         // the name search was tried and refused, and the contractor was created all the same
         $this->assertSame(array('/iapi/kontrahenci/Jan%20Kowalski.json'), $this->searchPaths());
         // the message of such a refusal is the one search() reports
+        $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"Blad walidacji"}}'));
+        $this->assertSame('Blad walidacji', $this->svc->search('Jan Kowalski')->getError());
+    }
+
+    public function testSearchKod403StartsTheCoolDownAndCreationIsNotAttempted()
+    {
+        $this->t->queue('GET', '#kontrahenci/id/PS-C7\.json#', $this->notFoundBody());
         $this->t->queue('GET', '#kontrahenci/Jan%20Kowalski\.json#', array('body' => '{"response":{"Kod":403,"Informacja":"Bledny podpis"}}'));
-        $this->assertSame('Bledny podpis', $this->svc->search('Jan Kowalski')->getError());
+        $this->t->queue('POST', '#kontrahenci\.json#', $this->ok());
+
+        $r = $this->svc->ensure($this->owned(), 7, $this->hints());
+
+        $this->assertSame('fallback', $r->getAction());
+        $this->assertStringContainsString('calls are paused until', $r->getMessage());
+        $this->assertStringContainsString('Bledny podpis', $r->getMessage());
+        $this->assertSame(array(), $this->paths('POST'), 'no create request was sent');
+        $this->assertMatchesRegularExpression('/^\d{10}\|.*Bledny podpis/', (string) Configuration::get('IFIRMA_AUTH_FAILURE'));
     }
 
     public function testCreateAndResolveReturnsTheSentIdentifierWhenItIsFound()

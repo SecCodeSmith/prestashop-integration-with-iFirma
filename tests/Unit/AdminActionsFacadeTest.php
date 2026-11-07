@@ -179,7 +179,7 @@ class AdminActionsFacadeTest extends TestCase
             $domains = array_merge($domains, $found[1]);
         }
 
-        $this->assertSame(47, $calls);
+        $this->assertSame(48, $calls);
         $this->assertSame(array('ifirmaadminactions'), array_values(array_unique($domains)));
     }
 

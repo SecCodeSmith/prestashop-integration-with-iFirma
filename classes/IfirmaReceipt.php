@@ -106,6 +106,9 @@ class IfirmaReceipt extends ObjectModel
     /** @var string|null */
     public $last_sync_at;
 
+    /** @var string|null when the customer last downloaded the document (download throttle) */
+    public $last_download_at;
+
     /** @var string|null */
     public $sync_error;
 
@@ -166,6 +169,7 @@ class IfirmaReceipt extends ObjectModel
             'ksef_error' => array('type' => self::TYPE_HTML),
             'linked_document' => array('type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'size' => 128),
             'last_sync_at' => array('type' => self::TYPE_DATE, 'validate' => 'isDate', 'allow_null' => true),
+            'last_download_at' => array('type' => self::TYPE_DATE, 'validate' => 'isDateFormat', 'allow_null' => true),
             'sync_error' => array('type' => self::TYPE_HTML),
             'duplicate_candidates' => array('type' => self::TYPE_HTML),
             'id_data_request' => array('type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'allow_null' => true),

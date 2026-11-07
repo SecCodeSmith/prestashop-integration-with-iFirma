@@ -206,11 +206,13 @@
                                 <td>{$candidate.rodzaj|escape:'html':'UTF-8'}</td>
                                 <td>{if $candidate.sent}{l s='Yes' mod='ifirma'}{else}{l s='No' mod='ifirma'}{/if}</td>
                                 <td>
+                                    {if $ifirma_can_issue}
                                     <button type="button" class="btn btn-default btn-sm ifirma-link-candidate"
                                             data-id-order="{$ifirma_id_order|intval}"
                                             data-faktura-id="{$candidate.id|escape:'html':'UTF-8'}">
                                         <i class="icon-link"></i> {l s='Link this document' mod='ifirma'}
                                     </button>
+                                    {/if}
                                 </td>
                             </tr>
                             {/foreach}
@@ -234,7 +236,7 @@
 
             {* ---- actions ---- *}
             <div class="ifirma-actions">
-                {if $ifirma_can_create}
+                {if $ifirma_can_create && $ifirma_can_issue}
                     <button type="button" class="btn btn-primary btn-lg"
                             id="ifirma-create-receipt"
                             data-id-order="{$ifirma_id_order|intval}">
@@ -242,7 +244,7 @@
                     </button>
                 {/if}
 
-                {if $ifirma_can_issue_anyway}
+                {if $ifirma_can_issue_anyway && $ifirma_can_issue}
                     <button type="button" class="btn btn-warning"
                             id="ifirma-issue-anyway"
                             data-id-order="{$ifirma_id_order|intval}">
@@ -257,25 +259,31 @@
                         <i class="icon-download"></i> {l s='Download PDF' mod='ifirma'}
                     </a>
 
+                    {if $ifirma_can_manage}
                     <button type="button" class="btn btn-primary"
                             id="ifirma-update-status"
                             data-id-order="{$ifirma_id_order|intval}">
                         <i class="icon-refresh"></i> {l s='Update status in iFirma (register payment)' mod='ifirma'}
                     </button>
+                    {/if}
 
+                    {if $ifirma_can_manage}
                     <button type="button" class="btn btn-default"
                             id="ifirma-resend"
                             data-id-order="{$ifirma_id_order|intval}">
                         <i class="icon-envelope"></i> {l s='Send again' mod='ifirma'}
                     </button>
+                    {/if}
 
+                    {if $ifirma_can_manage}
                     <button type="button" class="btn btn-default"
                             id="ifirma-refresh"
                             data-id-order="{$ifirma_id_order|intval}">
                         <i class="icon-cloud-download"></i> {l s='Refresh from iFirma' mod='ifirma'}
                     </button>
+                    {/if}
 
-                    {if !$ifirma_receipt->ksef_number && $ifirma_receipt->ksef_status != 'PRZYJETA'}
+                    {if $ifirma_can_manage && !$ifirma_receipt->ksef_number && $ifirma_receipt->ksef_status != 'PRZYJETA'}
                     <button type="button" class="btn btn-default"
                             id="ifirma-ksef-send"
                             data-id-order="{$ifirma_id_order|intval}">
@@ -285,11 +293,13 @@
                 {/if}
 
                 {if $ifirma_configured}
+                    {if $ifirma_can_issue}
                     <button type="button" class="btn btn-default"
                             id="ifirma-register-contractor"
                             data-id-order="{$ifirma_id_order|intval}">
                         <i class="icon-user"></i> {l s='Register contractor in iFirma' mod='ifirma'}
                     </button>
+                    {/if}
                 {/if}
             </div>
         </div>
@@ -353,6 +363,7 @@
                     </div>
                 </div>
 
+                {if $ifirma_can_manage}
                 <button type="button" class="btn btn-success" id="ifirma-approve-request"
                         data-id-request="{$ifirma_pending_request.id|intval}">
                     <i class="icon-check"></i> {l s='Approve' mod='ifirma'}
@@ -361,6 +372,7 @@
                         data-id-request="{$ifirma_pending_request.id|intval}">
                     <i class="icon-remove"></i> {l s='Reject' mod='ifirma'}
                 </button>
+                {/if}
             </div>
         {/if}
 

@@ -13,6 +13,8 @@ class ModuleAdminController extends AdminController
 {
     public $module;
     public $bootstrap;
+    /** @var string */
+    public $content = '';
     public $context;
     public $ajax = false;
     /** @var string[] */

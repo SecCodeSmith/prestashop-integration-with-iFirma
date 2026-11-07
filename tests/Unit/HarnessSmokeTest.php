@@ -68,6 +68,19 @@ class HarnessSmokeTest extends TestCase
         $this->assertFalse(Mail::Send(1, 'tpl', 'S', [], 'c@d.test'));
     }
 
+    public function testMediaAddJsDefIsRecordedAndMerged()
+    {
+        Media::addJsDef(array('ifirma' => array('ajax' => 'https://shop.test/ajax')));
+        $this->assertSame(array('ifirma' => array('ajax' => 'https://shop.test/ajax')), Media::$jsDefs);
+
+        Media::addJsDef(array('ifirmaPoll' => 120));
+        $this->assertSame(120, Media::$jsDefs['ifirmaPoll']);
+        $this->assertCount(2, Media::$jsDefs);
+
+        IfirmaTestState::resetAll();
+        $this->assertSame(array(), Media::$jsDefs);
+    }
+
     public function testModuleAndControllersLoad()
     {
         $module = IfirmaTestModuleLoader::loadModule();

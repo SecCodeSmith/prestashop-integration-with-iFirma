@@ -20,6 +20,10 @@ Each scenario resets the mock (`POST /__mock/reset`) and creates a fresh order.
 | G | PDF not ready | the mock answers Kod 404 for the first 2 PDF downloads; the module retries (waits of 3 s and 7 s, so the scenario takes about 10 s); receipt issued, `delivery_status` `sent`, mock counter back to 0 |
 | H | Contractor renamed by iFirma | mock in `rename` contractor mode, customer without a contractor link; the document carries the `IFI...` identifier iFirma assigned, `_contractor.action` is `created` with the same `assigned_identifier`, the contractor map holds it with `matched_by` `module`, and the admin order panel shows it |
 | I | Customer panel actions | a mock contractor `KOWALSKI-01` carries the customer's name and phone; `customerSearch` lists it with the phone and name flags; `customerLink` writes a map row with `matched_by` `manual`; a document issued for the customer's order references `KOWALSKI-01`; `customerCountRemote` reports a total of at least 1 and a complete count; `customerUnlink` leaves no map row |
+| J | Bulk runner | three orders with an `error`, an `unknown` and an issued record whose delivery failed; `IfirmaBulkRunner` kind `retry` on the two failed ids ends `issued` or `adopted` and moves `IFIRMA_RATE_WINDOW`, kind `resend` on the delivery-failed one ends `sent`, kind `refresh` on the three issued ids ends `refreshed` |
+| K | Issue feed | a failed and a delivery-failed record are listed by `IfirmaIssueFeed::latest()` with the right kind, `unseenCount('')` counts them, `markSeen()` then `unseenCount(seenAt())` is 0 (the employee's seen time is restored) |
+| L | Permissions | `AdminIfirmaController` with a throw-away employee of a profile without roles: `CreateReceipt` and `ResendDocument` answer the 403 failure envelope, `DownloadPdf` a 403 text; after READ + CREATE are granted `CreateReceipt` is dispatched and `ResendDocument` stays 403 (profile and employee are deleted at the end) |
+| M | Download throttle | `IfirmaDownloadThrottle`: the second download of a document within 30 s is refused, allowed again after the window; ten stamped documents of one customer refuse an eleventh until a minute has passed |
 
 ## Prerequisites
 
@@ -156,3 +160,13 @@ docker exec -u www-data -e PS_ROOT=/var/www/html ifirma91_prestashop php /var/ww
 ```
 
 On PrestaShop 8.1 and 9.1 the service ids are the same and the factory is public on the kernel container. The script keeps its output buffered and pushes a request with an array-backed session onto the request stack, because the grid's filter form needs a session that a CLI run does not have.
+
+## Upgrade 1.5.0 check
+
+`upgrade-150-check.php` drives `upgrade_module_1_5_0()` by hand on a running shop whose `ps_module` row still says 1.4.x (PrestaShop then does not run the script itself). It prints the `AdminIfirma` tab row, the profile-1 `ROLE_MOD_TAB_ADMINIFIRMA_%` access rows, the number of `actionAdminControllerSetMedia` registrations, the `last_download_at` column, the `idx_date_upd` index and the `IFIRMA_AUTH_FAILURE` row before the first run, after it and after a second run, and asserts: the tab id is unchanged and its parent is `AdminParentOrders`, every language is named "iFirma documents", the hook is registered once, the column and the index exist, the access rows are unchanged, the configuration key exists, and the second run changes nothing. Safe to run any number of times.
+
+```bash
+docker compose -f test-stack/docker-compose.yml exec -u www-data prestashop php modules/ifirma/tests/smoke/upgrade-150-check.php
+```
+
+Exit code `0` all assertions passed, `1` one failed. It does not change the module version recorded in `ps_module`.

@@ -111,12 +111,27 @@ class ActionSupportTest extends TestCase
     // ---- failure and guard ---------------------------------------------------------------------------
 
     /**
+     * The message of a module exception (class Exception or Ifirma*) is shown; any other Throwable is a bug
+     * or an outage whose text goes to the log and is replaced by the generic message (module-endpoint-security,
+     * "Generic bodies for unexpected errors").
+     *
+     * @param Throwable $failure
+     * @return string the message the envelope must carry
+     */
+    private function expectedMessage(Throwable $failure)
+    {
+        return IfirmaActionSupport::isModuleException($failure)
+            ? $failure->getMessage()
+            : 'Internal error; details are in the PrestaShop log.';
+    }
+
+    /**
      * @dataProvider throwables
      */
-    public function testFailureAnswersTheMessageOfAnyThrowableWithoutData(Throwable $failure)
+    public function testFailureAnswersTheMessageOfAModuleExceptionAndTheGenericTextOtherwise(Throwable $failure)
     {
         $this->assertSame(
-            array('success' => false, 'message' => $failure->getMessage(), 'data' => array()),
+            array('success' => false, 'message' => $this->expectedMessage($failure), 'data' => array()),
             $this->probe->failure($failure)
         );
     }
@@ -161,7 +176,7 @@ class ActionSupportTest extends TestCase
             throw $failure;
         });
 
-        $this->assertSame(array('success' => false, 'message' => $failure->getMessage(), 'data' => array()), $r);
+        $this->assertSame(array('success' => false, 'message' => $this->expectedMessage($failure), 'data' => array()), $r);
     }
 
     public function testGuardKeepsTheRefusalOfADataRequest()

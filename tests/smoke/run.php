@@ -429,7 +429,8 @@ assertTrue(Module::isInstalled('ifirma'), 'module installed');
 
 // The module classes are normally loaded by the module file / controllers.
 foreach (array('IfirmaApiClient', 'IfirmaReceipt', 'IfirmaDataRequest', 'IfirmaReceiptService', 'IfirmaPayloadBuilder', 'IfirmaIssuancePipeline',
-    'IfirmaDuplicateGuard', 'IfirmaDeliveryService', 'IfirmaStatusSyncService', 'IfirmaDataRequestService', 'IfirmaAdminActions') as $class) {
+    'IfirmaDuplicateGuard', 'IfirmaDeliveryService', 'IfirmaStatusSyncService', 'IfirmaDataRequestService', 'IfirmaAdminActions',
+    'IfirmaBulkRunner', 'IfirmaIssueFeed', 'IfirmaDownloadThrottle', 'IfirmaPermission') as $class) {
     if (!class_exists($class)) {
         require_once _PS_MODULE_DIR_ . 'ifirma/classes/' . $class . '.php';
     }
@@ -957,7 +958,339 @@ function scenarioI($module, $actions)
     }
 }
 
+// ---------------------------------------------------------------- admin receipt operations (1.5.0)
+
+/** A throw-away module record (no iFirma call); the caller deletes it. */
+function seedReceipt($idOrder, $idCustomer, $status, array $extra = array())
+{
+    $r = new IfirmaReceipt();
+    $r->id_order = (int) $idOrder;
+    $r->id_customer = (int) $idCustomer;
+    $r->id_shop = 1;
+    $r->status = $status;
+    $r->document_type = 'fakturakraj';
+    $r->source = 'module';
+    $r->security_token = Tools::passwdGen(32);
+    foreach ($extra as $k => $v) {
+        $r->$k = $v;
+    }
+    $r->add();
+
+    return $r;
+}
+
+/** @return array array('profile' => Profile, 'employee' => Employee) of a profile that holds no roles of the module */
+function createRolelessEmployee($tag)
+{
+    $profile = new Profile();
+    foreach (Language::getLanguages(false) as $l) {
+        $profile->name[$l['id_lang']] = 'ifirma-smoke-' . $tag;
+    }
+    $profile->add();
+    $employee = new Employee();
+    $employee->firstname = 'Smoke';
+    $employee->lastname = ucfirst($tag);
+    $employee->email = 'ifirma-smoke-' . $tag . '@example.com';
+    $employee->passwd = Tools::hash('Passw0rd!x');
+    $employee->id_profile = (int) $profile->id;
+    $employee->id_lang = (int) Configuration::get('PS_LANG_DEFAULT');
+    $employee->active = 1;
+    $employee->add();
+
+    return array('profile' => $profile, 'employee' => $employee);
+}
+
+function dropRolelessEmployee(array $pair)
+{
+    $db = Db::getInstance();
+    if ($pair['employee'] && (int) $pair['employee']->id) {
+        $pair['employee']->delete();
+    }
+    if ($pair['profile'] && (int) $pair['profile']->id) {
+        $db->execute('DELETE FROM `' . _DB_PREFIX_ . 'access` WHERE id_profile = ' . (int) $pair['profile']->id);
+        $pair['profile']->delete();
+    }
+}
+
+function scenarioJ($module)
+{
+    $order1 = freshScenario('J. Bulk runner: retry, resend, refresh');
+    if (!$order1) {
+        return;
+    }
+    $order2 = createOrder();
+    $order3 = createOrder();
+    if (!assertTrue($order2 instanceof Order && $order3 instanceof Order, 'two more orders created')) {
+        return;
+    }
+    $made = array();
+    // the duplicate guard would flag the second order as a same-buyer, same-amount document of the first one
+    // once the first is issued; a different total keeps the two retries independent
+    $order2->total_paid_tax_incl = $order2->total_paid = round((float) $order2->total_paid_tax_incl + 5, 2);
+    $order2->total_paid_tax_excl = round((float) $order2->total_paid_tax_excl + 5 / 1.23, 6);
+    $order2->update();
+    try {
+        $r1 = seedReceipt($order1->id, $order1->id_customer, IfirmaReceipt::STATUS_ERROR, array('last_error' => 'smoke error'));
+        $r2 = seedReceipt($order2->id, $order2->id_customer, IfirmaReceipt::STATUS_UNKNOWN, array('last_error' => 'smoke unknown'));
+        $made = array($r1, $r2);
+        $runner = new IfirmaBulkRunner($module);
+
+        $window = (string) Configuration::get('IFIRMA_RATE_WINDOW');
+        $res = $runner->run('retry', array((int) $r1->id, (int) $r2->id), 1, array('final' => true));
+        $outcomes = array();
+        foreach ($res['results'] as $row) {
+            $outcomes[(int) $row['id']] = $row['outcome'];
+        }
+        smokeOut('INFO', 'retry outcomes ' . json_encode($outcomes) . ', stopped ' . json_encode($res['stopped']));
+        foreach (array($r1, $r2) as $rec) {
+            $o = isset($outcomes[(int) $rec->id]) ? $outcomes[(int) $rec->id] : null;
+            assertTrue(in_array($o, array('issued', 'adopted'), true), 'retry of record ' . $rec->id . ' (' . $rec->status . ') ends issued or adopted', var_export($o, true));
+        }
+        assertSame('', $res['stopped'], 'retry run was not stopped');
+        assertSame(0, count($res['remaining']), 'retry run left nothing remaining');
+        assertTrue((string) Configuration::get('IFIRMA_RATE_WINDOW') !== $window, 'IFIRMA_RATE_WINDOW moved during the retry', $window . ' -> ' . Configuration::get('IFIRMA_RATE_WINDOW'));
+        $issued1 = IfirmaReceipt::getByOrder((int) $order1->id);
+        $issued2 = IfirmaReceipt::getByOrder((int) $order2->id);
+        assertTrue($issued1 && $issued1->isIssued() && $issued2 && $issued2->isIssued(), 'both retried records are issued now');
+
+        // an issued record whose delivery failed, with its document in the mock
+        $docId = seedDocument(array("Waluta" => "PLN"));
+        assertTrue($docId !== '', 'a mock document was seeded for the delivery-failed record', $docId);
+        $r3 = seedReceipt($order3->id, $order3->id_customer, IfirmaReceipt::STATUS_CREATED, array(
+            'ifirma_id' => $docId,
+            'ifirma_number' => '1/2026',
+            'issue_date' => date('Y-m-d'),
+            'delivery_status' => IfirmaReceipt::DELIVERY_FAILED,
+            'delivery_channel' => 'shop_mail',
+            'delivery_error' => 'smoke failure',
+        ));
+        $made[] = $r3;
+
+        $res = $runner->run('resend', array((int) $r3->id), 1, array('final' => true));
+        $row = $res['results'] ? $res['results'][0] : array('outcome' => null, 'message' => '');
+        assertSame('sent', $row['outcome'], 'resend of the delivery-failed record');
+        $r3b = new IfirmaReceipt((int) $r3->id);
+        assertSame('sent', $r3b->delivery_status, 'delivery_status is sent after the resend');
+
+        $ids = array((int) $issued1->id, (int) $issued2->id, (int) $r3->id);
+        $res = $runner->run('refresh', $ids, 1, array('final' => true));
+        $outcomes = array();
+        foreach ($res['results'] as $row) {
+            $outcomes[(int) $row['id']] = $row['outcome'];
+        }
+        smokeOut('INFO', 'refresh outcomes ' . json_encode($outcomes));
+        foreach ($ids as $id) {
+            assertSame('refreshed', isset($outcomes[$id]) ? $outcomes[$id] : null, 'refresh of record ' . $id);
+        }
+    } finally {
+        foreach ($made as $rec) {
+            $rec->delete();
+        }
+        if (isset($issued1) && $issued1) {
+            $issued1->delete();
+        }
+        if (isset($issued2) && $issued2) {
+            $issued2->delete();
+        }
+        mockReset();
+    }
+}
+
+function scenarioK($module)
+{
+    $order = freshScenario('K. Issue feed: latest, unseen count, mark seen');
+    if (!$order) {
+        return;
+    }
+    $feed = new IfirmaIssueFeed();
+    $seenKey = IfirmaIssueFeed::SEEN_KEY_PREFIX . 1;
+    $previousSeen = Configuration::get($seenKey);
+    $failed = seedReceipt($order->id, $order->id_customer, IfirmaReceipt::STATUS_ERROR, array('last_error' => 'smoke feed error'));
+    $deliveryFailed = seedReceipt($order->id, $order->id_customer, IfirmaReceipt::STATUS_CREATED, array(
+        'ifirma_id' => '999001', 'ifirma_number' => 'SMOKE/1', 'delivery_status' => IfirmaReceipt::DELIVERY_FAILED,
+    ));
+    try {
+        $kinds = array();
+        foreach ($feed->latest(100) as $item) {
+            $kinds[(int) $item['id_ifirma_receipt']] = $item['kind'];
+        }
+        assertSame(IfirmaIssueFeed::KIND_ERROR, isset($kinds[(int) $failed->id]) ? $kinds[(int) $failed->id] : null, 'latest() lists the failed record with kind error');
+        assertSame(IfirmaIssueFeed::KIND_DELIVERY_FAILED, isset($kinds[(int) $deliveryFailed->id]) ? $kinds[(int) $deliveryFailed->id] : null, 'latest() lists the delivery-failed record with kind delivery_failed');
+        assertTrue($feed->unseenCount('') >= 2, "unseenCount('') counts the seeded records", (string) $feed->unseenCount(''));
+        $feed->markSeen(1);
+        assertTrue($feed->seenAt(1) !== '', 'markSeen stored a time', $feed->seenAt(1));
+        assertSame(0, $feed->unseenCount($feed->seenAt(1)), 'unseenCount(seenAt) is 0 after markSeen');
+    } finally {
+        $failed->delete();
+        $deliveryFailed->delete();
+        if ($previousSeen === false || $previousSeen === null || $previousSeen === '') {
+            Configuration::deleteByName($seenKey);
+        } else {
+            Configuration::updateValue($seenKey, $previousSeen);
+        }
+    }
+}
+
+class SmokeJsonOut extends Exception
+{
+    public $payload;
+
+    public function __construct(array $payload)
+    {
+        parent::__construct('json');
+        $this->payload = $payload;
+    }
+}
+
+class SmokeTextOut extends Exception
+{
+    public $status;
+    public $text;
+
+    public function __construct($status, $text)
+    {
+        parent::__construct('text');
+        $this->status = $status;
+        $this->text = $text;
+    }
+}
+
+function scenarioL($module)
+{
+    section('L. Permissions through the admin controller');
+    require_once _PS_MODULE_DIR_ . 'ifirma/controllers/admin/AdminIfirmaController.php';
+    if (!class_exists('SmokeIfirmaController', false)) {
+        eval('class SmokeIfirmaController extends AdminIfirmaController {
+            public $statuses = array();
+            public $called = array();
+            public function wire($module, $context) { $this->module = $module; $this->context = $context; }
+            protected function output(array $payload) { throw new SmokeJsonOut($payload); }
+            protected function textResponse($status, $text) { throw new SmokeTextOut($status, $text); }
+            protected function statusHeader($code) { $this->statuses[] = $code; }
+            protected function actions() { return new SmokeRecordingActions($this->called); }
+        }');
+        eval('class SmokeRecordingActions {
+            private $log;
+            public function __construct(array &$log) { $this->log = &$log; }
+            public function createReceipt($o, $e) { $this->log[] = "createReceipt"; return array("success" => true, "message" => "recorded", "data" => array()); }
+            public function resend($o) { $this->log[] = "resend"; return array("success" => true, "message" => "recorded", "data" => array()); }
+        }');
+    }
+
+    $pair = createRolelessEmployee('perm');
+    $context = Context::getContext();
+    $original = $context->employee;
+    $profileId = (int) $pair['profile']->id;
+    try {
+        assertTrue($profileId > 0 && (int) $pair['employee']->id > 0, 'throw-away profile and employee created', 'profile ' . $profileId);
+        $context->employee = $pair['employee'];
+        $token = Tools::getAdminTokenLite('AdminIfirma');
+        $_GET['token'] = $_POST['token'] = $token;
+        $_POST['id_order'] = $_GET['id_order'] = '1';
+
+        $dispatch = function ($method) use ($context, $module) {
+            $c = (new ReflectionClass("SmokeIfirmaController"))->newInstanceWithoutConstructor();
+            $c->wire($module, $context);
+            try {
+                $c->$method();
+            } catch (SmokeJsonOut $j) {
+                return array('kind' => 'json', 'payload' => $j->payload, 'statuses' => $c->statuses, 'called' => $c->called);
+            } catch (SmokeTextOut $t) {
+                return array('kind' => 'text', 'status' => $t->status, 'text' => $t->text, 'statuses' => $c->statuses, 'called' => $c->called);
+            }
+
+            return array('kind' => 'none', 'statuses' => $c->statuses, 'called' => $c->called);
+        };
+
+        foreach (array('ajaxProcessCreateReceipt' => 'CreateReceipt', 'ajaxProcessResendDocument' => 'ResendDocument') as $method => $name) {
+            $out = $dispatch($method);
+            assertTrue($out['kind'] === 'json' && $out['payload']['success'] === false && $out['statuses'] === array(403) && !$out['called'],
+                $name . ' without roles answers the 403 failure envelope', json_encode($out));
+            smokeOut('INFO', $name . ' message: ' . (isset($out['payload']['message']) ? $out['payload']['message'] : ''));
+        }
+        $out = $dispatch('ajaxProcessDownloadPdf');
+        assertTrue($out['kind'] === 'text' && $out['status'] === 403 && $out['text'] !== '', 'DownloadPdf without roles answers 403 with a text', json_encode($out));
+
+        // grant view + issue
+        $db = Db::getInstance();
+        $db->execute('INSERT IGNORE INTO `' . _DB_PREFIX_ . 'access` (id_profile, id_authorization_role) SELECT ' . $profileId . ", id_authorization_role FROM `" . _DB_PREFIX_
+            . "authorization_role` WHERE slug IN ('ROLE_MOD_TAB_ADMINIFIRMA_READ', 'ROLE_MOD_TAB_ADMINIFIRMA_CREATE')");
+        assertTrue(IfirmaPermission::canView($pair['employee']) && IfirmaPermission::canIssue($pair['employee']) && !IfirmaPermission::canManage($pair['employee']),
+            'the profile now holds view and issue, not manage');
+
+        $out = $dispatch('ajaxProcessCreateReceipt');
+        assertTrue($out['kind'] === 'json' && $out['payload']['success'] === true && $out['called'] === array('createReceipt') && !$out['statuses'],
+            'CreateReceipt with READ + CREATE is dispatched (no 403)', json_encode($out));
+        $out = $dispatch('ajaxProcessResendDocument');
+        assertTrue($out['kind'] === 'json' && $out['payload']['success'] === false && $out['statuses'] === array(403) && !$out['called'],
+            'ResendDocument with READ + CREATE is still 403', json_encode($out));
+    } finally {
+        $context->employee = $original;
+        unset($_GET['token'], $_POST['token'], $_POST['id_order'], $_GET['id_order']);
+        dropRolelessEmployee($pair);
+    }
+    assertSame(0, (int) Db::getInstance()->getValue('SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'access` WHERE id_profile = ' . $profileId), 'throw-away profile has no access rows left');
+}
+
+function scenarioM($module)
+{
+    $order = freshScenario('M. Customer download throttle');
+    if (!$order) {
+        return;
+    }
+    $db = Db::getInstance();
+    $fakeCustomer = 99999;
+    $made = array();
+    try {
+        $receipt = seedReceipt($order->id, $fakeCustomer, IfirmaReceipt::STATUS_CREATED, array('ifirma_id' => '999002', 'ifirma_number' => 'SMOKE/2'));
+        $made[] = $receipt;
+        $now = time();
+        $throttle = new IfirmaDownloadThrottle();
+        assertTrue($throttle->allows($receipt), 'a first download is allowed');
+        $throttle->stamp($receipt);
+        assertTrue(!empty($receipt->last_download_at), 'stamp() sets last_download_at', (string) $receipt->last_download_at);
+        assertSame(false, $throttle->allows($receipt), 'the second download within 30 s is refused');
+        $later = new IfirmaDownloadThrottle(function () use ($now) {
+            return $now + IfirmaDownloadThrottle::DOCUMENT_WINDOW + 1;
+        });
+        assertSame(true, $later->allows($receipt), 'the same document is allowed again after 30 s');
+
+        // the per-customer count: ten stamped documents of the customer in the last minute refuse an eleventh
+        for ($i = 0; $i < IfirmaDownloadThrottle::CUSTOMER_MAX - 1; $i++) {
+            $extra = seedReceipt($order->id, $fakeCustomer, IfirmaReceipt::STATUS_CREATED, array('ifirma_id' => '99910' . $i));
+            $throttle->stamp($extra);
+            $made[] = $extra;
+        }
+        $count = (int) $db->getValue('SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'ifirma_receipt` WHERE id_customer = ' . $fakeCustomer . " AND last_download_at >= '" . pSQL(date('Y-m-d H:i:s', $now - 60)) . "'");
+        assertSame(IfirmaDownloadThrottle::CUSTOMER_MAX, $count, 'ten documents of the customer carry a download stamp in the last minute');
+        $fresh = seedReceipt($order->id, $fakeCustomer, IfirmaReceipt::STATUS_CREATED, array('ifirma_id' => '999200'));
+        $made[] = $fresh;
+        assertSame(false, $throttle->allows($fresh), 'an eleventh document of the customer is refused although it was never downloaded');
+        $afterWindow = new IfirmaDownloadThrottle(function () use ($now) {
+            return $now + IfirmaDownloadThrottle::CUSTOMER_WINDOW + 5;
+        });
+        assertSame(true, $afterWindow->allows($fresh), 'it is allowed once the minute has passed');
+    } finally {
+        foreach ($made as $rec) {
+            $rec->delete();
+        }
+        mockReset();
+    }
+}
+
 $scenarios = array(
+    'J' => function () use ($module) {
+        scenarioJ($module);
+    },
+    'K' => function () use ($module) {
+        scenarioK($module);
+    },
+    'L' => function () use ($module) {
+        scenarioL($module);
+    },
+    'M' => function () use ($module) {
+        scenarioM($module);
+    },
     'A' => function () use ($module, $actions) {
         scenarioA($module, $actions);
     },

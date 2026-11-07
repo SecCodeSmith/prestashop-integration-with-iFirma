@@ -253,6 +253,14 @@ class CustomerViewTest extends TestCase
         $this->assertSame('12/2026', $d['number']);
     }
 
+    /** Spec customer-receipt-visibility, "Generator unavailable": a record without a token offers no download. */
+    public function testARecordWithoutATokenHasNoDownloadUrl()
+    {
+        $v = $this->view->forOrder($this->order(), $this->receipt(array('security_token' => '')), null);
+        $this->assertSame('issued', $v['state']);
+        $this->assertNull($v['document']['download_url']);
+    }
+
     public function testMissingHasNoDownloadUrl()
     {
         $v = $this->view->forOrder($this->order(), $this->receipt(array('remote_missing' => 1)), null);

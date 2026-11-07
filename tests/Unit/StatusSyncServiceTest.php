@@ -752,4 +752,41 @@ class StatusSyncServiceTest extends TestCase
     {
         $this->assertInstanceOf('ModuleFrontController', IfirmaTestModuleLoader::loadFrontController('cron'));
     }
+
+    public function testCronDuringTheCoolDownTouchesNothing()
+    {
+        $this->receipt(201, '2026-10-30');
+        Db::getInstance()->whenExecuteS('/FROM `ps_ifirma_receipt`/', array(array('id_ifirma_receipt' => 1)));
+        Configuration::updateValue('IFIRMA_AUTH_FAILURE', ($this->now - 300) . '|Bad hash');
+        $queriesBefore = count(Db::getInstance()->queries);
+
+        $s = $this->svc->runCron();
+
+        $this->assertTrue($s['auth_blocked']);
+        $this->assertStringContainsString('calls are paused until', $s['message']);
+        $this->assertStringContainsString('Bad hash', $s['message']);
+        foreach (array('receipts_checked', 'updated', 'marked_paid', 'marked_missing', 'errors', 'rate_limited',
+            'calls', 'dates_total', 'dates_processed', 'held_orders') as $key) {
+            $this->assertSame(0, $s[$key], $key);
+        }
+        $this->assertSame(array(), $this->t->calls);
+        $this->assertCount($queriesBefore, Db::getInstance()->queries, 'no receipt selected');
+    }
+
+    public function testCronAfterTheCoolDownRunsAndReportsNotBlocked()
+    {
+        Configuration::updateValue('IFIRMA_AUTH_FAILURE', ($this->now - 900) . '|Bad hash');
+
+        $s = $this->svc->runCron();
+
+        $this->assertFalse($s['auth_blocked']);
+        $this->assertSame('', $s['message']);
+    }
+
+    public function testCronWithoutAMarkReportsNotBlocked()
+    {
+        $s = $this->svc->runCron();
+
+        $this->assertFalse($s['auth_blocked']);
+    }
 }

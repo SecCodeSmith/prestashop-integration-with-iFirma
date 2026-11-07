@@ -42,6 +42,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": "{\"candidates\":[{\"id\":\"77\",\"number\":\"7\\/2026\",\"date\":\"2026-11-03\",\"gross\":123,\"paid\":0,\"contractor\":\"Jan K\",\"rodzaj\":\"prz_faktura_paragon\",\"currency\":\"PLN\",\"sent\":false,\"sale_date\":\"\",\"matched_by\":\"\"}],\"resolution\":null}",
                     "id_data_request": null
@@ -85,7 +86,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "paid external document, delivered": {
@@ -130,6 +133,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -159,7 +163,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "sent to KSeF": {
@@ -204,6 +210,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -233,7 +240,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "issued document of a private buyer": {
@@ -278,6 +287,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -307,7 +317,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "document missing in iFirma": {
@@ -352,6 +364,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -381,7 +394,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "outcome unknown": {
@@ -426,6 +441,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -455,7 +471,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "error": {
@@ -500,6 +518,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -529,7 +548,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "issued document": {
@@ -574,6 +595,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -603,7 +625,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "no receipt": {
@@ -640,7 +664,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "held by a pending request": {
@@ -685,6 +711,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -877,7 +904,9 @@
                     }
                 ],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "linked contractor": {
@@ -918,7 +947,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "contractor note: read-back failure": {
@@ -963,6 +994,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -992,7 +1024,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "contractor note: ambiguous search": {
@@ -1037,6 +1071,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1066,7 +1101,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "contractor note: failed search": {
@@ -1111,6 +1148,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1140,7 +1178,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "contractor note: assigned identifier": {
@@ -1185,6 +1225,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1214,7 +1255,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "contractor note: failed lookup": {
@@ -1259,6 +1302,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1288,7 +1332,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "contractor note: failed update": {
@@ -1333,6 +1379,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1362,7 +1409,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "contractor note: rejected create": {
@@ -1407,6 +1456,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1436,7 +1486,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "contractor note: rejected reference": {
@@ -1481,6 +1533,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1510,7 +1563,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "contractor note: record of an older version": {
@@ -1555,6 +1610,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1584,7 +1640,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "contractor note: attached contractor": {
@@ -1629,6 +1687,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1658,7 +1717,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "record without a document": {
@@ -1701,6 +1762,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1730,7 +1792,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "issued document of a business buyer": {
@@ -1773,6 +1837,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1802,7 +1867,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "payloads stored with the record": {
@@ -1845,6 +1912,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1874,7 +1942,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "duplicate resolved by an employee": {
@@ -1917,6 +1987,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": "{\"candidates\":[{\"id\":\"77\",\"number\":\"7\\/2026\",\"date\":\"2026-11-03\",\"gross\":123,\"paid\":0,\"contractor\":\"Jan K\",\"rodzaj\":\"prz_faktura_paragon\",\"currency\":\"PLN\",\"sent\":false,\"sale_date\":\"\",\"matched_by\":\"\"}],\"resolution\":{\"action\":\"link\",\"id_employee\":3,\"at\":\"2026-11-02 11:00:00\"}}",
                     "id_data_request": null
@@ -1964,7 +2035,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "stored candidates as a plain list": {
@@ -2007,6 +2080,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": "[{\"id\":\"77\",\"number\":\"7\\/2026\",\"date\":\"2026-11-03\",\"gross\":123,\"paid\":0,\"contractor\":\"Jan K\",\"rodzaj\":\"prz_faktura_paragon\",\"currency\":\"PLN\",\"sent\":false,\"sale_date\":\"\",\"matched_by\":\"\"}]",
                     "id_data_request": null
@@ -2036,7 +2110,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "resolution stored without a candidate list": {
@@ -2079,6 +2155,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": "{\"candidates\":\"none\",\"resolution\":{\"action\":\"link\",\"id_employee\":null,\"at\":\"2026-11-02 11:00:00\"}}",
                     "id_data_request": null
@@ -2108,7 +2185,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "candidates stored without a resolution": {
@@ -2151,6 +2230,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": "{\"candidates\":[{\"id\":\"77\",\"number\":\"7\\/2026\",\"date\":\"2026-11-03\",\"gross\":123,\"paid\":0,\"contractor\":\"Jan K\",\"rodzaj\":\"prz_faktura_paragon\",\"currency\":\"PLN\",\"sent\":false,\"sale_date\":\"\",\"matched_by\":\"\"}]}",
                     "id_data_request": null
@@ -2194,7 +2274,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "request history": {
@@ -2237,6 +2319,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -2503,7 +2586,9 @@
                     }
                 ],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "request with values of every kind": {
@@ -2546,6 +2631,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -2714,7 +2800,9 @@
                     }
                 ],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "order that does not load": {
@@ -2757,6 +2845,7 @@
                     "ksef_error": null,
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -2897,7 +2986,9 @@
                     }
                 ],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "order without a customer": {
@@ -2931,7 +3022,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "contractor link that cannot be read": {
@@ -2965,7 +3058,9 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
             }
         },
         "link with a code of an older version": {
@@ -3004,7 +3099,159 @@
                 "ifirma_request_fields": [],
                 "ifirma_request_history": [],
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
-                "ifirma_token": "admin-token-AdminIfirma"
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
+            }
+        },
+        "view-only employee": {
+            "from": [],
+            "assignment": {
+                "ifirma_contractor_map": null,
+                "ifirma_id_order": 15,
+                "ifirma_receipt": {
+                    "__class": "IfirmaReceipt",
+                    "id": 1,
+                    "id_ifirma_receipt": 1,
+                    "id_order": 15,
+                    "id_customer": 5,
+                    "id_shop": null,
+                    "document_type": "fakturakraj",
+                    "ifirma_id": "77",
+                    "ifirma_number": "7/2026",
+                    "status": "created",
+                    "paid_amount": null,
+                    "security_token": "tok123",
+                    "request_payload": null,
+                    "response_payload": null,
+                    "last_error": null,
+                    "date_add": "2026-11-03 09:30:00",
+                    "date_upd": "2026-11-03 09:30:00",
+                    "source": "module",
+                    "order_reference": "",
+                    "issue_date": "2026-11-03",
+                    "delivery_status": "none",
+                    "delivery_channel": "",
+                    "delivered_at": null,
+                    "delivery_error": null,
+                    "remote_paid_amount": null,
+                    "remote_sent": false,
+                    "remote_draft": false,
+                    "remote_missing": false,
+                    "ksef_status": "",
+                    "ksef_number": "",
+                    "ksef_sent_at": null,
+                    "ksef_error": null,
+                    "linked_document": "",
+                    "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
+                    "sync_error": null,
+                    "duplicate_candidates": null,
+                    "id_data_request": null
+                },
+                "ifirma_payment_method": "",
+                "ifirma_contractor_note": "",
+                "ifirma_request_payload": "",
+                "ifirma_response_payload": "",
+                "ifirma_module_version": "<version of the module>",
+                "ifirma_build_stamp": "<modification time of ifirma.php>",
+                "ifirma_has_receipt": true,
+                "ifirma_is_issued": true,
+                "ifirma_is_external": false,
+                "ifirma_configured": true,
+                "ifirma_state": "issued",
+                "ifirma_state_label": "Issued",
+                "ifirma_can_create": false,
+                "ifirma_can_issue_anyway": false,
+                "ifirma_has_pending_request": false,
+                "ifirma_candidates": [],
+                "ifirma_resolution": null,
+                "ifirma_delivery_text": "Not sent",
+                "ifirma_ksef_text": "not sent (private buyer (B2B mode))",
+                "ifirma_gross": 123.0,
+                "ifirma_pending_request": null,
+                "ifirma_request_diff": [],
+                "ifirma_request_fields": [],
+                "ifirma_request_history": [],
+                "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": false,
+                "ifirma_can_manage": false
+            }
+        },
+        "issue without manage": {
+            "from": [],
+            "assignment": {
+                "ifirma_contractor_map": null,
+                "ifirma_id_order": 15,
+                "ifirma_receipt": {
+                    "__class": "IfirmaReceipt",
+                    "id": 1,
+                    "id_ifirma_receipt": 1,
+                    "id_order": 15,
+                    "id_customer": 5,
+                    "id_shop": null,
+                    "document_type": "fakturakraj",
+                    "ifirma_id": "77",
+                    "ifirma_number": "7/2026",
+                    "status": "created",
+                    "paid_amount": null,
+                    "security_token": "tok123",
+                    "request_payload": null,
+                    "response_payload": null,
+                    "last_error": null,
+                    "date_add": "2026-11-03 09:30:00",
+                    "date_upd": "2026-11-03 09:30:00",
+                    "source": "module",
+                    "order_reference": "",
+                    "issue_date": "2026-11-03",
+                    "delivery_status": "none",
+                    "delivery_channel": "",
+                    "delivered_at": null,
+                    "delivery_error": null,
+                    "remote_paid_amount": null,
+                    "remote_sent": false,
+                    "remote_draft": false,
+                    "remote_missing": false,
+                    "ksef_status": "",
+                    "ksef_number": "",
+                    "ksef_sent_at": null,
+                    "ksef_error": null,
+                    "linked_document": "",
+                    "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
+                    "sync_error": null,
+                    "duplicate_candidates": null,
+                    "id_data_request": null
+                },
+                "ifirma_payment_method": "",
+                "ifirma_contractor_note": "",
+                "ifirma_request_payload": "",
+                "ifirma_response_payload": "",
+                "ifirma_module_version": "<version of the module>",
+                "ifirma_build_stamp": "<modification time of ifirma.php>",
+                "ifirma_has_receipt": true,
+                "ifirma_is_issued": true,
+                "ifirma_is_external": false,
+                "ifirma_configured": true,
+                "ifirma_state": "issued",
+                "ifirma_state_label": "Issued",
+                "ifirma_can_create": false,
+                "ifirma_can_issue_anyway": false,
+                "ifirma_has_pending_request": false,
+                "ifirma_candidates": [],
+                "ifirma_resolution": null,
+                "ifirma_delivery_text": "Not sent",
+                "ifirma_ksef_text": "not sent (private buyer (B2B mode))",
+                "ifirma_gross": 123.0,
+                "ifirma_pending_request": null,
+                "ifirma_request_diff": [],
+                "ifirma_request_fields": [],
+                "ifirma_request_history": [],
+                "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": false
             }
         }
     }

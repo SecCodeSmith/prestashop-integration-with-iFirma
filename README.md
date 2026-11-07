@@ -7,6 +7,9 @@ PDF back to the customer and keeps the payment and KSeF status in line with iFir
 | Feature | Where |
 |---------|-------|
 | **Issue a document** in iFirma from an order | Back office → *Orders → (order) → iFirma panel → “Create Receipt”* |
+| **Issue from the Orders list**, and the bulk *Issue iFirma documents* | Back office → *Orders* → the iFirma cell of an order |
+| **Documents list** with filters, a *Needs attention* preset and bulk retry, resend and refresh | Back office → *Orders → iFirma documents* |
+| **Notification tab** with the documents that need attention | The iFirma tab of the back-office notification bell |
 | **Automatic issuance** when an order reaches a chosen status | Module configuration → *Auto‑create on order status* |
 | **PDF back to the customer** | Front office → *My account* block **and** the *Order detail* page; optional e‑mail with the PDF attached |
 | **Payment and status sync** (register the payment, read it back) | Back office → iFirma panel → “Update status in iFirma”, “Refresh from iFirma”, and a cron URL |
@@ -114,15 +117,52 @@ Advanced Parameters > Logs (messages start with "iFirma"); neither contains API 
 | Page | Contents |
 |------|----------|
 | [docs/architecture.md](docs/architecture.md) | How the module is built: hooks, controllers, classes, the issuance pipeline, data model, API surface, test harness |
-| [docs/configuration.md](docs/configuration.md) | Settings walk-through, every configuration key, duplicate guard settings, rate limits |
-| [docs/usage.md](docs/usage.md) | Issuing documents, orders list, monitoring and cron, duplicate guard, what the customer sees, delivery, KSeF, customer page, data‑change requests |
+| [docs/configuration.md](docs/configuration.md) | Settings walk-through (API key fields, base URL, cron header, the pause after a rejected key), every configuration key, the permission levels, duplicate guard settings, rate limits |
+| [docs/usage.md](docs/usage.md) | Issuing documents, orders list and its Issue action, the iFirma documents list with bulk actions, monitoring, the notification tab and cron, duplicate guard, what the customer sees and the download limits, delivery, KSeF, customer page, data‑change requests and their limits |
 | [docs/contractors.md](docs/contractors.md) | Linking existing iFirma contractors: CSV import, matching while issuing, manual links |
-| [docs/upgrading.md](docs/upgrading.md) | What to do when upgrading from 1.0.x, to 1.2.0, 1.4.0 and 1.4.1 |
+| [docs/upgrading.md](docs/upgrading.md) | What to do when upgrading from 1.0.x, to 1.2.0, 1.4.0, 1.4.1 and 1.5.0 |
 | [docs/development.md](docs/development.md) | Unit tests, package builds, the test‑stack submodule, releases, dev dependencies |
-| [docs/troubleshooting.md](docs/troubleshooting.md) | iFirma error codes and fixes for the common problems |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | iFirma error codes and fixes for the common problems, the pause after a rejected key, rate-limited bulk runs, permission messages, download limits |
 | [test-stack/README.md](test-stack/README.md) | The mock iFirma API and the Docker test stack |
 | [tests/smoke/README.md](tests/smoke/README.md) | The Docker smoke suite on PrestaShop 8.1 and 9.1 |
 | [tests/Stubs/README.md](tests/Stubs/README.md) | The PrestaShop stubs used by the unit tests |
+
+## Changelog
+
+### 1.5.0
+
+- **iFirma documents list** (*Orders > iFirma documents*): the module's records with filters, a *Needs attention*
+  preset and row actions (retry issuance, send again, refresh, download PDF). Bulk retry issuance, send again and
+  refresh from iFirma run in batches under the rate guard, show a summary with each outcome and write one log entry.
+- **Issue from the Orders list**: an Issue action in the iFirma cell of an order without a document, and the bulk
+  action *Issue iFirma documents*.
+- **Notification tab**: an iFirma tab in the back-office notification bell lists the newest 20 records that need
+  attention; each employee has an unseen counter.
+- **Permissions**: the tab has three levels (view, issue, manage) that are read from the Permissions page, and the
+  server checks them for every action. Behaviour change: profiles without the View level on the tab no longer see the
+  iFirma panels, the Orders-list column or the customer-page panel until they are granted it.
+- **Upgrade**: the tab moves under Orders, the `actionAdminControllerSetMedia` hook is registered, `ifirma_receipt`
+  gets `last_download_at` and the index `idx_date_upd`, and `IFIRMA_AUTH_FAILURE` is created. Release as a minor
+  version. See [Upgrading to 1.5.0](docs/upgrading.md#upgrading-to-150).
+- **Hardening** (security audit of 2026-11-07, by finding id):
+  - S1: state-changing AJAX actions check the employee's level on the server, on PrestaShop 8 and 9 alike.
+  - S2: the customer PDF download is limited to one fetch per document per 30 seconds and ten per customer per minute.
+  - S3: payment amounts must be positive, have at most two decimals and not exceed the order total.
+  - S4: the base URL must be `https` (`http` only in developer mode or for local hosts); the cURL transport allows
+    HTTP and HTTPS only, follows no redirects and stops at 20 MB.
+  - S5: after iFirma rejects the credentials, calls are paused for 15 minutes or until the settings are saved.
+  - S6: internal error text no longer reaches the browser; the details go to the PrestaShop log.
+  - S7: the PDF file name is built from safe characters only.
+  - S9: the API key fields are password inputs; the cron token can be sent in the `X-Ifirma-Token` header.
+  - S10: tokens come only from `random_bytes()`, with no weaker fallback.
+  - S11: the per-minute rate counter is incremented by one atomic statement.
+  - S12: the text of a data-change request is validated and length-limited.
+  - S13: data-change requests are limited to one per order every 10 minutes and ten per customer per day.
+  - S14: array input is refused instead of raising an error, and the optional keys are checked as hexadecimal.
+  - S15: the delivery e-mail variables are HTML-escaped.
+  - S16: PDF responses send `X-Content-Type-Options: nosniff`.
+  - S17: token values are read as scalars before they reach a query.
+  - S8 (the synchronous PDF retries inside the order-status hook) is deferred to its own change.
 
 ## Legal Disclaimer & Trademarks
 

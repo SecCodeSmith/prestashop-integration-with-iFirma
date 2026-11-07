@@ -36,6 +36,11 @@ class Validate
         return (bool) preg_match('/^[0-9]{1,10}(\.[0-9]{1,9})?$/', (string) $v);
     }
 
+    public static function isDateFormat($v)
+    {
+        return (bool) preg_match('/^([0-9]{4})-((?:0[1-9])|(?:1[0-2]))-((?:0[1-9])|(?:[1-2][0-9])|(?:3[01]))( [0-9]{2}:[0-9]{2}:[0-9]{2})?$/', (string) $v);
+    }
+
     public static function isDate($v)
     {
         return (bool) preg_match('/^([0-9]{4})-((?:0[1-9])|(?:1[0-2]))-((?:0[1-9])|(?:[1-2][0-9])|(?:3[01]))( [0-9]{2}:[0-9]{2}:[0-9]{2})?$/', (string) $v);
@@ -84,6 +89,16 @@ class Validate
     public static function isUrl($v)
     {
         return (bool) preg_match('/^[~:#,$%&_=\(\)\.\? \+\-@\/a-zA-Z0-9\pL\pS-]+$/u', (string) $v);
+    }
+
+    /** As core: a missing value passes, otherwise an optional scheme then //host/path from a limited character set. */
+    public static function isAbsoluteUrl($url)
+    {
+        if (!empty($url)) {
+            return (bool) preg_match('/^(https?:)?\/\/[$~:;#,%&_=\(\)\[\]\.\? \+\-@\/a-zA-Z0-9]+$/', (string) $url);
+        }
+
+        return true;
     }
 
     public static function isMessage($v)

@@ -43,3 +43,29 @@ unregistered on upgraded shops.
 ## Upgrading to 1.4.1
 
 No upgrade step is needed and there is no schema or configuration change: the release only sped up the Orders list query.
+
+## Upgrading to 1.5.0
+
+Upload the 1.5.0 module over the existing one and run the upgrade from the Module Manager.
+`upgrade/upgrade-1.5.0.php` makes these changes and can be run more than once; a second run changes nothing.
+
+- **Tab.** The iFirma tab becomes a menu entry, *Orders > iFirma documents*. It is the same tab row as
+  before, updated in place, so its id and its permission rows (`ps_access`) are kept. A shop without an
+  Orders menu keeps the tab hidden, as before.
+- **Hook.** `actionAdminControllerSetMedia` is registered, once, when it is missing.
+- **Schema.** The receipt table gets the `last_download_at` column (`DATETIME NULL`, the time of the last
+  PDF download) and the index `idx_date_upd` on `date_upd`. Each is added only if it is not there yet.
+- **Configuration.** `IFIRMA_AUTH_FAILURE` is created empty when it has no value yet.
+
+This release must be published as a `minor` version bump, as 1.4.0 was: PrestaShop runs an upgrade file
+only when its version is not above the module's, so a patch release would leave the tab and the hook
+unchanged on upgraded shops.
+
+**Behaviour change: check the permissions after the upgrade.** Employees of profiles without the View
+permission on the iFirma tab no longer see the iFirma panel on the order page, the iFirma column on the
+Orders list or the iFirma panel on the customer page. The panels come back when an administrator grants
+the permissions on *Team > Permissions > Orders > iFirma documents*: View lets an employee see the
+documents, Add lets them issue a document, and Edit lets them manage it (retry, send again). On the same
+page, under *Modules*, the profile also needs the iFirma module's own View permission: PrestaShop runs a
+module's back-office hooks only for profiles that may view the module, so without it the panels stay hidden
+whatever the tab permissions say.

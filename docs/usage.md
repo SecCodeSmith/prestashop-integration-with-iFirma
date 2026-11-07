@@ -1,6 +1,6 @@
 # Usage
 
-How the module is used day to day: issuing documents, states that need attention, the Orders list, monitoring, the duplicate guard, what the customer sees, delivery, KSeF, the back-office customer page and customer data-change requests.
+How the module is used day to day: issuing documents, states that need attention, the Orders list, the iFirma documents list with its bulk actions, monitoring and the notification tab, the duplicate guard, what the customer sees, delivery, KSeF, the back-office customer page and customer data-change requests.
 
 [Back to README](../README.md)
 
@@ -39,6 +39,13 @@ The panel's **Register contractor in iFirma** button creates or refreshes the or
 A failure never breaks the PrestaShop status change: exceptions are logged
 (Advanced Parameters > Logs) and stored as the record's last error.
 
+Each button needs a [permission level](configuration.md#permissions). Without View the panel is not shown
+at all. With View the employee sees the state, the candidates, the request details and the **Download PDF**
+link only. **Create Receipt**, **Issue anyway**, **Link this document** and **Register contractor in iFirma**
+need Issue. **Update status in iFirma**, **Send again**, **Send to KSeF**, **Refresh from iFirma**, **Approve**
+and **Reject** need Manage. The same levels are checked again on the server for every action, so a hidden
+button cannot be replaced by a hand-made request.
+
 ### States that need attention
 
 | State | Meaning | What to do |
@@ -50,7 +57,84 @@ A failure never breaks the PrestaShop status change: exceptions are logged
 
 ### Orders list
 
-The back-office Orders list has an **iFirma** column, placed before the Actions column. An order whose newest module record is an issued document (it has an iFirma identifier and is not in `error`) shows a receipt icon: green when the document is paid, blue otherwise. The tooltip reads `iFirma: <number> (<state>)`, where the number falls back to the iFirma identifier until a number is stored, and the state is "Paid" or "Issued". Orders without an issued document have an empty cell. The column is not sortable or filterable and does not change paging or totals; a click on the cell opens the order like the rest of the row. The column reads the module's own `ifirma_receipt` table and makes no iFirma API call.
+The back-office Orders list has an **iFirma** column, placed before the Actions column. An order whose newest module record is an issued document (it has an iFirma identifier and is not in `error`) shows a receipt icon: green when the document is paid, blue otherwise. The tooltip reads `iFirma: <number> (<state>)`, where the number falls back to the iFirma identifier until a number is stored, and the state is "Paid" or "Issued". Orders without an issued document have an empty cell, or the **Issue** action when the employee has the issue level (see below). The column is not sortable or filterable and does not change paging or totals; a click on the cell opens the order like the rest of the row. The column reads the module's own `ifirma_receipt` table and makes no iFirma API call while it is shown.
+
+**Issue from the list.** An employee with the issue level sees an **Issue** icon (a plus sign) in the iFirma cell of every order without an issued document. A click asks for confirmation, runs the same pipeline as **Create Receipt** for that order, duplicate guard included, and replaces the cell with the new state. The tooltip of the icon names the last state of the order's record when there is one: failed, unknown outcome, suspected duplicate or held. This is the only action of the column that calls iFirma, and only when clicked.
+
+**Bulk issue.** The bulk action **Issue iFirma documents** issues the selected orders the same way. It runs in batches of 3 orders per request, with the same stopping rules, summary and log entry as the [iFirma documents list](#ifirma-documents-list). Orders that already have an issued document are reported as skipped.
+
+## iFirma documents list
+
+**Orders > iFirma documents** is the back-office list of the module's own records (one row per record in
+`ifirma_receipt`), newest first. It needs the view level of the module's tab (see
+[Permissions](configuration.md#permissions)). The list reads the local table only and sends no request to
+iFirma.
+
+**Columns:** ID, order reference, customer, document number (the iFirma identifier until a number is stored),
+status, source (`module` or `external`), delivery, KSeF, issue date, last error (shortened) and the date of the
+last change.
+
+**Filters:** status, source, delivery, KSeF, order reference, document number, issue date and the date of the
+last change. The status values are Created, Paid, Error, Unknown, Suspected duplicate and Held.
+
+**Needs attention.** The **Needs attention** button in the page header shows only the records with one of these
+problems:
+
+- status Error, Unknown outcome or Suspected duplicate;
+- status Held while the order still has a pending data-change request;
+- delivery Failed;
+- KSeF failed (`BLAD`);
+- marked missing in iFirma.
+
+The notification tab uses the same conditions (see [Monitoring](#monitoring)). **All documents** in the page
+header goes back to the full list.
+
+**Row actions.** A record is issued when it has an iFirma identifier and its status is not Error.
+
+| Action | Shown for | Level |
+|---|---|---|
+| Open order | every row | the back-office access to the order |
+| Retry issuance | a record that is not issued | issue |
+| Send again | an issued record | manage |
+| Refresh | an issued record | manage |
+| Download PDF | an issued record | view |
+
+**Retry issuance** runs the same pipeline as **Create Receipt**, with the duplicate guard: a document the guard
+finds is adopted, and nothing is bypassed. A held record stops at the hold step, and the message names the
+pending data-change request.
+
+**Bulk actions.** The selected rows are handled by one of three bulk actions:
+
+| Bulk action | Level | Applies to | Records per request |
+|---|---|---|---|
+| Retry issuance | issue | records that are not issued; issued records are skipped | 3 |
+| Send again | manage | issued records, through the configured delivery channel; other records are skipped | 5 |
+| Refresh from iFirma | manage | issued records, one list call per issue date; other records are skipped | 25 |
+
+The server checks the level for the whole run before anything happens. An employee without it gets HTTP 403 with
+a message, and nothing is changed or sent.
+
+**How a bulk run works.** The browser sends the selection in batches of the size shown above and keeps the rest of
+the selection until every record has been attempted; no further clicks are needed. A batch also ends early when it
+has used 20 seconds, and the records left over go into the next request. Nothing is queued on the server.
+
+The run stops in one of two cases:
+
+- the module's per-minute rate guard refuses a request (see [Rate limits](configuration.md#rate-limits));
+- iFirma rejected the credentials, so the 15-minute pause applies (see [Troubleshooting](troubleshooting.md)).
+
+The records that were not yet attempted are then reported as **Not attempted**, with the message
+`not attempted (rate limited)` or `not attempted (credentials rejected)`, and the run asks you to run it again
+in a minute in the first case. Records already handled keep their outcome, and the records that were not reached
+keep their previous state.
+
+**Summary.** When the run ends, a dialog lists every selected record with its order or ID, its outcome and its
+message, and shows the totals per outcome. The outcomes are Issued, Adopted (the guard found the existing
+document), Suspected duplicate, Held, Failed, Sent, Refreshed, Skipped (for example, already issued, or delivery
+disabled with the channel set to none) and Not attempted. The dialog closes when the run has ended, and closing it
+reloads the list. Each run writes one entry to Advanced Parameters > Logs with the employee, the action and the
+totals. The entry is written when the last batch is answered or the run stops; a run whose connection to the
+server fails in the middle writes none.
 
 ## Monitoring
 
@@ -89,6 +173,33 @@ Three ways to sync:
    paid, marked missing, errors, rate limited, calls, orders held by pending data requests).
 
 **Rate limits:** see [Rate limits](configuration.md#rate-limits).
+
+### The iFirma tab in the notification bell
+
+An employee with the view level sees an **iFirma** tab in the back-office notification bell, on every page. The
+tab lists the newest 20 records that need attention, newest first, each with its order reference, its kind of
+problem and the time of its last change:
+
+| Kind | The record |
+|---|---|
+| Held by a data request | is held while a data-change request is pending |
+| Issuance failed | has status Error |
+| Unknown outcome | has status Unknown |
+| Suspected duplicate | has status Suspected duplicate |
+| Missing in iFirma | was marked missing by the status sync |
+| KSeF failed | has the KSeF state `BLAD` |
+| Delivery failed | has delivery status Failed |
+
+A record with several problems is listed once, under the first kind of this list. The full list is the
+**Needs attention** preset of the [documents list](#ifirma-documents-list). Clicking an entry opens the order.
+
+The tab's counter shows the records that need attention and changed since the employee last looked at the tab. The
+mark is kept per employee: opening the tab, or opening the bell while the tab is open, marks them as seen, and the
+bell's total is raised by the unseen count. The tab refreshes every 2 minutes from the module's local data (no
+iFirma call) and pauses while the browser tab is hidden.
+
+If the page has no notification bell, the script adds a small iFirma button with the same list to the header. If
+the header has no place for it, nothing is added.
 
 ## Duplicate guard
 
@@ -165,6 +276,13 @@ five states (internal errors, iFirma messages and candidate documents are never 
 The **My account** page lists issued documents (number, status, download link) and the count
 of orders with a pending request; the block is hidden when there is nothing to show.
 Customer texts are translatable (`translations/pl.php` ships Polish).
+
+### Download limits
+
+The customer download (`controllers/front/receipt.php`) fetches the PDF from iFirma on every request, so it is
+limited: a document can be fetched once every 30 seconds, and a customer can download at most ten documents in any
+60 seconds. A request over one of these limits gets HTTP 429 with the text "Please wait a moment before downloading
+the document again." The back-office **Download PDF** is not limited; it needs the view level instead.
 
 ## Delivery
 
@@ -246,8 +364,10 @@ Buttons:
   using the customer's latest order. It is unavailable without an order or when contractor sync is
   disabled.
 
-Link, Unlink and Register require the employee's edit permission on Customers. Check, search and
-count need only back-office access with the module token.
+The panel is shown only to an employee with the View level of the module's
+[permissions](configuration.md#permissions). Link, Unlink and Register still require the employee's edit
+permission on Customers on top of that. Check, search and count need only the View level and the module
+token.
 
 The panel is wrapped in a full-width column (`col-12`), so it spans the hook row and lines up with the other cards of the page; no data or action changed.
 
@@ -281,3 +401,14 @@ an order **before** the document is issued. Enabled by `IFIRMA_ALLOW_DATA_REQUES
 - **Scope of the change:** approved data overrides the buyer (`Kontrahent`) on the
   iFirma document only and is recorded in the stored request payload. The PrestaShop
   invoice address is never modified.
+- **Checks on the form.** The postcode and the city are always required. A company request needs the company name
+  and a VAT number of exactly 10 digits (separators are removed); a private request needs the first and last name.
+  Names, address lines and the city are checked with PrestaShop's own rules, the postcode with PrestaShop's postcode
+  rule and, when the country defines one, its postcode format. The country must be active. Maximum lengths:
+  company 150 characters; first name, last name, each address line and city 65; postcode 16; customer note 1000.
+- **Limits.** A customer can send a new request for an order only 10 minutes after the newest request for that order
+  was created or changed, whatever its status. A customer can create at most 10 requests in 24 hours, across all
+  orders. A refused request shows "Please wait 10 minutes before sending another request for this order." or
+  "You have reached the limit of requests for today."
+- **Admin text.** The note written on approval and the reason of a rejection are limited to 1000 characters. An
+  approval whose note is too long keeps the request pending.

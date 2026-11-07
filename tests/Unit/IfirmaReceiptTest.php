@@ -98,6 +98,7 @@ class IfirmaReceiptTest extends TestCase
             'ksef_error' => 'earlier ksef error',
             'linked_document' => 'KOR 1/2026',
             'last_sync_at' => '2026-01-05 12:00:00',
+            'last_download_at' => '2026-01-06 13:00:00',
             'sync_error' => 'earlier sync error',
             'duplicate_candidates' => '[{"id":1}]',
             'id_data_request' => 9,

@@ -39,6 +39,20 @@ class ConfigurationKeysTest extends TestCase
         }
     }
 
+    public function testAuthFailureDefaultIsEmptyAndUninstallRemovesIt()
+    {
+        $module = IfirmaTestModuleLoader::loadModule();
+        $this->assertTrue($module->install());
+
+        $this->assertArrayHasKey('IFIRMA_AUTH_FAILURE', IfirmaSchema::configurationDefaults());
+        $this->assertSame('', IfirmaSchema::configurationDefaults()['IFIRMA_AUTH_FAILURE']);
+        $this->assertTrue(Configuration::hasKey('IFIRMA_AUTH_FAILURE'));
+        $this->assertSame('', Configuration::get('IFIRMA_AUTH_FAILURE'));
+
+        $this->assertTrue($module->uninstall());
+        $this->assertFalse(Configuration::hasKey('IFIRMA_AUTH_FAILURE'));
+    }
+
     /**
      * Every version source must agree with package.json, whatever the version is,
      * so `npm version <level>` never needs a test edit.

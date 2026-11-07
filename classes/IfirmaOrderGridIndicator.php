@@ -18,6 +18,7 @@ class IfirmaOrderGridIndicator
     const FIELD = 'ifirma_document';           // the column id and the record key the presenter fills
     const FIELD_NUMBER = 'ifirma_document_number';
     const FIELD_STATUS = 'ifirma_document_status';
+    const FIELD_STATE = 'ifirma_document_state';   // the raw status of the newest record, '' without a row
     const ICON = 'receipt_long';
 
     /** @var string alias of the joined receipt row; none of PrestaShop's order-grid aliases (o, cu, cur, a, c, os, osl, s) */
@@ -44,8 +45,9 @@ class IfirmaOrderGridIndicator
     }
 
     /**
-     * @return string[] two select expressions on the joined row, each with an AS alias, for QueryBuilder::addSelect();
-     *                  both are '' for an order without an issued document (no row joined, or not issued)
+     * @return string[] three select expressions on the joined row, each with an AS alias, for QueryBuilder::addSelect();
+     *                  the first two are '' for an order without an issued document (no row joined, or not issued);
+     *                  the third is the raw status of the newest record, '' without a row
      */
     public static function selectSql()
     {
@@ -56,6 +58,7 @@ class IfirmaOrderGridIndicator
         return array(
             "IF({$issued}, IF({$j}.ifirma_number <> '', {$j}.ifirma_number, {$j}.ifirma_id), '') AS " . self::FIELD_NUMBER,
             "IF({$issued}, {$j}.status, '') AS " . self::FIELD_STATUS,
+            "IFNULL({$j}.status, '') AS " . self::FIELD_STATE,
         );
     }
 
@@ -71,15 +74,20 @@ class IfirmaOrderGridIndicator
     }
 
     /**
-     * @param array $record one grid record (the row as fetched), with FIELD_NUMBER and FIELD_STATUS when the query ran
-     * @param array $labels 'paid' => word for a paid document, 'issued' => word for any other issued document
-     * @return string '' when the order has no issued document, else the escaped <i> icon
+     * @param array $record    one grid record (the row as fetched), with FIELD_NUMBER, FIELD_STATUS and FIELD_STATE
+     *                         when the query ran, and id_order
+     * @param array $labels    'paid' => word for a paid document, 'issued' => word for any other issued document,
+     *                         'issue' => title of the issue anchor, error | unknown | duplicate_suspected | held =>
+     *                         the word for that state of an unissued record
+     * @param bool  $canIssue  true when the employee may issue documents: an order without an issued document then
+     *                         gets the issue anchor (the back-office script posts it)
+     * @return string the escaped issued icon, else the issue anchor when $canIssue, else ''
      */
-    public static function cell(array $record, array $labels)
+    public static function cell(array $record, array $labels, $canIssue = false)
     {
         $number = isset($record[self::FIELD_NUMBER]) ? trim((string) $record[self::FIELD_NUMBER]) : '';
         if ($number === '') {
-            return '';
+            return $canIssue ? self::issueAnchor($record, $labels) : '';
         }
         $status = isset($record[self::FIELD_STATUS]) ? (string) $record[self::FIELD_STATUS] : '';
         $paid = ($status === IfirmaReceipt::STATUS_PAID);
@@ -87,5 +95,23 @@ class IfirmaOrderGridIndicator
         $title = 'iFirma: ' . $number . ' (' . $word . ')';
 
         return '<i class="material-icons ifirma-grid-icon ' . ($paid ? 'text-success' : 'text-info') . '" title="' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '">' . self::ICON . '</i>';
+    }
+
+    /**
+     * @param array $record
+     * @param array $labels
+     * @return string
+     */
+    private static function issueAnchor(array $record, array $labels)
+    {
+        $idOrder = isset($record['id_order']) ? (int) $record['id_order'] : 0;
+        $title = isset($labels['issue']) ? (string) $labels['issue'] : 'Issue iFirma document';
+        $state = isset($record[self::FIELD_STATE]) ? (string) $record[self::FIELD_STATE] : '';
+        if ($state !== '') {
+            $title .= ' (' . (isset($labels[$state]) ? $labels[$state] : $state) . ')';
+        }
+
+        return '<a href="#" class="js-ifirma-issue" data-id-order="' . $idOrder . '" title="'
+            . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '"><i class="material-icons">add_circle_outline</i></a>';
     }
 }

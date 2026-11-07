@@ -54,6 +54,30 @@ class ErrorGuardTest extends TestCase
         return $this->throwablesRaising('database exploded', 'typed database exploded');
     }
 
+    /** A TypeError inside a guarded action: the generic message and exactly one log entry with the original text. */
+    public function testATypeErrorInsideAGuardedActionGivesTheGenericMessageAndOneLogEntry()
+    {
+        $this->databaseIsDown(new TypeError('typed database exploded'));
+
+        $r = $this->actions->createReceipt(15, 3);
+
+        $this->assertSame(array('success' => false, 'message' => self::GENERIC, 'data' => array()), $r);
+        $this->assertCount(1, PrestaShopLogger::$logs);
+        $this->assertSame('iFirma: TypeError: typed database exploded', PrestaShopLogger::$logs[0]['message']);
+        $this->assertSame(3, PrestaShopLogger::$logs[0]['severity']);
+    }
+
+    /** A rejection the module raises on purpose keeps its text and writes no log entry. */
+    public function testAModuleExceptionKeepsItsText()
+    {
+        $this->databaseIsDown(new Exception('iFirma rejected the request.'));
+
+        $r = $this->actions->createReceipt(15, 3);
+
+        $this->assertSame(array('success' => false, 'message' => 'iFirma rejected the request.', 'data' => array()), $r);
+        $this->assertSame(array(), PrestaShopLogger::$logs);
+    }
+
     // ---- helpers ------------------------------------------------------------------------------
 
     /** Every query from now on raises $failure, like a database that went away. */
@@ -65,11 +89,17 @@ class ErrorGuardTest extends TestCase
         });
     }
 
-    /** The envelope an action returns for a throwable. */
+    /**
+     * The envelope an action returns for a throwable that is not a module failure (every throwable
+     * of failures() is one): the generic message, the original text goes to the log.
+     */
     private function envelope(Throwable $failure)
     {
-        return array('success' => false, 'message' => $failure->getMessage(), 'data' => array());
+        return array('success' => false, 'message' => self::GENERIC, 'data' => array());
     }
+
+    /** The message of every non-module throwable. */
+    const GENERIC = 'Internal error; details are in the PrestaShop log.';
 
     /** Replaces the customer service of the actions by a double whose $method raises $failure. */
     private function customerServiceRaises($method, Throwable $failure)

@@ -219,6 +219,14 @@ class DataRequestServiceTest extends TestCase
         $this->assertArrayHasKey('company', $this->service->validate($this->companyInput(array('company' => ' '))));
     }
 
+    public function testAPostcodeWithForbiddenCharactersIsRejected()
+    {
+        $errors = $this->service->validate($this->privateInput(array('postcode' => '00_950', 'id_country' => '')));
+
+        $this->assertArrayHasKey('postcode', $errors);
+        $this->assertCount(1, $errors);
+    }
+
     public function testMissingPostcodeOrCity()
     {
         $errors = $this->service->validate($this->privateInput(array('postcode' => '', 'city' => '')));
@@ -1773,5 +1781,241 @@ class DataRequestServiceTest extends TestCase
     public function testDefaultsFromAddressHasTheKeysOfFieldsInOrder()
     {
         $this->assertSame($this->service->fields(), array_keys($this->service->defaultsFromAddress(new Address(3))));
+    }
+
+    // ---- field validation, cool-down and admin text limits (D14) ---------------
+
+    private function refusedFields(array $input)
+    {
+        $e = $this->assertRefused('invalid', function () use ($input) {
+            $this->service->submit($this->order, $this->customer, $input);
+        });
+        $this->assertSame(array(), IfirmaTestState::objects('ifirma_data_request'), 'nothing stored');
+
+        return $e->errors;
+    }
+
+    private function polandWithFormat()
+    {
+        $poland = new Country();
+        $poland->id = 14;
+        $poland->iso_code = 'PL';
+        $poland->zip_code_format = 'NN-NNN';
+        Country::register($poland);
+    }
+
+    public function testNameWithMarkupRefused()
+    {
+        Mail::$sent = array();
+        $errors = $this->refusedFields($this->privateInput(array('firstname' => '<script>x</script>')));
+
+        $this->assertArrayHasKey('firstname', $errors);
+        $this->assertSame(array(), Mail::$sent);
+    }
+
+    public function testAddressAndCityWithMarkupRefused()
+    {
+        $errors = $this->refusedFields($this->privateInput(array('address1' => 'Nowa <b>5', 'city' => 'War<i>szawa')));
+
+        $this->assertArrayHasKey('address1', $errors);
+        $this->assertArrayHasKey('city', $errors);
+    }
+
+    public function testPostcodeFollowsTheFormatOfTheCountry()
+    {
+        $this->polandWithFormat();
+
+        $errors = $this->refusedFields($this->privateInput(array('postcode' => 'ABCDE')));
+        $this->assertSame(array('postcode'), array_keys($errors));
+
+        $this->assertInstanceOf('IfirmaDataRequest', $this->service->submit($this->order, $this->customer, $this->privateInput(array('postcode' => '00-950'))));
+    }
+
+    public function testPostcodeWithoutTheDashMatchesTheFormat()
+    {
+        $this->polandWithFormat();
+
+        $this->assertSame(array(), $this->service->validate($this->privateInput(array('postcode' => '00950'))));
+    }
+
+    public function testInactiveCountryRefused()
+    {
+        $country = new Country();
+        $country->id = 14;
+        $country->iso_code = 'PL';
+        $country->active = false;
+        Country::register($country);
+
+        $errors = $this->refusedFields($this->privateInput());
+
+        $this->assertArrayHasKey('id_country', $errors);
+    }
+
+    public function testUnknownCountryRefused()
+    {
+        $errors = $this->refusedFields($this->privateInput(array('id_country' => '999')));
+
+        $this->assertArrayHasKey('id_country', $errors);
+    }
+
+    public function testOverLongNoteRefused()
+    {
+        $errors = $this->refusedFields($this->companyInput(array('customer_note' => str_repeat('a', 1001))));
+
+        $this->assertSame(array('customer_note'), array_keys($errors));
+    }
+
+    public function testNoteOfExactlyTheLimitAccepted()
+    {
+        $request = $this->submitPending($this->companyInput(array('customer_note' => str_repeat('a', 1000))));
+
+        $this->assertSame(1000, strlen($request->customer_note));
+    }
+
+    public function testArrayValuesCountAsEmpty()
+    {
+        $errors = $this->refusedFields($this->privateInput(array('firstname' => array('Anna'), 'city' => array('x'))));
+
+        $this->assertArrayHasKey('firstname', $errors);
+        $this->assertArrayHasKey('city', $errors);
+    }
+
+    /**
+     * Scripts the two cool-down queries from the stored requests, as the database would answer them.
+     */
+    private function scriptRequestHistory()
+    {
+        $rows = function () {
+            return IfirmaTestState::objects('ifirma_data_request');
+        };
+        Db::getInstance()->whenGetValue('/SELECT GREATEST\(date_add, date_upd\)/', function ($sql) use ($rows) {
+            $newest = '';
+            foreach ($rows() as $row) {
+                $stamp = max($row['date_add'], $row['date_upd']);
+                if ($stamp > $newest) {
+                    $newest = $stamp;
+                }
+            }
+
+            return $newest;
+        });
+        Db::getInstance()->whenGetValue('/SELECT COUNT\(\*\) FROM `\w*ifirma_data_request`/', function ($sql) use ($rows) {
+            preg_match('/date_add >= "([^"]+)"/', $sql, $since);
+            $count = 0;
+            foreach ($rows() as $row) {
+                if ($row['date_add'] >= $since[1]) {
+                    $count++;
+                }
+            }
+
+            return $count;
+        });
+    }
+
+    /** @return IfirmaDataRequestService a service whose clock runs $seconds ahead of real time */
+    private function serviceAhead($seconds)
+    {
+        return new IfirmaDataRequestService(new Module(), function () use ($seconds) {
+            return date('Y-m-d H:i:s', time() + $seconds);
+        });
+    }
+
+    public function testResubmitAfterCancelWithinTenMinutesRefused()
+    {
+        $this->scriptRequestHistory();
+        $request = $this->submitPending();
+        $this->service->cancel($request, $this->customer);
+        Mail::$sent = array();
+        $later = $this->serviceAhead(120);
+
+        $this->assertSame('cooldown', $later->canRequest($this->order, $this->customer)['reason']);
+        $e = $this->assertRefused('cooldown', function () use ($later) {
+            $later->submit($this->order, $this->customer, $this->companyInput());
+        });
+        $this->assertSame('Please wait 10 minutes before sending another request for this order.', $e->getMessage());
+        $this->assertCount(1, IfirmaTestState::objects('ifirma_data_request'), 'nothing new stored');
+        $this->assertSame(array(), Mail::$sent);
+    }
+
+    public function testCooldownOverAfterTenMinutes()
+    {
+        $this->scriptRequestHistory();
+        $request = $this->submitPending();
+        $this->service->cancel($request, $this->customer);
+        $later = $this->serviceAhead(601);
+
+        $this->assertSame('ok', $later->canRequest($this->order, $this->customer)['reason']);
+        $this->assertInstanceOf('IfirmaDataRequest', $later->submit($this->order, $this->customer, $this->companyInput()));
+    }
+
+    private function storeCancelledRequests($count)
+    {
+        for ($i = 0; $i < $count; $i++) {
+            $request = new IfirmaDataRequest();
+            $request->id_order = 100 + $i;
+            $request->id_customer = 7;
+            $request->status = IfirmaDataRequest::STATUS_CANCELLED;
+            $request->save();
+        }
+    }
+
+    public function testDailyCapRefusesTheEleventhRequest()
+    {
+        $this->scriptRequestHistory();
+        // the requests belong to other orders: the cool-down of this order is not what refuses
+        Db::getInstance()->whenGetValue('/SELECT GREATEST\(date_add, date_upd\)/', '2000-01-01 00:00:00');
+        $this->storeCancelledRequests(10);
+        Mail::$sent = array();
+
+        $this->assertSame('daily_cap', $this->service->canRequest($this->order, $this->customer)['reason']);
+        $e = $this->assertRefused('daily_cap', function () {
+            $this->submitPending();
+        });
+        $this->assertSame('You have reached the limit of requests for today.', $e->getMessage());
+        $this->assertCount(10, IfirmaTestState::objects('ifirma_data_request'));
+        $this->assertSame(array(), Mail::$sent);
+    }
+
+    public function testNineRequestsInADayStillAllowed()
+    {
+        $this->scriptRequestHistory();
+        Db::getInstance()->whenGetValue('/SELECT GREATEST\(date_add, date_upd\)/', '2000-01-01 00:00:00');
+        $this->storeCancelledRequests(9);
+
+        $this->assertSame('ok', $this->service->canRequest($this->order, $this->customer)['reason']);
+    }
+
+    public function testOverLongRejectionReasonRefusedAndRequestUnchanged()
+    {
+        $request = $this->submitPending();
+        $e = $this->assertRefused('invalid', function () use ($request) {
+            $this->service->reject($request, 4, str_repeat('a', 1001));
+        });
+
+        $this->assertArrayHasKey('reason', $e->errors);
+        $this->assertSame(IfirmaDataRequest::STATUS_PENDING, $request->status);
+        $rows = IfirmaTestState::objects('ifirma_data_request');
+        $this->assertSame('pending', reset($rows)['status']);
+    }
+
+    public function testOverLongAdminNoteRefusedAndRequestUnchanged()
+    {
+        $request = $this->submitPending();
+        $e = $this->assertRefused('invalid', function () use ($request) {
+            $this->service->approve($request, 4, null, str_repeat('b', 1001));
+        });
+
+        $this->assertArrayHasKey('admin_note', $e->errors);
+        $this->assertSame(IfirmaDataRequest::STATUS_PENDING, $request->status);
+    }
+
+    public function testMarkupInTheAdminNoteIsStoredAsText()
+    {
+        $request = $this->submitPending();
+
+        $this->service->approve($request, 4, null, '<b>ok</b> & fine');
+
+        $rows = IfirmaTestState::objects('ifirma_data_request');
+        $this->assertSame('<b>ok</b> & fine', reset($rows)['admin_note']);
     }
 }

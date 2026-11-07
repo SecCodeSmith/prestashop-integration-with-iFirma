@@ -45,7 +45,7 @@ The customer pages do not start the pipeline: the front controllers read and wri
 
 ## Entry points
 
-**Module class** [`ifirma.php`](../ifirma.php): `install()` creates the tables ([`sql/install.php`](../sql/install.php)), the default configuration values, the `AdminIfirma` tab and registers nine hooks; `getContent()` is the settings page (save the settings, regenerate the cron token, import a contractor CSV, reset the contractor map).
+**Module class** [`ifirma.php`](../ifirma.php): `install()` creates the tables ([`sql/install.php`](../sql/install.php)), the default configuration values, the `AdminIfirma` tab and registers ten hooks; `getContent()` is the settings page (save the settings, regenerate the cron token, import a contractor CSV, reset the contractor map).
 
 **Hooks** registered by `install()`:
 
@@ -60,8 +60,27 @@ The customer pages do not start the pipeline: the front controllers read and wri
 | `actionOrderGridDefinitionModifier` | Adds the "iFirma" column to the Orders list. |
 | `actionOrderGridQueryBuilderModifier` | Joins the newest module record of each listed order (via [`IfirmaOrderGridIndicator`](../classes/IfirmaOrderGridIndicator.php)). |
 | `actionOrderGridPresenterModifier` | Fills the cell of that column for each record. |
+| `actionAdminControllerSetMedia` | Back office: adds the notification-tab script and the module stylesheet to every page for employees with the view level, and the bulk script on the Orders list and the documents list for those who may issue or manage. Passes the `ifirmaAdmin` variable (URL, levels, batch sizes, poll interval, words) to the scripts. See [Back-office scripts](#back-office-scripts). |
 
-**Admin controller** [`controllers/admin/AdminIfirmaController.php`](../controllers/admin/AdminIfirmaController.php): AJAX actions `ajaxProcessCreateReceipt`, `IssueAnyway`, `LinkCandidate`, `UpdateStatus`, `ResendDocument`, `SendToKsef`, `RefreshStatus`, `RegisterContractor`, `CustomerCheck`, `CustomerSearch`, `CustomerLink`, `CustomerUnlink`, `CustomerRegister`, `CustomerCountRemote`, `ApproveRequest`, `RejectRequest` and `DownloadPdf`. Each calls [`IfirmaAdminActions`](../classes/IfirmaAdminActions.php) and answers JSON (`success`, `message`, `data`); the PDF download streams through [`IfirmaHttpOutput`](../classes/IfirmaHttpOutput.php).
+**Admin controller** [`controllers/admin/AdminIfirmaController.php`](../controllers/admin/AdminIfirmaController.php) is the tab `AdminIfirma` (menu *Orders > iFirma documents*). It has two parts:
+
+- **The documents list**: a legacy list of the `ifirma_receipt` table (`fields_list`, filters, the preset `ifirma_preset=attention`, the three native bulk entries). Row buttons are rendered by list callbacks. Without JavaScript the bulk entries only explain that they need it (`processBulk*()`).
+- **AJAX actions** (`ajaxProcess<Name>()`, called with `ajax=1&action=<Name>`), each answering the JSON envelope (`success`, `message`, `data`). Every action looks up its level in a static table and answers HTTP 403 with the same envelope when the employee lacks it (see Security notes):
+
+| Level | Actions |
+|-------|---------|
+| view | `DownloadPdf`, `IssueFeed`, `IssueFeedSeen`, `CustomerCheck`, `CustomerSearch`, `CustomerCountRemote`, `CustomerLink`, `CustomerUnlink`, `CustomerRegister` (the last three also need the Customers edit permission) |
+| issue | `CreateReceipt`, `IssueAnyway`, `LinkCandidate`, `RegisterContractor`, `IssueFromList`, and `BulkRun` with kind `issue` or `retry` |
+| manage | `UpdateStatus`, `ResendDocument`, `SendToKsef`, `RefreshStatus`, `ApproveRequest`, `RejectRequest`, and `BulkRun` with kind `resend` or `refresh` (an unknown kind needs manage) |
+
+`BulkRun` runs one batch through [`IfirmaBulkRunner`](../classes/IfirmaBulkRunner.php). `IssueFromList` creates one order's document from the Orders list and answers the new HTML of its cell. `IssueFeed` answers the newest 20 records that need attention with the unseen count, and `IssueFeedSeen` stores the employee's seen mark (both through [`IfirmaIssueFeed`](../classes/IfirmaIssueFeed.php)). The other actions call [`IfirmaAdminActions`](../classes/IfirmaAdminActions.php). The PDF download streams through [`IfirmaHttpOutput`](../classes/IfirmaHttpOutput.php).
+
+### Back-office scripts
+
+Two plain JavaScript files in [`views/js/admin/`](../views/js/admin/) hold no text and no token: the words, the AJAX URL and the levels come from the `ifirmaAdmin` variable that `actionAdminControllerSetMedia` adds.
+
+- [`ifirma-bulk.js`](../views/js/admin/ifirma-bulk.js) (Orders list and documents list, for issue, manage or retry levels): the **Issue** action of an Orders-list cell and the bulk actions. It sends the selection to `BulkRun` in batches (3, 5 or 25 ids per request, as `IfirmaBulkRunner::batchSize()` gives them), shows the progress and the summary dialog, and reloads the list when the dialog closes. It stops at the first `stopped` answer and reports the rest as not attempted.
+- [`ifirma-notifications.js`](../views/js/admin/ifirma-notifications.js) (every page, for the view level): adds the **iFirma** tab to the notification bell (or a small header button when the page has no bell), polls `IssueFeed` every 120 seconds while the page is visible, marks the feed seen through `IssueFeedSeen`, and keeps the bell's total in step with the unseen count.
 
 **Front controllers** (`/module/ifirma/<name>`):
 
@@ -71,11 +90,11 @@ The customer pages do not start the pipeline: the front controllers read and wri
 | [`controllers/front/datarequest.php`](../controllers/front/datarequest.php) | Customer form to request a change of the invoice data of an order; all rules live in [`IfirmaDataRequestService`](../classes/IfirmaDataRequestService.php). |
 | [`controllers/front/cron.php`](../controllers/front/cron.php) | Status synchronisation at `/module/ifirma/cron?token=IFIRMA_CRON_TOKEN`; a wrong token answers 403, a right one runs `IfirmaStatusSyncService::runCron()`. |
 
-**Upgrades:** [`upgrade/upgrade-1.1.0.php`](../upgrade/upgrade-1.1.0.php) (columns, two tables, defaults), [`upgrade/upgrade-1.2.0.php`](../upgrade/upgrade-1.2.0.php) (hook swap, drops PrestaShop 1.7), [`upgrade/upgrade-1.4.0.php`](../upgrade/upgrade-1.4.0.php) (the three Orders-list hooks).
+**Upgrades:** [`upgrade/upgrade-1.1.0.php`](../upgrade/upgrade-1.1.0.php) (columns, two tables, defaults), [`upgrade/upgrade-1.2.0.php`](../upgrade/upgrade-1.2.0.php) (hook swap, drops PrestaShop 1.7), [`upgrade/upgrade-1.4.0.php`](../upgrade/upgrade-1.4.0.php) (the three Orders-list hooks), [`upgrade/upgrade-1.5.0.php`](../upgrade/upgrade-1.5.0.php) (the tab moves under Orders, the script hook, the download column and the date index, the default of the pause mark).
 
 ## Class layers
 
-46 classes under [`classes/`](../classes/), one per file (`IfirmaDataRequest.php` also declares `IfirmaDataRequestException`). The centre is [`IfirmaIssuancePipeline`](../classes/IfirmaIssuancePipeline.php) with [`IfirmaReceiptService`](../classes/IfirmaReceiptService.php); the admin side reaches them through [`IfirmaAdminActions`](../classes/IfirmaAdminActions.php).
+50 files under [`classes/`](../classes/), one class per file (`IfirmaDataRequest.php` also declares `IfirmaDataRequestException`, so 51 classes). The centre is [`IfirmaIssuancePipeline`](../classes/IfirmaIssuancePipeline.php) with [`IfirmaReceiptService`](../classes/IfirmaReceiptService.php); the admin side reaches them through [`IfirmaAdminActions`](../classes/IfirmaAdminActions.php).
 
 **API transport**
 
@@ -161,10 +180,20 @@ The customer pages do not start the pipeline: the front controllers read and wri
 | [`IfirmaCustomerActions`](../classes/IfirmaCustomerActions.php) | Contractor actions of an order and of the customer page. |
 | [`IfirmaDataRequestActions`](../classes/IfirmaDataRequestActions.php) | Approve or reject a data request, then resume the held issuance. |
 | [`IfirmaDataRequestService`](../classes/IfirmaDataRequestService.php) | Rules and e-mails of the data-change requests. |
+| [`IfirmaPermission`](../classes/IfirmaPermission.php) | The view, issue and manage levels of an employee, read from the roles of the module's tab. |
 | [`IfirmaAdminPanelPresenter`](../classes/IfirmaAdminPanelPresenter.php) | The words and small decisions of the order panel. |
 | [`IfirmaAdminOrderPanelView`](../classes/IfirmaAdminOrderPanelView.php) | The template variables of the order panel for one order. |
 | [`IfirmaOrderGridIndicator`](../classes/IfirmaOrderGridIndicator.php) | SQL and cell of the Orders-list column. |
-| [`IfirmaSettings`](../classes/IfirmaSettings.php) | Pure validation table for the settings form. |
+| [`IfirmaSettings`](../classes/IfirmaSettings.php) | Pure validation table for the settings form, including the base URL rule and the hexadecimal key check. |
+| [`IfirmaBulkRunner`](../classes/IfirmaBulkRunner.php) | One batch of a bulk action (`retry`, `issue`, `resend`, `refresh`): batch sizes 3, 3, 5 and 25, a 20-second budget, one outcome per id (`issued`, `adopted`, `suspected`, `held`, `failed`, `sent`, `refreshed`, `skipped`, `not_attempted`), and one log entry per run. Stops on a rate-guard refusal or a rejected key. |
+| [`IfirmaIssueFeed`](../classes/IfirmaIssueFeed.php) | The records that need attention (the seven kinds, newest 20), the unseen count and the per-employee seen mark. Shares its condition with the Needs-attention preset. |
+
+**Input, downloads and output**
+
+| Class | Role |
+|-------|------|
+| [`IfirmaInput`](../classes/IfirmaInput.php) | Reads one request value safely: `scalar()` gives `''` for an array or an object, `decimal()` parses an amount (or null). |
+| [`IfirmaDownloadThrottle`](../classes/IfirmaDownloadThrottle.php) | The customer PDF limits: one fetch per document every 30 seconds, ten per customer per 60 seconds (HTTP 429). |
 
 **Status sync**
 
@@ -234,7 +263,7 @@ The "Create" button on the order panel, from the browser to the HTTP transport:
 
 The schema is defined once in [`classes/IfirmaSchema.php`](../classes/IfirmaSchema.php) and used by [`sql/install.php`](../sql/install.php) and the upgrade scripts.
 
-`ps_ifirma_receipt` - one row per iFirma document (issued by the module or discovered in iFirma). Core columns: order/customer/shop link, `document_type`, `ifirma_id` and `ifirma_number`, `status` (`created` / `paid` / `error` / `unknown` / `duplicate_suspected`), `paid_amount`, a download `security_token` and the full request/response payloads for auditing. Since 1.1.0 the table also holds: `source` (`module` or `external`) and `order_reference`, which tell where a document came from; `delivery_status`, `delivery_channel`, `delivered_at` and `delivery_error`, which track sending the document to the customer; `remote_paid_amount`, `remote_sent`, `remote_draft`, `remote_missing`, `ksef_status`, `ksef_number`, `linked_document`, `last_sync_at` and `sync_error`, which mirror the state last read from iFirma by the synchronisation job; `duplicate_candidates` (JSON list of possible existing documents found before issuing); and `id_data_request`, the link to the buyer-data request that produced the document. Indexes: `idx_order`, `idx_customer`, `idx_token`.
+`ps_ifirma_receipt` - one row per iFirma document (issued by the module or discovered in iFirma). Core columns: order/customer/shop link, `document_type`, `ifirma_id` and `ifirma_number`, `status` (`created` / `paid` / `error` / `unknown` / `duplicate_suspected`), `paid_amount`, a download `security_token` and the full request/response payloads for auditing. Since 1.1.0 the table also holds: `source` (`module` or `external`) and `order_reference`, which tell where a document came from; `delivery_status`, `delivery_channel`, `delivered_at` and `delivery_error`, which track sending the document to the customer; `remote_paid_amount`, `remote_sent`, `remote_draft`, `remote_missing`, `ksef_status`, `ksef_number`, `linked_document`, `last_sync_at` and `sync_error`, which mirror the state last read from iFirma by the synchronisation job; `duplicate_candidates` (JSON list of possible existing documents found before issuing); and `id_data_request`, the link to the buyer-data request that produced the document. Indexes: `idx_order`, `idx_customer`, `idx_token`, and since 1.5.0 `idx_date_upd` (on `date_upd`, for the documents list, the notification feed and its unseen count). Since 1.5.0 the table also holds `last_download_at` (`DATETIME NULL`), the time of the last customer PDF download, which the download throttle reads. Fresh installs get both from the schema; on upgraded shops the 1.5.0 upgrade adds them, and the customer download also adds the column on first use (`IfirmaSchema::ensureReceiptDownloadColumn()`).
 
 `ps_ifirma_contractor_map` (new in 1.1.0) - one row per customer linking it to an iFirma contractor: `id_customer` (unique), `ifirma_identifier`, `matched_by` (`module`, `nip`, `name`, `email`, `import-nip`, `import-email`, `import-name`, `manual`), `ifirma_name`. Created on install, on upgrade and, when missing, on first use. See [Linking existing contractors](contractors.md).
 
@@ -251,7 +280,8 @@ Configuration keys (defaults in `IfirmaSchema`; the settings walk-through is in 
 | KSeF | `IFIRMA_KSEF_MODE` |
 | Duplicate guard | `IFIRMA_DUPLICATE_CHECK`, `IFIRMA_DUPLICATE_WINDOW_DAYS`, `IFIRMA_DUPLICATE_AMOUNT_TOLERANCE` |
 | Status and cron | `IFIRMA_SYNC_INTERVAL_MIN`, `IFIRMA_CRON_TOKEN`, `IFIRMA_CRON_MAX_CALLS`, `IFIRMA_NOTIFY_EMAIL` |
-| Rate limiting | `IFIRMA_RATE_MAX_PER_MIN`, `IFIRMA_RATE_WINDOW` |
+| Rate limiting | `IFIRMA_RATE_MAX_PER_MIN`, `IFIRMA_RATE_WINDOW` (incremented by one atomic statement) |
+| Internal state | `IFIRMA_AUTH_FAILURE` (the pause mark after a rejected key, `<unix time>|<message>`), `IFIRMA_SEEN_<id_employee>` (the notification seen mark) |
 
 ## API surface
 
@@ -294,10 +324,19 @@ Envelope: iFirma answers with a `response` object carrying `Kod` (non-zero is an
 
 ### Security notes
 
-- API keys are stored in `ps_configuration`; the *faktura* key is validated as a hexadecimal string before any request is signed.
+- API keys are stored in `ps_configuration` in clear text; encryption at rest is not implemented, so database access is the boundary. Every key must be hexadecimal before any request is signed, the key fields are password inputs that never show a stored key (see [Configuration](configuration.md#settings-walk-through)), and an array posted in place of a setting is refused instead of raising a type error. A payment amount is accepted only when it is positive, has at most two decimals and does not exceed the order total (`IfirmaInput`, `IfirmaReceiptService::updateStatusPaid()`).
+- **Authentication pause.** After iFirma rejects the credentials (`Kod` 400, 401, 402, 403, 499 or HTTP 401/403), `IfirmaApiClient` refuses every call for 900 seconds (`AUTH_COOLDOWN`), without sending it. The mark is `IFIRMA_AUTH_FAILURE`; a successful save of the settings clears it. The cron run and the delivery retries honour it too.
+- **Base URL and transport.** The base URL must be `https`, or `http` only in developer mode or for a local, private or single-label host (`IfirmaSettings::isAcceptableBaseUrl()`). The cURL transport allows only the HTTP and HTTPS protocols, sets no redirect following, and aborts an answer larger than 20 MB (`IfirmaHttpTransport::MAX_RESPONSE_BYTES`).
+- **Atomic rate counter.** The per-minute counter of `IFIRMA_RATE_WINDOW` is one `UPDATE` statement that checks the cap and increments the count in the same step, so two requests at the same moment cannot both take the last slot.
+- **Download throttle.** The customer PDF download, which proxies iFirma, is limited to one fetch per document every 30 seconds and to ten downloads per customer in 60 seconds, with HTTP 429 (`IfirmaDownloadThrottle`). The back-office download is not throttled and needs the view level.
+- **Generic errors, nosniff and file names.** Only the message of a module's own exception reaches the browser. Any other failure (a PHP error, a database error) answers "Internal error; details are in the PrestaShop log." and writes the original class and message to the PrestaShop log (`IfirmaActionSupport::failure()`, `downloadFailureMessage()`). PDF and plain-text answers carry `X-Content-Type-Options: nosniff`. The PDF file name is built from `[0-9A-Za-z._-]` characters only. The delivery e-mail's name and order-reference variables are HTML-escaped in the HTML template.
+- **Password fields and the cron header.** The keys are password inputs with a *Remove the stored key* box, so a stored key is never sent back to the page. The cron token can be sent in the `X-Ifirma-Token` header instead of the query string, which keeps it out of web server access logs; the query value is checked first when both are sent. The comparison is constant time (`hash_equals`).
+- **Secure random tokens only.** Download tokens (20 random bytes) and the cron token (16 random bytes) come from `random_bytes()`. When it is unavailable, no download token is stored (the customer download is then not offered) and the cron token cannot be generated, so the install or upgrade fails. There is no weaker fallback.
+- **Data-change request limits.** The form validates names, address lines, city, postcode and country with PrestaShop's own rules, limits the lengths, and stores the notes as plain text that is escaped on output. A customer can file one request per order every 10 minutes and ten per 24 hours, and the admin note and the rejection reason are capped at 1000 characters. Token values are read as scalars before they reach a query.
 - Front-office PDF access requires an authenticated customer, a matching document token, and `id_customer` ownership - a customer can never fetch another's document.
-- Back-office actions run through `AdminIfirmaController`, protected by the standard PrestaShop admin token.
-- Every admin action (create, issue anyway, link, resend, refresh, approve/reject a request, PDF download) requires the `AdminIfirma` admin token; calls without it are refused by PrestaShop.
+- Back-office actions run through `AdminIfirmaController` and are checked twice. First the standard PrestaShop admin token: PrestaShop refuses a call without it before any action method runs. Then the permission level (view, issue or manage, see [Permissions](configuration.md#permissions)): every action looks up its level in a static table of the controller and [`IfirmaPermission`](../classes/IfirmaPermission.php) reads the roles `ROLE_MOD_TAB_ADMINIFIRMA_READ`, `_CREATE` and `_UPDATE` for the employee's profile. A refusal answers HTTP 403 with the usual JSON envelope (`success` false and a message), or a text body for the PDF download. SuperAdmin is always granted; an employee without a profile is granted nothing.
+- The server check is the real one; the templates also hide the buttons an employee may not use. On PrestaShop 8 the legacy ajax flow ran `ajaxProcess*` after the token alone, so without the server check any back-office employee could call any action; on PrestaShop 9 it runs after the READ permission of the tab, which still would not tell issue from manage.
+- The order panel, the customer panel and the Orders-list column are not rendered without the view level.
 - The cron endpoint is protected by a random secret token (`IFIRMA_CRON_TOKEN`, compared in constant time). Treat the URL like a password and regenerate the token in the module settings if it leaks.
 - The customer data-change request form carries a CSRF token which is verified before the request is accepted.
 - iFirma error bodies returned on a `.pdf` endpoint are detected so an error JSON is never streamed to the browser as a PDF.

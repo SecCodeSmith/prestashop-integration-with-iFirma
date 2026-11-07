@@ -1,0 +1,111 @@
+/**
+ * SCM iFirma integration module for PrestaShop.
+ *
+ * @author    SCM Jakub Berechowski <admin@seccodesmith.pl>
+ * @copyright 2026 SCM Jakub Berechowski
+ * @license   SecCodeSmith Commercial License v1.3
+ * SPDX-License-Identifier: LicenseRef-SecCodeSmith-Commercial-1.2
+ * See the LICENCE file distributed with this module for the full terms.
+ */
+
+/* iFirma module - back-office notifications, grid cell and bulk summary */
+
+.ifirma-notif-count {
+  display: inline-block;
+  min-width: 1.4em;
+  padding: 0 0.4em;
+  border-radius: 1em;
+  background: #f44336;
+  color: #fff;
+  font-size: 0.75em;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.ifirma-notif-count:empty {
+  display: none;
+}
+
+.ifirma-notif-footer {
+  padding: 0.5rem 1rem;
+  text-align: center;
+  border-top: 1px solid #dfdfdf;
+}
+
+#ifirma-notifications .notification-elements a.notif {
+  display: block;
+  padding: 0.5rem 1rem;
+}
+
+#ifirma-notif {
+  position: relative;
+}
+
+#ifirma-notif .ifirma-notif-panel {
+  display: none;
+  position: absolute;
+  right: 0;
+  z-index: 1050;
+  min-width: 320px;
+  max-height: 420px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #dfdfdf;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+#ifirma-notif.open .ifirma-notif-panel {
+  display: block;
+}
+
+#ifirma-notif .ifirma-notif-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+.js-ifirma-issue,
+.ifirma-grid-icon {
+  display: inline-block;
+  vertical-align: middle;
+  line-height: 1;
+}
+
+.js-ifirma-issue .material-icons,
+.ifirma-grid-icon .material-icons {
+  font-size: 20px;
+  vertical-align: middle;
+}
+
+#ifirma-bulk-modal .ifirma-bulk-table {
+  width: 100%;
+  margin-bottom: 0.5rem;
+}
+
+#ifirma-bulk-modal .ifirma-bulk-table th,
+#ifirma-bulk-modal .ifirma-bulk-table td {
+  padding: 0.25rem 0.5rem;
+  vertical-align: top;
+  border-top: 1px solid #dfdfdf;
+}
+
+#ifirma-bulk-modal .ifirma-bulk-totals {
+  font-weight: bold;
+}
+
+/* Documents list: scroll inside the panel and keep the row buttons on one line. */
+#ifirma_receipt_list .table-responsive-row,
+#form-ifirma_receipt .table-responsive-row,
+#ifirma_receipt_list .table-responsive {
+  overflow-x: auto;
+}
+
+#table-ifirma_receipt td.text-right,
+#table-ifirma_receipt td:last-child {
+  white-space: nowrap;
+}
+
+#table-ifirma_receipt td.text-right .btn,
+#table-ifirma_receipt td:last-child .btn {
+  white-space: nowrap;
+}

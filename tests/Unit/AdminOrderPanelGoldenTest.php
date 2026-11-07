@@ -53,6 +53,16 @@ class AdminOrderPanelGoldenTest extends TestCase
 
     // ---- fixtures ---------------------------------------------------------------------------
 
+    /** Puts an employee of a non-SuperAdmin profile with exactly these roles into the context. */
+    public function employeeWith(array $roles)
+    {
+        Access::reset();
+        Context::getContext()->employee->id_profile = 4;
+        foreach ($roles as $role) {
+            Access::grant($role, 4);
+        }
+    }
+
     /** A receipt of order 15 with the dates fixed; $props override anything. */
     protected function receipt(array $props = array())
     {
@@ -322,6 +332,14 @@ class AdminOrderPanelGoldenTest extends TestCase
             'link with a code of an older version' => array(array(), static function (self $t) {
                 IfirmaContractorMap::link(5, 'KOWALSKI-01', 'legacy-code', 'Jan Kowalski');
             }),
+            'view-only employee' => array(array(), static function (self $t) {
+                $t->receipt(array('status' => 'created'));
+                $t->employeeWith(array(IfirmaPermission::ROLE_READ));
+            }),
+            'issue without manage' => array(array(), static function (self $t) {
+                $t->receipt(array('status' => 'created'));
+                $t->employeeWith(array(IfirmaPermission::ROLE_READ, IfirmaPermission::ROLE_CREATE));
+            }),
         );
     }
 
@@ -483,6 +501,8 @@ class AdminOrderPanelGoldenTest extends TestCase
             'ifirma_request_history',
             'ifirma_ajax_url',
             'ifirma_token',
+            'ifirma_can_issue',
+            'ifirma_can_manage',
         ), $keys);
     }
 }

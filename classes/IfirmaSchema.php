@@ -56,6 +56,18 @@ class IfirmaSchema
     }
 
     /**
+     * Columns added to the receipt table in 1.5.0: when the PDF was last downloaded.
+     *
+     * @return array column name => DDL fragment
+     */
+    public static function newReceiptColumnsFor150()
+    {
+        return array(
+            'last_download_at' => 'DATETIME NULL',
+        );
+    }
+
+    /**
      * @return array column name => DDL fragment, in table order
      */
     public static function receiptColumns()
@@ -78,7 +90,7 @@ class IfirmaSchema
             'date_upd' => 'DATETIME NOT NULL',
         );
 
-        return array_merge($columns, self::newReceiptColumnsFor110());
+        return array_merge($columns, self::newReceiptColumnsFor110(), self::newReceiptColumnsFor150());
     }
 
     /**
@@ -143,7 +155,8 @@ class IfirmaSchema
             . "    PRIMARY KEY (`id_ifirma_receipt`),\n"
             . "    KEY `idx_order` (`id_order`),\n"
             . "    KEY `idx_customer` (`id_customer`),\n"
-            . "    KEY `idx_token` (`security_token`)\n"
+            . "    KEY `idx_token` (`security_token`),\n"
+            . "    KEY `idx_date_upd` (`date_upd`)\n"
             . ') ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8;';
     }
 
@@ -191,6 +204,21 @@ class IfirmaSchema
         return (int) Db::getInstance()->getValue(
             "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()"
             . " AND TABLE_NAME = '" . pSQL($table) . "' AND COLUMN_NAME = '" . pSQL($column) . "'"
+        ) !== 0;
+    }
+
+    /**
+     * Whether a table of the current database has the named index.
+     *
+     * @param string $table full table name, prefix included
+     * @param string $index
+     * @return bool
+     */
+    public static function indexExists($table, $index)
+    {
+        return (int) Db::getInstance()->getValue(
+            "SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE()"
+            . " AND TABLE_NAME = '" . pSQL($table) . "' AND INDEX_NAME = '" . pSQL($index) . "'"
         ) !== 0;
     }
 
@@ -270,6 +298,55 @@ class IfirmaSchema
         return $ok;
     }
 
+    /** @var bool the download column was already ensured in this request */
+    private static $receiptDownloadEnsured = false;
+
+    /**
+     * Adds the last_download_at column to the receipt table when missing. Idempotent; at most once per request.
+     *
+     * @return bool
+     */
+    public static function ensureReceiptDownloadColumn()
+    {
+        if (self::$receiptDownloadEnsured) {
+            return true;
+        }
+        $table = _DB_PREFIX_ . 'ifirma_receipt';
+        $ok = true;
+        if (!self::columnExists($table, 'last_download_at')) {
+            $columns = self::newReceiptColumnsFor150();
+            $ok = (bool) Db::getInstance()->execute(
+                'ALTER TABLE `' . $table . '` ADD COLUMN `last_download_at` ' . $columns['last_download_at']
+            );
+        }
+        self::$receiptDownloadEnsured = $ok;
+
+        return $ok;
+    }
+
+    /** @var bool the date index was already ensured in this request */
+    private static $receiptDateIndexEnsured = false;
+
+    /**
+     * Adds the idx_date_upd index to the receipt table when missing. Idempotent; at most once per request.
+     *
+     * @return bool
+     */
+    public static function ensureReceiptDateIndex()
+    {
+        if (self::$receiptDateIndexEnsured) {
+            return true;
+        }
+        $table = _DB_PREFIX_ . 'ifirma_receipt';
+        $ok = true;
+        if (!self::indexExists($table, 'idx_date_upd')) {
+            $ok = (bool) Db::getInstance()->execute('ALTER TABLE `' . $table . '` ADD KEY `idx_date_upd` (`date_upd`)');
+        }
+        self::$receiptDateIndexEnsured = $ok;
+
+        return $ok;
+    }
+
     /**
      * Forget that the table was ensured (tests).
      */
@@ -277,6 +354,8 @@ class IfirmaSchema
     {
         self::$contractorMapEnsured = false;
         self::$receiptKsefEnsured = false;
+        self::$receiptDownloadEnsured = false;
+        self::$receiptDateIndexEnsured = false;
     }
 
     /**
@@ -318,22 +397,40 @@ class IfirmaSchema
             'IFIRMA_CRON_MAX_CALLS' => 40,
             'IFIRMA_RATE_MAX_PER_MIN' => 80,
             'IFIRMA_RATE_WINDOW' => '',
+            'IFIRMA_AUTH_FAILURE' => '',
         );
     }
 
     /**
+     * Test seam: callable(int $length): string used instead of random_bytes() when set.
+     *
+     * @var callable|null
+     */
+    public static $randomBytes = null;
+
+    /**
+     * A token from the operating system's secure random generator. There is no weaker fallback: a token that
+     * could be guessed is worse than none.
+     *
      * @return string 32 hex characters
+     * @throws RuntimeException when the secure random generator is unavailable
      */
     public static function generateCronToken()
     {
-        if (function_exists('random_bytes')) {
-            try {
-                return bin2hex(random_bytes(16));
-            } catch (Exception $e) {
-                // fall through to the fallback below
+        $bytes = null;
+        try {
+            if (is_callable(self::$randomBytes)) {
+                $bytes = call_user_func(self::$randomBytes, 16);
+            } elseif (function_exists('random_bytes')) {
+                $bytes = random_bytes(16);
             }
+        } catch (Throwable $e) {
+            $bytes = null;
+        }
+        if (!is_string($bytes) || strlen($bytes) !== 16) {
+            throw new RuntimeException('The secure random generator is unavailable');
         }
 
-        return substr(hash('sha256', uniqid('ifirma', true) . mt_rand()), 0, 32);
+        return bin2hex($bytes);
     }
 }

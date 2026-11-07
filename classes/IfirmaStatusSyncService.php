@@ -338,7 +338,17 @@ class IfirmaStatusSyncService
             'errors' => 0, 'rate_limited' => 0, 'calls' => 0,
             'dates_total' => 0, 'dates_processed' => 0, 'held_orders' => 0,
             'started_at' => date('c', $this->now()), 'finished_at' => '',
+            'auth_blocked' => false, 'message' => '',
         );
+
+        if ($this->client->isAuthBlocked()) {
+            // iFirma rejected the credentials a moment ago: touch neither the receipts nor the API.
+            $summary['auth_blocked'] = true;
+            $summary['message'] = $this->client->getAuthBlockMessage();
+            $summary['finished_at'] = date('c', $this->now());
+
+            return $summary;
+        }
 
         $groups = array();
         foreach ($this->selectForCron() as $receipt) {

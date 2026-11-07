@@ -81,6 +81,8 @@ class AdminOrderPanelViewTest extends TestCase
             'configured' => true,
             'ajax_url' => 'https://shop.test/ajax?token=T9',
             'token' => 'T9',
+            'can_issue' => true,
+            'can_manage' => true,
         ), $over);
     }
 
@@ -123,6 +125,8 @@ class AdminOrderPanelViewTest extends TestCase
             'ifirma_request_history',
             'ifirma_ajax_url',
             'ifirma_token',
+            'ifirma_can_issue',
+            'ifirma_can_manage',
         ), array_keys($this->build()));
     }
 
@@ -165,6 +169,25 @@ class AdminOrderPanelViewTest extends TestCase
         $this->assertTrue($v['ifirma_configured']);
         $this->assertSame('https://shop.test/ajax?token=T9', $v['ifirma_ajax_url']);
         $this->assertSame('T9', $v['ifirma_token']);
+        $this->assertTrue($v['ifirma_can_issue']);
+        $this->assertTrue($v['ifirma_can_manage']);
+    }
+
+    public function testThePermissionFlagsFollowTheOptionsAndDefaultToFalse()
+    {
+        $v = $this->build(15, $this->facts(array('can_issue' => true, 'can_manage' => false)));
+        $this->assertTrue($v['ifirma_can_issue']);
+        $this->assertFalse($v['ifirma_can_manage']);
+
+        $v = $this->build(15, $this->facts(array('can_issue' => false, 'can_manage' => true)));
+        $this->assertFalse($v['ifirma_can_issue']);
+        $this->assertTrue($v['ifirma_can_manage']);
+
+        $facts = $this->facts();
+        unset($facts['can_issue'], $facts['can_manage']);
+        $v = $this->build(15, $facts);
+        $this->assertFalse($v['ifirma_can_issue']);
+        $this->assertFalse($v['ifirma_can_manage']);
     }
 
     public function testAnUnconfiguredModuleIsHandedOverAsFalse()

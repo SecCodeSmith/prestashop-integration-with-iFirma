@@ -468,4 +468,39 @@ class ModuleCustomerHooksTest extends TestCase
         $this->assertNotFalse(strpos($body, 'width: 35%'));
         $this->assertNotFalse(strpos($body, 'white-space: nowrap'));
     }
+
+    // ---- permission levels (spec: receipt-access-control) ----------------------------------------
+
+    public function testNoCustomerPanelWithoutTheViewLevel()
+    {
+        Access::reset();
+        Context::getContext()->employee->id_profile = 4;
+        Access::grant(IfirmaPermission::ROLE_CREATE, 4);
+        Access::grant(IfirmaPermission::ROLE_UPDATE, 4);
+
+        $out = $this->module->hookDisplayAdminCustomers(array('id_customer' => 5));
+
+        $this->assertSame('', $out);
+        $this->assertSame(array(), $this->vars());
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testTheCustomerPanelIsRenderedWithTheViewLevel()
+    {
+        Access::reset();
+        Context::getContext()->employee->id_profile = 4;
+        Access::grant(IfirmaPermission::ROLE_READ, 4);
+
+        $out = $this->module->hookDisplayAdminCustomers(array('id_customer' => 5));
+
+        $this->assertNotSame('', $out);
+        $this->assertSame(5, $this->vars()['ifirma_customer_id']);
+    }
+
+    public function testTheCustomerPanelIsRenderedForASuperAdmin()
+    {
+        Access::reset();
+
+        $this->assertNotSame('', $this->module->hookDisplayAdminCustomers(array('id_customer' => 5)));
+    }
 }

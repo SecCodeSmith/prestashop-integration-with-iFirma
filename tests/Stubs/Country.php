@@ -18,6 +18,29 @@ class Country
     public $name;
     /** @var bool|int a country that is switched off is left out by getCountries($idLang, true) */
     public $active = true;
+    /** @var string zip code format as core stores it: N digit, L letter, C iso code, other characters literal */
+    public $zip_code_format = '';
+
+    /**
+     * Like core: true when the format is empty or the code matches it ('-' and ' ' are optional).
+     *
+     * @param string $zipCode
+     * @return bool
+     */
+    public function checkZipCode($zipCode)
+    {
+        if (empty($this->zip_code_format)) {
+            return true;
+        }
+        $regexp = '/^' . $this->zip_code_format . '$/ui';
+        $regexp = str_replace(' ', '( |)', $regexp);
+        $regexp = str_replace('-', '(-|)', $regexp);
+        $regexp = str_replace('N', '[0-9]', $regexp);
+        $regexp = str_replace('L', '[a-zA-Z]', $regexp);
+        $regexp = str_replace('C', $this->iso_code, $regexp);
+
+        return (bool) preg_match($regexp, (string) $zipCode);
+    }
 
     public function __construct($id = null, $idLang = null)
     {

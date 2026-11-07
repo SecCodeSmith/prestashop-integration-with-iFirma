@@ -64,7 +64,7 @@ class IfirmaAdminOrderPanelView
     /**
      * @param int   $idOrder
      * @param array $module  what only the module class knows: version, build_stamp (the build installed when
-     *                       the version number did not change), configured, ajax_url and token
+     *                       the version number did not change), configured, ajax_url, token, can_issue and can_manage (the permission levels of the employee)
      * @return array the Smarty variables of the panel, in the order the module has always assigned them
      */
     public function build($idOrder, array $module)
@@ -105,6 +105,8 @@ class IfirmaAdminOrderPanelView
             'ifirma_request_history' => $changes['history'],
             'ifirma_ajax_url' => $module['ajax_url'],
             'ifirma_token' => $module['token'],
+            'ifirma_can_issue' => !empty($module['can_issue']),
+            'ifirma_can_manage' => !empty($module['can_manage']),
         );
     }
 

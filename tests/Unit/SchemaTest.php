@@ -386,6 +386,126 @@ class SchemaTest extends TestCase
         $this->assertCount(3, $this->addColumnStatements());
     }
 
+    public function testReceiptCreateSqlCarriesTheDownloadColumnAndTheDateIndex()
+    {
+        $sql = IfirmaSchema::receiptCreateSql();
+
+        $this->assertStringContainsString("    `last_download_at` DATETIME NULL,\n    PRIMARY KEY", $sql);
+        $this->assertStringContainsString("    KEY `idx_date_upd` (`date_upd`)\n) ENGINE=", $sql);
+        $this->assertStringContainsString("    KEY `idx_token` (`security_token`),\n    KEY `idx_date_upd`", $sql);
+    }
+
+    public function testReceiptDownloadColumnIsAddedToTheFreshSchemaOnly()
+    {
+        $this->assertSame(array('last_download_at' => 'DATETIME NULL'), IfirmaSchema::newReceiptColumnsFor150());
+        $this->assertArrayHasKey('last_download_at', IfirmaSchema::receiptColumns());
+        $this->assertArrayNotHasKey('last_download_at', IfirmaSchema::newReceiptColumnsFor110());
+    }
+
+    public function testIndexExistsAsksInformationSchemaAboutTheNamedIndex()
+    {
+        Db::getInstance()->whenGetValue("/INDEX_NAME = 'idx_wanted'/", 1);
+
+        $this->assertTrue(IfirmaSchema::indexExists('ps_demo', 'idx_wanted'));
+        $this->assertSame(array(
+            "SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE()"
+            . " AND TABLE_NAME = 'ps_demo' AND INDEX_NAME = 'idx_wanted'",
+        ), $this->indexProbes());
+    }
+
+    public function testIndexExistsReadsZeroAsMissing()
+    {
+        Db::getInstance()->whenGetValue('/information_schema\.STATISTICS/', '0');
+
+        $this->assertFalse(IfirmaSchema::indexExists('ps_demo', 'idx_wanted'));
+    }
+
+    public function testEnsureReceiptDownloadColumnAddsTheColumnOnce()
+    {
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'last_download_at'/", '0');
+
+        $this->assertTrue(IfirmaSchema::ensureReceiptDownloadColumn());
+        $this->assertTrue(IfirmaSchema::ensureReceiptDownloadColumn());
+
+        $this->assertSame(array(
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `last_download_at` DATETIME NULL',
+        ), $this->addColumnStatements());
+    }
+
+    public function testEnsureReceiptDownloadColumnSkipsAnExistingColumn()
+    {
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'last_download_at'/", '1');
+
+        $this->assertTrue(IfirmaSchema::ensureReceiptDownloadColumn());
+        $this->assertSame(array(), $this->addColumnStatements());
+    }
+
+    public function testEnsureReceiptDownloadColumnDoesNotRememberAFailure()
+    {
+        $db = Db::getInstance();
+        $db->whenGetValue("/COLUMN_NAME = 'last_download_at'/", '0');
+        $db->whenExecute('/ADD COLUMN `last_download_at`/', false);
+
+        $this->assertFalse(IfirmaSchema::ensureReceiptDownloadColumn());
+
+        $db->whenExecute('/ADD COLUMN `last_download_at`/', true);
+        $this->assertTrue(IfirmaSchema::ensureReceiptDownloadColumn());
+        $this->assertCount(2, $this->addColumnStatements());
+
+        $this->assertTrue(IfirmaSchema::ensureReceiptDownloadColumn());
+        $this->assertCount(2, $this->addColumnStatements());
+    }
+
+    public function testEnsureReceiptDateIndexAddsTheIndexOnce()
+    {
+        Db::getInstance()->whenGetValue("/INDEX_NAME = 'idx_date_upd'/", '0');
+
+        $this->assertTrue(IfirmaSchema::ensureReceiptDateIndex());
+        $this->assertTrue(IfirmaSchema::ensureReceiptDateIndex());
+
+        $this->assertSame(array(
+            'ALTER TABLE `ps_ifirma_receipt` ADD KEY `idx_date_upd` (`date_upd`)',
+        ), $this->addKeyStatements());
+    }
+
+    public function testEnsureReceiptDateIndexSkipsAnExistingIndex()
+    {
+        Db::getInstance()->whenGetValue("/INDEX_NAME = 'idx_date_upd'/", '1');
+
+        $this->assertTrue(IfirmaSchema::ensureReceiptDateIndex());
+        $this->assertSame(array(), $this->addKeyStatements());
+    }
+
+    public function testEnsureReceiptDateIndexDoesNotRememberAFailure()
+    {
+        $db = Db::getInstance();
+        $db->whenGetValue("/INDEX_NAME = 'idx_date_upd'/", '0');
+        $db->whenExecute('/ADD KEY `idx_date_upd`/', false);
+
+        $this->assertFalse(IfirmaSchema::ensureReceiptDateIndex());
+
+        $db->whenExecute('/ADD KEY `idx_date_upd`/', true);
+        $this->assertTrue(IfirmaSchema::ensureReceiptDateIndex());
+        $this->assertCount(2, $this->addKeyStatements());
+
+        $this->assertTrue(IfirmaSchema::ensureReceiptDateIndex());
+        $this->assertCount(2, $this->addKeyStatements());
+    }
+
+    private function addKeyStatements()
+    {
+        return array_values(array_filter(Db::getInstance()->executed, function ($q) {
+            return strpos($q, 'ALTER TABLE') === 0 && strpos($q, 'ADD KEY') !== false;
+        }));
+    }
+
+    private function indexProbes()
+    {
+        return array_values(array_filter(Db::getInstance()->queries, function ($q) {
+            return strpos($q, 'information_schema.STATISTICS') !== false;
+        }));
+    }
+
     public function testSignatureTypeDefaultIsBpo()
     {
         $this->assertSame('BPO', IfirmaSchema::configurationDefaults()['IFIRMA_SIGNATURE_TYPE']);
@@ -403,5 +523,69 @@ class SchemaTest extends TestCase
         sort($a);
 
         return $a;
+    }
+
+    // ---- the cron token (admin-receipt-ops-and-hardening 8.3) ----------------------------------
+
+    public function testTheCronTokenIs32HexCharactersFromTheSecureGenerator()
+    {
+        $token = IfirmaSchema::generateCronToken();
+
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{32}$/', $token);
+        $this->assertNotSame($token, IfirmaSchema::generateCronToken());
+    }
+
+    public function testTheCronTokenIsMadeOfTheBytesTheSeamReturns()
+    {
+        $asked = array();
+        IfirmaSchema::$randomBytes = function ($length) use (&$asked) {
+            $asked[] = $length;
+
+            return str_repeat("\x01\xab", 8);
+        };
+        try {
+            $token = IfirmaSchema::generateCronToken();
+        } finally {
+            IfirmaSchema::$randomBytes = null;
+        }
+
+        $this->assertSame(str_repeat('01ab', 8), $token);
+        $this->assertSame(array(16), $asked);
+    }
+
+    public function provideGeneratorFailures()
+    {
+        return array(
+            'the generator throws' => array(function () {
+                throw new Exception('no entropy');
+            }),
+            'the generator fails hard' => array(function () {
+                throw new Error('gone');
+            }),
+            'the generator returns nothing' => array(function () {
+                return '';
+            }),
+            'the generator returns too little' => array(function () {
+                return 'abc';
+            }),
+            'the generator returns false' => array(function () {
+                return false;
+            }),
+        );
+    }
+
+    /**
+     * @dataProvider provideGeneratorFailures
+     */
+    public function testGeneratorUnavailableThrowsInsteadOfFallingBackToAWeakToken($seam)
+    {
+        IfirmaSchema::$randomBytes = $seam;
+        try {
+            $this->expectException(RuntimeException::class);
+            $this->expectExceptionMessage('The secure random generator is unavailable');
+            IfirmaSchema::generateCronToken();
+        } finally {
+            IfirmaSchema::$randomBytes = null;
+        }
     }
 }

@@ -19,11 +19,19 @@ class ApiClientErrorsTest extends TestCase
     /** @var IfirmaApiClient */
     private $c;
 
+    /** @var int */
+    public $now;
+
     protected function setUp(): void
     {
         IfirmaTestState::resetAll();
         $this->t = new ScriptedTransport();
         $this->c = new IfirmaApiClient('u@example.com', array('faktura' => str_repeat('ab', 16)), 'http://ifirma-mock:8001/iapi/', 30, $this->t);
+        $this->now = mktime(10, 0, 0, 11, 1, 2026);
+        $self = $this;
+        $this->c->setClock(function () use ($self) {
+            return $self->now;
+        });
     }
 
     public function kodProvider()
@@ -58,6 +66,7 @@ class ApiClientErrorsTest extends TestCase
         $this->t->queue('GET', '#x\.json#', array('body' => '{"response":{"Kod":0}}'));
         $this->c->get('x.json', 'faktura');
         $this->assertSame('Invalid signature - check the API key (Kod 403)', $this->c->getLastError());
+        $this->now += 901; // the 403 starts a cool-down: the second call waits for it to end
         $this->c->get('x.json', 'faktura');
         $this->assertNull($this->c->getLastKod());
         $this->assertSame('', $this->c->getLastError());
@@ -118,5 +127,152 @@ class ApiClientErrorsTest extends TestCase
         $this->assertTrue($this->c->isPdf('%PDF-1.7'));
         $this->assertFalse($this->c->isPdf('{"a":1}'));
         $this->assertFalse($this->c->isPdf(''));
+    }
+
+    public function authFailureProvider()
+    {
+        return array(
+            'Kod 400' => array(200, '{"response":{"Kod":400,"Informacja":"x"}}'),
+            'Kod 401' => array(200, '{"response":{"Kod":401}}'),
+            'Kod 402' => array(200, '{"response":{"Kod":402}}'),
+            'Kod 403' => array(200, '{"response":{"Kod":403}}'),
+            'Kod 499' => array(200, '{"response":{"Kod":499}}'),
+            'HTTP 401 html' => array(401, '<html>denied</html>'),
+            'HTTP 403 empty' => array(403, ''),
+        );
+    }
+
+    /**
+     * @dataProvider authFailureProvider
+     */
+    public function testAuthFailureSetsTheMark($status, $body)
+    {
+        $this->t->queue('GET', '#x\.json#', array('status' => $status, 'body' => $body));
+        $this->c->get('x.json', 'faktura');
+        $mark = (string) Configuration::get('IFIRMA_AUTH_FAILURE');
+        $this->assertStringStartsWith($this->now . '|', $mark);
+        $this->assertTrue($this->c->isAuthBlocked(), 'the mark is active right after the failing call');
+        $this->assertFalse($this->c->lastCallWasAuthBlocked(), 'the failing call itself was sent');
+    }
+
+    public function testSecondCallBlocked()
+    {
+        $body = json_encode(array('response' => array('Kod' => 403, 'Informacja' => 'Bad hash')));
+        $this->t->queue('POST', '#x\.json#', array('status' => 200, 'body' => $body));
+        $this->t->queue('POST', '#x\.json#', array('status' => 200, 'body' => '{"response":{"Kod":0}}'));
+
+        $this->assertNotNull($this->c->post('x.json', 'faktura', array()));
+        $failedAt = $this->now;
+        $this->assertCount(1, $this->t->calls);
+
+        $this->now += 120;
+        $this->assertNull($this->c->post('x.json', 'faktura', array()));
+        $this->assertCount(1, $this->t->calls, 'no second request reaches the transport');
+        $this->assertFalse($this->c->lastRequestWasSent());
+        $this->assertTrue($this->c->isAuthBlocked());
+        $this->assertTrue($this->c->lastCallWasAuthBlocked());
+        $this->assertFalse($this->c->isRateLimited());
+        $this->assertNull($this->c->getLastKod());
+        $this->assertSame(
+            'iFirma rejected the credentials at ' . date('Y-m-d H:i:s', $failedAt)
+            . ': Invalid signature - check the API key (Kod 403): Bad hash; calls are paused until '
+            . date('Y-m-d H:i:s', $failedAt + 900),
+            $this->c->getLastError()
+        );
+        $this->assertSame(1, $this->c->getRequestCount());
+    }
+
+    public function testBlockedCallsCoverEveryVerbAndBinary()
+    {
+        $this->t->queue('GET', '#x\.json#', array('status' => 403, 'body' => ''));
+        $this->c->get('x.json', 'faktura');
+        $this->assertNull($this->c->put('x.json', 'faktura', array()));
+        $this->assertFalse($this->c->getBinary('x.pdf', 'faktura'));
+        $this->assertNull($this->c->getDetail('fakturaparagon', '1'));
+        $this->assertNull($this->c->listInvoices(array('dataOd' => 'a', 'dataDo' => 'b', 'iloscNaStronie' => 1)));
+        $this->assertCount(1, $this->t->calls);
+        $this->assertTrue($this->c->isAuthBlocked());
+    }
+
+    public function testBareHttp403StartsTheCoolDown()
+    {
+        $this->t->queue('GET', '#x\.json#', array('status' => 403, 'body' => ''));
+        $this->assertNull($this->c->get('x.json', 'faktura'));
+        $this->assertSame(403, $this->c->getLastHttpCode());
+        $this->assertSame($this->now . '|HTTP 403 returned by iFirma.', Configuration::get('IFIRMA_AUTH_FAILURE'));
+        $this->c->get('x.json', 'faktura');
+        $this->assertCount(1, $this->t->calls);
+    }
+
+    public function testWindowOverSendsAgain()
+    {
+        $this->t->queue('GET', '#x\.json#', array('status' => 403, 'body' => ''));
+        $this->t->queue('GET', '#x\.json#', array('status' => 200, 'body' => '{"response":{"Kod":0}}'));
+        $this->c->get('x.json', 'faktura');
+        $this->now += 899;
+        $this->c->get('x.json', 'faktura');
+        $this->assertCount(1, $this->t->calls, 'still inside the 900 seconds');
+        $this->now += 1;
+        $this->assertNotNull($this->c->get('x.json', 'faktura'));
+        $this->assertCount(2, $this->t->calls);
+        $this->assertFalse($this->c->isAuthBlocked());
+        $this->assertFalse($this->c->lastCallWasAuthBlocked());
+        $this->assertSame('', $this->c->getLastError());
+    }
+
+    public function testKod500DoesNotPause()
+    {
+        $this->t->queue('GET', '#x\.json#', array('status' => 200, 'body' => '{"response":{"Kod":500}}'));
+        $this->t->queue('GET', '#x\.json#', array('status' => 200, 'body' => '{"response":{"Kod":0}}'));
+        $this->c->get('x.json', 'faktura');
+        $this->assertFalse(Configuration::get('IFIRMA_AUTH_FAILURE'));
+        $this->assertNotNull($this->c->get('x.json', 'faktura'));
+        $this->assertCount(2, $this->t->calls);
+        $this->assertFalse($this->c->isAuthBlocked());
+    }
+
+    public function testOtherFailuresDoNotPause()
+    {
+        $this->t->queue('GET', '#x\.json#', array('status' => 502, 'body' => ''));
+        $this->t->queue('GET', '#x\.json#', array('status' => 0, 'error' => 'timeout'));
+        $this->c->get('x.json', 'faktura');
+        $this->c->get('x.json', 'faktura');
+        $this->assertFalse(Configuration::get('IFIRMA_AUTH_FAILURE'));
+        $this->assertCount(2, $this->t->calls);
+    }
+
+    public function testIsAuthBlockedIsLiveAfterTheFailingCallToo()
+    {
+        $this->t->queue('GET', '#x\.json#', array('status' => 403, 'body' => ''));
+        $this->assertFalse($this->c->isAuthBlocked());
+        $this->c->get('x.json', 'faktura');
+        $this->assertTrue($this->c->isAuthBlocked(), 'a bulk run stops right after the item that set the mark');
+        $this->now += 900;
+        $this->assertFalse($this->c->isAuthBlocked(), 'no call needed to see the window end');
+    }
+
+    public function testIsAuthBlockedReadsTheMarkBeforeAnyCall()
+    {
+        $this->assertFalse($this->c->isAuthBlocked());
+        Configuration::updateValue('IFIRMA_AUTH_FAILURE', ($this->now - 60) . '|Bad hash');
+        $this->assertTrue($this->c->isAuthBlocked());
+        $this->now += 900;
+        $this->assertFalse($this->c->isAuthBlocked());
+    }
+
+    public function testAMessageWithAPipeKeepsItsText()
+    {
+        Configuration::updateValue('IFIRMA_AUTH_FAILURE', $this->now . '|a|b');
+        $this->c->get('x.json', 'faktura');
+        $this->assertStringContainsString(': a|b; calls are paused until', $this->c->getLastError());
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testMissingKeyIsReportedBeforeTheCoolDown()
+    {
+        Configuration::updateValue('IFIRMA_AUTH_FAILURE', $this->now . '|x');
+        $c = new IfirmaApiClient('u', array(), 'http://ifirma-mock:8001/iapi/', 30, $this->t);
+        $c->get('x.json', 'faktura');
+        $this->assertSame('Missing iFirma API key "faktura".', $c->getLastError());
     }
 }

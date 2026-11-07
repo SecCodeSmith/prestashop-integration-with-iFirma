@@ -255,7 +255,6 @@ class IfirmaSettingsTest extends TestCase
             'a base url is trimmed' => array('IFIRMA_BASE_URL', ' http://mock/iapi/ ', 'http://mock/iapi/'),
             'an empty base url is the production one' => array('IFIRMA_BASE_URL', '', 'https://www.ifirma.pl/iapi/'),
             'a base url of spaces is the production one' => array('IFIRMA_BASE_URL', '   ', 'https://www.ifirma.pl/iapi/'),
-            'a base url of zero is a base url' => array('IFIRMA_BASE_URL', '0', '0'),
             'a text is trimmed' => array('IFIRMA_SEND_TEXT', "  Thank you\r\n", 'Thank you'),
             'a text keeps its line breaks and markup' => array('IFIRMA_SEND_TEXT', "<b>a</b>\r\nb & \"c\"", "<b>a</b>\r\nb & \"c\""),
             'a text as long as the limit' => array('IFIRMA_SEND_TEXT', str_repeat($a, 1000), str_repeat($a, 1000)),
@@ -264,7 +263,7 @@ class IfirmaSettingsTest extends TestCase
             'a text is cut in characters, not in bytes' => array('IFIRMA_SEND_TEXT', str_repeat($a, 600), str_repeat($a, 600)),
             'no text' => array('IFIRMA_SEND_TEXT', false, ''),
             'a login is not cut at the limit of the text' => array('IFIRMA_USER', str_repeat($a, 1500), str_repeat($a, 1500)),
-            'a base url is not cut at the limit of the text' => array('IFIRMA_BASE_URL', str_repeat('a', 1500), str_repeat('a', 1500)),
+            'a base url is not cut at the limit of the text' => array('IFIRMA_BASE_URL', 'https://sandbox.example/' . str_repeat('a', 1500) . '/', 'https://sandbox.example/' . str_repeat('a', 1500) . '/'),
             'a token is not cut at the limit of the text' => array('IFIRMA_PAYMENT_TYPE_TOKEN', str_repeat('a', 1500), str_repeat('a', 1500)),
         );
     }
@@ -942,5 +941,145 @@ class IfirmaSettingsTest extends TestCase
         $this->assertNull($result['values']['IFIRMA_DUPLICATE_WINDOW_DAYS']);
         $this->assertSame(array(), Configuration::$writes);
         $this->assertSame('from the configuration', Configuration::get('IFIRMA_USER'));
+    }
+
+    /**
+     * @return array[] name => array(url, devMode, accepted)
+     */
+    public function baseUrls()
+    {
+        return array(
+            'production' => array('https://www.ifirma.pl/iapi/', false, true),
+            'another https host' => array('https://sandbox.example/iapi/', false, true),
+            'http to the public internet without dev mode' => array('http://www.ifirma.pl/iapi/', false, false),
+            'http to the public internet in dev mode' => array('http://www.ifirma.pl/iapi/', true, true),
+            'the mock service (single label host)' => array('http://ifirma-mock:8001/iapi/', false, true),
+            'localhost' => array('http://localhost:8001/', false, true),
+            'loopback' => array('http://127.0.0.1:8001/', false, true),
+            'ipv6 loopback' => array('http://[::1]:8001/', false, true),
+            'class A private range' => array('http://10.1.2.3/', false, true),
+            'class B private range, first' => array('http://172.16.0.9/', false, true),
+            'class B private range, last' => array('http://172.31.255.1/', false, true),
+            'just outside the class B private range' => array('http://172.32.0.1/', false, false),
+            'class C private range' => array('http://192.168.1.5/', false, true),
+            'a public name that starts like a private range' => array('http://10.example.com/', false, false),
+            'file' => array('file:///etc/passwd', true, false),
+            'gopher' => array('gopher://host/', true, false),
+            'ftp' => array('ftp://host/', true, false),
+            'credentials in https' => array('https://user:pw@host.example/', false, false),
+            'a login only' => array('https://user@host.example/', false, false),
+            'credentials in a local http url' => array('http://user:pw@localhost/', false, false),
+            'no scheme' => array('www.ifirma.pl/iapi/', true, false),
+            'a relative path' => array('/iapi/', true, false),
+            'zero' => array('0', true, false),
+            'a word' => array('abc', true, false),
+        );
+    }
+
+    /**
+     * @dataProvider baseUrls
+     */
+    public function testTheBaseUrlMustBeAnAddressTheModuleMayCall($url, $devMode, $accepted)
+    {
+        IfirmaSettings::$devMode = $devMode;
+        try {
+            $result = $this->fromRequest(array('IFIRMA_BASE_URL' => $url));
+        } finally {
+            IfirmaSettings::$devMode = null;
+        }
+
+        if ($accepted) {
+            $this->assertSame($url, $result['values']['IFIRMA_BASE_URL']);
+            $this->assertArrayNotHasKey('IFIRMA_BASE_URL', $result['errors']);
+
+            return;
+        }
+        $this->assertArrayHasKey('IFIRMA_BASE_URL', $result['errors']);
+        $this->assertNull($result['values']['IFIRMA_BASE_URL']);
+    }
+
+    public function testAUrlThePrestaShopAbsoluteUrlCheckRejectsIsNotAcceptable()
+    {
+        IfirmaSettings::$devMode = true;
+        try {
+            $this->assertFalse(IfirmaSettings::isAcceptableBaseUrl('http://exa<mple.test/iapi/'));
+        } finally {
+            IfirmaSettings::$devMode = null;
+        }
+    }
+
+    public function testTheDevModeSeamDefaultsToThePrestaShopConstant()
+    {
+        $this->assertNull(IfirmaSettings::$devMode);
+        $expected = defined('_PS_MODE_DEV_') && _PS_MODE_DEV_;
+        $this->assertSame($expected, IfirmaSettings::isAcceptableBaseUrl('http://www.ifirma.pl/iapi/'));
+    }
+
+    public function testAnEmptyBaseUrlStaysTheProductionOne()
+    {
+        IfirmaSettings::$devMode = false;
+        try {
+            $result = $this->fromRequest(array('IFIRMA_BASE_URL' => '  '));
+        } finally {
+            IfirmaSettings::$devMode = null;
+        }
+
+        $this->assertSame(IfirmaApiClient::BASE_URL, $result['values']['IFIRMA_BASE_URL']);
+        $this->assertArrayNotHasKey('IFIRMA_BASE_URL', $result['errors']);
+    }
+
+    // ---- an array or an object posted for a scalar (admin-receipt-ops-and-hardening 8.6) ---------
+
+    /**
+     * @return array[] name => array(key, posted, is an error)
+     */
+    public function nonScalars()
+    {
+        return array(
+            'a login' => array('IFIRMA_USER', array('x'), true),
+            'a base url' => array('IFIRMA_BASE_URL', array('https://a.example/'), true),
+            'a key' => array('IFIRMA_KEY_FAKTURA', array('abc'), true),
+            'an abonent key' => array('IFIRMA_KEY_ABONENT', array('abc'), true),
+            'an e-mail address' => array('IFIRMA_NOTIFY_EMAIL', array('a@example.test'), true),
+            'a whole number' => array('IFIRMA_SYNC_INTERVAL_MIN', array('15'), true),
+            'a tolerance' => array('IFIRMA_DUPLICATE_AMOUNT_TOLERANCE', array('1'), true),
+            'a payment code' => array('IFIRMA_PAYMENT_METHOD', array('PRZ'), true),
+            'a payment map' => array('IFIRMA_PAYMENT_METHOD_MAP', array('a=PRZ'), true),
+            'an object as a login' => array('IFIRMA_USER', new stdClass(), true),
+            'a choice' => array('IFIRMA_SEND_CHANNEL', array('none'), false),
+            'a copy mode' => array('IFIRMA_SEND_COPY_MODE', array('shop'), false),
+            'a raw value' => array('IFIRMA_DEFAULT_UNIT', array('szt.'), false),
+        );
+    }
+
+    /**
+     * @dataProvider nonScalars
+     */
+    public function testArrayLoginOrAnyOtherScalarGivenAnArrayIsRefusedOrIgnoredWithoutAWarning($key, $posted, $isError)
+    {
+        set_error_handler(function ($no, $message) {
+            throw new ErrorException($message);
+        });
+        try {
+            $result = $this->fromRequest(array($key => $posted));
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertSame($isError, array_key_exists($key, $result['errors']), $key);
+        if ($isError) {
+            $this->assertNull($result['values'][$key]);
+        } else {
+            $this->assertTrue(is_scalar($result['values'][$key]) || $result['values'][$key] === false, $key . ' stays a scalar');
+        }
+    }
+
+    public function testTheAbonentAndReceiptKeysMustBeHexadecimalWhenTheyAreNotEmpty()
+    {
+        foreach (array('IFIRMA_KEY_ABONENT', 'IFIRMA_KEY_RACHUNEK') as $key) {
+            $this->assertArrayHasKey($key, $this->fromRequest(array($key => 'xyz'))['errors']);
+            $this->assertArrayNotHasKey($key, $this->fromRequest(array($key => ''))['errors']);
+            $this->assertArrayNotHasKey($key, $this->fromRequest(array($key => 'abcdef0123'))['errors']);
+        }
     }
 }

@@ -103,6 +103,7 @@
       "post": {
         "submitIfirma": "1",
         "IFIRMA_USER": "firma@example.test",
+        "clear_IFIRMA_KEY_FAKTURA_on": "1",
         "IFIRMA_PAYMENT_METHOD": "PRZ",
         "IFIRMA_PAYMENT_METHOD_MODE": "order",
         "IFIRMA_DUPLICATE_WINDOW_DAYS": "30",
@@ -147,6 +148,7 @@
       "name": "optional fields posted empty",
       "change": {
         "IFIRMA_BASE_URL": "   ",
+        "clear_IFIRMA_KEY_FAKTURA_on": "1",
         "IFIRMA_KEY_FAKTURA": "",
         "IFIRMA_KEY_ABONENT": "",
         "IFIRMA_KEY_RACHUNEK": "",

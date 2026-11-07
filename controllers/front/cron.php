@@ -11,7 +11,7 @@
 
 /**
  * Cron endpoint: bulk status sync (spec: receipt-status-sync).
- * URL: /module/ifirma/cron?token=<IFIRMA_CRON_TOKEN>
+ * URL: /module/ifirma/cron?token=<IFIRMA_CRON_TOKEN>, or the token in the X-Ifirma-Token header
  */
 
 if (!defined('_PS_VERSION_')) {
@@ -33,7 +33,13 @@ class IfirmaCronModuleFrontController extends ModuleFrontController
         $this->ajax = true;
         $service = IfirmaStatusSyncService::build($this->module);
 
-        if (!$service->isValidCronToken(Tools::getValue('token'))) {
+        // the query token wins; the X-Ifirma-Token header keeps the token out of the web server's access log
+        $given = Tools::getValue('token');
+        if ($given === false || $given === '' || !is_scalar($given)) {
+            $given = isset($_SERVER['HTTP_X_IFIRMA_TOKEN']) ? (string) $_SERVER['HTTP_X_IFIRMA_TOKEN'] : '';
+        }
+
+        if (!$service->isValidCronToken($given)) {
             $this->respond(403, array('error' => 'Forbidden'));
         } else {
             $this->respond(200, $service->runCron());

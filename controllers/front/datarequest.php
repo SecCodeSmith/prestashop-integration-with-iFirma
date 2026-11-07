@@ -14,6 +14,7 @@ if (!defined('_PS_VERSION_')) {
 }
 
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDataRequestService.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaInput.php';
 
 /**
  * Customer form to request a change of the invoice data of an order.
@@ -49,6 +50,26 @@ class IfirmaDatarequestModuleFrontController extends ModuleFrontController
     }
 
     /**
+     * The `token` request value as a string; an array gives ''.
+     *
+     * @return string
+     */
+    public function readToken()
+    {
+        return IfirmaInput::scalar(Tools::getValue('token'));
+    }
+
+    /**
+     * The `id_order` request value as an integer; an array gives 0.
+     *
+     * @return int
+     */
+    public function readOrderId()
+    {
+        return (int) IfirmaInput::scalar(Tools::getValue('id_order'));
+    }
+
+    /**
      * Loads the order; redirects away when it is not the customer's.
      *
      * @return Order
@@ -56,7 +77,7 @@ class IfirmaDatarequestModuleFrontController extends ModuleFrontController
     private function loadOrder()
     {
         if ($this->order === null) {
-            $order = new Order((int) Tools::getValue('id_order'));
+            $order = new Order($this->readOrderId());
             if (!Validate::isLoadedObject($order)
                 || (int) $order->id_customer !== (int) $this->context->customer->id) {
                 Tools::redirect($this->context->link->getPageLink('history', true));
@@ -73,7 +94,7 @@ class IfirmaDatarequestModuleFrontController extends ModuleFrontController
             $back = $this->context->link->getModuleLink(
                 $this->module->name,
                 'datarequest',
-                array('id_order' => (int) Tools::getValue('id_order')),
+                array('id_order' => $this->readOrderId()),
                 true
             );
             Tools::redirect($this->context->link->getPageLink('authentication', true, null, array('back' => $back)));
@@ -91,7 +112,7 @@ class IfirmaDatarequestModuleFrontController extends ModuleFrontController
         }
 
         $order = $this->loadOrder();
-        if (!IfirmaDataRequestService::isValidToken(Tools::getValue('token'))) {
+        if (!IfirmaDataRequestService::isValidToken($this->readToken())) {
             $this->errors[] = $this->service()->reasonMessage('invalid_token');
 
             return;

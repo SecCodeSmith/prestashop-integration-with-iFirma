@@ -15,6 +15,9 @@ class IfirmaApiClient
     const BASE_URL = 'https://www.ifirma.pl/iapi/';
     const DEFAULT_RATE_CAP = 80;
 
+    /** Seconds all calls are refused after iFirma rejected the credentials. */
+    const AUTH_COOLDOWN = 900;
+
     /** @var string */
     private $user;
 
@@ -47,6 +50,9 @@ class IfirmaApiClient
 
     /** @var bool */
     private $rateLimited = false;
+
+    /** @var bool */
+    private $authBlocked = false;
 
     /** @var int */
     private $requestCount = 0;
@@ -396,6 +402,33 @@ class IfirmaApiClient
     }
 
     /**
+     * @return bool true while the stored credentials-rejected mark is younger than AUTH_COOLDOWN seconds by this
+     *              client's clock, whether or not this instance has made a call
+     */
+    public function isAuthBlocked()
+    {
+        return $this->authBlockMessage() !== null;
+    }
+
+    /**
+     * @return bool true when the last call was refused locally because of that cool-down
+     */
+    public function lastCallWasAuthBlocked()
+    {
+        return $this->authBlocked;
+    }
+
+    /**
+     * @return string the dated "calls are paused" message while the cool-down runs, else ''
+     */
+    public function getAuthBlockMessage()
+    {
+        $message = $this->authBlockMessage();
+
+        return $message !== null ? $message : '';
+    }
+
+    /**
      * @return bool true when the last call reached the transport (even if it failed or timed
      *              out); false when it was refused locally (missing/invalid key, rate guard)
      *              or no call was made
@@ -440,7 +473,50 @@ class IfirmaApiClient
         $this->lastHttpCode = 0;
         $this->lastKod = null;
         $this->rateLimited = false;
+        $this->authBlocked = false;
         $this->requestSent = false;
+    }
+
+    /**
+     * @return int
+     */
+    private function now()
+    {
+        return $this->clock !== null ? (int) call_user_func($this->clock) : time();
+    }
+
+    /**
+     * Remembers that iFirma rejected the credentials; execute() then refuses calls for AUTH_COOLDOWN seconds.
+     *
+     * @param string $message
+     */
+    private function recordAuthFailure($message)
+    {
+        Configuration::updateValue('IFIRMA_AUTH_FAILURE', $this->now() . '|' . $message);
+    }
+
+    /**
+     * @return string|null the refusal message while the cool-down runs, else null
+     */
+    private function authBlockMessage()
+    {
+        $stored = (string) Configuration::get('IFIRMA_AUTH_FAILURE');
+        if ($stored === '' || strpos($stored, '|') === false) {
+            return null;
+        }
+
+        $parts = explode('|', $stored, 2);
+        $at = (int) $parts[0];
+        if ($at <= 0 || $this->now() - $at >= self::AUTH_COOLDOWN) {
+            return null;
+        }
+
+        return sprintf(
+            'iFirma rejected the credentials at %s: %s; calls are paused until %s',
+            date('Y-m-d H:i:s', $at),
+            $parts[1],
+            date('Y-m-d H:i:s', $at + self::AUTH_COOLDOWN)
+        );
     }
 
     /**
@@ -472,6 +548,11 @@ class IfirmaApiClient
 
         $this->lastKod = $kod;
         $this->lastError = $message;
+
+        // Kod 500 is endpoint-specific (the abonent limit call), so it does not count.
+        if (in_array($kod, array(400, 401, 402, 403, 499), true)) {
+            $this->recordAuthFailure($message);
+        }
     }
 
     /**
@@ -505,36 +586,44 @@ class IfirmaApiClient
      */
     private function passRateGuard()
     {
-        $now = $this->clock !== null ? (int) call_user_func($this->clock) : time();
-        $minute = date('YmdHi', $now);
+        $minute = date('YmdHi', $this->now());
         $cap = (int) Configuration::get('IFIRMA_RATE_MAX_PER_MIN');
         if ($cap <= 0) {
             $cap = self::DEFAULT_RATE_CAP;
         }
 
-        $count = 0;
-        $stored = (string) Configuration::get('IFIRMA_RATE_WINDOW');
-        if (strpos($stored, ':') !== false) {
-            $parts = explode(':', $stored, 2);
-            if ($parts[0] === $minute) {
-                $count = (int) $parts[1];
-            }
+        $db = Db::getInstance();
+        $table = _DB_PREFIX_ . 'configuration';
+        $m = pSQL($minute);
+        // One atomic statement: reset or increment the counter, but only while the cap is not reached.
+        $db->execute(
+            "UPDATE `" . $table . "` SET `value` = IF(SUBSTRING_INDEX(`value`, ':', 1) = '" . $m . "', "
+            . "CONCAT('" . $m . ":', SUBSTRING_INDEX(`value`, ':', -1) + 1), '" . $m . ":1') "
+            . "WHERE `name` = 'IFIRMA_RATE_WINDOW' AND (SUBSTRING_INDEX(`value`, ':', 1) <> '" . $m . "' "
+            . "OR SUBSTRING_INDEX(`value`, ':', -1) < " . (int) $cap . ")"
+        );
+        if ((int) $db->Affected_Rows() >= 1) {
+            return true;
         }
 
-        if ($count >= $cap) {
-            $this->rateLimited = true;
-            $this->lastError = sprintf(
-                'iFirma rate limit guard: %d requests in the current minute (cap %d). Retry shortly.',
-                $count,
-                $cap
-            );
+        $stored = $db->getValue("SELECT `value` FROM `" . $table . "` WHERE `name` = 'IFIRMA_RATE_WINDOW'", false);
+        if ($stored === false || $stored === null) {
+            // No row yet (the module was never installed with the default): start the window.
+            Configuration::updateValue('IFIRMA_RATE_WINDOW', $minute . ':1');
 
-            return false;
+            return true;
         }
 
-        Configuration::updateValue('IFIRMA_RATE_WINDOW', $minute . ':' . ($count + 1));
+        $parts = explode(':', (string) $stored, 2);
+        $count = (count($parts) === 2 && $parts[0] === $minute) ? (int) $parts[1] : $cap;
+        $this->rateLimited = true;
+        $this->lastError = sprintf(
+            'iFirma rate limit guard: %d requests in the current minute (cap %d). Retry shortly.',
+            $count,
+            $cap
+        );
 
-        return true;
+        return false;
     }
 
     /**
@@ -554,6 +643,14 @@ class IfirmaApiClient
         $authHeader = $this->buildAuthHeader($url, $keyName, $content);
 
         if ($authHeader === false) {
+            return false;
+        }
+
+        $blocked = $this->authBlockMessage();
+        if ($blocked !== null) {
+            $this->authBlocked = true;
+            $this->lastError = $blocked;
+
             return false;
         }
 
@@ -580,6 +677,11 @@ class IfirmaApiClient
         $status = isset($result['status']) ? (int) $result['status'] : 0;
         $error = isset($result['error']) ? (string) $result['error'] : '';
         $this->lastHttpCode = $status;
+
+        if ($status === 401 || $status === 403) {
+            // Any body: a later Kod in it overwrites the mark with the richer message.
+            $this->recordAuthFailure('HTTP ' . $status . ' returned by iFirma.');
+        }
 
         if ($status === 0 || $error !== '') {
             $this->lastError = 'cURL error: ' . ($error !== '' ? $error : 'no response');

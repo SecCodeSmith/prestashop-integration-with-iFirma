@@ -277,4 +277,92 @@ class UpdateStatusPaidTest extends TestCase
         $this->assertSame(array(), IfirmaTestState::writes('ifirma_receipt'));
         $this->assertSame('error', $receipt->status);
     }
+
+    private function registerOrder($total)
+    {
+        $order = new Order();
+        $order->id = 15;
+        $order->total_paid_tax_incl = $total;
+        Order::register($order);
+    }
+
+    private function assertAmountRefused($amount, $message)
+    {
+        $receipt = $this->issuedReceipt();
+        try {
+            $this->service->updateStatusPaid($receipt, $amount);
+            $this->fail('expected an exception');
+        } catch (Exception $e) {
+            $this->assertSame($message, $e->getMessage());
+        }
+        $this->assertSame(array(), $this->t->calls, 'no iFirma call');
+        $this->assertSame(array(), IfirmaTestState::writes('ifirma_receipt'));
+    }
+
+    public function testCommaDecimalAccepted()
+    {
+        $this->registerOrder(20.0);
+        $receipt = $this->issuedReceipt();
+        $this->queueAccepted();
+
+        $this->service->updateStatusPaid($receipt, '12,50');
+
+        $this->assertSame('{"Kwota":12.5}', $this->posts()[0]['body']);
+    }
+
+    public function testNonNumericAmountRefused()
+    {
+        $this->registerOrder(20.0);
+        $this->assertAmountRefused('abc', 'The amount must be a positive number with at most two decimals.');
+    }
+
+    public function testArrayAmountRefused()
+    {
+        $this->registerOrder(20.0);
+        $this->assertAmountRefused(array(1), 'The amount must be a positive number with at most two decimals.');
+    }
+
+    public function testNegativeAmountRefused()
+    {
+        $this->registerOrder(20.0);
+        $this->assertAmountRefused('-5', 'The amount must be a positive number with at most two decimals.');
+    }
+
+    public function testZeroAmountRefused()
+    {
+        $this->registerOrder(20.0);
+        $this->assertAmountRefused('0', 'The amount must be a positive number with at most two decimals.');
+    }
+
+    public function testAmountAboveTheOrderTotalRefused()
+    {
+        $this->registerOrder(20.0);
+        $this->assertAmountRefused('25', 'The amount cannot exceed the order total (20.00).');
+    }
+
+    public function testAmountEqualToTheOrderTotalAccepted()
+    {
+        $this->registerOrder(20.0);
+        $receipt = $this->issuedReceipt();
+        $this->queueAccepted();
+
+        $this->service->updateStatusPaid($receipt, '20.00');
+
+        $this->assertSame('{"Kwota":20}', $this->posts()[0]['body']);
+    }
+
+    public function testEmptyAmountUsesTheOrderAmount()
+    {
+        $order = new Order();
+        $order->id = 15;
+        $order->total_paid_tax_incl = 20.0;
+        $order->totalPaidReal = 20.0;
+        Order::register($order);
+        $receipt = $this->issuedReceipt();
+        $this->queueAccepted();
+
+        $this->service->updateStatusPaid($receipt, null);
+
+        $this->assertSame('{"Kwota":20}', $this->posts()[0]['body']);
+    }
 }

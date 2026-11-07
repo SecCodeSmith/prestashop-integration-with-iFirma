@@ -13,6 +13,7 @@ require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaContractorService.php';
 require_once dirname(__FILE__) . '/IfirmaCreateResponse.php';
 require_once dirname(__FILE__) . '/IfirmaDocumentSettings.php';
+require_once dirname(__FILE__) . '/IfirmaInput.php';
 require_once dirname(__FILE__) . '/IfirmaPayloadBuilder.php';
 
 class IfirmaReceiptService
@@ -467,8 +468,40 @@ class IfirmaReceiptService
     }
 
     /**
+     * An amount given by the caller: a string (a form value) must be a positive number with at most
+     * two decimals, a number computed by the module is rounded; both must not exceed the order total.
+     *
+     * @param mixed $amount
+     * @param int   $idOrder
+     * @return float
+     * @throws Exception
+     */
+    private function validatedAmount($amount, $idOrder)
+    {
+        $invalid = $this->l('The amount must be a positive number with at most two decimals.');
+        if (is_int($amount) || is_float($amount)) {
+            $value = round((float) $amount, 2);
+        } else {
+            $value = IfirmaInput::decimal($amount);
+        }
+        if ($value === null || $value <= 0) {
+            throw new Exception($invalid);
+        }
+
+        $order = new Order($idOrder);
+        if (Validate::isLoadedObject($order)) {
+            $total = round((float) $order->total_paid_tax_incl, 2);
+            if ($value > $total) {
+                throw new Exception($this->l('The amount cannot exceed the order total (%s).', number_format($total, 2, '.', '')));
+            }
+        }
+
+        return round($value, 2);
+    }
+
+    /**
      * @param IfirmaReceipt $receipt
-     * @param float|null    $amount
+     * @param mixed|null    $amount
      * @return IfirmaReceipt
      * @throws Exception
      */
@@ -481,8 +514,10 @@ class IfirmaReceiptService
         if ($amount === null) {
             $order = new Order((int) $receipt->id_order);
             $amount = $this->payloadBuilder->getPaidAmount($order);
+            $amount = round((float) $amount, 2);
+        } else {
+            $amount = $this->validatedAmount($amount, (int) $receipt->id_order);
         }
-        $amount = round((float) $amount, 2);
 
         $typeToken = Configuration::get('IFIRMA_PAYMENT_TYPE_TOKEN');
         if (!$typeToken) {
@@ -616,14 +651,30 @@ class IfirmaReceiptService
     }
 
     /**
-     * @return string random 40-character token for public receipt links
+     * Test seam: callable(int $length): string replacing random_bytes() (spec customer-receipt-visibility,
+     * "Download token generation").
+     *
+     * @var callable|null
+     */
+    public static $randomBytes = null;
+
+    /**
+     * The 40-character download token of a receipt, from the secure random generator only. When that
+     * generator is unavailable the token is '' (the record is stored, the customer download is not
+     * offered) and the failure is logged; a weaker token is never made up.
+     *
+     * @return string
      */
     public static function generateSecurityToken()
     {
         try {
-            return bin2hex(random_bytes(20));
+            $bytes = self::$randomBytes !== null ? call_user_func(self::$randomBytes, 20) : random_bytes(20);
+
+            return bin2hex((string) $bytes);
         } catch (Exception $e) {
-            return substr(hash('sha256', uniqid((string) mt_rand(), true)), 0, 40);
+            PrestaShopLogger::addLog('iFirma: the secure random generator is unavailable, download token not set: ' . $e->getMessage(), 3);
+
+            return '';
         }
     }
 

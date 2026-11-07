@@ -834,4 +834,67 @@ class DeliveryServiceTest extends TestCase
         $r->source = 'external';
         $this->assertSame('Skipped (external)', $this->svc->describeDelivery($r));
     }
+
+    public function testBareHttp403IsNotRetried()
+    {
+        $this->t->queue('GET', '#\.pdf#', array('status' => 403, 'body' => ''));
+        $res = $this->svc->deliver($this->receipt());
+
+        $this->assertFalse($res->isSent());
+        $this->assertSame(1, $this->pdfCalls());
+        $this->assertCount(1, $this->t->calls);
+        $this->assertSame(array(), $this->waits);
+        $this->assertCount(0, Mail::$sent);
+        $row = $this->row();
+        $this->assertSame('failed', $row['delivery_status']);
+        $this->assertStringContainsString('HTTP 403', $row['delivery_error']);
+        $this->assertStringNotContainsString('attempts', $row['delivery_error']);
+        $this->assertMatchesRegularExpression('/^\d{10}\|HTTP 403 returned by iFirma\.$/', (string) Configuration::get('IFIRMA_AUTH_FAILURE'));
+    }
+
+    public function testHttp401WithAnHtmlBodyIsNotRetried()
+    {
+        $this->t->queue('GET', '#\.pdf#', array('status' => 401, 'body' => '<html>Unauthorized</html>'));
+        $this->svc->deliver($this->receipt());
+
+        $this->assertSame(1, $this->pdfCalls());
+        $this->assertSame(array(), $this->waits);
+    }
+
+    public function testCallsInsideTheCoolDownAreNotSentNorRetried()
+    {
+        $now = time();
+        $this->client->setClock(function () use ($now) {
+            return $now;
+        });
+        Configuration::updateValue('IFIRMA_AUTH_FAILURE', ($now - 120) . '|Bad hash');
+        $res = $this->svc->deliver($this->receipt());
+
+        $this->assertFalse($res->isSent());
+        $this->assertSame(array(), $this->t->calls);
+        $this->assertSame(array(), $this->waits);
+        $row = $this->row();
+        $this->assertSame('failed', $row['delivery_status']);
+        $this->assertStringContainsString('calls are paused until', $row['delivery_error']);
+        $this->assertStringNotContainsString('attempts', $row['delivery_error']);
+    }
+
+    public function testMarkupInANameIsEscapedInTheMailVariables()
+    {
+        $this->pdfOk();
+        Customer::$instances[5]->firstname = '<script>alert(1)</script>';
+        Customer::$instances[5]->lastname = 'O\'Neil & "Sons"';
+        $this->registerOrder(15, 2)->reference = 'AB<b>C';
+        $r = $this->receipt();
+
+        $res = $this->svc->deliver($r);
+
+        $this->assertTrue($res->isSent());
+        $vars = Mail::$sent[0]['templateVars'];
+        $this->assertSame('&lt;script&gt;alert(1)&lt;/script&gt;', $vars['{firstname}']);
+        $this->assertSame('O&#039;Neil &amp; &quot;Sons&quot;', $vars['{lastname}']);
+        $this->assertSame('AB&lt;b&gt;C', $vars['{order_reference}']);
+        $this->assertSame('7/2026', $vars['{document_number}']);
+        $this->assertSame('<script>alert(1)</script> O\'Neil & "Sons"', Mail::$sent[0]['toName'], 'the recipient name is a header, not a template value');
+    }
 }

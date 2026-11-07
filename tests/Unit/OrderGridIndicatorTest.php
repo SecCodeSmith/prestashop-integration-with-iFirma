@@ -52,7 +52,7 @@ class OrderGridIndicatorTest extends TestCase
         $this->assertStringContainsString('IF(ifr.ifirma_number <> \'\', ifr.ifirma_number, ifr.ifirma_id)', $sql[0]);
         $this->assertStringEndsWith(' AS ifirma_document_number', $sql[0]);
         $this->assertStringEndsWith(' AS ifirma_document_status', $sql[1]);
-        foreach ($sql as $expression) {
+        foreach (array($sql[0], $sql[1]) as $expression) {
             $this->assertStringStartsWith('IF(ifr.ifirma_id <> \'\' AND ifr.status <> \'error\', ', $expression);
             $this->assertStringNotContainsString('SELECT', $expression, 'the values come from the joined row, not from a subquery each');
         }
@@ -109,8 +109,106 @@ class OrderGridIndicatorTest extends TestCase
         IfirmaOrderGridIndicator::joinSql('o; DROP');
     }
 
-    public function testTheSelectCountIsTwo()
+    public function testTheSelectCountIsThree()
     {
-        $this->assertCount(2, IfirmaOrderGridIndicator::selectSql());
+        $this->assertCount(3, IfirmaOrderGridIndicator::selectSql());
+    }
+
+    public function testTheThirdSelectIsTheRawStateOfTheNewestRecord()
+    {
+        $sql = IfirmaOrderGridIndicator::selectSql();
+
+        $this->assertSame("IFNULL(ifr.status, '') AS ifirma_document_state", $sql[2]);
+        $this->assertSame('ifirma_document_state', IfirmaOrderGridIndicator::FIELD_STATE);
+    }
+
+    /** @return array words the module class gives the cell */
+    private function issueLabels()
+    {
+        return array(
+            'paid' => 'Paid', 'issued' => 'Issued', 'issue' => 'Issue iFirma document',
+            'error' => 'Issuance failed', 'unknown' => 'Unknown outcome',
+            'duplicate_suspected' => 'Suspected duplicate', 'held' => 'Held',
+        );
+    }
+
+    public function testOrderWithoutARecordGetsTheIssueAnchor()
+    {
+        $cell = IfirmaOrderGridIndicator::cell(array(
+            'id_order' => 42,
+            IfirmaOrderGridIndicator::FIELD_NUMBER => '',
+            IfirmaOrderGridIndicator::FIELD_STATUS => '',
+            IfirmaOrderGridIndicator::FIELD_STATE => '',
+        ), $this->issueLabels(), true);
+
+        $this->assertSame(
+            '<a href="#" class="js-ifirma-issue" data-id-order="42" title="Issue iFirma document"><i class="material-icons">add_circle_outline</i></a>',
+            $cell
+        );
+    }
+
+    public function testOrderWithoutARecordViewOnlyHasAnEmptyCell()
+    {
+        $this->assertSame('', IfirmaOrderGridIndicator::cell(array('id_order' => 42), $this->issueLabels(), false));
+        $this->assertSame('', IfirmaOrderGridIndicator::cell(array('id_order' => 42), $this->issueLabels()));
+    }
+
+    public function testFailedIssuanceNamesTheStateInTheTitle()
+    {
+        $cell = IfirmaOrderGridIndicator::cell(array(
+            'id_order' => 42,
+            IfirmaOrderGridIndicator::FIELD_NUMBER => '',
+            IfirmaOrderGridIndicator::FIELD_STATUS => '',
+            IfirmaOrderGridIndicator::FIELD_STATE => 'error',
+        ), $this->issueLabels(), true);
+
+        $this->assertStringContainsString('title="Issue iFirma document (Issuance failed)"', $cell);
+        $this->assertStringContainsString('data-id-order="42"', $cell);
+    }
+
+    public function testHeldOrderNamesTheStateInTheTitle()
+    {
+        $cell = IfirmaOrderGridIndicator::cell(array(
+            'id_order' => 7,
+            IfirmaOrderGridIndicator::FIELD_STATE => 'held',
+        ), $this->issueLabels(), true);
+
+        $this->assertStringContainsString('title="Issue iFirma document (Held)"', $cell);
+    }
+
+    public function testAnUnlabelledStateFallsBackToTheRawState()
+    {
+        $cell = IfirmaOrderGridIndicator::cell(array(
+            'id_order' => 7,
+            IfirmaOrderGridIndicator::FIELD_STATE => 'weird',
+        ), array('issue' => 'Issue'), true);
+
+        $this->assertStringContainsString('title="Issue (weird)"', $cell);
+    }
+
+    public function testMarkupInTheIssueTitleIsEscaped()
+    {
+        $cell = IfirmaOrderGridIndicator::cell(array(
+            'id_order' => '7"><script>',
+            IfirmaOrderGridIndicator::FIELD_STATE => '<b>x</b>',
+        ), array('issue' => '"Issue"'), true);
+
+        $this->assertStringContainsString('data-id-order="7"', $cell);
+        $this->assertStringNotContainsString('<script>', $cell);
+        $this->assertStringNotContainsString('<b>', $cell);
+        $this->assertStringContainsString('&quot;Issue&quot; (&lt;b&gt;x&lt;/b&gt;)', $cell);
+    }
+
+    public function testAnIssuedRecordKeepsTheIconEvenWhenIssuingIsAllowed()
+    {
+        $cell = IfirmaOrderGridIndicator::cell(array(
+            'id_order' => 42,
+            IfirmaOrderGridIndicator::FIELD_NUMBER => 'FP 7/2026',
+            IfirmaOrderGridIndicator::FIELD_STATUS => 'created',
+            IfirmaOrderGridIndicator::FIELD_STATE => 'created',
+        ), $this->issueLabels(), true);
+
+        $this->assertStringContainsString('receipt_long', $cell);
+        $this->assertStringNotContainsString('js-ifirma-issue', $cell);
     }
 }

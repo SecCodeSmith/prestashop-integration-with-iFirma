@@ -75,6 +75,11 @@ class ClassFileRequiresTest extends TestCase
             'the payload builder' => array('IfirmaPayloadBuilder'),
             'the document settings' => array('IfirmaDocumentSettings'),
             'the payment method resolver' => array('IfirmaPaymentMethodResolver'),
+            'the permission helper' => array('IfirmaPermission'),
+            'the bulk runner' => array('IfirmaBulkRunner'),
+            'the issue feed' => array('IfirmaIssueFeed'),
+            'the request input reader' => array('IfirmaInput'),
+            'the order grid indicator' => array('IfirmaOrderGridIndicator'),
         );
     }
 
