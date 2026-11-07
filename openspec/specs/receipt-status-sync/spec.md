@@ -71,7 +71,7 @@ When the owning customer opens the order detail page and the last sync is older 
 - **THEN** the page renders with the last known state and no error is shown to the customer
 
 ### Requirement: Cron endpoint authentication
-A module front endpoint SHALL run a bulk sync only when called with the correct secret token, which is generated at install or upgrade and shown on the configuration page; a wrong or missing token SHALL return HTTP 403 and do nothing.
+A module front endpoint SHALL run a bulk sync only when called with the correct secret token, which is generated at install or upgrade and shown on the configuration page, given either as the `token` query parameter or as the `X-Ifirma-Token` request header; the comparison SHALL be constant-time, an empty configured token SHALL never match, and a wrong or missing token SHALL return HTTP 403 and do nothing.
 
 #### Scenario: Correct token
 - **WHEN** the endpoint is called with the configured token
@@ -80,6 +80,14 @@ A module front endpoint SHALL run a bulk sync only when called with the correct 
 #### Scenario: Wrong or missing token
 - **WHEN** the token is wrong or absent
 - **THEN** the response is HTTP 403 and no iFirma request is made
+
+#### Scenario: Token in the header
+- **WHEN** the endpoint is called without a query token and with the configured token in `X-Ifirma-Token`
+- **THEN** the bulk sync runs and returns HTTP 200
+
+#### Scenario: Empty configured token
+- **WHEN** the configured token is empty and the endpoint is called with an empty token
+- **THEN** the response is HTTP 403
 
 ### Requirement: Cron selection and budget
 The bulk sync SHALL select receipts that are not paid, or not remotely sent, or not synced within 24 hours, group them by issue date so one list call updates many receipts, stop after the configured maximum list calls per run (default 40), and respond with a JSON summary.
@@ -114,3 +122,14 @@ The admin SHALL still be able to register the order's paid amount in iFirma for 
 #### Scenario: Payment registered then synced
 - **WHEN** the admin registers payment and a sync follows
 - **THEN** the remote paid amount shown equals the registered amount
+
+### Requirement: Cron token generation
+The cron token SHALL come from the cryptographically secure random generator only; when that generator is unavailable, install, upgrade and regeneration SHALL fail with a message instead of storing a weaker token.
+
+#### Scenario: Regeneration
+- **WHEN** the administrator regenerates the cron token
+- **THEN** the new token is 32 hexadecimal characters from the secure generator
+
+#### Scenario: Generator unavailable
+- **WHEN** the secure generator throws during regeneration
+- **THEN** the page shows an error, the previous token stays in place and no weaker token is stored
