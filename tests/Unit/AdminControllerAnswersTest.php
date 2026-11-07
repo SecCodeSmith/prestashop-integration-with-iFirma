@@ -144,11 +144,38 @@ class AdminControllerAnswersTest extends TestCase
 
         $controller->{'ajaxProcess' . $action}();
 
-        $this->assertSame(array(), $controller->statuses);
+        $this->assertSame(array(403), $controller->statuses);
         $this->assertCount(1, $controller->outputs);
         $this->assertFalse($controller->outputs[0]['success']);
         $this->assertSame('You do not have permission to edit customers.', $controller->outputs[0]['message']);
         $this->assertSame(array(), $this->t->calls, 'iFirma is not asked');
+    }
+
+    public function testAnEmployeeWithoutAProfileIsRefusedAtTheViewLevelBeforeTheEditCheck()
+    {
+        Context::getContext()->employee->id_profile = 0;
+        $controller = $this->controller(array('identifier' => 'KOW-01'));
+
+        $controller->ajaxProcessCustomerLink();
+
+        $this->assertSame(array(403), $controller->statuses);
+        $this->assertCount(1, $controller->outputs);
+        $this->assertSame('You do not have permission to see iFirma documents.', $controller->outputs[0]['message']);
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testCanEditCustomersIsFalseWhenTheEmployeeHasNoProfile()
+    {
+        // a profile of 0 (or null) fails the view check first, so the edit check is reached only by calling it directly
+        $method = new ReflectionMethod('AdminIfirmaController', 'canEditCustomers');
+        $method->setAccessible(true);
+        $controller = $this->controller(array());
+
+        Context::getContext()->employee->id_profile = 0;
+        $this->assertFalse($method->invoke($controller));
+
+        Context::getContext()->employee->id_profile = null;
+        $this->assertFalse($method->invoke($controller));
     }
 
     public function testTheControllerBuildsItsOwnBulkRunner()
@@ -246,6 +273,56 @@ class AdminControllerAnswersTest extends TestCase
 
         $this->assertCount(1, $controller->texts);
         $this->assertSame(404, $controller->texts[0][0]);
+    }
+
+    public function testAnArrayOrderIdIsNotReadAsOne()
+    {
+        $this->makeReceipt(array('id_order' => 1));
+        $controller = $this->controller(array('id_order' => array(1)));
+
+        $this->assertSame(0, $this->callPrivate($controller, 'orderId'));
+        $controller->ajaxProcessDownloadPdf();
+
+        $this->assertSame(404, $controller->texts[0][0]);
+    }
+
+    public function testAnArrayCustomerIdAndRequestIdAreNotReadAsOne()
+    {
+        $controller = $this->controller(array('id_customer' => array(1)));
+        $this->assertSame(0, $this->callPrivate($controller, 'customerId'));
+
+        $this->employeeHolding(array(IfirmaPermission::ROLE_UPDATE));
+        foreach (array('ajaxProcessApproveRequest', 'ajaxProcessRejectRequest') as $method) {
+            $controller = $this->controller(array('id_request' => array(1)));
+            $controller->$method();
+            $this->assertFalse($controller->outputs[0]['success'], $method);
+        }
+    }
+
+    public function testPdfDownloadByReceiptIdNeedsTheMatchingOrder()
+    {
+        $receipt = $this->makeReceipt(array('id_order' => 15));
+        IfirmaApiClient::setDefaultTransport(new IfirmaTestAnswerTransport());
+
+        $other = $this->controller(array('id_order' => 16, 'id_ifirma_receipt' => $receipt->id));
+        $other->ajaxProcessDownloadPdf();
+        $this->assertSame(404, $other->texts[0][0]);
+
+        $unknown = $this->controller(array('id_order' => 15, 'id_ifirma_receipt' => 9999));
+        $unknown->ajaxProcessDownloadPdf();
+        $this->assertSame(404, $unknown->texts[0][0]);
+
+        $match = $this->controller(array('id_order' => 15, 'id_ifirma_receipt' => $receipt->id));
+        $match->ajaxProcessDownloadPdf();
+        $this->assertSame(502, $match->texts[0][0], 'the record is found and the download is attempted');
+    }
+
+    private function callPrivate($object, $method)
+    {
+        $m = new ReflectionMethod($object, $method);
+        $m->setAccessible(true);
+
+        return $m->invoke($object);
     }
 
     public function testPdfDownloadThatIFirmaRefusesAnswers502WithTheModuleMessage()

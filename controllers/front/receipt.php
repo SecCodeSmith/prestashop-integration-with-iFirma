@@ -45,10 +45,9 @@ class IfirmaReceiptModuleFrontController extends ModuleFrontController
 
         IfirmaSchema::ensureReceiptDownloadColumn();
         $throttle = new IfirmaDownloadThrottle();
-        if (!$throttle->allows($receipt)) {
+        if (!$throttle->claim($receipt)) {
             $this->tooManyRequests();
         }
-        $throttle->stamp($receipt);
 
         try {
             $service = IfirmaReceiptService::build($this->module);
@@ -71,6 +70,11 @@ class IfirmaReceiptModuleFrontController extends ModuleFrontController
         return IfirmaInput::scalar(Tools::getValue('token'));
     }
 
+    /**
+     * Streams the document and ends the request.
+     *
+     * @codeCoverageIgnore header() output and exit end the request; IfirmaHttpOutput::pdf() is tested on its own
+     */
     private function streamPdf($pdf, IfirmaReceipt $receipt)
     {
         IfirmaHttpOutput::pdf($pdf, $receipt->ifirma_number ?: $receipt->ifirma_id);

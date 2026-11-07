@@ -185,6 +185,14 @@ class ApiClientTest extends TestCase
         $this->assertNull($this->client()->getLimit());
     }
 
+    public function testGetLimitWithoutLimitFieldsReturnsNullWithError()
+    {
+        $this->t->queue('GET', '#abonent/limit\.json#', array('body' => '{"response":{"Kod":0,"Wynik":{}}}'));
+        $c = $this->client();
+        $this->assertNull($c->getLimit());
+        $this->assertSame('Unexpected limit response from iFirma.', $c->getLastError());
+    }
+
     public function testTimeouts()
     {
         $this->t->queue('GET', '#x\.json#', array('body' => '{}'));

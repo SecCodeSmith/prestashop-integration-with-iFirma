@@ -202,10 +202,30 @@ class IfirmaDeliveryService
         }
 
         $message = isset($res['message']) ? (string) $res['message'] : '';
+        if ($manual) {
+            // a call the client refused itself (rate guard, credentials cool-down) never reached iFirma: report
+            // it and leave the recorded delivery state as it was
+            $refusal = $this->localRefusal();
+            if ($refusal !== '') {
+                return new IfirmaDeliveryResult(false, 'failed', $effective, $message, $refusal);
+            }
+        }
         $receipt->recordDelivery(IfirmaReceipt::DELIVERY_FAILED, $effective, $message);
         $this->persist($receipt);
 
         return $this->result(false, 'failed', $effective, $message);
+    }
+
+    /**
+     * @return string '' | rate_limited | auth_blocked: why the last client call was refused locally
+     */
+    private function localRefusal()
+    {
+        if ($this->client->isRateLimited()) {
+            return 'rate_limited';
+        }
+
+        return $this->client->lastCallWasAuthBlocked() ? 'auth_blocked' : '';
     }
 
     /**

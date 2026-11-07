@@ -44,7 +44,9 @@
     return node;
   }
 
-  /* POST an action; resolves with parsed JSON, rejects with {message}. */
+  /* POST an action; resolves with parsed JSON, rejects with {message, unknown}. unknown is true when the
+     answer is not one of the module's JSON envelopes (transport failure, HTML page): the request may have
+     been processed. */
   function post(action, data) {
     var d = $.Deferred();
     $.ajax({ url: endpoint(action), type: 'POST', dataType: 'text', data: data }).done(function (txt) {
@@ -57,19 +59,21 @@
       if (parsed && typeof parsed === 'object') {
         d.resolve(parsed);
       } else {
-        d.reject({ message: words.request_failed });
+        d.reject({ message: words.request_failed, unknown: true });
       }
     }).fail(function (xhr) {
       var msg = words.request_failed;
+      var known = false;
       try {
         var p = JSON.parse(xhr && xhr.responseText);
+        known = !!p && typeof p === 'object';
         if (p && p.message) {
           msg = p.message;
         }
       } catch (e) {
         msg = words.request_failed;
       }
-      d.reject({ message: msg });
+      d.reject({ message: msg, unknown: !known });
     });
     return d.promise();
   }
@@ -300,6 +304,21 @@
       });
     }
 
+    /* The batch in flight got no usable answer: it may have been processed, so its ids are "unknown" (the
+       list has to be reloaded to see), the ids still queued were never sent. */
+    function lostAnswer(batch, err) {
+      var word = outcomeWords.unknown || outcomeWords.failed || 'unknown';
+      batch.forEach(function (id) {
+        var r = { id: id, id_order: kind === 'issue' ? id : 0, outcome: 'unknown', message: err.message || words.request_failed };
+        results.push(r);
+        appendRow(r);
+      });
+      setProgress(word);
+      notAttempted(queue, word);
+      queue = [];
+      finish();
+    }
+
     function finish() {
       busy = false;
       setBusyUi(false);
@@ -349,6 +368,10 @@
         }
         step();
       }).fail(function (err) {
+        if (err.unknown) {
+          lostAnswer(batch, err);
+          return;
+        }
         var text = err.message || words.request_failed;
         setProgress(text);
         notAttempted(batch.concat(queue), text);

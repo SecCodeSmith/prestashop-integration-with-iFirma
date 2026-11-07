@@ -58,7 +58,9 @@
   var fallback = false;
   var timer = null;
   var coreTotal = 0;
-  var lastWritten = null;
+  var writing = false;
+  var tick = 0;
+  var seenTick = 0;
   var removedHide = false;
   var observer = null;
   var observed = null;
@@ -237,13 +239,20 @@
     if (!totalEl) {
       return;
     }
+    /* a write of the core still waiting in the observer queue is the new core total: take it first */
+    if (observer && observer.takeRecords().length > 0) {
+      readCoreTotal();
+    }
     var sum = coreTotal + unseen;
     var text = String(sum);
     if (totalEl.textContent !== text) {
-      lastWritten = text;
+      /* our own write must not come back as a core write: raise the flag and drop its records at once */
+      writing = true;
       totalEl.textContent = text;
-    } else {
-      lastWritten = text;
+      if (observer) {
+        observer.takeRecords();
+      }
+      writing = false;
     }
     var ht = hideTargetEl();
     if (ht) {
@@ -288,11 +297,10 @@
     }
     observed = totalEl;
     observer = new window.MutationObserver(function () {
-      var now = String(totalEl.textContent);
-      if (now === lastWritten) {
+      if (writing) {
         return;
       }
-      coreTotal = parseInt(now.replace(/[^0-9]/g, ''), 10) || 0;
+      readCoreTotal();
       renderTotal();
     });
     observer.observe(totalEl, { childList: true, characterData: true, subtree: true });
@@ -327,7 +335,12 @@
       window.clearTimeout(timer);
       timer = null;
     }
+    var started = ++tick;
     call('IssueFeed').done(function (res) {
+      /* an answer to a request that started before the last successful seen POST still carries the old count */
+      if (started < seenTick) {
+        return;
+      }
       if (res && res.success && res.data) {
         applyFeed(res.data);
       }
@@ -343,9 +356,12 @@
       seenPending = false;
     }).done(function (res) {
       if (res && res.success) {
+        seenTick = ++tick;
         unseen = 0;
         renderBadge();
         renderTotal();
+        /* ask again: the feed now answers with the mark in place */
+        poll();
       }
     });
   }

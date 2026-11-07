@@ -88,8 +88,11 @@ class IfirmaDataRequest extends ObjectModel
             'status' => array('type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'size' => 16),
             'requested_data' => array('type' => self::TYPE_HTML),
             'approved_data' => array('type' => self::TYPE_HTML),
-            'customer_note' => array('type' => self::TYPE_STRING, 'size' => 1000),
-            'admin_note' => array('type' => self::TYPE_STRING, 'size' => 1000),
+            // TYPE_HTML on purpose: ObjectModel writes TYPE_STRING through strip_tags(nl2br()), which would
+            // destroy line breaks and "<" in a note. The text is validated to 1000 characters by the service and
+            // always escaped on output.
+            'customer_note' => array('type' => self::TYPE_HTML, 'size' => 1000),
+            'admin_note' => array('type' => self::TYPE_HTML, 'size' => 1000),
             'resolved_by' => array('type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'allow_null' => true),
             'date_add' => array('type' => self::TYPE_DATE, 'validate' => 'isDate'),
             'date_upd' => array('type' => self::TYPE_DATE, 'validate' => 'isDate'),

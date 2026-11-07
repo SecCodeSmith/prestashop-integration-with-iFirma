@@ -49,7 +49,7 @@ No upgrade step is needed and there is no schema or configuration change: the re
 Upload the 1.5.0 module over the existing one and run the upgrade from the Module Manager.
 `upgrade/upgrade-1.5.0.php` makes these changes and can be run more than once; a second run changes nothing.
 
-- **Tab.** The iFirma tab becomes a menu entry, *Orders > iFirma documents*. It is the same tab row as
+- **Tab.** The iFirma tab becomes a menu entry, *Orders > iFirma documents* (*Dokumenty iFirma* in a Polish back office). It is the same tab row as
   before, updated in place, so its id and its permission rows (`ps_access`) are kept. A shop without an
   Orders menu keeps the tab hidden, as before.
 - **Hook.** `actionAdminControllerSetMedia` is registered, once, when it is missing.

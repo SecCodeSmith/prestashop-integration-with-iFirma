@@ -552,7 +552,25 @@ class ModuleHooksTest extends TestCase
         $tab = Tab::$added[0];
         $this->assertSame('AdminIfirma', $tab->class_name);
         $this->assertSame(4, $tab->id_parent);
-        $this->assertSame(array(1 => 'iFirma documents', 2 => 'iFirma documents'), $tab->name);
+        $this->assertSame(array(1 => 'iFirma documents', 2 => 'Dokumenty iFirma'), $tab->name);
+    }
+
+    public function testTheTabNameFollowsTheIsoCodeOfEachLanguage()
+    {
+        Module::reset();
+        Language::$languages = array(
+            array('id_lang' => 1, 'iso_code' => 'en', 'name' => 'English'),
+            array('id_lang' => 2, 'iso_code' => 'pl', 'name' => 'Polski'),
+            array('id_lang' => 3, 'iso_code' => 'de', 'name' => 'Deutsch'),
+            array('id_lang' => 4, 'name' => 'a row without an iso code'),
+        );
+
+        $this->assertTrue($this->module->install());
+
+        $this->assertSame(
+            array(1 => 'iFirma documents', 2 => 'Dokumenty iFirma', 3 => 'iFirma documents', 4 => 'iFirma documents'),
+            Tab::$added[0]->name
+        );
     }
 
     public function testInstallFallsBackToTheParentOfTheOrdersTab()
@@ -566,7 +584,7 @@ class ModuleHooksTest extends TestCase
         $this->assertTrue($this->module->install());
 
         $this->assertSame(4, Tab::$added[0]->id_parent);
-        $this->assertSame(array(1 => 'iFirma documents', 2 => 'iFirma documents'), Tab::$added[0]->name);
+        $this->assertSame(array(1 => 'iFirma documents', 2 => 'Dokumenty iFirma'), Tab::$added[0]->name);
     }
 
     public function testInstallKeepsTheTabHiddenAndLogsWithoutAnOrdersMenu()
@@ -580,6 +598,42 @@ class ModuleHooksTest extends TestCase
             'iFirma: Orders menu not found, tab installed hidden',
             array_column(PrestaShopLogger::$logs, 'message')
         );
+    }
+
+    public function testHookHeaderAddsTheStylesheetThroughAControllerWithoutRegisterStylesheet()
+    {
+        $controller = new class {
+            /** @var array[] */
+            public $css = array();
+
+            public function addCSS($path, $media)
+            {
+                $this->css[] = array($path, $media);
+            }
+        };
+        $previous = Context::getContext()->controller;
+        Context::getContext()->controller = $controller;
+
+        $this->module->hookHeader(array());
+
+        Context::getContext()->controller = $previous;
+        $this->assertSame(array(array('/modules/ifirma/views/css/ifirma.css', 'all')), $controller->css);
+    }
+
+    public function testHookHeaderRegistersTheStylesheetOnAControllerWithRegisterStylesheet()
+    {
+        $controller = new IfirmaTestController();
+        $previous = Context::getContext()->controller;
+        Context::getContext()->controller = $controller;
+
+        $this->module->hookHeader(array());
+
+        Context::getContext()->controller = $previous;
+        $this->assertSame(array(array(
+            'id' => 'module-ifirma',
+            'path' => 'modules/ifirma/views/css/ifirma.css',
+            'params' => array('media' => 'all', 'priority' => 150),
+        )), $controller->stylesheets);
     }
 
     public function testInstallRegistersTheMediaHookOnce()
@@ -814,6 +868,30 @@ class ModuleHooksTest extends TestCase
         $this->assertStringContainsString('curl', $html);
         $buttons = HelperForm::$lastForm[0]['form']['buttons'];
         $this->assertSame('submitIfirmaRegenerateCron', $buttons[0]['name']);
+    }
+
+    public function testTheSettingsPageWarnsAboutAStoredBaseUrlThatIsRefusedAtRunTime()
+    {
+        IfirmaSettings::$devMode = false;
+        try {
+            Configuration::updateValue('IFIRMA_BASE_URL', 'http://sandbox.example/iapi/?x=<1>');
+            Tools::$values = array();
+            $out = $this->module->getContent();
+
+            $this->assertStringContainsString(
+                '<warning>The stored API base URL "http://sandbox.example/iapi/?x=&lt;1&gt;" is not accepted, so the module talks to the iFirma production address. Save a valid URL below.</warning>',
+                $out
+            );
+
+            foreach (array('http://ifirma-mock:8001/iapi/', 'https://www.ifirma.pl/iapi/', '') as $fine) {
+                Configuration::updateValue('IFIRMA_BASE_URL', $fine);
+                $this->assertStringNotContainsString('is not accepted', $this->module->getContent(), 'stored: ' . $fine);
+            }
+            Configuration::deleteByName('IFIRMA_BASE_URL');
+            $this->assertStringNotContainsString('is not accepted', $this->module->getContent());
+        } finally {
+            IfirmaSettings::$devMode = null;
+        }
     }
 
     public function testRegenerateCronTokenReplacesTheToken()
@@ -1860,8 +1938,10 @@ class ModuleHooksTest extends TestCase
         $this->assertSame('Running… %1$d of %2$d', $words['running']);
         $this->assertSame('Issue iFirma documents for the %d selected orders?', $words['confirm_bulk_issue']);
         $this->assertSame(
-            array('issued', 'adopted', 'suspected', 'held', 'failed', 'sent', 'refreshed', 'skipped', 'not_attempted'),
+            array('issued', 'adopted', 'suspected', 'held', 'failed', 'sent', 'refreshed', 'skipped', 'not_attempted', 'unknown'),
             array_keys($words['outcomes'])
+        );
+        $this->assertSame('Unknown, reload the list', $words['outcomes']['unknown']
         );
         $this->assertSame('Suspected duplicate', $words['outcomes']['suspected']);
         $this->assertSame(

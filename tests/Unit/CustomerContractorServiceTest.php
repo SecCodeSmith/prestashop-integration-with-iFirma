@@ -15,6 +15,23 @@ use PHPUnit\Framework\TestCase;
  * Spec: customer-contractor-panel (link state, registration check, local count, remote count,
  * search, ranking, manual link, unlink).
  */
+/** An IfirmaContractorService whose fetch() throws the given throwable. */
+class ThrowingContractorServiceDouble extends IfirmaContractorService
+{
+    private $error;
+
+    public function __construct(IfirmaApiClient $client, $error)
+    {
+        parent::__construct($client);
+        $this->error = $error;
+    }
+
+    public function fetch($identifier)
+    {
+        throw $this->error;
+    }
+}
+
 class CustomerContractorServiceTest extends TestCase
 {
     use IfirmaContractorMapDb;
@@ -1389,6 +1406,44 @@ class CustomerContractorServiceTest extends TestCase
         $this->assertSame('error', $result['code']);
         $this->assertNotSame('', $result['message']);
         $this->assertSame(array(), $this->mapRows());
+    }
+
+    /** @return IfirmaContractorService whose fetch() throws $e */
+    private function throwingContractors($e)
+    {
+        return new ThrowingContractorServiceDouble($this->client, $e);
+    }
+
+    public function testANonModuleExceptionIsLoggedAndTheMessageIsGeneric()
+    {
+        PrestaShopLogger::reset();
+        $svc = new IfirmaCustomerContractorService($this->client, $this->throwingContractors(new PDOException('SQLSTATE[HY000] secret detail')), null, new Module());
+
+        $result = $svc->link(7, 'KOWALSKI-01');
+
+        $this->assertFalse($result['success']);
+        $this->assertSame('error', $result['code']);
+        $this->assertSame('Internal error; details are in the PrestaShop log.', $result['message']);
+        $this->assertCount(1, PrestaShopLogger::$logs);
+        $this->assertSame('iFirma: PDOException: SQLSTATE[HY000] secret detail', PrestaShopLogger::$logs[0]['message']);
+        $this->assertSame(3, PrestaShopLogger::$logs[0]['severity']);
+        $this->assertSame(array(), $this->mapRows());
+    }
+
+    public function testTheGenericMessageIsEnglishWithoutAModuleAndCatchesErrors()
+    {
+        $svc = new IfirmaCustomerContractorService($this->client, $this->throwingContractors(new TypeError('boom')));
+
+        $this->assertSame('Internal error; details are in the PrestaShop log.', $svc->link(7, 'KOWALSKI-01')['message']);
+    }
+
+    public function testAModuleExceptionKeepsItsOwnMessage()
+    {
+        PrestaShopLogger::reset();
+        $svc = new IfirmaCustomerContractorService($this->client, $this->throwingContractors(new Exception('Could not store the link.')), null, new Module());
+
+        $this->assertSame('Could not store the link.', $svc->link(7, 'KOWALSKI-01')['message']);
+        $this->assertSame(array(), PrestaShopLogger::$logs);
     }
 
     public function testEmptyOrTooLongIdentifierIsRefusedWithoutARequest()

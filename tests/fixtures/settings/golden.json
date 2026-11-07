@@ -1,5 +1,5 @@
 {
-  "provenance": "Written on 2026-11-05 from Ifirma::postProcessConfiguration() as of commit d708c46 and confirmed by running it, before the IfirmaSettings table replaced its checks (refactor-srp-splits 7.2). 'valid' is the request the settings form sends when everything is right, and the Configuration::updateValue() calls the save makes for it, in order, type for type. It also posts IFIRMA_KEY_RACHUNEK, which the form has no input for: the save writes that key even when a request leaves it out (trim(false) gives ''). The 'minimal request' scenario shows the real shape: a request with only the fields the checks need still gets every call, each key written from what the save makes of its missing field. A scenario changes that request ('change'; a null removes the field) or replaces it ('post'), and lists the calls it must cause ('writes') or only those whose value differs from the valid ones ('writes_as_valid'). A request with a validation error writes nothing. 'notice' is what the page shows above the form. 'page_writes' replaces the calls the page makes after a successful save; the default is the IFIRMA_RATE_WINDOW stamp that an even-length hex abonent key causes (SettingsGoldenTest::pageWrites()). A value {\"repeat\": s, \"times\": n} stands for s repeated n times. Change this file only when the settings behaviour is changed on purpose.",
+  "provenance": "Written on 2026-11-05 from Ifirma::postProcessConfiguration() as of commit d708c46 and confirmed by running it, before the IfirmaSettings table replaced its checks (refactor-srp-splits 7.2). 'valid' is the request the settings form sends when everything is right, and the Configuration::updateValue() calls the save makes for it, in order, type for type. It also posts IFIRMA_KEY_RACHUNEK (the form got its input in the 1.5.0 review fixes): the save writes that key even when a request leaves it out (trim(false) gives ''). An odd-length hex key is refused since then, an API key being whole bytes. The 'minimal request' scenario shows the real shape: a request with only the fields the checks need still gets every call, each key written from what the save makes of its missing field. A scenario changes that request ('change'; a null removes the field) or replaces it ('post'), and lists the calls it must cause ('writes') or only those whose value differs from the valid ones ('writes_as_valid'). A request with a validation error writes nothing. 'notice' is what the page shows above the form. 'page_writes' replaces the calls the page makes after a successful save; the default is the IFIRMA_RATE_WINDOW stamp that an even-length hex abonent key causes (SettingsGoldenTest::pageWrites()). A value {\"repeat\": s, \"times\": n} stands for s repeated n times. Change this file only when the settings behaviour is changed on purpose.",
   "employees": [
     {"id": 0, "firstname": "Nobody", "lastname": "Zero", "active": 1},
     {"id": 3, "firstname": "Anna", "lastname": "Nowak", "active": 1},
@@ -382,11 +382,10 @@
       }
     },
     {
-      "name": "odd-length abonent key: refused before the rate guard, so no stamp",
+      "name": "odd-length abonent key: a key is whole bytes, so the save is refused",
       "change": {"IFIRMA_KEY_ABONENT": "fedcba9876543210fedcba987654321"},
-      "notice": "<confirmation>Settings updated.</confirmation>",
-      "writes_as_valid": {"IFIRMA_KEY_ABONENT": "fedcba9876543210fedcba987654321"},
-      "page_writes": []
+      "notice": "<error>The abonent API key must be a hexadecimal string.</error>",
+      "writes": []
     },
     {
       "name": "login is blank",

@@ -81,7 +81,7 @@ The Orders list SHALL offer the bulk action **Issue iFirma documents** to employ
 
 #### Scenario: Guard refuses mid-run
 - **WHEN** the rate guard refuses during the third of ten selected orders
-- **THEN** two outcomes are reported, the third order keeps its state and seven are reported as not attempted
+- **THEN** two outcomes are reported, the third order keeps its recorded state, and it and the remaining seven are reported as not attempted
 
 #### Scenario: Bulk action hidden without the issue level
 - **WHEN** an employee with the view level only opens the Orders list

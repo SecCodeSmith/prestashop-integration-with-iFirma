@@ -110,7 +110,8 @@ The module has three permission levels. They are the View, Add and Edit permissi
 | Issue | Add | Create Receipt, Issue anyway, Link this document (a duplicate candidate) and Register contractor in iFirma. On the Orders list: the Issue action of a cell and the bulk Issue iFirma documents. On the documents list: Retry issuance and its bulk action. |
 | Manage | Edit | Update status in iFirma, Send again, Send to KSeF, Refresh from iFirma, and Approve or Reject a data-change request. On the documents list: Send again, Refresh and their bulk actions. |
 
-Defaults: the SuperAdmin profile always has all three levels. Every other profile has none until you
+Defaults: the SuperAdmin profile and the profile of the employee who installed the module hold all
+three levels (PrestaShop grants them when the tab is created). Every other profile has none until you
 grant them, so after an upgrade grant View (and the others as needed) to each profile that works with
 the documents. The levels are independent of each other: grant View together with Issue or Manage, because
 a panel that cannot be seen cannot be used. The Delete permission of the tab has no effect, as the module

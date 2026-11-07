@@ -487,7 +487,7 @@ class UpgradeTest extends TestCase
         $this->assertTrue(upgrade_module_1_5_0($module));
 
         $this->assertSame(4, Tab::$rows[140]['id_parent']);
-        $this->assertSame(array(1 => 'iFirma documents', 2 => 'iFirma documents'), Tab::$rows[140]['name']);
+        $this->assertSame(array(1 => 'iFirma documents', 2 => 'Dokumenty iFirma'), Tab::$rows[140]['name'], 'Polish gets the Polish name');
         $this->assertSame(array(), Tab::$deleted, 'the tab row is updated, never deleted');
         $this->assertSame(array(), Tab::$added, 'the tab row is updated, never added again');
         $this->assertSame(array('actionAdminControllerSetMedia'), Module::$hooks);

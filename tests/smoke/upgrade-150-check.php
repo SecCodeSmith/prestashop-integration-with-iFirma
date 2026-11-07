@@ -89,9 +89,10 @@ check($before['tab'] && $after1['tab'] && $before['tab']['id_tab'] === $after1['
 check($after1['ordersParent'] > 0 && (int) $after1['tab']['id_parent'] === $after1['ordersParent'], 'id_parent is the id of AdminParentOrders', $after1['tab']['id_parent'] . ' / ' . $after1['ordersParent']);
 $allNames = true;
 foreach ($after1['tab_names'] as $row) {
-    $allNames = $allNames && $row['name'] === 'iFirma documents';
+    // "Dokumenty iFirma" for a Polish language row, "iFirma documents" for every other language (upgrade-1.5.0.php)
+    $allNames = $allNames && in_array($row['name'], array('iFirma documents', 'Dokumenty iFirma'), true);
 }
-check($after1['tab_names'] && $allNames, 'ps_tab_lang names the tab "iFirma documents" in every language', json_encode($after1['tab_names']));
+check($after1['tab_names'] && $allNames, 'ps_tab_lang names the tab "iFirma documents" (or "Dokumenty iFirma" in Polish) in every language', json_encode($after1['tab_names']));
 check($after1['hook_rows'] === 1, 'actionAdminControllerSetMedia is registered once', (string) $after1['hook_rows']);
 check($after1['column_last_download_at'], 'ps_ifirma_receipt.last_download_at exists');
 check($after1['index_idx_date_upd'], 'ps_ifirma_receipt has the index idx_date_upd');

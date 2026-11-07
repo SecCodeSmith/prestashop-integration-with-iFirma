@@ -81,7 +81,7 @@ A bulk run SHALL process the selection in batches, continuing automatically unti
 
 #### Scenario: Guard refuses mid-run
 - **WHEN** the guard refuses during the retry of the 12th of 40 selected records
-- **THEN** the first 11 outcomes are reported, the 12th record keeps its previous state, and the remaining 29 are reported as not attempted
+- **THEN** the first 11 outcomes are reported, the 12th record keeps its recorded state, and it and the remaining 28 are reported as not attempted
 
 #### Scenario: Batch continuation
 - **WHEN** 60 records are selected for a resend

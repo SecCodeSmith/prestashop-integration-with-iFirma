@@ -33,6 +33,45 @@ class IfirmaDownloadThrottle
     }
 
     /**
+     * Claims the download: the per-customer count first, then the per-document slot in one conditional
+     * UPDATE, so two parallel requests cannot both pass (a read followed by a write could).
+     *
+     * @param IfirmaReceipt $receipt
+     * @return bool false when the customer downloaded too often or the document was downloaded in the last
+     *              DOCUMENT_WINDOW seconds (another request took the slot)
+     */
+    public function claim(IfirmaReceipt $receipt)
+    {
+        $now = $this->now();
+
+        $count = (int) Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'ifirma_receipt`
+             WHERE id_customer = ' . (int) $receipt->id_customer . '
+             AND last_download_at >= \'' . pSQL(date('Y-m-d H:i:s', $now - self::CUSTOMER_WINDOW)) . '\''
+        );
+        if ($count >= self::CUSTOMER_MAX) {
+            return false;
+        }
+
+        $stamp = date('Y-m-d H:i:s', $now);
+        $db = Db::getInstance();
+        $db->execute(
+            'UPDATE `' . _DB_PREFIX_ . 'ifirma_receipt`
+             SET last_download_at = \'' . pSQL($stamp) . '\'
+             WHERE id_ifirma_receipt = ' . (int) $receipt->id . '
+             AND (last_download_at IS NULL OR last_download_at < \'' . pSQL(date('Y-m-d H:i:s', $now - self::DOCUMENT_WINDOW)) . '\')'
+        );
+        if ((int) $db->Affected_Rows() !== 1) {
+            return false;
+        }
+        $receipt->last_download_at = $stamp;
+
+        return true;
+    }
+
+    /**
+     * Non-atomic read; kept for the smoke script. The front controller uses claim().
+     *
      * @param IfirmaReceipt $receipt
      * @return bool false when the document or the customer downloaded too recently / too often
      */

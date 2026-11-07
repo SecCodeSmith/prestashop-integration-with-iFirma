@@ -247,7 +247,7 @@ class IfirmaSettingsTest extends TestCase
         return array(
             'a login is trimmed' => array('IFIRMA_USER', "  firma@example.test\t", 'firma@example.test'),
             'a login of zero is a login' => array('IFIRMA_USER', '0', '0'),
-            'a key is trimmed' => array('IFIRMA_KEY_ABONENT', ' abc ', 'abc'),
+            'a key is trimmed' => array('IFIRMA_KEY_ABONENT', ' abcd ', 'abcd'),
             'a key is empty' => array('IFIRMA_KEY_ABONENT', '', ''),
             'a key of spaces is empty' => array('IFIRMA_KEY_RACHUNEK', '   ', ''),
             'a token is trimmed' => array('IFIRMA_PAYMENT_TYPE_TOKEN', ' prz_faktura_kraj ', 'prz_faktura_kraj'),
@@ -308,7 +308,7 @@ class IfirmaSettingsTest extends TestCase
         return array(
             'digits' => array('0123456789', '0123456789'),
             'letters in both cases' => array('abcdefABCDEF', 'abcdefABCDEF'),
-            'a zero' => array('0', '0'),
+            'a pair of zeros' => array('00', '00'),
             'padded' => array(' a1b2 ', 'a1b2'),
             'empty' => array('', ''),
             'spaces' => array('   ', ''),
@@ -333,6 +333,9 @@ class IfirmaSettingsTest extends TestCase
     {
         return array(
             'a letter past f' => array('abcg'),
+            'an odd length' => array('abc'),
+            'a single digit' => array('0'),
+            'an odd length of 31 digits' => array('fedcba987654321fedcba987654321a'),
             'a prefix' => array('0x1f'),
             'a space inside' => array('12 34'),
             'a minus' => array('-1'),
@@ -963,6 +966,15 @@ class IfirmaSettingsTest extends TestCase
             'just outside the class B private range' => array('http://172.32.0.1/', false, false),
             'class C private range' => array('http://192.168.1.5/', false, true),
             'a public name that starts like a private range' => array('http://10.example.com/', false, false),
+            'ipv6 unique local over http' => array('http://[fd12:3456::1]:8001/', false, true),
+            'ipv6 link local over http' => array('http://[fe80::1]/', false, true),
+            'public ipv6 over http' => array('http://[2606:4700::1111]/iapi/', false, false),
+            'public ipv6 over http in dev mode' => array('http://[2606:4700::1111]/iapi/', true, true),
+            'public ipv6 over https' => array('https://[2606:4700::1111]/iapi/', false, true),
+            'a query string' => array('https://www.ifirma.pl/iapi/?a=b', false, false),
+            'a query string on a local host' => array('http://localhost:8001/iapi/?a=b', false, false),
+            'a fragment' => array('https://www.ifirma.pl/iapi/#top', false, false),
+            'a fragment on a local host' => array('http://ifirma-mock:8001/iapi/#top', false, false),
             'file' => array('file:///etc/passwd', true, false),
             'gopher' => array('gopher://host/', true, false),
             'ftp' => array('ftp://host/', true, false),

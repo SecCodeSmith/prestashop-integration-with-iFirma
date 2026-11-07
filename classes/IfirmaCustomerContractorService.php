@@ -13,6 +13,7 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
+require_once dirname(__FILE__) . '/IfirmaActionSupport.php';
 require_once dirname(__FILE__) . '/IfirmaApiClient.php';
 require_once dirname(__FILE__) . '/IfirmaContractorMap.php';
 require_once dirname(__FILE__) . '/IfirmaContractorService.php';
@@ -76,16 +77,21 @@ class IfirmaCustomerContractorService
     /** @var callable returns the current unix timestamp */
     private $clock;
 
+    /** @var Module|null translates the generic message of link(); null gives the English text */
+    private $module;
+
     /**
      * @param IfirmaApiClient         $client
      * @param IfirmaContractorService $contractors
      * @param callable|null           $clock unix timestamp provider (default time())
+     * @param Module|null             $module translator for the generic internal-error message
      */
-    public function __construct(IfirmaApiClient $client, IfirmaContractorService $contractors, $clock = null)
+    public function __construct(IfirmaApiClient $client, IfirmaContractorService $contractors, $clock = null, $module = null)
     {
         $this->client = $client;
         $this->contractors = $contractors;
         $this->clock = $clock;
+        $this->module = $module;
     }
 
     /**
@@ -96,7 +102,7 @@ class IfirmaCustomerContractorService
     {
         $client = IfirmaApiClient::fromConfiguration();
 
-        return new self($client, new IfirmaContractorService($client));
+        return new self($client, new IfirmaContractorService($client), null, $module);
     }
 
     // ---- local state ----------------------------------------------------------------------
@@ -576,25 +582,25 @@ class IfirmaCustomerContractorService
             return $out;
         }
 
-        $row = $this->contractors->fetch($identifier);
-        if ($row === null) {
-            $out['code'] = self::LINK_NOT_FOUND;
-
-            return $out;
-        }
-        if ($row === false) {
-            $out['code'] = self::LINK_ERROR;
-            $out['message'] = (string) $this->client->getLastError();
-
-            return $out;
-        }
-
-        $name = isset($row['Nazwa']) ? (string) $row['Nazwa'] : '';
         try {
+            $row = $this->contractors->fetch($identifier);
+            if ($row === null) {
+                $out['code'] = self::LINK_NOT_FOUND;
+
+                return $out;
+            }
+            if ($row === false) {
+                $out['code'] = self::LINK_ERROR;
+                $out['message'] = (string) $this->client->getLastError();
+
+                return $out;
+            }
+
+            $name = isset($row['Nazwa']) ? (string) $row['Nazwa'] : '';
             IfirmaContractorMap::link((int) $idCustomer, $identifier, IfirmaContractorMap::BY_MANUAL, $name);
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             $out['code'] = self::LINK_ERROR;
-            $out['message'] = $e->getMessage();
+            $out['message'] = $this->failureMessage($e);
 
             return $out;
         }
@@ -604,6 +610,25 @@ class IfirmaCustomerContractorService
         $out['name'] = $name;
 
         return $out;
+    }
+
+    /**
+     * The text of a failure of link(): the message of a module exception, the generic text (and a log
+     * line) for anything else, so a PDO or driver message never reaches the screen.
+     *
+     * @param Throwable $e
+     * @return string
+     */
+    private function failureMessage($e)
+    {
+        if (IfirmaActionSupport::isModuleException($e)) {
+            return $e->getMessage();
+        }
+        PrestaShopLogger::addLog('iFirma: ' . get_class($e) . ': ' . $e->getMessage(), 3);
+
+        return $this->module !== null
+            ? $this->module->l('Internal error; details are in the PrestaShop log.', 'ifirmacustomercontractorservice')
+            : 'Internal error; details are in the PrestaShop log.';
     }
 
     /**

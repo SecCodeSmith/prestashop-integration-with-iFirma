@@ -310,12 +310,12 @@ class IfirmaDataRequestTest extends TestCase
         $this->assertSame($expected, IfirmaDataRequest::countOrdersOnHold());
     }
 
-    public function testNoteFieldsAreStringsOfAtMost1000Characters()
+    public function testNoteFieldsAreHtmlTypedOfAtMost1000Characters()
     {
         $fields = IfirmaDataRequest::$definition['fields'];
 
         foreach (array('customer_note', 'admin_note') as $name) {
-            $this->assertSame(ObjectModel::TYPE_STRING, $fields[$name]['type'], $name);
+            $this->assertSame(ObjectModel::TYPE_HTML, $fields[$name]['type'], $name);
             $this->assertSame(1000, $fields[$name]['size'], $name);
         }
         $this->assertSame(ObjectModel::TYPE_HTML, $fields['requested_data']['type']);

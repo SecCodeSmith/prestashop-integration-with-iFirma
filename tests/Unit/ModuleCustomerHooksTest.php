@@ -130,6 +130,7 @@ class ModuleCustomerHooksTest extends TestCase
             'ifirma_customer_criteria',
             'ifirma_customer_can_register',
             'ifirma_customer_register_reason',
+            'ifirma_customer_can_edit',
             'ifirma_customer_ajax_url',
             'ifirma_customer_css_url',
         ), array_keys($this->vars()));
@@ -495,6 +496,65 @@ class ModuleCustomerHooksTest extends TestCase
 
         $this->assertNotSame('', $out);
         $this->assertSame(5, $this->vars()['ifirma_customer_id']);
+    }
+
+    public function testThePanelTellsWhetherTheEmployeeMayEditCustomers()
+    {
+        Access::reset();
+        Context::getContext()->employee->id_profile = 4;
+        Access::grant(IfirmaPermission::ROLE_READ, 4);
+
+        $this->module->hookDisplayAdminCustomers(array('id_customer' => 5));
+        $this->assertFalse($this->vars()['ifirma_customer_can_edit'], 'the view level alone does not edit customers');
+
+        Access::grant('ROLE_MOD_TAB_ADMINCUSTOMERS_UPDATE', 4);
+        $this->module->hookDisplayAdminCustomers(array('id_customer' => 5));
+        $this->assertTrue($this->vars()['ifirma_customer_can_edit']);
+
+        // another profile's grant does not count
+        Access::reset();
+        Access::grant(IfirmaPermission::ROLE_READ, 4);
+        Access::grant('ROLE_MOD_TAB_ADMINCUSTOMERS_UPDATE', 5);
+        $this->module->hookDisplayAdminCustomers(array('id_customer' => 5));
+        $this->assertFalse($this->vars()['ifirma_customer_can_edit']);
+    }
+
+    public function testASuperAdminMayAlwaysEditCustomers()
+    {
+        Access::reset();
+
+        $this->module->hookDisplayAdminCustomers(array('id_customer' => 5));
+
+        $this->assertTrue($this->vars()['ifirma_customer_can_edit']);
+    }
+
+    public function testAnEmployeeWithoutAProfileMayNotEditCustomers()
+    {
+        Access::reset();
+        $employee = Context::getContext()->employee;
+        $employee->id_profile = 4;
+        Access::grant(IfirmaPermission::ROLE_READ, 4);
+        $this->module->hookDisplayAdminCustomers(array('id_customer' => 5));
+        $employee->id_profile = 0;
+        // no profile, no view level: the hook renders nothing, so the decision is read through the method
+        $method = new ReflectionMethod($this->module, 'canEditCustomers');
+        $method->setAccessible(true);
+
+        $this->assertFalse($method->invoke($this->module));
+    }
+
+    public function testTheTemplateHidesRegisterLinkAndUnlinkWithoutTheEditRole()
+    {
+        $template = str_replace("\r\n", "\n", file_get_contents(dirname(__DIR__, 2) . '/views/templates/hook/admin_customer_panel.tpl'));
+
+        $this->assertSame(2, substr_count($template, "{if \$ifirma_customer_can_edit}\n"), 'Unlink and Register sit behind the role');
+        $guard = "{if \$ifirma_customer_can_edit}\n";
+        $first = strpos($template, $guard);
+        $second = strpos($template, $guard, $first + 1);
+        $this->assertLessThan(strpos($template, 'id="ifirma-cp-unlink"'), $first);
+        $this->assertLessThan(strpos($template, 'id="ifirma-cp-register"'), $second);
+        $this->assertStringContainsString('canEdit: {if $ifirma_customer_can_edit}true{else}false{/if}', $template);
+        $this->assertStringContainsString('if (cfg.canEdit) {', $template, 'the Link button is added only with the role');
     }
 
     public function testTheCustomerPanelIsRenderedForASuperAdmin()

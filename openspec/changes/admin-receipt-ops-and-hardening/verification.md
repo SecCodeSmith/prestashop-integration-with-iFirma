@@ -67,6 +67,47 @@ the core rewrote it, the capture-phase Issue click not reaching the row handler,
 with `remaining` re-queued first, `final=1` carrying the totals, the stop on `rate_limited`, the non-JSON answer,
 the native bulk entries of the documents list rewired.
 
+## Independent review after the first commit (7302756)
+
+A workflow of nine finders (one per area: permissions, bulk, notifications, API hardening, endpoint hardening,
+list and upgrade, spec conformance of the new and of the modified capabilities, PHP 7.2 and PrestaShop 8/9
+compatibility with translations and docs) reported 41 findings; each was judged by three independent refuters
+(correctness, impact, reproduction), 39 survived, 2 were refuted (the multishop rate-counter rows, the install
+abort order). De-duplicated to 27 items in `build/review-fixes.md`, all fixed in a second commit:
+
+- documents list: the Needs-attention preset is carried by the sort, paging and filter URLs; the generic legacy
+  list actions (save, update, delete, status, export, bulk delete and enable/disable) are refused; Download PDF
+  per row; array ids read as 0;
+- bulk runs: one log entry per run, totals whitelisted, `already_issued` counted as skipped, a refreshed document
+  missing in iFirma reported as failed, a locally refused resend (rate guard or cool-down) leaves the record
+  untouched and stops the run through a result flag; a transport failure of the in-flight batch is reported as
+  unknown rather than not attempted;
+- permissions: the customer-page panel hides Register, Link and Unlink without the Customers edit right; the
+  refusal answers 403 like the other denials;
+- settings and client: a third password input for the rachunek key, even-length hex keys, base URLs with a query
+  or fragment refused, public IPv6 literals never treated as local, a stored URL that fails the rule replaced by
+  the default at run time with a warning, a cool-down mark dated in the future treated as expired;
+- data requests: note fields kept as HTML-typed so line breaks survive, cool-down measured from the request's
+  own dates (not the admin's approve or reject), country required;
+- download throttle: the per-document slot is claimed by one conditional UPDATE;
+- notifications script: own writes flagged for the total observer, stale feed answers after the seen mark
+  ignored, fallback panel CSS;
+- tab named "Dokumenty iFirma" for Polish; the link action never returns raw exception text; docs and the two
+  spec scenarios about the guard refusal aligned.
+
+Caught by the smoke run after the fixes, not by the unit suite: `Db::getRow()` appends its own `LIMIT 1`, so the
+new cool-down query with an explicit `LIMIT 1` was a MariaDB syntax error (fixed); the daily cap of ten requests
+then refused the smoke customer's eleventh request, so scenario C now clears that customer's requests first.
+
+Accepted without a code change: the seen mark's one-second resolution, a failed PDF fetch consuming the 30 s
+window, the client's English pause message (like its other technical errors).
+
+Gate after the fix wave (manager's run): `OK (4235 tests, 16904 assertions)` in the 8.2 image, `Total: 1212 lines`,
+`Missing: 0 lines`, `GATE: PASS`; PS 8.1 container 4235 tests with the two known float cases; `LINT72 rc=0`;
+licence check 242 files; `tests/smoke/run.php` `passed 184, failed 0, skipped 1` and `order-grid-check.php`
+`ORDER_GRID_CHECK_OK` on both shops; `upgrade-150-check.php` 12/12 on both. A timing-sensitive cool-down test
+(two clocks built at different instants) was pinned to one base instant per test.
+
 ## Browser checks (tasks 9.3, 9.2 browser part, 4.3, 4.4, 5.3, 6.4)
 
 Puppeteer (headless Chrome) against both shops; screenshots in the git-ignored `build/shots/`.

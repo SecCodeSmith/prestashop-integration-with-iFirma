@@ -57,11 +57,13 @@
             {/if}
         </tbody>
     </table>
+    {if $ifirma_customer_can_edit}
     <p>
         <button type="button" class="btn btn-default btn-sm" id="ifirma-cp-unlink"{if !$ifirma_customer_link.linked} style="display:none;"{/if}{if !$ifirma_customer_configured} disabled="disabled"{/if}>
             {l s='Unlink' mod='ifirma'}
         </button>
     </p>
+    {/if}
 
     {* ---- documents recorded by the module (no API call) ---- *}
     <h4>{l s='Documents recorded by the module' mod='ifirma'}</h4>
@@ -121,6 +123,7 @@
             </p>
             <div id="ifirma-cp-results" class="table-responsive"></div>
 
+            {if $ifirma_customer_can_edit}
             <h4>{l s='Register as a new contractor' mod='ifirma'}</h4>
             {if $ifirma_customer_can_register}
                 <p>
@@ -128,6 +131,7 @@
                 </p>
             {else}
                 <p class="text-muted" id="ifirma-cp-register-reason">{$ifirma_customer_register_reason|escape:'html':'UTF-8'}</p>
+            {/if}
             {/if}
         </div>
     {/if}
@@ -156,7 +160,8 @@
         var cfg = {
             url: "{$ifirma_customer_ajax_url|escape:'javascript':'UTF-8'}",
             id: {$ifirma_customer_id|intval},
-            labels: JSON.parse("{$ifirma_customer_match_labels_json|escape:'javascript':'UTF-8'}")
+            labels: JSON.parse("{$ifirma_customer_match_labels_json|escape:'javascript':'UTF-8'}"),
+            canEdit: {if $ifirma_customer_can_edit}true{else}false{/if}
         };
         var t = {
             error: "{l s='Error' mod='ifirma' js=1}",
@@ -305,11 +310,15 @@
                     }
                 });
                 $tr.append($flags);
-                $tr.append($('<td>').append(
-                    $('<button type="button" class="btn btn-default btn-sm ifirma-cp-link">')
-                        .attr('data-identifier', row.identifier === null || row.identifier === undefined ? '' : String(row.identifier))
-                        .text(t.link)
-                ));
+                var $action = $('<td>');
+                if (cfg.canEdit) {
+                    $action.append(
+                        $('<button type="button" class="btn btn-default btn-sm ifirma-cp-link">')
+                            .attr('data-identifier', row.identifier === null || row.identifier === undefined ? '' : String(row.identifier))
+                            .text(t.link)
+                    );
+                }
+                $tr.append($action);
                 $body.append($tr);
             });
             $box.append($('<table class="table ifirma-cp-table">').append($('<thead>').append($head)).append($body));

@@ -31,8 +31,19 @@ class AdminController
     public $toolbar_btn = array();
     public $page_header_toolbar_btn = array();
     public $redirect_after;
+    public $action;
+    public $display;
 
     public function processFilter()
+    {
+    }
+
+    public function init()
+    {
+    }
+
+    /** The core decides the action from the request; the tests set $action before the module override runs. */
+    public function initProcess()
     {
     }
 

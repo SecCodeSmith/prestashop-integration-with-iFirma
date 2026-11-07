@@ -13,6 +13,19 @@ use PHPUnit\Framework\TestCase;
 
 require_once _PS_MODULE_DIR_ . 'ifirma/controllers/admin/AdminIfirmaController.php';
 
+/** Link that remembers the controller and the query parameters of every admin link it builds. */
+class IfirmaTestParamRecordingLink extends Link
+{
+    public static $calls = array();
+
+    public function getAdminLink($controller, $withToken = true, $sfRouteParams = [], $params = [])
+    {
+        self::$calls[] = array($controller, $params);
+
+        return parent::getAdminLink($controller, $withToken, $sfRouteParams, $params);
+    }
+}
+
 /**
  * Spec: receipt-documents-list (design D3): the legacy list definition of AdminIfirma.
  */
@@ -172,6 +185,96 @@ class AdminListDefinitionTest extends TestCase
         $this->assertArrayNotHasKey('new', $c->toolbar_btn);
     }
 
+    public function testTheActivePresetIsCarriedByTheListBaseUrl()
+    {
+        AdminController::$currentIndex = 'index.php?controller=AdminIfirma';
+        $c = $this->controller();
+        $c->init();
+        $this->assertSame('index.php?controller=AdminIfirma', AdminController::$currentIndex);
+
+        $c = $this->controller(array('ifirma_preset' => 'attention'));
+        $c->init();
+        $this->assertSame('index.php?controller=AdminIfirma&ifirma_preset=attention', AdminController::$currentIndex);
+
+        // the way back to all documents does not carry it
+        $c->initPageHeaderToolbar();
+        $this->assertStringNotContainsString('ifirma_preset', $c->page_header_toolbar_btn['ifirma_all']['href']);
+        AdminController::$currentIndex = 'index.php?controller=AdminModules';
+    }
+
+    // ---- the generic list actions -----------------------------------------------------------------
+
+    public static function legacyActions()
+    {
+        return array(
+            'none' => array('', null, true),
+            'list' => array('list', null, true),
+            'filter' => array('filter', null, true),
+            'reset filters' => array('reset_filters', null, true),
+            'bulk retry' => array('bulkretryIssuance', null, true),
+            'bulk resend' => array('bulkresend', 'list', true),
+            'bulk refresh' => array('bulkrefresh', null, true),
+            'save' => array('save', 'list', false),
+            'new' => array('new', 'add', false),
+            'delete' => array('delete', null, false),
+            'status' => array('status', null, false),
+            'position' => array('position', null, false),
+            'export' => array('export', null, false),
+            'bulk delete' => array('bulkdelete', null, false),
+            'bulk enable' => array('bulkenableSelection', null, false),
+            'update options' => array('update_options', 'options', false),
+            'edit form without action' => array('', 'edit', false),
+            'view' => array('view', 'view', false),
+        );
+    }
+
+    /** @dataProvider legacyActions */
+    public function testOnlyTheListFilterAndBulkFallbackActionsSurviveTheCoreAction($action, $display, $kept)
+    {
+        $c = $this->controller();
+        $c->action = $action;
+        $c->display = $display;
+
+        $c->initProcess();
+
+        if ($kept) {
+            $this->assertSame($action, $c->action);
+            $this->assertSame($display, $c->display);
+            $this->assertSame(array(), $c->errors);
+
+            return;
+        }
+        $this->assertSame('', $c->action);
+        $this->assertNull($c->display);
+        $this->assertSame(array('This action is not available on this page.'), $c->errors);
+    }
+
+    public function testAnAjaxRequestKeepsItsAction()
+    {
+        $c = $this->controller();
+        $c->ajax = true;
+        $c->action = 'BulkRun';
+
+        $c->initProcess();
+
+        $this->assertSame('BulkRun', $c->action);
+        $this->assertSame(array(), $c->errors);
+    }
+
+    public function testTheGenericProcessMethodsRefuseAndAlterNothing()
+    {
+        $methods = array(
+            'processSave', 'processAdd', 'processUpdate', 'processDelete', 'processStatus', 'processPosition',
+            'processExport', 'processBulkDelete', 'processBulkEnableSelection', 'processBulkDisableSelection',
+        );
+        foreach ($methods as $method) {
+            $c = $this->controller();
+            $this->assertFalse($c->$method(), $method);
+            $this->assertSame(array('This action is not available on this page.'), $c->errors, $method);
+        }
+        $this->assertSame(array(), IfirmaTestState::writes('ifirma_receipt'));
+    }
+
     // ---- the row buttons ----------------------------------------------------------------------
 
     public function testANotIssuedRowWithTheIssueLevelShowsRetryOnly()
@@ -197,6 +300,26 @@ class AdminListDefinitionTest extends TestCase
         $this->assertStringContainsString('data-kind="refresh" data-id="12"', $html);
         $this->assertStringContainsString('Download PDF', $html);
         $this->assertStringNotContainsString('data-kind="retry"', $html);
+    }
+
+    public function testThePdfLinkOfARowNamesTheRecordAndTheOrder()
+    {
+        $this->holding(array(IfirmaPermission::ROLE_READ));
+        $context = Context::getContext();
+        $saved = $context->link;
+        $context->link = new IfirmaTestParamRecordingLink();
+        try {
+            $this->controller()->renderRowActions('', $this->row());
+            $calls = IfirmaTestParamRecordingLink::$calls;
+        } finally {
+            $context->link = $saved;
+        }
+
+        $pdf = array_filter($calls, function ($call) {
+            return $call[0] === 'AdminIfirma';
+        });
+        $params = reset($pdf);
+        $this->assertSame(array('ajax' => 1, 'action' => 'DownloadPdf', 'id_order' => 42, 'id_ifirma_receipt' => 12), $params[1]);
     }
 
     /** Scenario: Actions hidden without the level */

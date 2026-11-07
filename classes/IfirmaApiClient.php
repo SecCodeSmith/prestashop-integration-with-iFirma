@@ -86,6 +86,10 @@ class IfirmaApiClient
      */
     public static function fromConfiguration($baseUrl = null)
     {
+        if (!$baseUrl) {
+            $baseUrl = self::storedBaseUrl();
+        }
+
         return new IfirmaApiClient(
             Configuration::get('IFIRMA_USER'),
             array(
@@ -93,8 +97,42 @@ class IfirmaApiClient
                 'abonent' => Configuration::get('IFIRMA_KEY_ABONENT'),
                 'rachunek' => Configuration::get('IFIRMA_KEY_RACHUNEK'),
             ),
-            $baseUrl ?: (Configuration::get('IFIRMA_BASE_URL') ?: self::BASE_URL)
+            $baseUrl ?: self::BASE_URL
         );
+    }
+
+    /** @var bool whether this request already logged a stored base URL that failed the check */
+    private static $badBaseUrlLogged = false;
+
+    /**
+     * The stored base URL, checked again at run time: a value that no longer passes
+     * IfirmaSettings::isAcceptableBaseUrl() (edited in the database, or dev mode switched off since the save)
+     * is not used. The client talks to iFirma instead and the shop log says so, once per request.
+     *
+     * @return string the stored URL, '' for none or for one that is refused
+     */
+    private static function storedBaseUrl()
+    {
+        // loaded when needed: IfirmaSettings requires this file, so a require at the top would be circular
+        require_once dirname(__FILE__) . '/IfirmaSettings.php';
+        $stored = trim((string) Configuration::get('IFIRMA_BASE_URL'));
+        if ($stored === '' || IfirmaSettings::isAcceptableBaseUrl($stored)) {
+            return $stored;
+        }
+        if (!self::$badBaseUrlLogged) {
+            self::$badBaseUrlLogged = true;
+            PrestaShopLogger::addLog('iFirma: the stored API base URL is not acceptable, the production address is used: ' . $stored, 2);
+        }
+
+        return '';
+    }
+
+    /**
+     * Test seam: forgets that the bad stored base URL was logged, as a new request would.
+     */
+    public static function resetRequestState()
+    {
+        self::$badBaseUrlLogged = false;
     }
 
     /**
@@ -507,7 +545,9 @@ class IfirmaApiClient
 
         $parts = explode('|', $stored, 2);
         $at = (int) $parts[0];
-        if ($at <= 0 || $this->now() - $at >= self::AUTH_COOLDOWN) {
+        $now = $this->now();
+        // a mark dated in the future (the clock was stepped back) would block calls for good: it counts as expired
+        if ($at <= 0 || $at > $now || $now - $at >= self::AUTH_COOLDOWN) {
             return null;
         }
 

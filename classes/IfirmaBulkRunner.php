@@ -111,6 +111,18 @@ class IfirmaBulkRunner
     }
 
     /**
+     * @return string[] every outcome code a result can carry
+     */
+    public static function outcomes()
+    {
+        return array(
+            self::OUTCOME_ISSUED, self::OUTCOME_ADOPTED, self::OUTCOME_SUSPECTED, self::OUTCOME_HELD,
+            self::OUTCOME_FAILED, self::OUTCOME_SENT, self::OUTCOME_REFRESHED, self::OUTCOME_SKIPPED,
+            self::OUTCOME_NOT_ATTEMPTED,
+        );
+    }
+
+    /**
      * @param object $pipeline IfirmaIssuancePipeline (test seam)
      * @return $this
      */
@@ -220,7 +232,8 @@ class IfirmaBulkRunner
             $counts[$result['outcome']] = (isset($counts[$result['outcome']]) ? $counts[$result['outcome']] : 0) + 1;
         }
 
-        if (!empty($options['final']) || $state['stopped'] !== '') {
+        // one log entry per run: when the last batch is done, or when the run stops
+        if ((!empty($options['final']) && !$remaining) || $state['stopped'] !== '') {
             $this->log($kind, (int) $idEmployee, isset($options['previous_totals']) ? $options['previous_totals'] : array(), $counts, $state['stopped']);
         }
 
@@ -317,7 +330,10 @@ class IfirmaBulkRunner
             return self::STOP_RATE_LIMITED;
         }
 
-        if ($r->ok) {
+        if ($r->outcome === IfirmaPipelineResult::OUTCOME_ALREADY_ISSUED) {
+            // the order got its document meanwhile (another tab, the automatic issuance): nothing was done
+            $outcome = self::OUTCOME_SKIPPED;
+        } elseif ($r->ok) {
             $outcome = $r->outcome === IfirmaPipelineResult::OUTCOME_ADOPTED ? self::OUTCOME_ADOPTED : self::OUTCOME_ISSUED;
         } elseif ($r->outcome === IfirmaPipelineResult::OUTCOME_SUSPECTED) {
             $outcome = self::OUTCOME_SUSPECTED;
@@ -373,10 +389,12 @@ class IfirmaBulkRunner
 
             return '';
         }
-        if (stripos($message, 'rate limit guard') !== false) {
-            $state['results'][$id] = $this->notAttempted($id, self::STOP_RATE_LIMITED, $idOrder);
+        if ($res->refusedLocally()) {
+            // the client refused the call itself and the record was left untouched: stop the run
+            $reason = $res->getRefusal() === 'auth_blocked' ? self::STOP_AUTH_BLOCKED : self::STOP_RATE_LIMITED;
+            $state['results'][$id] = $this->notAttempted($id, $reason, $idOrder);
 
-            return self::STOP_RATE_LIMITED;
+            return $reason;
         }
 
         $state['results'][$id] = $this->result($id, $idOrder, self::OUTCOME_FAILED, $message, $receipt);
@@ -430,7 +448,9 @@ class IfirmaBulkRunner
             $failed = false;
             foreach ($receipts as $id => $receipt) {
                 $error = (string) $receipt->sync_error;
-                if ($error === '') {
+                if ($receipt->remote_missing) {
+                    $state['results'][$id] = $this->result($id, (int) $receipt->id_order, self::OUTCOME_FAILED, $this->module->l('The document is missing in iFirma.', 'ifirmabulkrunner'), $receipt);
+                } elseif ($error === '') {
                     $state['results'][$id] = $this->result($id, (int) $receipt->id_order, self::OUTCOME_REFRESHED, $this->module->l('Refreshed from iFirma.', 'ifirmabulkrunner'), $receipt);
                 } else {
                     $failed = true;
@@ -509,7 +529,11 @@ class IfirmaBulkRunner
                 continue;
             }
             foreach ($part as $outcome => $count) {
-                $totals[(string) $outcome] = (isset($totals[(string) $outcome]) ? $totals[(string) $outcome] : 0) + (int) $count;
+                // the browser posts the earlier totals back: keep only the known outcome words and no negative count
+                if (!in_array((string) $outcome, self::outcomes(), true)) {
+                    continue;
+                }
+                $totals[(string) $outcome] = (isset($totals[(string) $outcome]) ? $totals[(string) $outcome] : 0) + max(0, (int) $count);
             }
         }
         $pairs = array();

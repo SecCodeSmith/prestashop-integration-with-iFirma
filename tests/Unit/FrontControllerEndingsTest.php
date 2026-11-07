@@ -76,9 +76,26 @@ class FrontControllerEndingsTest extends TestCase
     {
         $receipt = $this->makeReceipt(array('security_token' => 'tok123', 'last_download_at' => date('Y-m-d H:i:s')));
         Db::getInstance()->whenGetValue('/WHERE security_token = "tok123"/', (int) $receipt->id);
+        // the conditional UPDATE of the throttle finds no row to claim: the document is inside its window
+        Db::getInstance()->whenExecute('/UPDATE `\w*ifirma_receipt`\s+SET last_download_at/', 0);
         Tools::$values = array('token' => 'tok123');
 
         $this->assertSame('429', $this->answer(new IfirmaTestEndingReceiptController()));
+    }
+
+    public function testAFailedPdfFetchLogsTheReasonAndAnswersServerError()
+    {
+        $receipt = $this->makeReceipt(array('security_token' => 'tok123'));
+        Db::getInstance()->whenGetValue('/WHERE security_token = "tok123"/', (int) $receipt->id);
+        // the conditional UPDATE of the throttle claims the document
+        Db::getInstance()->whenExecute('/UPDATE `\w*ifirma_receipt`\s+SET last_download_at/', 1);
+        $this->t->queue('GET', '#\.pdf#', array('status' => 404, 'body' => '{"response":{"Kod":404,"Informacja":"Nie znaleziono dokumentu"}}'));
+        Tools::$values = array('token' => 'tok123');
+        PrestaShopLogger::reset();
+
+        $this->assertSame('502', $this->answer(new IfirmaTestEndingReceiptController()));
+        $this->assertCount(1, PrestaShopLogger::$logs);
+        $this->assertStringContainsString('iFirma front download failed', PrestaShopLogger::$logs[0]['message']);
     }
 
     public function testAnAnonymousVisitorToTheReceiptIsSentToTheLoginWithTheTokenAsTheReturnTarget()

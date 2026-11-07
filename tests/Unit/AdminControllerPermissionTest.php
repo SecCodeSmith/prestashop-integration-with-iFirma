@@ -261,7 +261,9 @@ class AdminControllerPermissionTest extends TestCase
         list($payload, $statuses) = $this->callAction($action);
 
         if ($allowed) {
-            $this->assertSame(array(), $statuses, 'no status header for an allowed call');
+            // the customer writes pass the level and are then refused for the missing customers-edit right
+            $expected = in_array($action, array('CustomerLink', 'CustomerUnlink', 'CustomerRegister'), true) ? array(403) : array();
+            $this->assertSame($expected, $statuses, 'no status header for an allowed call');
             $this->assertNotContains($payload['message'], $refusals, 'the body ran');
             return;
         }
@@ -289,7 +291,7 @@ class AdminControllerPermissionTest extends TestCase
         $this->employeeHolding(array(IfirmaPermission::ROLE_READ));
         list($payload, $statuses) = $this->callAction('CustomerLink', array('identifier' => 'X-1'));
 
-        $this->assertSame(array(), $statuses, 'the level passed');
+        $this->assertSame(array(403), $statuses, 'the level passed; the missing customers-edit right answers 403 once');
         $this->assertFalse($payload['success']);
         $this->assertSame('You do not have permission to edit customers.', $payload['message']);
     }

@@ -260,6 +260,27 @@ class ApiClientErrorsTest extends TestCase
         $this->assertFalse($this->c->isAuthBlocked());
     }
 
+    public function testAMarkDatedInTheFutureIsExpired()
+    {
+        // the clock of the server was stepped back: the mark must not pause the calls until it catches up
+        Configuration::updateValue('IFIRMA_AUTH_FAILURE', ($this->now + 3600) . '|Bad hash');
+
+        $this->assertFalse($this->c->isAuthBlocked());
+        $this->assertSame('', $this->c->getAuthBlockMessage());
+
+        $this->t->queue('GET', '#/x\.json$#', array('body' => '{"response":{"Kod":0}}'));
+        $this->assertSame(array('response' => array('Kod' => 0)), $this->c->get('x.json', 'faktura'));
+        $this->assertFalse($this->c->lastCallWasAuthBlocked());
+        $this->assertCount(1, $this->t->calls);
+    }
+
+    public function testAMarkDatedThisVerySecondStillPauses()
+    {
+        Configuration::updateValue('IFIRMA_AUTH_FAILURE', $this->now . '|Bad hash');
+
+        $this->assertTrue($this->c->isAuthBlocked());
+    }
+
     public function testAMessageWithAPipeKeepsItsText()
     {
         Configuration::updateValue('IFIRMA_AUTH_FAILURE', $this->now . '|a|b');

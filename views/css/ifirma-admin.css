@@ -58,6 +58,15 @@
   display: block;
 }
 
+/* the fallback panel has no core styles: the empty-state line shows only while the list is empty */
+#ifirma-notif .no-notification {
+  display: none;
+}
+
+#ifirma-notif .empty .no-notification {
+  display: block;
+}
+
 #ifirma-notif .ifirma-notif-badge {
   position: absolute;
   top: 0;

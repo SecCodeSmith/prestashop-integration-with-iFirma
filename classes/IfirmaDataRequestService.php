@@ -136,19 +136,28 @@ class IfirmaDataRequestService
     }
 
     /**
+     * The window starts when the customer's newest request for the order was created, or when it was
+     * cancelled; an administrator's approval or rejection does not restart it.
+     *
      * @param int $idOrder
      * @param int $idCustomer
-     * @return bool true when the customer's newest request for the order, whatever its status, was
-     *              created or changed less than COOLDOWN seconds ago
+     * @return bool true when that moment is less than COOLDOWN seconds ago
      */
     private function inCooldown($idOrder, $idCustomer)
     {
-        $newest = (string) Db::getInstance()->getValue(
-            'SELECT GREATEST(date_add, date_upd) FROM `' . _DB_PREFIX_ . 'ifirma_data_request`
+        $row = Db::getInstance()->getRow(
+            'SELECT status, date_add, date_resolved FROM `' . _DB_PREFIX_ . 'ifirma_data_request`
              WHERE id_order = ' . (int) $idOrder . ' AND id_customer = ' . (int) $idCustomer . '
-             ORDER BY GREATEST(date_add, date_upd) DESC'
-        );
-        $at = $newest !== '' ? strtotime($newest) : false;
+             ORDER BY date_add DESC, id_ifirma_data_request DESC'
+        ); // no LIMIT here: Db::getRow() appends its own "LIMIT 1" and a second one is a syntax error on MariaDB
+        if (!is_array($row) || empty($row['date_add'])) {
+            return false;
+        }
+        $from = $row['date_add'];
+        if (isset($row['status']) && $row['status'] === IfirmaDataRequest::STATUS_CANCELLED && !empty($row['date_resolved'])) {
+            $from = $row['date_resolved'];
+        }
+        $at = strtotime((string) $from);
 
         return $at !== false && strtotime($this->now()) - $at < self::COOLDOWN;
     }
@@ -325,6 +334,8 @@ class IfirmaDataRequestService
         if (isset($input['id_country']) && $input['id_country'] !== '' && $input['id_country'] !== null
             && (!is_scalar($input['id_country']) || !ctype_digit((string) $input['id_country']) || (int) $input['id_country'] <= 0)) {
             $errors['id_country'] = $this->module->l('Select a valid country.', 'ifirmadatarequestservice');
+        } elseif ($get('id_country') === '') {
+            $errors['id_country'] = $this->module->l('Please choose a country.', 'ifirmadatarequestservice');
         }
 
         $invalid = $this->module->l('This value contains characters that are not allowed.', 'ifirmadatarequestservice');

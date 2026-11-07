@@ -400,7 +400,7 @@ class BulkRunnerTest extends TestCase
         }
         $delivery = new BulkRunnerFakeDelivery(function ($receipt, $n) {
             if ($n === 2) {
-                return new IfirmaDeliveryResult(false, 'failed', 'ifirma_mail', 'iFirma rate limit guard: 80 requests in the current minute (cap 80). Retry shortly.');
+                return new IfirmaDeliveryResult(false, 'failed', 'ifirma_mail', 'iFirma rate limit guard: 80 requests in the current minute (cap 80). Retry shortly.', 'rate_limited');
             }
 
             return new IfirmaDeliveryResult(true, 'sent', 'shop_mail', '');
@@ -416,7 +416,72 @@ class BulkRunnerTest extends TestCase
         $this->assertSame(1, $data['processed']);
     }
 
+    public function testAResendFailureThatOnlyMentionsTheGuardIsNotAStop()
+    {
+        $r = $this->makeReceipt();
+        $delivery = new BulkRunnerFakeDelivery(function () {
+            return new IfirmaDeliveryResult(false, 'failed', 'shop_mail', 'iFirma rate limit guard: mentioned in a mail error');
+        });
+
+        $data = $this->runner()->setDeliveryService($delivery)->run('resend', array($r->id), 9);
+
+        $this->assertSame(array('failed'), $this->outcomes($data));
+        $this->assertSame('', $data['stopped']);
+    }
+
+    public function testAResendTheClientRefusedBecauseOfRejectedCredentialsStopsTheRun()
+    {
+        $ids = array();
+        for ($i = 0; $i < 3; $i++) {
+            $this->order(70 + $i);
+            $ids[] = (int) $this->makeReceipt(array('id_order' => 70 + $i))->id;
+        }
+        $delivery = new BulkRunnerFakeDelivery(function ($receipt, $n) {
+            return $n === 2
+                ? new IfirmaDeliveryResult(false, 'failed', 'ifirma_mail', 'paused', 'auth_blocked')
+                : new IfirmaDeliveryResult(true, 'sent', 'shop_mail', '');
+        });
+
+        $data = $this->runner()->setDeliveryService($delivery)->run('resend', $ids, 9);
+
+        $this->assertSame(array('sent', 'not_attempted', 'not_attempted'), $this->outcomes($data));
+        $this->assertSame('auth_blocked', $data['stopped']);
+        $this->assertSame('not attempted (credentials rejected)', $data['results'][1]['message']);
+    }
+
+    public function testAnOrderThatGotItsDocumentMeanwhileIsSkippedNotIssued()
+    {
+        $this->order(15);
+        $pipeline = new BulkRunnerFakePipeline(function () {
+            return $this->result('already_issued', true);
+        });
+
+        $data = $this->runner()->setPipeline($pipeline)->run('issue', array(15), 9);
+
+        $this->assertSame(array('skipped'), $this->outcomes($data));
+        $this->assertSame('described:already_issued', $data['results'][0]['message']);
+        $this->assertSame(1, $data['processed'], 'a skipped item still counts as processed');
+    }
+
     // --- refresh -----------------------------------------------------------------------------------------------
+
+    public function testARefreshOfADocumentIFirmaNoLongerListsFailsWithTheMissingMessage()
+    {
+        $a = $this->makeReceipt();
+        $b = $this->makeReceipt(array('id_order' => 16, 'ifirma_id' => '78'));
+        $sync = new BulkRunnerFakeSync();
+        $sync->decide = function ($date, array $receipts, $n, array $summary) {
+            $receipts[0]->remote_missing = 1;
+
+            return $summary;
+        };
+
+        $data = $this->runner()->setSyncService($sync)->run('refresh', array($a->id, $b->id), 9);
+
+        $this->assertSame(array('failed', 'refreshed'), $this->outcomes($data));
+        $this->assertSame('The document is missing in iFirma.', $data['results'][0]['message']);
+        $this->assertSame('', $data['stopped']);
+    }
 
     public function testRecordsOfTwoIssueDatesCostTwoListCalls()
     {
@@ -426,8 +491,13 @@ class BulkRunnerTest extends TestCase
             $date = $i % 2 === 0 ? '2026-11-01' : '2026-11-02';
             $ids[] = (int) $this->makeReceipt(array('id_order' => 70 + $i, 'ifirma_id' => (string) (200 + $i), 'issue_date' => $date))->id;
         }
-        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->remoteRow(array('FakturaId' => 200)))));
-        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->remoteRow(array('FakturaId' => 201)))));
+        // both dates list all of their documents, so none is reported missing
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array_map(function ($n) {
+            return $this->remoteRow(array('FakturaId' => $n));
+        }, array(200, 202, 204, 206, 208))));
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array_map(function ($n) {
+            return $this->remoteRow(array('FakturaId' => $n));
+        }, array(201, 203, 205, 207, 209))));
 
         $data = $this->runner()->run('refresh', $ids, 9);
 
@@ -614,6 +684,43 @@ class BulkRunnerTest extends TestCase
         $this->assertCount(1, PrestaShopLogger::$logs);
         $this->assertSame('iFirma bulk issue by employee 5: issued=4, failed=1', PrestaShopLogger::$logs[0]['message']);
         $this->assertSame(1, PrestaShopLogger::$logs[0]['severity']);
+    }
+
+    public function testOnlyTheLastBatchOfARunLogs()
+    {
+        foreach (array(80, 81, 82, 83) as $id) {
+            $this->order($id);
+        }
+        $pipeline = new BulkRunnerFakePipeline(function () {
+            return $this->result('issued', true);
+        });
+        $runner = $this->runner()->setPipeline($pipeline);
+
+        // a batch that is not the last, and a "final" batch that still has ids left over, write nothing
+        $runner->run('issue', array(80, 81, 82), 5);
+        $this->assertCount(0, PrestaShopLogger::$logs);
+        $first = $runner->run('issue', array(80, 81, 82, 83), 5, array('final' => true));
+        $this->assertSame(array(83), $first['remaining']);
+        $this->assertCount(0, PrestaShopLogger::$logs);
+
+        $runner->run('issue', $first['remaining'], 5, array('final' => true, 'previous_totals' => array('issued' => 3)));
+        $this->assertCount(1, PrestaShopLogger::$logs);
+        $this->assertSame('iFirma bulk issue by employee 5: issued=4', PrestaShopLogger::$logs[0]['message']);
+    }
+
+    public function testThePostedTotalsKeepOnlyKnownOutcomesWithNonNegativeCounts()
+    {
+        $this->order(80);
+        $pipeline = new BulkRunnerFakePipeline(function () {
+            return $this->result('issued', true);
+        });
+
+        $this->runner()->setPipeline($pipeline)->run('issue', array(80), 5, array(
+            'final' => true,
+            'previous_totals' => array('issued' => -5, 'failed' => 2, 'forged line, stopped: x' => 9, 'sent' => '-1'),
+        ));
+
+        $this->assertSame('iFirma bulk issue by employee 5: issued=1, failed=2, sent=0', PrestaShopLogger::$logs[0]['message']);
     }
 
     public function testAStoppedRunLogsWithTheStopReason()

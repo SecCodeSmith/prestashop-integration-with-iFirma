@@ -99,6 +99,119 @@ class AdminIfirmaController extends ModuleAdminController
     }
 
     /**
+     * The core sets the list base URL in init(): the preset is appended there so the sort, pagination and
+     * filter links of the list carry it.
+     */
+    public function init()
+    {
+        parent::init();
+
+        if ($this->attentionPresetActive()) {
+            self::$currentIndex .= '&ifirma_preset=attention';
+        }
+    }
+
+    /**
+     * The generic list actions of the core class (save, add, update, delete, status, position, export, the
+     * core bulk entries) would change the rows of the receipt table: only the list and filter actions and the
+     * three bulk fallbacks of this controller stay. Ajax requests are not touched.
+     */
+    public function initProcess()
+    {
+        parent::initProcess();
+
+        if ($this->ajax) {
+            return;
+        }
+        $allowed = array('', 'list', 'filter', 'reset_filters', 'bulkretryissuance', 'bulkresend', 'bulkrefresh');
+        $action = strtolower(IfirmaInput::scalar($this->action));
+        $display = IfirmaInput::scalar($this->display);
+        if (in_array($action, $allowed, true) && in_array($display, array('', 'list'), true)) {
+            return;
+        }
+
+        $this->action = '';
+        $this->display = null;
+        $this->unavailable();
+    }
+
+    private function unavailable()
+    {
+        $this->errors[] = $this->module->l('This action is not available on this page.', 'adminifirmacontroller');
+    }
+
+    // the generic actions of the core class, refused even when something sets them (initProcess() clears them first)
+    public function processSave()
+    {
+        $this->unavailable();
+
+        return false;
+    }
+
+    public function processAdd()
+    {
+        $this->unavailable();
+
+        return false;
+    }
+
+    public function processUpdate()
+    {
+        $this->unavailable();
+
+        return false;
+    }
+
+    public function processDelete()
+    {
+        $this->unavailable();
+
+        return false;
+    }
+
+    public function processStatus()
+    {
+        $this->unavailable();
+
+        return false;
+    }
+
+    public function processPosition()
+    {
+        $this->unavailable();
+
+        return false;
+    }
+
+    public function processExport($text_delimiter = '"')
+    {
+        $this->unavailable();
+
+        return false;
+    }
+
+    public function processBulkDelete()
+    {
+        $this->unavailable();
+
+        return false;
+    }
+
+    public function processBulkEnableSelection()
+    {
+        $this->unavailable();
+
+        return false;
+    }
+
+    public function processBulkDisableSelection()
+    {
+        $this->unavailable();
+
+        return false;
+    }
+
+    /**
      * @return bool whether the needs-attention preset was asked for
      */
     private function attentionPresetActive()
@@ -274,7 +387,7 @@ class AdminIfirmaController extends ModuleAdminController
             $html .= $this->rowButton('refresh', $idReceipt, $this->module->l('Refresh', 'adminifirmacontroller'));
         }
         if ($issued && IfirmaPermission::canView($employee)) {
-            $url = $link->getAdminLink('AdminIfirma', true, array(), array('ajax' => 1, 'action' => 'DownloadPdf', 'id_order' => $idOrder));
+            $url = $link->getAdminLink('AdminIfirma', true, array(), array('ajax' => 1, 'action' => 'DownloadPdf', 'id_order' => $idOrder, 'id_ifirma_receipt' => $idReceipt));
             $html .= '<a class="btn btn-default btn-sm" href="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '">'
                 . htmlspecialchars($this->module->l('Download PDF', 'adminifirmacontroller'), ENT_QUOTES, 'UTF-8') . '</a> ';
         }
@@ -474,7 +587,7 @@ class AdminIfirmaController extends ModuleAdminController
      */
     private function orderId()
     {
-        return (int) Tools::getValue('id_order');
+        return (int) IfirmaInput::scalar(Tools::getValue('id_order'));
     }
 
     public function ajaxProcessCreateReceipt()
@@ -552,7 +665,7 @@ class AdminIfirmaController extends ModuleAdminController
      */
     private function customerId()
     {
-        return (int) Tools::getValue('id_customer');
+        return (int) IfirmaInput::scalar(Tools::getValue('id_customer'));
     }
 
     /**
@@ -581,6 +694,7 @@ class AdminIfirmaController extends ModuleAdminController
         if ($this->canEditCustomers()) {
             return true;
         }
+        $this->statusHeader(403);
         $this->respond(array(
             'success' => false,
             'message' => $this->module->l('You do not have permission to edit customers.', 'adminifirmacontroller'),
@@ -654,7 +768,7 @@ class AdminIfirmaController extends ModuleAdminController
             $edited = is_array($data) ? $data : null;
 
             $this->respond($this->actions()->approveRequest(
-                (int) Tools::getValue('id_request'),
+                (int) IfirmaInput::scalar(Tools::getValue('id_request')),
                 $this->employeeId(),
                 $edited,
                 IfirmaInput::scalar(Tools::getValue('admin_note'))
@@ -666,7 +780,7 @@ class AdminIfirmaController extends ModuleAdminController
     {
         $this->handle('RejectRequest', function () {
             $this->respond($this->actions()->rejectRequest(
-                (int) Tools::getValue('id_request'),
+                (int) IfirmaInput::scalar(Tools::getValue('id_request')),
                 $this->employeeId(),
                 IfirmaInput::scalar(Tools::getValue('reason'))
             ));
@@ -922,7 +1036,16 @@ class AdminIfirmaController extends ModuleAdminController
         }
 
         $idOrder = $this->orderId();
-        $receipt = IfirmaReceipt::getByOrder($idOrder);
+        $idReceipt = (int) IfirmaInput::scalar(Tools::getValue('id_ifirma_receipt'));
+        if ($idReceipt > 0) {
+            // the list row names its record; it has to belong to the posted order
+            $receipt = new IfirmaReceipt($idReceipt);
+            if (!Validate::isLoadedObject($receipt) || (int) $receipt->id_order !== $idOrder) {
+                $receipt = null;
+            }
+        } else {
+            $receipt = IfirmaReceipt::getByOrder($idOrder);
+        }
 
         if (!$receipt || !$receipt->isIssued()) {
             $this->textResponse(404, $this->module->l('Document not found.', 'adminifirmacontroller'));

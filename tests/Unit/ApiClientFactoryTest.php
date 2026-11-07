@@ -24,7 +24,8 @@ use PHPUnit\Framework\TestCase;
 class ApiClientFactoryTest extends TestCase
 {
     const USER = 'ifirma-api@example.test';
-    const CONFIGURED_BASE = 'http://configured.test/iapi/';
+    // a single-label host: IfirmaSettings accepts plain http for it, as for a Docker service
+    const CONFIGURED_BASE = 'http://configured/iapi/';
     const EXPLICIT_BASE = 'http://explicit.test/api/';
 
     /** @var ScriptedTransport */
@@ -33,6 +34,7 @@ class ApiClientFactoryTest extends TestCase
     protected function setUp(): void
     {
         IfirmaTestState::resetAll();
+        IfirmaApiClient::resetRequestState();
         $this->t = new ScriptedTransport();
         IfirmaApiClient::setDefaultTransport($this->t);
 
@@ -46,6 +48,8 @@ class ApiClientFactoryTest extends TestCase
 
     protected function tearDown(): void
     {
+        IfirmaSettings::$devMode = null;
+        IfirmaApiClient::resetRequestState();
         IfirmaApiClient::setDefaultTransport(null);
     }
 
@@ -114,6 +118,58 @@ class ApiClientFactoryTest extends TestCase
 
         Configuration::updateValue('IFIRMA_BASE_URL', '');
         $this->assertClientConfigured(IfirmaApiClient::fromConfiguration(), IfirmaApiClient::BASE_URL);
+    }
+
+    public function refusedStoredBaseUrls()
+    {
+        return array(
+            'plain http to a public host' => array('http://sandbox.example/iapi/'),
+            'a query string' => array('https://sandbox.example/iapi/?x=1'),
+            'a fragment' => array('https://sandbox.example/iapi/#top'),
+            'credentials' => array('https://user:pw@sandbox.example/iapi/'),
+            'not an address' => array('abc'),
+        );
+    }
+
+    /**
+     * @dataProvider refusedStoredBaseUrls
+     */
+    public function testAStoredBaseUrlThatFailsTheCheckIsNotUsedAndIsLoggedOncePerRequest($stored)
+    {
+        IfirmaSettings::$devMode = false;
+        Configuration::updateValue('IFIRMA_BASE_URL', $stored);
+
+        $this->assertClientConfigured(IfirmaApiClient::fromConfiguration(), IfirmaApiClient::BASE_URL);
+        $this->assertClientConfigured(IfirmaApiClient::fromConfiguration(null), IfirmaApiClient::BASE_URL);
+
+        $this->assertCount(1, PrestaShopLogger::$logs, 'one entry for the request, not one per client');
+        $this->assertSame(2, PrestaShopLogger::$logs[0]['severity']);
+        $this->assertStringContainsString($stored, PrestaShopLogger::$logs[0]['message']);
+
+        // a new request logs again
+        IfirmaApiClient::resetRequestState();
+        IfirmaApiClient::fromConfiguration();
+        $this->assertCount(2, PrestaShopLogger::$logs);
+    }
+
+    public function testAStoredBaseUrlThatPassesTheCheckIsUsedWithoutALogEntry()
+    {
+        $this->assertClientConfigured(IfirmaApiClient::fromConfiguration(), self::CONFIGURED_BASE);
+        $this->assertSame(array(), PrestaShopLogger::$logs);
+
+        // the mock of the test stack stays acceptable
+        Configuration::updateValue('IFIRMA_BASE_URL', 'http://ifirma-mock:8001/iapi/');
+        $this->assertClientConfigured(IfirmaApiClient::fromConfiguration(), 'http://ifirma-mock:8001/iapi/');
+        $this->assertSame(array(), PrestaShopLogger::$logs);
+    }
+
+    public function testAnExplicitBaseUrlIsNotCheckedAgainstTheStoredOne()
+    {
+        IfirmaSettings::$devMode = false;
+        Configuration::updateValue('IFIRMA_BASE_URL', 'http://sandbox.example/iapi/');
+
+        $this->assertClientConfigured(IfirmaApiClient::fromConfiguration(self::EXPLICIT_BASE), self::EXPLICIT_BASE);
+        $this->assertSame(array(), PrestaShopLogger::$logs);
     }
 
     public function testAKeyThatIsNotConfiguredStaysMissingAndNothingIsSent()

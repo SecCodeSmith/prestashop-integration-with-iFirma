@@ -48,7 +48,9 @@ function upgrade_module_1_5_0($module)
         }
         $tab->name = array();
         foreach (Language::getLanguages(false) as $lang) {
-            $tab->name[$lang['id_lang']] = 'iFirma documents';
+            // the same naming as Ifirma::installTab(): Polish for the Polish back office
+            $isPolish = isset($lang['iso_code']) && $lang['iso_code'] === 'pl';
+            $tab->name[$lang['id_lang']] = $isPolish ? 'Dokumenty iFirma' : 'iFirma documents';
         }
         if (!$tab->update()) {
             return false;

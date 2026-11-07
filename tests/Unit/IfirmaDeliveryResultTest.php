@@ -33,6 +33,19 @@ class IfirmaDeliveryResultTest extends TestCase
         $this->assertSame('delivered', $r->getMessage());
     }
 
+    public function testRefusedLocallyFollowsTheRefusalReason()
+    {
+        $plain = new IfirmaDeliveryResult(false, 'failed', 'shop_mail', 'x');
+        $this->assertFalse($plain->refusedLocally());
+        $this->assertSame('', $plain->getRefusal());
+
+        foreach (array('rate_limited', 'auth_blocked') as $reason) {
+            $r = new IfirmaDeliveryResult(false, 'failed', 'shop_mail', 'x', $reason);
+            $this->assertTrue($r->refusedLocally(), $reason);
+            $this->assertSame($reason, $r->getRefusal());
+        }
+    }
+
     /**
      * The four results deliver() produces: the old ok flag is true for sent and skipped, false for
      * failed and disabled.
@@ -109,9 +122,9 @@ class IfirmaDeliveryResultTest extends TestCase
 
     public function testItOffersNoMutator()
     {
-        // immutable: the constructor and the four readers are the whole public surface
+        // immutable: the constructor and the readers are the whole public surface
         $this->assertSame(
-            array('__construct', 'isSent', 'getStatus', 'getChannel', 'getMessage'),
+            array('__construct', 'isSent', 'getStatus', 'getChannel', 'getMessage', 'refusedLocally', 'getRefusal'),
             get_class_methods(IfirmaDeliveryResult::class)
         );
     }

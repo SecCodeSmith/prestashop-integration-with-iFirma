@@ -49,7 +49,7 @@ Note: controllers use `exit`/`die`/`header()`; those paths cannot be unit-tested
 | `Smarty` | `assign($k,$v)` / `assign(array)` merge into `->vars`; `fetch()` ''; `clearAssign()` |
 | `Link` | `getModuleLink($m,$c,$params)` -> `https://shop.test/module/M/C?query`; `getAdminLink($c,$withToken)` -> `https://shop.test/admin/index.php?controller=C[&token=admin-token-C]`; `getPageLink($c,...)` |
 | `HelperForm` | public props; `generateForm($fields)` stores `HelperForm::$lastForm` (the definition) and `HelperForm::$lastHelper` (read `->fields_value`), returns `<form/>` |
-| `AdminController` | `static $currentIndex` |
+| `AdminController` | `static $currentIndex`, `action`, `display`; no-op `init()` and `initProcess()` (the tests set `action`/`display` before the module override runs) |
 | `ModuleAdminController` | `module`, `bootstrap`, `context`, `ajax`, `errors`; `checkToken()` (request `token` == `Tools::getAdminTokenLite("AdminIfirma")`), `dispatchAjax($action)` (token gate then `ajaxProcess<Action>()`, false on bad token); ctor: `module=Module::getInstanceByName('ifirma')` |
 | `ModuleFrontController` | `module`, `context`, `ajax`, `errors`, `success`, `template`/`templates` (via `setTemplate`), `initContent()` no-op |
 | `Hook` | `exec()` returns '' |

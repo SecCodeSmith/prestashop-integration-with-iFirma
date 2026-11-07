@@ -193,7 +193,7 @@ class IfirmaSettings
             case self::TYPE_TEXT:
                 return self::text($row, $raw, null);
             case self::TYPE_HEX:
-                return self::text($row, $raw, 'ctype_xdigit');
+                return self::text($row, $raw, array('IfirmaSettings', 'isHexKey'));
             case self::TYPE_EMAIL:
                 return self::text($row, $raw, array('Validate', 'isEmail'));
             case self::TYPE_URL:
@@ -221,9 +221,22 @@ class IfirmaSettings
     }
 
     /**
+     * @param string $text
+     * @return bool a hexadecimal string of even length: an API key is a sequence of whole bytes
+     */
+    public static function isHexKey($text)
+    {
+        $text = (string) $text;
+
+        return ctype_xdigit($text) && strlen($text) % 2 === 0;
+    }
+
+    /**
      * Whether the module may send its signed requests to this address: an absolute URL without credentials,
      * over https, or over http when the shop is in developer mode or the host is local (localhost, loopback,
-     * private ranges, or a single-label name such as a Docker service).
+     * private ranges, or a single-label name such as a Docker service). A query string or a fragment is refused:
+     * the module appends its own path and query. An IPv6 literal counts as local only when it is ::1 or a
+     * private, link-local or reserved address; a public one never gets plain http.
      *
      * @param string $url
      * @return bool
@@ -240,6 +253,9 @@ class IfirmaSettings
 
         $parts = parse_url($url);
         if (!is_array($parts) || empty($parts['host']) || isset($parts['user']) || isset($parts['pass'])) {
+            return false;
+        }
+        if (isset($parts['query']) || isset($parts['fragment'])) {
             return false;
         }
 
@@ -270,13 +286,29 @@ class IfirmaSettings
     private static function isLocalHost($host)
     {
         $host = strtolower(trim($host, '[]'));
+        if (strpos($host, ':') !== false) {
+            return self::isLocalIpv6($host);
+        }
 
         return $host === 'localhost'
-            || $host === '::1'
             || strpos($host, '.') === false
             || (bool) preg_match('/^(127|10)\.\d{1,3}\.\d{1,3}\.\d{1,3}$/', $host)
             || (bool) preg_match('/^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/', $host)
             || (bool) preg_match('/^192\.168\.\d{1,3}\.\d{1,3}$/', $host);
+    }
+
+    /**
+     * @param string $host an IPv6 literal without brackets
+     * @return bool ::1, or an address in a private, link-local or reserved range
+     */
+    private static function isLocalIpv6($host)
+    {
+        if ($host === '::1') {
+            return true;
+        }
+
+        return filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false
+            && filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false;
     }
 
     /**

@@ -21,6 +21,8 @@ if (!defined('_PS_VERSION_')) {
  *  - channel  the channel the outcome concerns (shop_mail, ifirma_mail, shop_mail_fallback, none);
  *             empty when the pipeline had to build the failure itself
  *  - message  the failure or skip reason; empty when there is none
+ *  - refusedLocally() is true when a manual resend did not reach iFirma because the API client refused the
+ *             call itself (rate guard or credentials cool-down); the record was not changed then.
  *  - isSent() is the old `ok` flag, the one test the callers (the pipeline's deliver step, the admin
  *             resend action) make: true for sent and for skipped (nothing needed sending), false for
  *             failed and disabled. Use getStatus() to tell sent from skipped.
@@ -39,14 +41,19 @@ class IfirmaDeliveryResult
     /** @var string */
     private $message;
 
+    /** @var string '' | rate_limited | auth_blocked */
+    private $refusal;
+
     /**
      * @param bool   $ok
      * @param string $status
      * @param string $channel
      * @param string $message
+     * @param string $refusal '' | rate_limited | auth_blocked: why the API client refused the call locally
      */
-    public function __construct($ok, $status, $channel, $message)
+    public function __construct($ok, $status, $channel, $message, $refusal = '')
     {
+        $this->refusal = (string) $refusal;
         $this->ok = (bool) $ok;
         $this->status = (string) $status;
         $this->channel = (string) $channel;
@@ -83,5 +90,21 @@ class IfirmaDeliveryResult
     public function getMessage()
     {
         return $this->message;
+    }
+
+    /**
+     * @return bool true when the API client refused the call locally (nothing was sent and nothing recorded)
+     */
+    public function refusedLocally()
+    {
+        return $this->refusal !== '';
+    }
+
+    /**
+     * @return string '' | rate_limited | auth_blocked
+     */
+    public function getRefusal()
+    {
+        return $this->refusal;
     }
 }

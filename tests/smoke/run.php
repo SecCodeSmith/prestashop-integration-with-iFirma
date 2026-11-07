@@ -754,6 +754,9 @@ function scenarioC($module, $actions, $triggerState)
     $customer->logged = 1; // not a DB column; Customer::isLogged() reads it
     $address = new Address((int) $order->id_address_invoice);
     Context::getContext()->customer = $customer;
+    // earlier smoke runs leave this customer's requests behind; the module allows ten per 24 hours
+    // (invoice-data-change-request, "Submission cool-down"), so start the scenario from a clean slate
+    Db::getInstance()->delete('ifirma_data_request', 'id_customer = ' . (int) $customer->id);
 
     $request = null;
     try {

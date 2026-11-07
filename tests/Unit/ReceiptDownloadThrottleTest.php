@@ -103,6 +103,53 @@ class ReceiptDownloadThrottleTest extends TestCase
         $this->assertSame('2026-11-07 10:00:00', $receipt->last_download_at);
     }
 
+    public function testClaimTakesTheSlotWithOneConditionalUpdate()
+    {
+        $receipt = $this->receipt();
+
+        $this->assertTrue($this->throttle()->claim($receipt));
+
+        $sql = Db::getInstance()->executed[0];
+        $this->assertCount(1, Db::getInstance()->executed);
+        $this->assertStringContainsString("SET last_download_at = '2026-11-07 10:00:00'", $sql);
+        $this->assertStringContainsString('WHERE id_ifirma_receipt = 41', $sql);
+        $this->assertStringContainsString("last_download_at IS NULL OR last_download_at < '2026-11-07 09:59:30'", $sql);
+        $this->assertSame('2026-11-07 10:00:00', $receipt->last_download_at);
+    }
+
+    public function testClaimRefusedWhenAnotherRequestTookTheSlot()
+    {
+        Db::getInstance()->whenExecute('/UPDATE `\w*ifirma_receipt`/', 0);
+        $receipt = $this->receipt();
+
+        $this->assertFalse($this->throttle()->claim($receipt));
+        $this->assertEmpty($receipt->last_download_at);
+    }
+
+    public function testClaimRefusedWhenMoreThanOneRowWouldBeAffected()
+    {
+        Db::getInstance()->whenExecute('/UPDATE `\w*ifirma_receipt`/', 2);
+
+        $this->assertFalse($this->throttle()->claim($this->receipt()));
+    }
+
+    public function testClaimChecksTheCustomerCountBeforeTouchingTheDocument()
+    {
+        Db::getInstance()->whenGetValue('/SELECT COUNT\(\*\) FROM `\w*ifirma_receipt`/', 10);
+        $receipt = $this->receipt();
+
+        $this->assertFalse($this->throttle()->claim($receipt));
+        $this->assertSame(array(), Db::getInstance()->executed, 'the slot is not claimed when the customer is over the limit');
+        $this->assertEmpty($receipt->last_download_at);
+    }
+
+    public function testClaimAllowedAtNineRecentDownloads()
+    {
+        Db::getInstance()->whenGetValue('/SELECT COUNT\(\*\) FROM `\w*ifirma_receipt`/', 9);
+
+        $this->assertTrue($this->throttle()->claim($this->receipt()));
+    }
+
     public function testArrayTokenIsReadAsEmptyByTheReceiptController()
     {
         Tools::$values = array('token' => array('a', 'b'));

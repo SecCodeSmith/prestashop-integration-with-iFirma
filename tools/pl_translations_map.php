@@ -13,6 +13,7 @@
  * English source string => Polish translation, consumed by tools/generate_pl_translations.php.
  */
 return array(
+    'Please choose a country.' => 'Wybierz kraj.',
     'The amount must be a positive number with at most two decimals.' => 'Kwota musi być liczbą dodatnią z co najwyżej dwoma miejscami po przecinku.',
     'The amount cannot exceed the order total (%s).' => 'Kwota nie może przekraczać wartości zamówienia (%s).',
     'Please wait a moment before downloading the document again.' => 'Poczekaj chwilę przed ponownym pobraniem dokumentu.',
@@ -423,6 +424,10 @@ return array(
     'You do not have permission to see iFirma documents.' => 'Nie masz uprawnień do przeglądania dokumentów iFirma.',
     'You do not have permission to issue iFirma documents.' => 'Nie masz uprawnień do wystawiania dokumentów iFirma.',
     'You do not have permission to manage iFirma documents.' => 'Nie masz uprawnień do zarządzania dokumentami iFirma.',
+    'API key: rachunek' => 'Klucz API: rachunek',
+    'Optional "rachunek" key (receipts).' => 'Opcjonalny klucz „rachunek” (rachunki).',
+    'Unknown, reload the list' => 'Nieznany, odśwież listę',
+    'The stored API base URL "%s" is not accepted, so the module talks to the iFirma production address. Save a valid URL below.' => 'Zapisany adres bazowy API „%s” nie jest akceptowany, dlatego moduł łączy się z adresem produkcyjnym iFirma. Zapisz poprawny adres poniżej.',
     'A key is stored; leave the field empty to keep it.' => 'Klucz jest zapisany; zostaw pole puste, aby go zachować.',
     'Remove the stored key' => 'Usuń zapisany klucz',
     'The abonent API key must be a hexadecimal string.' => 'Klucz API abonent musi być ciągiem szesnastkowym.',
@@ -483,4 +488,6 @@ return array(
     'Refreshed from iFirma.' => 'Odświeżono z iFirma.',
     'not attempted (credentials rejected)' => 'nie podjęto próby (odrzucone dane logowania)',
     'not attempted (rate limited)' => 'nie podjęto próby (limit zapytań)',
+    'This action is not available on this page.' => 'Ta akcja nie jest dostępna na tej stronie.',
+    'The document is missing in iFirma.' => 'Dokumentu nie ma już w iFirma.',
 );

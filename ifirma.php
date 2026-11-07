@@ -167,7 +167,9 @@ class Ifirma extends Module
 
         $tab->name = array();
         foreach (Language::getLanguages(false) as $lang) {
-            $tab->name[$lang['id_lang']] = 'iFirma documents';
+            // a Polish back office gets the Polish name; a tab has no translation domain of its own
+            $isPolish = isset($lang['iso_code']) && $lang['iso_code'] === 'pl';
+            $tab->name[$lang['id_lang']] = $isPolish ? 'Dokumenty iFirma' : 'iFirma documents';
         }
         if ($tab->id_parent === -1) {
             PrestaShopLogger::addLog('iFirma: Orders menu not found, tab installed hidden', 2);
@@ -214,7 +216,25 @@ class Ifirma extends Module
             $output .= $this->resetContractorMap();
         }
 
-        return $this->authBlockBanner() . $output . $this->renderConfigForm() . $this->renderContractorsPanel($report, $errors);
+        return $this->authBlockBanner() . $this->storedBaseUrlWarning() . $output . $this->renderConfigForm() . $this->renderContractorsPanel($report, $errors);
+    }
+
+    /**
+     * The warning that says the stored API base URL is refused at run time (see IfirmaApiClient::fromConfiguration()).
+     *
+     * @return string HTML, '' when no URL is stored or the stored one is acceptable
+     */
+    private function storedBaseUrlWarning()
+    {
+        $stored = trim((string) Configuration::get('IFIRMA_BASE_URL'));
+        if ($stored === '' || IfirmaSettings::isAcceptableBaseUrl($stored)) {
+            return '';
+        }
+
+        return $this->displayWarning(sprintf(
+            $this->l('The stored API base URL "%s" is not accepted, so the module talks to the iFirma production address. Save a valid URL below.'),
+            $this->esc($stored)
+        ));
     }
 
     /**
@@ -702,6 +722,12 @@ class Ifirma extends Module
                 $this->l('API key: abonent'),
                 $this->l('Optional "abonent" key (subscriber data).'),
                 false
+            ),
+            $this->secretInputs(
+                'IFIRMA_KEY_RACHUNEK',
+                $this->l('API key: rachunek'),
+                $this->l('Optional "rachunek" key (receipts).'),
+                false
             )
         );
         $inputs = array_merge($inputs, array(
@@ -966,6 +992,7 @@ class Ifirma extends Module
             'IFIRMA_USER' => Configuration::get('IFIRMA_USER'),
             'IFIRMA_KEY_FAKTURA' => '',
             'IFIRMA_KEY_ABONENT' => '',
+            'IFIRMA_KEY_RACHUNEK' => '',
             'IFIRMA_DOC_TYPE' => IfirmaDocumentSettings::normalizeDocumentType(Configuration::get('IFIRMA_DOC_TYPE')),
             'IFIRMA_SIGNATURE_TYPE' => IfirmaDocumentSettings::normalizeSignatureType(Configuration::get('IFIRMA_SIGNATURE_TYPE')),
             'IFIRMA_PAYMENT_METHOD' => Configuration::get('IFIRMA_PAYMENT_METHOD'),
@@ -1051,12 +1078,29 @@ class Ifirma extends Module
             'ifirma_customer_criteria' => $service->defaultCriteria($idCustomer),
             'ifirma_customer_can_register' => $canRegister,
             'ifirma_customer_register_reason' => $registerReason,
+            // Register, Link and Unlink change customer data: the controller asks for the customers edit role
+            'ifirma_customer_can_edit' => $this->canEditCustomers(),
             'ifirma_customer_ajax_url' => $this->context->link->getAdminLink('AdminIfirma', false) . '&token=' . $token,
             // the back office does not load the module stylesheet by itself; the template links it
             'ifirma_customer_css_url' => $this->_path . 'views/css/ifirma.css?v=' . rawurlencode((string) $this->version),
         ));
 
         return $this->display(__FILE__, 'views/templates/hook/admin_customer_panel.tpl');
+    }
+
+    /**
+     * @return bool the employee holds the customers edit role (the SuperAdmin profile always does)
+     */
+    private function canEditCustomers()
+    {
+        $employee = $this->context->employee;
+        $idProfile = is_object($employee) && isset($employee->id_profile) ? (int) $employee->id_profile : 0;
+        if ($idProfile <= 0) {
+            return false;
+        }
+        $superAdmin = defined('_PS_ADMIN_PROFILE_') ? (int) _PS_ADMIN_PROFILE_ : 1;
+
+        return $idProfile === $superAdmin || (bool) Access::isGranted('ROLE_MOD_TAB_ADMINCUSTOMERS_UPDATE', $idProfile);
     }
 
     /**
@@ -1418,6 +1462,7 @@ class Ifirma extends Module
                 'refreshed' => $this->l('Refreshed'),
                 'skipped' => $this->l('Skipped'),
                 'not_attempted' => $this->l('Not attempted'),
+                'unknown' => $this->l('Unknown, reload the list'),
             ),
             'kinds' => $this->issueKindLabels(),
         );

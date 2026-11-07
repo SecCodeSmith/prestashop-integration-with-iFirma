@@ -13,6 +13,9 @@ use PHPUnit\Framework\TestCase;
 
 class DataRequestServiceTest extends TestCase
 {
+    /** @var int one fixed instant per test: every clock of serviceAhead() counts from it, so no second boundary can move a result */
+    private $baseTime;
+
     use IfirmaTestMailTrait;
 
     /** @var IfirmaDataRequestService */
@@ -27,6 +30,7 @@ class DataRequestServiceTest extends TestCase
     protected function setUp(): void
     {
         IfirmaTestState::resetAll();
+        $this->baseTime = time();
         Configuration::updateValue('IFIRMA_ALLOW_DATA_REQUEST', 1);
 
         $this->customer = new Customer();
@@ -221,7 +225,7 @@ class DataRequestServiceTest extends TestCase
 
     public function testAPostcodeWithForbiddenCharactersIsRejected()
     {
-        $errors = $this->service->validate($this->privateInput(array('postcode' => '00_950', 'id_country' => '')));
+        $errors = $this->service->validate($this->privateInput(array('postcode' => '00_950')));
 
         $this->assertArrayHasKey('postcode', $errors);
         $this->assertCount(1, $errors);
@@ -1888,16 +1892,19 @@ class DataRequestServiceTest extends TestCase
         $rows = function () {
             return IfirmaTestState::objects('ifirma_data_request');
         };
-        Db::getInstance()->whenGetValue('/SELECT GREATEST\(date_add, date_upd\)/', function ($sql) use ($rows) {
-            $newest = '';
+        Db::getInstance()->whenGetRow('/SELECT status, date_add, date_resolved FROM/', function ($sql) use ($rows) {
+            $newest = array();
             foreach ($rows() as $row) {
-                $stamp = max($row['date_add'], $row['date_upd']);
-                if ($stamp > $newest) {
-                    $newest = $stamp;
+                if (!$newest || $row['date_add'] >= $newest['date_add']) {
+                    $newest = $row;
                 }
             }
 
-            return $newest;
+            return $newest ? array(
+                'status' => $newest['status'],
+                'date_add' => $newest['date_add'],
+                'date_resolved' => isset($newest['date_resolved']) ? $newest['date_resolved'] : null,
+            ) : array();
         });
         Db::getInstance()->whenGetValue('/SELECT COUNT\(\*\) FROM `\w*ifirma_data_request`/', function ($sql) use ($rows) {
             preg_match('/date_add >= "([^"]+)"/', $sql, $since);
@@ -1916,7 +1923,7 @@ class DataRequestServiceTest extends TestCase
     private function serviceAhead($seconds)
     {
         return new IfirmaDataRequestService(new Module(), function () use ($seconds) {
-            return date('Y-m-d H:i:s', time() + $seconds);
+            return date('Y-m-d H:i:s', $this->baseTime + $seconds);
         });
     }
 
@@ -1940,12 +1947,69 @@ class DataRequestServiceTest extends TestCase
     public function testCooldownOverAfterTenMinutes()
     {
         $this->scriptRequestHistory();
-        $request = $this->submitPending();
+        $request = $this->serviceAhead(0)->submit($this->order, $this->customer, $this->companyInput());
         $this->service->cancel($request, $this->customer);
         $later = $this->serviceAhead(601);
 
         $this->assertSame('ok', $later->canRequest($this->order, $this->customer)['reason']);
         $this->assertInstanceOf('IfirmaDataRequest', $later->submit($this->order, $this->customer, $this->companyInput()));
+    }
+
+    public function testCooldownRunsFromTheCancellationNotFromTheCreation()
+    {
+        $this->scriptRequestHistory();
+        $request = $this->serviceAhead(0)->submit($this->order, $this->customer, $this->companyInput());
+        // cancelled 15 minutes after it was created
+        $this->serviceAhead(900)->cancel($request, $this->customer);
+
+        // 20 minutes after creation, 5 after the cancellation: still cooling down
+        $this->assertSame('cooldown', $this->serviceAhead(1200)->canRequest($this->order, $this->customer)['reason']);
+        // 26 minutes after creation, 11 after the cancellation
+        $this->assertSame('ok', $this->serviceAhead(1560)->canRequest($this->order, $this->customer)['reason']);
+    }
+
+    public function testApprovalDoesNotRestartTheCooldown()
+    {
+        $this->scriptRequestHistory();
+        $request = $this->serviceAhead(0)->submit($this->order, $this->customer, $this->companyInput());
+        $this->serviceAhead(500)->approve($request, 4, null, 'ok');
+
+        $this->assertSame('cooldown', $this->serviceAhead(599)->canRequest($this->order, $this->customer)['reason']);
+        $this->assertSame('ok', $this->serviceAhead(601)->canRequest($this->order, $this->customer)['reason']);
+    }
+
+    public function testRejectionDoesNotRestartTheCooldown()
+    {
+        $this->scriptRequestHistory();
+        $request = $this->serviceAhead(0)->submit($this->order, $this->customer, $this->companyInput());
+        $this->serviceAhead(500)->reject($request, 4, 'wrong NIP');
+
+        $this->assertSame('ok', $this->serviceAhead(601)->canRequest($this->order, $this->customer)['reason']);
+    }
+
+    public function testNoRequestsMeansNoCooldown()
+    {
+        $this->assertSame('ok', $this->service->canRequest($this->order, $this->customer)['reason']);
+    }
+
+    public function testMissingCountryIsAFieldErrorWithItsOwnMessage()
+    {
+        foreach (array('', null) as $empty) {
+            $errors = $this->refusedFields($this->privateInput(array('id_country' => $empty)));
+            $this->assertSame(array('id_country'), array_keys($errors));
+            $this->assertSame('Please choose a country.', $errors['id_country']);
+        }
+        $input = $this->privateInput();
+        unset($input['id_country']);
+        $this->assertSame('Please choose a country.', $this->refusedFields($input)['id_country']);
+    }
+
+    public function testSubmitWithoutCountryIsRefused()
+    {
+        $e = $this->assertRefused('invalid', function () {
+            $this->service->submit($this->order, $this->customer, $this->privateInput(array('id_country' => '')));
+        });
+        $this->assertArrayHasKey('id_country', $e->errors);
     }
 
     private function storeCancelledRequests($count)
@@ -1963,7 +2027,7 @@ class DataRequestServiceTest extends TestCase
     {
         $this->scriptRequestHistory();
         // the requests belong to other orders: the cool-down of this order is not what refuses
-        Db::getInstance()->whenGetValue('/SELECT GREATEST\(date_add, date_upd\)/', '2000-01-01 00:00:00');
+        Db::getInstance()->whenGetRow('/SELECT status, date_add, date_resolved FROM/', array('status' => 'cancelled', 'date_add' => '2000-01-01 00:00:00', 'date_resolved' => '2000-01-01 00:00:00'));
         $this->storeCancelledRequests(10);
         Mail::$sent = array();
 
@@ -1979,7 +2043,7 @@ class DataRequestServiceTest extends TestCase
     public function testNineRequestsInADayStillAllowed()
     {
         $this->scriptRequestHistory();
-        Db::getInstance()->whenGetValue('/SELECT GREATEST\(date_add, date_upd\)/', '2000-01-01 00:00:00');
+        Db::getInstance()->whenGetRow('/SELECT status, date_add, date_resolved FROM/', array('status' => 'cancelled', 'date_add' => '2000-01-01 00:00:00', 'date_resolved' => '2000-01-01 00:00:00'));
         $this->storeCancelledRequests(9);
 
         $this->assertSame('ok', $this->service->canRequest($this->order, $this->customer)['reason']);

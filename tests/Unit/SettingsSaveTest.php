@@ -349,6 +349,10 @@ class SettingsSaveTest extends TestCase
     {
         // the base URL must be an address (IfirmaSettings::TYPE_URL), so its "zero" is a URL with a path of 0
         $zero = $field === 'IFIRMA_BASE_URL' ? 'https://example.test/0/' : '0';
+        if (strpos($field, 'IFIRMA_KEY_') === 0) {
+            // a key is whole bytes: the shortest "zero" key is two digits
+            $zero = '00';
+        }
         $page = $this->save(array($field => $zero));
 
         $this->assertSaved($page);
@@ -596,6 +600,45 @@ class SettingsSaveTest extends TestCase
         $this->assertArrayNotHasKey('required', $faktura, 'a stored key needs no new one');
         $this->assertStringContainsString('A key is stored; leave the field empty to keep it.', $faktura['desc']);
         $this->assertSame('password', $this->formInput('IFIRMA_KEY_ABONENT')['type']);
+        $this->assertSame('', $values['IFIRMA_KEY_RACHUNEK']);
+        $this->assertSame('password', $this->formInput('IFIRMA_KEY_RACHUNEK')['type']);
+    }
+
+    public function testTheReceiptKeyHasItsOwnOptionalPasswordInputLikeTheOtherKeys()
+    {
+        Configuration::updateValue('IFIRMA_KEY_RACHUNEK', 'a1b2c3d4e5f60718293a4b5c6d7e8f90');
+        Tools::$values = array();
+
+        $this->module->getContent();
+
+        $rachunek = $this->formInput('IFIRMA_KEY_RACHUNEK');
+        $this->assertSame('API key: rachunek', $rachunek['label']);
+        $this->assertSame('password', $rachunek['type']);
+        $this->assertArrayNotHasKey('required', $rachunek, 'the receipt key is optional');
+        $this->assertStringContainsString('A key is stored; leave the field empty to keep it.', $rachunek['desc']);
+        $this->assertStringNotContainsString('a1b2c3d4e5f60718293a4b5c6d7e8f90', json_encode(HelperForm::$lastForm));
+
+        Configuration::deleteByName('IFIRMA_KEY_RACHUNEK');
+        $this->module->getContent();
+        $rachunek = $this->formInput('IFIRMA_KEY_RACHUNEK');
+        $this->assertArrayNotHasKey('required', $rachunek);
+        $this->assertStringNotContainsString('A key is stored', $rachunek['desc']);
+    }
+
+    public function testTheReceiptKeyIsKeptOnAnEmptyFieldClearedByItsBoxAndReplacedByATypedKey()
+    {
+        Configuration::updateValue('IFIRMA_KEY_RACHUNEK', 'a1b2c3d4e5f60718293a4b5c6d7e8f90');
+
+        $this->assertSaved($this->save(array('IFIRMA_KEY_RACHUNEK' => '')));
+        $this->assertSame('a1b2c3d4e5f60718293a4b5c6d7e8f90', $this->stored('IFIRMA_KEY_RACHUNEK'));
+
+        $this->assertSaved($this->save(array('IFIRMA_KEY_RACHUNEK' => 'aabbccdd')));
+        $this->assertSame('aabbccdd', $this->stored('IFIRMA_KEY_RACHUNEK'));
+
+        $this->assertSaved($this->save(array('IFIRMA_KEY_RACHUNEK' => '', 'clear_IFIRMA_KEY_RACHUNEK_on' => '1')));
+        $this->assertSame('', $this->stored('IFIRMA_KEY_RACHUNEK'));
+
+        $this->assertRejected($this->save(array('IFIRMA_KEY_RACHUNEK' => 'abc')), 'The receipt API key must be a hexadecimal string.');
     }
 
     public function testWithoutAStoredKeyTheFakturaInputIsRequiredAndSaysNothingAboutAStoredKey()
@@ -616,7 +659,7 @@ class SettingsSaveTest extends TestCase
         Tools::$values = array();
         $this->module->getContent();
 
-        foreach (array('IFIRMA_KEY_FAKTURA', 'IFIRMA_KEY_ABONENT') as $key) {
+        foreach (array('IFIRMA_KEY_FAKTURA', 'IFIRMA_KEY_ABONENT', 'IFIRMA_KEY_RACHUNEK') as $key) {
             $box = $this->formInput('clear_' . $key);
             $this->assertSame('checkbox', $box['type']);
             // HelperForm names the posted field <name>_<value id>
@@ -635,7 +678,7 @@ class SettingsSaveTest extends TestCase
         $this->assertSaved($page);
         $this->assertSame(str_repeat('1', 64), $this->stored('IFIRMA_KEY_FAKTURA'));
         $this->assertSame('fedcba9876543210fedcba9876543210', $this->stored('IFIRMA_KEY_ABONENT'));
-        $this->assertSame('a1b2c3d4e5f60718293a4b5c6d7e8f90', $this->stored('IFIRMA_KEY_RACHUNEK'), 'the form has no receipt key input: it must not wipe it');
+        $this->assertSame('a1b2c3d4e5f60718293a4b5c6d7e8f90', $this->stored('IFIRMA_KEY_RACHUNEK'), 'an empty receipt key field keeps the stored key');
     }
 
     public function testANewKeyReplacesTheStoredOne()

@@ -286,6 +286,75 @@ class DeliveryServiceTest extends TestCase
         $this->assertStringContainsString('rate limit guard', $row['delivery_error']);
     }
 
+    public function testTheAutomaticDeliveryRecordsARateGuardRefusalAndIsNotFlaggedRefusedLocally()
+    {
+        $now = mktime(10, 15, 20, 11, 1, 2026);
+        $this->client->setClock(function () use ($now) {
+            return $now;
+        });
+        Configuration::updateValue('IFIRMA_RATE_MAX_PER_MIN', '3');
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi', $now) . ':3');
+
+        $res = $this->svc->deliver($this->receipt());
+
+        $this->assertFalse($res->refusedLocally());
+        $this->assertSame('', $res->getRefusal());
+        $this->assertSame('failed', $this->row()['delivery_status']);
+    }
+
+    public function testAResendTheRateGuardRefusesIsReportedAndLeavesTheRecordAlone()
+    {
+        $now = mktime(10, 15, 20, 11, 1, 2026);
+        $this->client->setClock(function () use ($now) {
+            return $now;
+        });
+        Configuration::updateValue('IFIRMA_RATE_MAX_PER_MIN', '3');
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi', $now) . ':3');
+        $r = $this->seeded(array('delivery_status' => 'sent', 'delivery_error' => '', 'delivered_at' => '2026-10-30 08:00:00'));
+
+        $res = $this->svc->resend($r);
+
+        $this->assertFalse($res->isSent());
+        $this->assertSame('failed', $res->getStatus());
+        $this->assertTrue($res->refusedLocally());
+        $this->assertSame('rate_limited', $res->getRefusal());
+        $this->assertStringContainsString('rate limit guard', $res->getMessage());
+        $this->assertSame(array(), $this->receiptWriteOps(), 'nothing is saved');
+        $this->assertSame('sent', $this->row()['delivery_status']);
+        $this->assertSame('', (string) $this->row()['delivery_error']);
+        $this->assertSame(0, $this->pdfCalls());
+    }
+
+    public function testAResendTheCredentialCoolDownRefusesIsReportedAndLeavesTheRecordAlone()
+    {
+        $now = time();
+        $this->client->setClock(function () use ($now) {
+            return $now;
+        });
+        Configuration::updateValue('IFIRMA_AUTH_FAILURE', ($now - 120) . '|Bad hash');
+        $r = $this->seeded(array('delivery_status' => 'sent'));
+
+        $res = $this->svc->resend($r);
+
+        $this->assertTrue($res->refusedLocally());
+        $this->assertSame('auth_blocked', $res->getRefusal());
+        $this->assertSame(array(), $this->receiptWriteOps());
+        $this->assertSame('sent', $this->row()['delivery_status']);
+    }
+
+    public function testAResendThatReachedIFirmaAndFailedIsStillRecorded()
+    {
+        $this->t->queue('GET', '#\.pdf#', $this->kod(403, 'Brak uprawnien'));
+        $r = $this->seeded(array('delivery_status' => 'sent'));
+
+        $res = $this->svc->resend($r);
+
+        $this->assertFalse($res->isSent());
+        $this->assertFalse($res->refusedLocally());
+        $this->assertNotSame(array(), $this->receiptWriteOps());
+        $this->assertSame('failed', $this->row()['delivery_status']);
+    }
+
     public function testResendRetriesTheSameWay()
     {
         $this->t->queue('GET', '#\.pdf#', $this->notFound());

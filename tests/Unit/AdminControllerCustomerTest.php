@@ -29,6 +29,14 @@ class IfirmaTestJsonResponse extends Exception
 /** AdminIfirmaController whose JSON output is thrown instead of echoed and die()d. */
 class IfirmaTestCapturingAdminController extends AdminIfirmaController
 {
+    /** @var int[] status codes the controller asked for */
+    public $statuses = array();
+
+    protected function statusHeader($code)
+    {
+        $this->statuses[] = $code;
+    }
+
     protected function output(array $payload)
     {
         throw new IfirmaTestJsonResponse($payload);
