@@ -20,6 +20,17 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/auto_allow_safe.py\"",
+            "timeout": 10,
+            "statusMessage": "auto-allow-safe"
+          }
+        ]
       }
     ]
   }
