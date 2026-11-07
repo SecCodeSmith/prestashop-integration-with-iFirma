@@ -138,6 +138,111 @@ function mockReset()
     }
 }
 
+// ---------------------------------------------------------------- mail sink access
+
+/** @return array the sink's message listing, newest first (empty when the sink does not answer) */
+function mailbox()
+{
+    $r = mockRequest('GET', '/__mock/mail');
+
+    return ($r['code'] === 200 && is_array($r['data']) && isset($r['data']['mail']) && is_array($r['data']['mail'])) ? $r['data']['mail'] : array();
+}
+
+/** @return array|null the full record of one captured message */
+function mailGet($id)
+{
+    $r = mockRequest('GET', '/__mock/mail/' . (int) $id);
+
+    return ($r['code'] === 200 && is_array($r['data'])) ? $r['data'] : null;
+}
+
+function mailClear()
+{
+    return mockRequest('DELETE', '/__mock/mail');
+}
+
+function mailReject($on)
+{
+    return mockRequest('POST', '/__mock/mail/reject', array('enabled' => (bool) $on));
+}
+
+/** Stops the run (exit 2) when the mock has no mailbox: an old mock image, or the wrong host. */
+function mailCheck()
+{
+    global $mockHost;
+
+    $r = mockRequest('GET', '/__mock/mail');
+    if ($r['code'] !== 200) {
+        smokeOut('FAIL', 'mail sink', 'HTTP ' . $r['code'] . ' at ' . $mockHost . '/__mock/mail (rebuild the ifirma-mock image: docker compose up -d --build --no-deps ifirma-mock)');
+        exit(2);
+    }
+}
+
+/**
+ * The records among $list (full records, fetched one by one) that satisfy $filter.
+ *
+ * @param callable $filter function (array $fullRecord): bool
+ * @return array full records, newest first
+ */
+function mailFind(callable $filter)
+{
+    $found = array();
+    foreach (mailbox() as $row) {
+        $full = mailGet($row['id']);
+        if ($full !== null && $filter($full)) {
+            $found[] = $full;
+        }
+    }
+
+    return $found;
+}
+
+/**
+ * One [ OK ] / [FAIL] per fact. Keys of $expected (all optional): from, to (array), bcc (array),
+ * rcpt_tos (array, the SMTP envelope), subject_contains, text_contains (array), html_contains (array),
+ * attachment_count (int), attachments (list of array('filename' => ..., 'content_type' => ...)).
+ * Addresses are compared lower-cased, the sink lower-cases them too.
+ */
+function assertMail(array $mail, array $expected, $label)
+{
+    $lower = function ($list) {
+        return array_map('strtolower', array_values((array) $list));
+    };
+    if (isset($expected['from'])) {
+        assertSame(strtolower($expected['from']), strtolower((string) (isset($mail['from']) ? $mail['from'] : '')), $label . ': from');
+    }
+    foreach (array('to', 'bcc') as $field) {
+        if (isset($expected[$field])) {
+            assertSame($lower($expected[$field]), $lower(isset($mail[$field]) ? $mail[$field] : array()), $label . ': ' . $field);
+        }
+    }
+    if (isset($expected['rcpt_tos'])) {
+        $rcpt = isset($mail['envelope']['rcpt_tos']) ? $mail['envelope']['rcpt_tos'] : array();
+        assertSame($lower($expected['rcpt_tos']), $lower($rcpt), $label . ': envelope recipients');
+    }
+    if (isset($expected['subject_contains'])) {
+        $subject = (string) (isset($mail['subject']) ? $mail['subject'] : '');
+        assertTrue(strpos($subject, $expected['subject_contains']) !== false, $label . ': subject contains "' . $expected['subject_contains'] . '"', 'subject: ' . $subject);
+    }
+    foreach (array('text', 'html') as $part) {
+        $key = $part . '_contains';
+        foreach (isset($expected[$key]) ? $expected[$key] : array() as $needle) {
+            $body = (string) (isset($mail[$part]) ? $mail[$part] : '');
+            assertTrue($body !== '' && strpos($body, $needle) !== false, $label . ': ' . $part . ' part contains "' . $needle . '"', $body === '' ? 'the part is empty' : substr($body, 0, 160));
+        }
+    }
+    $attachments = isset($mail['attachments']) && is_array($mail['attachments']) ? $mail['attachments'] : array();
+    if (isset($expected['attachment_count'])) {
+        assertSame((int) $expected['attachment_count'], count($attachments), $label . ': attachment count');
+    }
+    foreach (isset($expected['attachments']) ? $expected['attachments'] : array() as $i => $att) {
+        $got = isset($attachments[$i]) ? $attachments[$i] : array();
+        foreach ($att as $k => $v) {
+            assertSame($v, isset($got[$k]) ? $got[$k] : null, $label . ': attachment ' . $i . ' ' . $k);
+        }
+    }
+}
+
 /**
  * @return mixed first value stored under $key anywhere in $data, or null
  */
@@ -333,7 +438,7 @@ function createOrder()
 
 /**
  * Moves the order to a new state through OrderHistory, which fires actionOrderStatusPostUpdate.
- * addWithemail(true) is the back office call; PS_MAIL_METHOD 3 keeps it from sending anything.
+ * addWithemail(true) is the back office call; the status mails it sends land in the mail sink.
  */
 function changeState(Order $order, $idState)
 {
@@ -353,6 +458,7 @@ function freshScenario($title)
 {
     section($title);
     mockReset();
+    mailClear();
     // The whole run sends more than the module's 80 requests per minute guard allows; each scenario
     // starts with a fresh window so the guard does not fail scenarios that are not testing it.
     Configuration::updateValue('IFIRMA_RATE_WINDOW', '');
@@ -448,12 +554,22 @@ Configuration::updateValue('IFIRMA_SEND_CHANNEL', 'shop_mail');
 Configuration::updateValue('IFIRMA_DUPLICATE_CHECK', 1);
 Configuration::updateValue('IFIRMA_ALLOW_DATA_REQUEST', 1);
 Configuration::updateValue('IFIRMA_SYNC_INTERVAL_MIN', 0);
-Configuration::updateValue('PS_MAIL_METHOD', 3); // never send: Mail::Send() succeeds without SMTP
+// Mail goes over SMTP to the mock's mail sink (see tests/smoke/README.md); the settings stay after the run.
+$smtpHost = getenv('IFIRMA_SMTP_HOST') ? getenv('IFIRMA_SMTP_HOST') : 'ifirma-mock';
+$smtpPort = getenv('IFIRMA_SMTP_PORT') ? (int) getenv('IFIRMA_SMTP_PORT') : 1025;
+Configuration::updateValue('PS_MAIL_METHOD', 2);
+Configuration::updateValue('PS_MAIL_SERVER', $smtpHost);
+Configuration::updateValue('PS_MAIL_SMTP_PORT', $smtpPort);
+Configuration::updateValue('PS_MAIL_SMTP_ENCRYPTION', 'off');
+Configuration::updateValue('PS_MAIL_USER', '');
+Configuration::updateValue('PS_MAIL_PASSWD', '');
+Configuration::updateValue('PS_MAIL_TYPE', 3); // HTML + the template's text part
 Configuration::updateValue('PS_ORDER_OUT_OF_STOCK', 1);
 if ((string) Configuration::get('IFIRMA_CRON_TOKEN') === '' && class_exists('IfirmaSchema')) {
     Configuration::updateValue('IFIRMA_CRON_TOKEN', IfirmaSchema::generateCronToken());
 }
 assertTrue($module->isConfigured(), 'module configured for the mock');
+mailCheck();
 
 $GLOBALS['fixture'] = discoverFixtures();
 smokeOut('INFO', 'fixtures: ' . json_encode($GLOBALS['fixture']));
@@ -658,6 +774,22 @@ function scenarioC($module, $actions, $triggerState)
     }
     assertSame('pending', $request->status, 'data request is pending');
 
+    $reference = IfirmaPayloadBuilder::buildOrderReference($order);
+    $merchantTo = trim((string) Configuration::get('IFIRMA_NOTIFY_EMAIL'));
+    if ($merchantTo === '') {
+        $merchantTo = trim((string) Configuration::get('PS_SHOP_EMAIL'));
+    }
+    $notice = mailFind(function ($m) use ($order) {
+        return strpos((string) $m['subject'], (string) $order->reference) !== false && strpos((string) $m['subject'], 'Invoice data change request') !== false;
+    });
+    if (assertSame(1, count($notice), 'merchant notification captured at submission')) {
+        assertMail($notice[0], array(
+            'to' => array($merchantTo),
+            'subject_contains' => (string) $order->reference,
+            'text_contains' => array('Smoke Sp. z o.o.'),
+        ), 'merchant notification');
+    }
+
     changeState($order, $triggerState);
     $receipt = receiptOf($order);
     assertTrue(!$receipt || !$receipt->isIssued(), 'no document issued while the request is pending');
@@ -671,11 +803,26 @@ function scenarioC($module, $actions, $triggerState)
     assertTrue($receipt && $receipt->isIssued(), 'receipt isIssued');
     assertSame('module', $receipt ? $receipt->source : null, 'receipt source is module');
     $payload = $receipt ? (string) $receipt->request_payload : '';
-    $reference = IfirmaPayloadBuilder::buildOrderReference($order);
     assertTrue(strpos($payload, 'Smoke Sp. z o.o.') !== false, 'request_payload carries the override company name');
     assertTrue(strpos($payload, '5250001234') !== false, 'request_payload carries the override NIP');
     assertTrue(strpos($payload, $reference) !== false, 'request_payload carries the order reference');
-    assertSame('sent', $receipt ? $receipt->delivery_status : null, 'delivery recorded as sent (PS_MAIL_METHOD 3)');
+    assertSame('sent', $receipt ? $receipt->delivery_status : null, 'delivery recorded as sent');
+
+    $customerEmail = strtolower((string) $customer->email);
+    $approved = mailFind(function ($m) use ($customerEmail) {
+        return strpos((string) $m['subject'], 'Your invoice data change was approved') !== false && in_array($customerEmail, array_map('strtolower', (array) $m['to']), true);
+    });
+    if (assertSame(1, count($approved), 'approval mail to the customer captured')) {
+        assertMail($approved[0], array(
+            'to' => array($customerEmail),
+            'subject_contains' => 'Your invoice data change was approved',
+            'text_contains' => array((string) $order->reference),
+        ), 'approval mail');
+    }
+    $delivery = mailFind(function ($m) use ($receipt) {
+        return $receipt && (string) $receipt->ifirma_number !== '' && strpos((string) $m['subject'], (string) $receipt->ifirma_number) !== false;
+    });
+    assertSame(1, count($delivery), 'delivery mail of the issued document captured (order of the two mails not asserted)');
 
     if ($receipt && $receipt->isIssued()) {
         $detail = ifirmaClient()->getDetail('fakturakraj', $receipt->ifirma_id);
@@ -689,6 +836,41 @@ function scenarioC($module, $actions, $triggerState)
             $remotePayment,
             'payment method follows the order'
         );
+    }
+
+    // A second request, on a new order (the mock is not reset), is rejected with a reason.
+    $order2 = createOrder();
+    if (!assertTrue($order2 instanceof Order && Validate::isLoadedObject($order2), 'second order created for the rejection')) {
+        return;
+    }
+    $address2 = new Address((int) $order2->id_address_invoice);
+    $request2 = null;
+    try {
+        $request2 = IfirmaDataRequestService::build($module)->submit($order2, $customer, array(
+            'want_invoice_for_company' => 1,
+            'company' => 'Smoke Sp. z o.o.',
+            'vat_number' => '525-000-12-34',
+            'address1' => $address2->address1,
+            'postcode' => $address2->postcode,
+            'city' => $address2->city,
+            'id_country' => (int) $address2->id_country,
+        ));
+    } catch (Exception $e) {
+        assertTrue(false, 'second data request submitted', $e->getMessage() . ' ' . json_encode(isset($e->errors) ? $e->errors : array()));
+    }
+    if (!$request2) {
+        return;
+    }
+    mailClear();
+    $r = $actions->rejectRequest((int) $request2->id, 1, 'Smoke rejection reason');
+    assertTrue($r['success'], 'rejectRequest succeeds', $r['message']);
+    $rejected = mailbox();
+    if (assertSame(1, count($rejected), 'one mail captured by the rejection')) {
+        assertMail(mailGet($rejected[0]['id']), array(
+            'to' => array($customerEmail),
+            'subject_contains' => 'Your invoice data change was rejected',
+            'text_contains' => array((string) $order2->reference, 'Smoke rejection reason'),
+        ), 'rejection mail');
     }
 }
 
@@ -1131,6 +1313,120 @@ function scenarioK($module)
     }
 }
 
+function scenarioN($module, $actions)
+{
+    $order = freshScenario('N. E-mail delivery through the SMTP sink');
+    if (!$order) {
+        return;
+    }
+    $customer = new Customer((int) $order->id_customer);
+    $customerEmail = strtolower((string) $customer->email);
+    $originalCopyMode = Configuration::get('IFIRMA_SEND_COPY_MODE');
+    $originalShopEmail = Configuration::get('PS_SHOP_EMAIL');
+    $shopEmail = strtolower((string) $originalShopEmail);
+    if ($shopEmail === $customerEmail) {
+        // the copy steps need a shop address that differs from the customer's
+        $shopEmail = 'smoke-shop@example.com';
+        Configuration::updateValue('PS_SHOP_EMAIL', $shopEmail);
+    }
+    global $mockHost;
+
+    try {
+        // 1. copy mode none: one message to the customer, no blind copy, the PDF attached
+        Configuration::updateValue('IFIRMA_SEND_COPY_MODE', 'none');
+        mailClear(); // the order confirmation mails of createOrder()
+        $result = IfirmaIssuancePipeline::build($module)->run($order, array('trigger' => 'manual'));
+        $receipt = receiptOf($order);
+        if (!assertTrue($result->ok && $receipt && $receipt->isIssued(), 'document issued and delivered through the shop mail', $result->message)) {
+            return;
+        }
+        $number = (string) $receipt->ifirma_number;
+        assertSame('sent', $receipt->delivery_status, 'delivery recorded as sent');
+        $safe = trim((string) preg_replace('/[^A-Za-z0-9_-]+/', '-', $number), '-');
+        $rows = mailbox();
+        if (assertSame(1, count($rows), 'copy none: exactly one message in the sink')) {
+            $mail = mailGet($rows[0]['id']);
+            assertMail($mail, array(
+                'from' => $shopEmail,
+                'to' => array($customerEmail),
+                'bcc' => array(),
+                'rcpt_tos' => array($customerEmail),
+                'subject_contains' => $number,
+                'text_contains' => array($number, (string) $order->reference),
+                'html_contains' => array($number, (string) $order->reference),
+                'attachment_count' => 1,
+                'attachments' => array(array('filename' => 'ifirma-' . $safe . '.pdf', 'content_type' => 'application/pdf')),
+            ), 'copy none');
+            $pdf = httpRequest('GET', $mockHost . '/__mock/mail/' . (int) $mail['id'] . '/attachments/0');
+            $bytes = is_string($pdf['raw']) ? $pdf['raw'] : '';
+            assertSame('%PDF-', substr($bytes, 0, 5), 'copy none: the attachment starts with %PDF-');
+            $listed = isset($mail['attachments'][0]['size']) ? (int) $mail['attachments'][0]['size'] : -1;
+            assertSame($listed, strlen($bytes), 'copy none: the downloaded attachment has the listed size');
+        }
+        $deliveredAt = (string) $receipt->delivered_at;
+
+        // 2. copy mode shop, manual resend: the shop address is a blind copy
+        Configuration::updateValue('IFIRMA_SEND_COPY_MODE', 'shop');
+        sleep(1); // delivered_at has a one-second resolution
+        $r = $actions->resend((int) $order->id);
+        assertTrue($r['success'], 'resend with copy mode shop succeeds', $r['message']);
+        $rows = mailbox();
+        if (assertSame(2, count($rows), 'copy shop: the resend added a second message')) {
+            assertMail(mailGet($rows[0]['id']), array(
+                'to' => array($customerEmail),
+                'bcc' => array($shopEmail),
+                'rcpt_tos' => array($customerEmail, $shopEmail),
+                'subject_contains' => $number,
+                'attachment_count' => 1,
+                'attachments' => array(array('filename' => 'ifirma-' . $safe . '.pdf', 'content_type' => 'application/pdf')),
+            ), 'copy shop');
+        }
+        $receipt = receiptOf($order);
+        assertTrue($receipt && (string) $receipt->delivered_at > $deliveredAt, 'copy shop: delivered_at renewed by the resend', $deliveredAt . ' -> ' . ($receipt ? $receipt->delivered_at : 'n/a'));
+
+        // 3. the copy address equals the customer's (compared ignoring case): the envelope holds one recipient
+        Configuration::updateValue('PS_SHOP_EMAIL', strtoupper($customerEmail));
+        $r = $actions->resend((int) $order->id);
+        assertTrue($r['success'], 'resend with the shop address equal to the customer succeeds', $r['message']);
+        $rows = mailbox();
+        if (assertSame(3, count($rows), 'copy equal to the customer: a third message')) {
+            assertMail(mailGet($rows[0]['id']), array(
+                'to' => array($customerEmail),
+                'bcc' => array(),
+                'rcpt_tos' => array($customerEmail),
+            ), 'copy equal to the customer');
+        }
+        Configuration::updateValue('PS_SHOP_EMAIL', $shopEmail);
+        Configuration::updateValue('IFIRMA_SEND_COPY_MODE', 'none');
+
+        // 4. the mail server refuses: a second order, the mock is not reset
+        $order2 = createOrder();
+        if (!assertTrue($order2 instanceof Order && Validate::isLoadedObject($order2), 'second order created for the refusal')) {
+            return;
+        }
+        $before = count(mailbox()); // includes the order confirmation mails of createOrder()
+        mailReject(true);
+        $result = IfirmaIssuancePipeline::build($module)->run($order2, array('trigger' => 'manual', 'bypass_guard' => true));
+        $receipt2 = receiptOf($order2);
+        assertTrue($receipt2 && $receipt2->isIssued() && (string) $receipt2->ifirma_number !== '', 'refusal: the document is issued although the mail was refused', $result->message);
+        assertSame('failed', $receipt2 ? $receipt2->delivery_status : null, 'refusal: delivery recorded as failed');
+        assertTrue($receipt2 && (string) $receipt2->delivery_error !== '', 'refusal: delivery_error is not empty', $receipt2 ? (string) $receipt2->delivery_error : 'no receipt');
+        assertSame($before, count(mailbox()), 'refusal: the sink captured no message');
+
+        mailReject(false);
+        $r = $actions->resend((int) $order2->id);
+        assertTrue($r['success'], 'resend after the switch was cleared succeeds', $r['message']);
+        $receipt2 = receiptOf($order2);
+        assertSame('sent', $receipt2 ? $receipt2->delivery_status : null, 'recovery: delivery recorded as sent');
+        assertSame('', $receipt2 ? (string) $receipt2->delivery_error : null, 'recovery: delivery_error cleared');
+        assertSame($before + 1, count(mailbox()), 'recovery: one new message in the sink');
+    } finally {
+        mailReject(false);
+        Configuration::updateValue('IFIRMA_SEND_COPY_MODE', $originalCopyMode === false ? 'none' : $originalCopyMode);
+        Configuration::updateValue('PS_SHOP_EMAIL', $originalShopEmail);
+    }
+}
+
 class SmokeJsonOut extends Exception
 {
     public $payload;
@@ -1320,6 +1616,9 @@ $scenarios = array(
     },
     'I' => function () use ($module, $actions) {
         scenarioI($module, $actions);
+    },
+    'N' => function () use ($module, $actions) {
+        scenarioN($module, $actions);
     },
 );
 

@@ -122,5 +122,13 @@ The document itself is fine.
 **What to do:** wait a few seconds and reload. If customers hit the limit routinely, look for something that downloads the
 PDF repeatedly, such as a link preview or a script.
 
+### Delivery shows "sent" but no e-mail arrived
+
+**Meaning:** the module records a delivery as *sent* when PrestaShop's mailer accepted the message; it does not wait for the recipient's mail server. With `PS_MAIL_METHOD=3` mail is switched off in the shop, and such a delivery still counts as sent.
+
+**What to do on a production shop:** check the mail method and server under Advanced Parameters > E-mail. Then open Advanced Parameters > Logs and look for lines containing "Swift Error" or "Mailer Error"; they say why the mailer refused the message.
+
+**On the test stack:** the shop sends to the mock's SMTP sink, not to a real mail server. Open `http://localhost:8001/__mock/status` and read the Mail section, or call `GET /__mock/mail`. `tests/smoke/run.php` leaves the shop pointed at the sink, so mail from the shop keeps going there after a smoke run until its mail settings are changed back.
+
 **Reporting a problem.** Copy the diagnostics block (request, response, contractor step, last error) and the
 relevant lines from Advanced Parameters > Logs (messages start with "iFirma"). Neither contains API keys.

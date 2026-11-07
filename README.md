@@ -98,7 +98,7 @@ back‑office customer page. See [docs/contractors.md](docs/contractors.md).
 
 The mock iFirma API and the Docker test stack live in the `test-stack/` git submodule
 ([SecCodeSmith/test-stack](https://github.com/SecCodeSmith/test-stack), MIT). The mock keeps its state in a
-file, so documents survive a restart, and has a status page at `/__mock/status`:
+file, so documents survive a restart. It also catches the shop's e-mails over SMTP (port 1025) and shows them on its status page at `/__mock/status`, where the smoke suite checks the e-mails the module sends:
 
 ![Status page of the mock iFirma API](docs/img/mock-status.png)
 

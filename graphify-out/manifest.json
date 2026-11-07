@@ -108,10 +108,10 @@
     "semantic_hash": ""
   },
   "test-stack/ifirma-mock/app/__init__.py": {
-    "mtime": 1787142734.6200507,
-    "seen": 1793556933.9258895,
-    "ast_hash": "9f2bae972b5de5c4c040ac98aee51cc7",
-    "semantic_hash": "9f2bae972b5de5c4c040ac98aee51cc7"
+    "mtime": 1794078503.4210515,
+    "seen": 1794079226.2345977,
+    "ast_hash": "25bc8946a084ad89872aa5e7b0c1c149",
+    "semantic_hash": ""
   },
   "test-stack/ifirma-mock/app/auth.py": {
     "mtime": 1787142734.6280727,
@@ -120,15 +120,15 @@
     "semantic_hash": "9697236a54e051d11006c3cc93b601df"
   },
   "test-stack/ifirma-mock/app/config.py": {
-    "mtime": 1794049190.1730144,
-    "seen": 1794050846.9809766,
-    "ast_hash": "00dda834eecb13260068a5f9735aac91",
+    "mtime": 1794078518.8365166,
+    "seen": 1794079226.2345994,
+    "ast_hash": "16146b9b19ba8b5060e5e566b91c1242",
     "semantic_hash": ""
   },
   "test-stack/ifirma-mock/app/main.py": {
-    "mtime": 1794050108.8817868,
-    "seen": 1794050846.980978,
-    "ast_hash": "43ab50a78d9ce513e180027aad36630e",
+    "mtime": 1794079002.897721,
+    "seen": 1794079226.2346003,
+    "ast_hash": "1a2a60a0113ec5e090de31ed4ce48ca1",
     "semantic_hash": ""
   },
   "test-stack/ifirma-mock/app/pdf.py": {
@@ -138,15 +138,15 @@
     "semantic_hash": "b8829cc655d9390fab218ced830b4a81"
   },
   "test-stack/ifirma-mock/app/store.py": {
-    "mtime": 1794049549.551589,
-    "seen": 1794050846.9809828,
-    "ast_hash": "78603453291bda205c7f8e1bdb32e2ca",
+    "mtime": 1794078518.841534,
+    "seen": 1794079226.2346044,
+    "ast_hash": "5dcc1656d7a11fda48c04ddcc4d3dbfa",
     "semantic_hash": ""
   },
   "test-stack/ifirma-mock/pyproject.toml": {
-    "mtime": 1794049133.9135516,
-    "seen": 1794050846.9809852,
-    "ast_hash": "c6d4e52d457ad7bc30762b44c3dcca09",
+    "mtime": 1794078503.3663404,
+    "seen": 1794079226.2346058,
+    "ast_hash": "0b6e07a78ea55aa86b1448f4bc9d46a2",
     "semantic_hash": ""
   },
   "test-stack/ifirma-mock/tests/__init__.py": {
@@ -258,9 +258,9 @@
     "semantic_hash": "67d88e9d0760c3ba54c75dfd9551c1c5"
   },
   "README.md": {
-    "mtime": 1794060125.4722698,
-    "seen": 1794060710.7492602,
-    "ast_hash": "842321c3b0601d22af052b8b66565ed6",
+    "mtime": 1794079128.8991764,
+    "seen": 1794079226.2348237,
+    "ast_hash": "b65e15ca5f7c8bb56daa85673317a0b3",
     "semantic_hash": ""
   },
   "openspec/config.yaml": {
@@ -276,15 +276,15 @@
     "semantic_hash": "58cfc6237dd6c7e609cdcde1fc893218"
   },
   "test-stack/README.md": {
-    "mtime": 1794049587.8732486,
-    "seen": 1794050846.981459,
-    "ast_hash": "055e09bea628ba59e870102a176cea26",
+    "mtime": 1794079002.897721,
+    "seen": 1794079226.234938,
+    "ast_hash": "515fc7f98eed9bc9cd8b53f859a41def",
     "semantic_hash": ""
   },
   "test-stack/docker-compose.yml": {
-    "mtime": 1794049139.644677,
-    "seen": 1794050846.9814618,
-    "ast_hash": "834caedc420a50b13e094ee98878d5b4",
+    "mtime": 1794078503.2660055,
+    "seen": 1794079226.2349393,
+    "ast_hash": "98d0c04cb6c4a2a6a2735e30369eb026",
     "semantic_hash": ""
   },
   "test-stack/ifirma-mock/requirements-dev.txt": {
@@ -294,10 +294,10 @@
     "semantic_hash": "7cd0531f1719628978ca975f5f3610c2"
   },
   "test-stack/ifirma-mock/requirements.txt": {
-    "mtime": 1787130980.291852,
-    "seen": 1793556933.9259095,
-    "ast_hash": "e88187422bed1e90de22671ababa2665",
-    "semantic_hash": "e88187422bed1e90de22671ababa2665"
+    "mtime": 1794078502.6591065,
+    "seen": 1794079226.2349412,
+    "ast_hash": "3558713ad681dd460d38e9805b416e69",
+    "semantic_hash": ""
   },
   "logo.png": {
     "mtime": 1786438637.8730454,
@@ -774,9 +774,9 @@
     "semantic_hash": ""
   },
   "tests/smoke/run.php": {
-    "mtime": 1794060072.272873,
-    "seen": 1794060710.749152,
-    "ast_hash": "f5eeacfb834fa703052dbc0143040391",
+    "mtime": 1794079014.1936615,
+    "seen": 1794079226.234794,
+    "ast_hash": "f55812326aaad511592c8d2f6ef6ccc9",
     "semantic_hash": ""
   },
   "tools/generate_pl_translations.php": {
@@ -924,9 +924,9 @@
     "semantic_hash": ""
   },
   "tests/smoke/README.md": {
-    "mtime": 1794060130.8096538,
-    "seen": 1794060710.7496755,
-    "ast_hash": "dcff8356be0ffa2c6db7473fb0a828b0",
+    "mtime": 1794079182.5420477,
+    "seen": 1794079226.2349434,
+    "ast_hash": "6628bdc90b58d289e72c3c253708cf8c",
     "semantic_hash": ""
   },
   "tests/smoke/upgrade-phase1.php": {
@@ -2418,9 +2418,9 @@
     "semantic_hash": ""
   },
   "test-stack/ifirma-mock/app/ui.py": {
-    "mtime": 1794049639.3236384,
-    "seen": 1794050846.9809837,
-    "ast_hash": "ace93d45ce6431ddb358c06f57da9af3",
+    "mtime": 1794078599.9095087,
+    "seen": 1794079226.234605,
+    "ast_hash": "7fcc900ea90cdfa23c377aa8d5d224e5",
     "semantic_hash": ""
   },
   "test-stack/ifirma-mock/tests/test_mock_state.py": {
@@ -2430,9 +2430,9 @@
     "semantic_hash": ""
   },
   "test-stack/ifirma-mock/tests/test_mock_status.py": {
-    "mtime": 1794049639.3611495,
-    "seen": 1794050846.9809985,
-    "ast_hash": "bdee0ba7805170aae05c096fc511cc35",
+    "mtime": 1794078852.2588096,
+    "seen": 1794079226.2346158,
+    "ast_hash": "bba0674deaf5fbe85d1629a896f01dd0",
     "semantic_hash": ""
   },
   "tools/screenshots.mjs": {
@@ -2442,9 +2442,9 @@
     "semantic_hash": ""
   },
   "docs/architecture.md": {
-    "mtime": 1794060097.2423327,
-    "seen": 1794060710.7492628,
-    "ast_hash": "56c21092b4a94935e44b028496a9efb2",
+    "mtime": 1794079136.8620486,
+    "seen": 1794079226.2348247,
+    "ast_hash": "2ff8c2411411debb53f492d0d2c9476a",
     "semantic_hash": ""
   },
   "docs/configuration.md": {
@@ -2466,9 +2466,9 @@
     "semantic_hash": ""
   },
   "docs/troubleshooting.md": {
-    "mtime": 1794060039.2430644,
-    "seen": 1794060710.7492735,
-    "ast_hash": "9c0c80771c76d35f26afb49478d0370a",
+    "mtime": 1794079132.6375623,
+    "seen": 1794079226.234828,
+    "ast_hash": "8a9422bf1204158d4c2e1155359141f8",
     "semantic_hash": ""
   },
   "docs/upgrading.md": {
@@ -2514,15 +2514,15 @@
     "semantic_hash": ""
   },
   ".claude/hooks/auto_allow_safe.py": {
-    "mtime": 1794061340.1207018,
-    "seen": 1794062544.569014,
-    "ast_hash": "9ff3271db265d02056c82fe2ea07fb27",
+    "mtime": 1794078895.0483637,
+    "seen": 1794079226.2345145,
+    "ast_hash": "312d71650826e0c817540de6ef3f29e9",
     "semantic_hash": ""
   },
   ".claude/hooks/test_auto_allow_safe.py": {
-    "mtime": 1794061287.9072762,
-    "seen": 1794062544.5690188,
-    "ast_hash": "cad298b7ccbf967645a51069c335c260",
+    "mtime": 1794078857.9523857,
+    "seen": 1794079226.234519,
+    "ast_hash": "7f34cf5bf196dbb6666d1598eb84c8fd",
     "semantic_hash": ""
   },
   "classes/IfirmaBulkRunner.php": {
@@ -2664,9 +2664,9 @@
     "semantic_hash": ""
   },
   "openspec/changes/add-smtp-mock-and-mail-e2e/design.md": {
-    "mtime": 1794052942.0889125,
-    "seen": 1794055997.2125459,
-    "ast_hash": "b15cf716138defeaa690bfd2f882d4bc",
+    "mtime": 1794079131.8916037,
+    "seen": 1794079226.2348447,
+    "ast_hash": "e229821b2faa68e1e050f6361894b573",
     "semantic_hash": ""
   },
   "openspec/changes/add-smtp-mock-and-mail-e2e/proposal.md": {
@@ -2682,9 +2682,9 @@
     "semantic_hash": ""
   },
   "openspec/changes/add-smtp-mock-and-mail-e2e/specs/mock-smtp-sink/spec.md": {
-    "mtime": 1794052736.9448407,
-    "seen": 1794055997.212548,
-    "ast_hash": "69b80f1e113b9f452f9e70358dd7214b",
+    "mtime": 1794078986.352934,
+    "seen": 1794079226.2348475,
+    "ast_hash": "5a775b5e1943e52b485271e61f48ea52",
     "semantic_hash": ""
   },
   "openspec/changes/add-smtp-mock-and-mail-e2e/specs/mock-status-page/spec.md": {
@@ -2694,9 +2694,9 @@
     "semantic_hash": ""
   },
   "openspec/changes/add-smtp-mock-and-mail-e2e/tasks.md": {
-    "mtime": 1794052942.3219757,
-    "seen": 1794055997.2125497,
-    "ast_hash": "93a93c0ae4a682a669436287d0318b46",
+    "mtime": 1794079213.8150618,
+    "seen": 1794079226.234849,
+    "ast_hash": "f59e440df15fd3f1d1e50a67de520dc0",
     "semantic_hash": ""
   },
   "openspec/changes/admin-receipt-ops-and-hardening/.openspec.yaml": {
@@ -2778,9 +2778,9 @@
     "semantic_hash": ""
   },
   "openspec/changes/admin-receipt-ops-and-hardening/tasks.md": {
-    "mtime": 1794062171.8015468,
-    "seen": 1794062544.5693803,
-    "ast_hash": "58e3ff5fef1231f514e24bc4a1a87dfe",
+    "mtime": 1794062703.2290785,
+    "seen": 1794079226.2348611,
+    "ast_hash": "b4dc53ecd9339cd4fbee6e2906efab9d",
     "semantic_hash": ""
   },
   "openspec/changes/archive/2026-11-07-mock-persistence-status-ui-docs/.openspec.yaml": {
@@ -2862,9 +2862,27 @@
     "semantic_hash": ""
   },
   "openspec/changes/admin-receipt-ops-and-hardening/verification.md": {
-    "mtime": 1794062171.9077299,
-    "seen": 1794062544.5693815,
-    "ast_hash": "484328f3556829044c0f5e228fd25d76",
+    "mtime": 1794062959.5843976,
+    "seen": 1794079226.2348619,
+    "ast_hash": "0ff85d9e3db1de41f21620dea3760dc3",
+    "semantic_hash": ""
+  },
+  "test-stack/ifirma-mock/app/smtp.py": {
+    "mtime": 1794079002.8894858,
+    "seen": 1794079226.234602,
+    "ast_hash": "c9af3bfc29232ae2ec166780039977ff",
+    "semantic_hash": ""
+  },
+  "test-stack/ifirma-mock/tests/conftest.py": {
+    "mtime": 1794078599.1300628,
+    "seen": 1794079226.234608,
+    "ast_hash": "fe3dfe44c2224fe7d90d36c3f9347884",
+    "semantic_hash": ""
+  },
+  "test-stack/ifirma-mock/tests/test_mock_mail.py": {
+    "mtime": 1794079002.89873,
+    "seen": 1794079226.2346144,
+    "ast_hash": "73a70c7db8662b4071c9cdfbd79213ee",
     "semantic_hash": ""
   }
 }
