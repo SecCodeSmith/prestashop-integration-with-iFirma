@@ -1,0 +1,339 @@
+# Architecture
+
+How the iFirma module is built: what runs where, which class does what, how a document gets issued, the data model, the API rules, and the test and release tooling. Back to the [README](../README.md).
+
+## What runs where
+
+The module (`ifirma.php`, class [`Ifirma`](../ifirma.php), version 1.4.1, PrestaShop 8.0 to 9.99.99) runs inside PrestaShop. There is no daemon of its own: work happens in the back office (an administrator clicks a button), in the front office (a customer opens a page), in a PrestaShop hook (an order changes status) or in the cron endpoint (an external scheduler calls a URL). All calls to iFirma leave through one cURL transport. In the test stack the same calls go to the mock instead.
+
+```mermaid
+flowchart LR
+    subgraph BO["Back office"]
+        ADM["AdminIfirmaController AJAX"]
+        SET["Settings page getContent"]
+        PNL["Order panel, customer panel, Orders list column"]
+    end
+    subgraph FO["Front office"]
+        CUS["Customer pages and receipt.php, datarequest.php"]
+    end
+    HOOK["actionOrderStatusPostUpdate hook"]
+    CRON["Scheduler calls cron.php"]
+    subgraph MOD["Module classes"]
+        ACT["IfirmaAdminActions"]
+        PIPE["IfirmaIssuancePipeline"]
+        SYNC["IfirmaStatusSyncService"]
+        API["IfirmaApiClient and IfirmaHttpTransport"]
+    end
+    DB[("MySQL: ifirma_receipt, ifirma_data_request, ifirma_contractor_map")]
+    IF["iFirma REST API, or the ifirma-mock in the test stack"]
+    ADM --> ACT
+    ACT --> PIPE
+    HOOK --> PIPE
+    CUS --> DB
+    CRON --> SYNC
+    SET --> DB
+    PNL --> DB
+    PIPE --> API
+    SYNC --> API
+    ACT --> API
+    PIPE --> DB
+    SYNC --> DB
+    API --> IF
+```
+
+The customer pages do not start the pipeline: the front controllers read and write the data-request and receipt rows, and a request the customer filed is resolved in the back office, where `IfirmaDataRequestActions` calls `IfirmaIssuancePipeline::resumeAfterRequest()` after an approve or a reject.
+
+## Entry points
+
+**Module class** [`ifirma.php`](../ifirma.php): `install()` creates the tables ([`sql/install.php`](../sql/install.php)), the default configuration values, the `AdminIfirma` tab and registers nine hooks; `getContent()` is the settings page (save the settings, regenerate the cron token, import a contractor CSV, reset the contractor map).
+
+**Hooks** registered by `install()`:
+
+| Hook | What it does |
+|------|--------------|
+| `displayAdminOrderMainBottom` | Renders the iFirma panel on the order page (`renderAdminOrderPanel()`). |
+| `displayAdminCustomers` | Renders the contractor panel on the customer page (link state, search, register). |
+| `displayCustomerAccount` | Adds the document and request entry to the customer's account page (nothing when the customer is not logged in or has nothing to show). |
+| `displayOrderDetail` | Shows the document and the data-change request on the customer's order page; refreshes a stale remote state first. |
+| `actionOrderStatusPostUpdate` | Runs `IfirmaIssuancePipeline::onOrderStatusChange()` for the new order state. |
+| `header` | Registers `views/css/ifirma.css` on front-office pages. |
+| `actionOrderGridDefinitionModifier` | Adds the "iFirma" column to the Orders list. |
+| `actionOrderGridQueryBuilderModifier` | Joins the newest module record of each listed order (via [`IfirmaOrderGridIndicator`](../classes/IfirmaOrderGridIndicator.php)). |
+| `actionOrderGridPresenterModifier` | Fills the cell of that column for each record. |
+
+**Admin controller** [`controllers/admin/AdminIfirmaController.php`](../controllers/admin/AdminIfirmaController.php): AJAX actions `ajaxProcessCreateReceipt`, `IssueAnyway`, `LinkCandidate`, `UpdateStatus`, `ResendDocument`, `SendToKsef`, `RefreshStatus`, `RegisterContractor`, `CustomerCheck`, `CustomerSearch`, `CustomerLink`, `CustomerUnlink`, `CustomerRegister`, `CustomerCountRemote`, `ApproveRequest`, `RejectRequest` and `DownloadPdf`. Each calls [`IfirmaAdminActions`](../classes/IfirmaAdminActions.php) and answers JSON (`success`, `message`, `data`); the PDF download streams through [`IfirmaHttpOutput`](../classes/IfirmaHttpOutput.php).
+
+**Front controllers** (`/module/ifirma/<name>`):
+
+| File | Purpose |
+|------|---------|
+| [`controllers/front/receipt.php`](../controllers/front/receipt.php) | Customer PDF download (authenticated customer, matching token, owner check). |
+| [`controllers/front/datarequest.php`](../controllers/front/datarequest.php) | Customer form to request a change of the invoice data of an order; all rules live in [`IfirmaDataRequestService`](../classes/IfirmaDataRequestService.php). |
+| [`controllers/front/cron.php`](../controllers/front/cron.php) | Status synchronisation at `/module/ifirma/cron?token=IFIRMA_CRON_TOKEN`; a wrong token answers 403, a right one runs `IfirmaStatusSyncService::runCron()`. |
+
+**Upgrades:** [`upgrade/upgrade-1.1.0.php`](../upgrade/upgrade-1.1.0.php) (columns, two tables, defaults), [`upgrade/upgrade-1.2.0.php`](../upgrade/upgrade-1.2.0.php) (hook swap, drops PrestaShop 1.7), [`upgrade/upgrade-1.4.0.php`](../upgrade/upgrade-1.4.0.php) (the three Orders-list hooks).
+
+## Class layers
+
+46 classes under [`classes/`](../classes/), one per file (`IfirmaDataRequest.php` also declares `IfirmaDataRequestException`). The centre is [`IfirmaIssuancePipeline`](../classes/IfirmaIssuancePipeline.php) with [`IfirmaReceiptService`](../classes/IfirmaReceiptService.php); the admin side reaches them through [`IfirmaAdminActions`](../classes/IfirmaAdminActions.php).
+
+**API transport**
+
+| Class | Role |
+|-------|------|
+| [`IfirmaApiClient`](../classes/IfirmaApiClient.php) | Signs and sends requests (`get`, `post`, `put`, `getBinary`, `listInvoices`, `getDetail`, `send`, `sendToKsef`, `getLimit`), reads the iFirma `Kod` answer, enforces the per-minute rate cap. |
+| [`IfirmaHttpTransport`](../classes/IfirmaHttpTransport.php) | Default cURL transport; returns status, body and error. |
+| [`IfirmaHttpStatus`](../classes/IfirmaHttpStatus.php) | Builds the HTTP status line for a code. |
+| [`IfirmaHttpOutput`](../classes/IfirmaHttpOutput.php) | Sends a PDF as the response (headers in one place). |
+
+**Payload**
+
+| Class | Role |
+|-------|------|
+| [`IfirmaPayloadBuilder`](../classes/IfirmaPayloadBuilder.php) | Builds the document payload from an order. |
+| [`IfirmaPaymentMethodResolver`](../classes/IfirmaPaymentMethodResolver.php) | Chooses the `SposobZaplaty` code for an order. |
+| [`IfirmaDocumentSettings`](../classes/IfirmaDocumentSettings.php) | The document type and recipient signature type the module offers. |
+
+**Pipeline**
+
+| Class | Role |
+|-------|------|
+| [`IfirmaIssuancePipeline`](../classes/IfirmaIssuancePipeline.php) | The six issuance steps and their three entry points. |
+| [`IfirmaPipelineResult`](../classes/IfirmaPipelineResult.php) | Outcome, stopping step and per-step list of one run. |
+| [`IfirmaReceiptService`](../classes/IfirmaReceiptService.php) | Creates the document in iFirma and writes the row; payment registration, number and PDF fetch. |
+| [`IfirmaCreateResponse`](../classes/IfirmaCreateResponse.php) | Immutable parsed answer of the create request. |
+
+**Duplicate guard**
+
+| Class | Role |
+|-------|------|
+| [`IfirmaDuplicateGuard`](../classes/IfirmaDuplicateGuard.php) | Looks for an existing iFirma document before creating one. |
+| [`IfirmaDuplicateMatcher`](../classes/IfirmaDuplicateMatcher.php) | Pure candidate selection and confirmation helpers. |
+| [`IfirmaGuardResult`](../classes/IfirmaGuardResult.php) | Outcome of a guard check. |
+| [`IfirmaGuardSettings`](../classes/IfirmaGuardSettings.php) | Guard settings (enabled, bypass, tolerance, window, timeout, detail-call budget). |
+
+**Persistence**
+
+| Class | Role |
+|-------|------|
+| [`IfirmaReceipt`](../classes/IfirmaReceipt.php) | ObjectModel of `ifirma_receipt`; state marks (`markError`, `markHeld`, `markSuspected`, `markPaid`). |
+| [`IfirmaDataRequest`](../classes/IfirmaDataRequest.php) | ObjectModel of `ifirma_data_request`; also declares `IfirmaDataRequestException`. |
+| [`IfirmaContractorMap`](../classes/IfirmaContractorMap.php) | ObjectModel of `ifirma_contractor_map`: one customer, one iFirma contractor. |
+| [`IfirmaSchema`](../classes/IfirmaSchema.php) | Single source of the schema and the configuration defaults. |
+
+**Delivery**
+
+| Class | Role |
+|-------|------|
+| [`IfirmaDeliveryService`](../classes/IfirmaDeliveryService.php) | Sends the document to the customer (shop mail or iFirma mail), with PDF retries and an optional copy. |
+| [`IfirmaDeliveryResult`](../classes/IfirmaDeliveryResult.php) | Immutable result of `deliver()` and `resend()`. |
+| [`IfirmaDataRequestNotifier`](../classes/IfirmaDataRequestNotifier.php) | Sends the data-request e-mails. |
+
+**KSeF**
+
+| Class | Role |
+|-------|------|
+| [`IfirmaKsefService`](../classes/IfirmaKsefService.php) | Decides whether to submit a document to KSeF (mode off, b2b or all) and submits it. |
+
+**Contractors and customers**
+
+| Class | Role |
+|-------|------|
+| [`IfirmaContractorService`](../classes/IfirmaContractorService.php) | Keeps one iFirma contractor (`PS-C<id_customer>`) in step with the shop customer. |
+| [`IfirmaContractorResolution`](../classes/IfirmaContractorResolution.php) | Immutable result of `ensure()`: which contractor a document goes to and how. |
+| [`IfirmaContractorSearchResult`](../classes/IfirmaContractorSearchResult.php) | Immutable result of a contractor search. |
+| [`IfirmaContractorMatcher`](../classes/IfirmaContractorMatcher.php) | Pure matching of an iFirma contractor export against the shop customers. |
+| [`IfirmaContractorImport`](../classes/IfirmaContractorImport.php) | Offline CSV import that links customers to contractors. |
+| [`IfirmaCustomerIndex`](../classes/IfirmaCustomerIndex.php) | The shop-side lookups for the import (NIP, e-mail, name and postcode). |
+| [`IfirmaCustomerContractorService`](../classes/IfirmaCustomerContractorService.php) | Customer-level contractor state, search, link, unlink, remote counts. |
+| [`IfirmaCustomerView`](../classes/IfirmaCustomerView.php) | View-model for the customer pages (never carries errors or payloads). |
+| [`IfirmaCustomerInvoiceProfile`](../classes/IfirmaCustomerInvoiceProfile.php) | The invoice data of one customer with the search-form fallbacks. |
+| [`IfirmaRemoteDocumentCollector`](../classes/IfirmaRemoteDocumentCollector.php) | Reads the documents iFirma lists for one customer within a call budget. |
+| [`IfirmaMatchLabels`](../classes/IfirmaMatchLabels.php) | The words for the codes that say how a customer was linked. |
+
+**Admin UI and actions**
+
+| Class | Role |
+|-------|------|
+| [`IfirmaAdminActions`](../classes/IfirmaAdminActions.php) | Facade the controller instantiates; delegates to the three action classes. |
+| [`IfirmaActionSupport`](../classes/IfirmaActionSupport.php) | Abstract base: result envelope, error guard, order lookup. |
+| [`IfirmaReceiptActions`](../classes/IfirmaReceiptActions.php) | Create, issue anyway, adopt a candidate, register payment, resend, KSeF, refresh. |
+| [`IfirmaCustomerActions`](../classes/IfirmaCustomerActions.php) | Contractor actions of an order and of the customer page. |
+| [`IfirmaDataRequestActions`](../classes/IfirmaDataRequestActions.php) | Approve or reject a data request, then resume the held issuance. |
+| [`IfirmaDataRequestService`](../classes/IfirmaDataRequestService.php) | Rules and e-mails of the data-change requests. |
+| [`IfirmaAdminPanelPresenter`](../classes/IfirmaAdminPanelPresenter.php) | The words and small decisions of the order panel. |
+| [`IfirmaAdminOrderPanelView`](../classes/IfirmaAdminOrderPanelView.php) | The template variables of the order panel for one order. |
+| [`IfirmaOrderGridIndicator`](../classes/IfirmaOrderGridIndicator.php) | SQL and cell of the Orders-list column. |
+| [`IfirmaSettings`](../classes/IfirmaSettings.php) | Pure validation table for the settings form. |
+
+**Status sync**
+
+| Class | Role |
+|-------|------|
+| [`IfirmaStatusSyncService`](../classes/IfirmaStatusSyncService.php) | Mirrors the remote state of issued documents (cron, opportunistic on the customer's order page). |
+
+## Issuance pipeline
+
+[`IfirmaIssuancePipeline`](../classes/IfirmaIssuancePipeline.php) runs six steps in a fixed order: `hold`, `guard`, `create`, `number`, `ksef`, `deliver`. `run()` never throws; it returns an [`IfirmaPipelineResult`](../classes/IfirmaPipelineResult.php) with one entry per step (`ok`, `skipped`, `stopped` or `failed`). `IfirmaIssuancePipeline::build(Module)` shares one [`IfirmaApiClient`](../classes/IfirmaApiClient.php), and so one rate counter, across all collaborators.
+
+Three triggers:
+
+| Trigger | Entry point | Started by |
+|---------|-------------|------------|
+| `status` | `onOrderStatusChange()` | the `actionOrderStatusPostUpdate` hook; does nothing when `IFIRMA_AUTO_CREATE_STATE` is 0, differs from the new state, or credentials are missing |
+| `manual` / `issue_anyway` | `run()` | the "Create" and "Issue anyway" buttons of the order panel |
+| `resume` | `resumeAfterRequest()` | approving or rejecting a data-change request, when the order is in (or went through) the trigger state and has no issued document |
+
+```mermaid
+flowchart TD
+    START["run order"] --> HOLD{"hold: pending data request?"}
+    HOLD -- "already issued" --> GUARD
+    HOLD -- "yes" --> HELD["stop: held, row marked held"]
+    HOLD -- "no" --> GUARD{"guard: duplicate check"}
+    GUARD -- "local record already issued" --> DONE1["stop: already_issued, later steps skipped"]
+    GUARD -- "unconfirmed candidates" --> SUSP["stop: suspected, status duplicate_suspected"]
+    GUARD -- "list call failed" --> INC["stop: inconclusive or rate_limited"]
+    GUARD -- "confirmed match" --> ADOPT["adopted"]
+    GUARD -- "disabled, bypassed or nothing found" --> CREATE
+    ADOPT --> NUMBER
+    CREATE{"create: POST to iFirma"} -- "rejected or unreachable" --> ERR["stop: error or unknown"]
+    CREATE -- "accepted" --> NUMBER["number: issued"]
+    NUMBER --> KSEF{"ksef: mode and buyer allow submission?"}
+    KSEF -- "no, or skip_ksef" --> DELIVER
+    KSEF -- "submitted" --> DELIVER
+    KSEF -- "submission failed" --> DELIVER
+    DELIVER{"deliver: send to customer"} -- "skip_delivery" --> FIN["result"]
+    DELIVER -- "sent" --> FIN
+    DELIVER -- "failed" --> FIN
+```
+
+What each step reads and writes (verified in the step methods):
+
+- **hold**: reads the data-request table. A pending request for the order stops the run with outcome `held` and marks the row held. An order with an issued record skips the step.
+- **guard**: [`IfirmaDuplicateGuard::check()`](../classes/IfirmaDuplicateGuard.php), outcomes `LOCAL_ISSUED`, `DISABLED`, `BYPASSED`, `PROCEED`, `ADOPT`, `SUSPECTED`, `INCONCLUSIVE`. `LOCAL_ISSUED` skips all later steps; `SUSPECTED` and `INCONCLUSIVE` stop; `ADOPT` marks the run adopted so `create` and `number` are skipped.
+- **create**: [`IfirmaReceiptService::createReceipt()`](../classes/IfirmaReceiptService.php) (applies an approved data-request override). An exception stops the run with `unknown` when the row status is `unknown`, otherwise `error`. After a bypassed guard the resolution `issue_anyway` is recorded.
+- **number**: records whether the number is available yet and marks the run issued.
+- **ksef**: skipped when the caller passes `skip_ksef`, there is no document, or [`IfirmaKsefService::skipReason()`](../classes/IfirmaKsefService.php) is not empty. A failed submission does not stop the run: the step is `failed`, delivery still runs and the message ends with `KSeF: <error>`.
+- **deliver**: [`IfirmaDeliveryService::deliver()`](../classes/IfirmaDeliveryService.php), skipped on `skip_delivery`. A failed delivery sets `stoppedAt = deliver` but never changes `ok` or the outcome.
+
+Any other exception is caught in `run()`, recorded on the row (`last_error`, status `error` for a new row) and returned as outcome `error`.
+
+## Request flow: Create Receipt
+
+The "Create" button on the order panel, from the browser to the HTTP transport:
+
+1. `AdminIfirmaController::ajaxProcessCreateReceipt()` ([`AdminIfirmaController.php`](../controllers/admin/AdminIfirmaController.php)) calls `IfirmaAdminActions::createReceipt()`.
+2. [`IfirmaAdminActions`](../classes/IfirmaAdminActions.php) delegates to `IfirmaReceiptActions::createReceipt()`, which calls `runPipeline()` ([`IfirmaReceiptActions.php`](../classes/IfirmaReceiptActions.php)). It loads the order, refuses an unconfigured module, then runs the rest inside the error guard.
+3. `IfirmaIssuancePipeline::build($module)->run($order, ...)` with trigger `manual` (`issue_anyway` for the other button) and the employee id.
+4. `execute()` runs `stepHold`, then `stepGuard` ([`IfirmaDuplicateGuard::check()`](../classes/IfirmaDuplicateGuard.php)).
+5. `stepCreate` calls `IfirmaReceiptService::createReceipt()`: [`IfirmaPayloadBuilder::buildInvoicePayload()`](../classes/IfirmaPayloadBuilder.php) builds the payload, `postWithRetries()` sends it through `IfirmaApiClient::post()` to [`IfirmaHttpTransport`](../classes/IfirmaHttpTransport.php) (cURL), and `applyCreateResponse()` writes the answer to the `ifirma_receipt` row.
+6. `stepNumber`, `stepKsef` ([`IfirmaKsefService`](../classes/IfirmaKsefService.php)) and `stepDeliver` ([`IfirmaDeliveryService`](../classes/IfirmaDeliveryService.php)) follow.
+7. The [`IfirmaPipelineResult`](../classes/IfirmaPipelineResult.php) is turned into the AJAX answer (`success`, `message`, `data`) and the controller responds with JSON.
+
+## Data model and configuration
+
+The schema is defined once in [`classes/IfirmaSchema.php`](../classes/IfirmaSchema.php) and used by [`sql/install.php`](../sql/install.php) and the upgrade scripts.
+
+`ps_ifirma_receipt` - one row per iFirma document (issued by the module or discovered in iFirma). Core columns: order/customer/shop link, `document_type`, `ifirma_id` and `ifirma_number`, `status` (`created` / `paid` / `error` / `unknown` / `duplicate_suspected`), `paid_amount`, a download `security_token` and the full request/response payloads for auditing. Since 1.1.0 the table also holds: `source` (`module` or `external`) and `order_reference`, which tell where a document came from; `delivery_status`, `delivery_channel`, `delivered_at` and `delivery_error`, which track sending the document to the customer; `remote_paid_amount`, `remote_sent`, `remote_draft`, `remote_missing`, `ksef_status`, `ksef_number`, `linked_document`, `last_sync_at` and `sync_error`, which mirror the state last read from iFirma by the synchronisation job; `duplicate_candidates` (JSON list of possible existing documents found before issuing); and `id_data_request`, the link to the buyer-data request that produced the document. Indexes: `idx_order`, `idx_customer`, `idx_token`.
+
+`ps_ifirma_contractor_map` (new in 1.1.0) - one row per customer linking it to an iFirma contractor: `id_customer` (unique), `ifirma_identifier`, `matched_by` (`module`, `nip`, `name`, `email`, `import-nip`, `import-email`, `import-name`, `manual`), `ifirma_name`. Created on install, on upgrade and, when missing, on first use. See [Linking existing contractors](contractors.md).
+
+`ps_ifirma_data_request` (new in 1.1.0) - customer requests to change the buyer data (company, NIP, address) used on a document. One row per request: order, customer and shop; `status` (`pending` / `approved` / `rejected` / `cancelled`); `requested_data` and `approved_data` (JSON); `customer_note` and `admin_note`; `resolved_by` (employee id) and the `date_add`, `date_upd` and `date_resolved` timestamps.
+
+Configuration keys (defaults in `IfirmaSchema`; the settings walk-through is in [configuration.md](configuration.md)):
+
+| Group | Keys |
+|-------|------|
+| Connection | `IFIRMA_BASE_URL`, `IFIRMA_USER`, `IFIRMA_KEY_FAKTURA`, `IFIRMA_KEY_ABONENT`, `IFIRMA_KEY_RACHUNEK` |
+| Document | `IFIRMA_DOC_TYPE`, `IFIRMA_SIGNATURE_TYPE`, `IFIRMA_DEFAULT_UNIT`, `IFIRMA_PAYMENT_METHOD`, `IFIRMA_PAYMENT_METHOD_MODE`, `IFIRMA_PAYMENT_METHOD_MAP`, `IFIRMA_PAYMENT_TYPE_TOKEN`, `IFIRMA_MARK_PAID_ON_CREATE` |
+| Triggers | `IFIRMA_AUTO_CREATE_STATE`, `IFIRMA_CONTRACTOR_SYNC`, `IFIRMA_ALLOW_DATA_REQUEST` |
+| Delivery | `IFIRMA_SEND_CHANNEL`, `IFIRMA_SEND_TEXT`, `IFIRMA_SEND_COPY_MODE`, `IFIRMA_SEND_COPY_EMPLOYEE` |
+| KSeF | `IFIRMA_KSEF_MODE` |
+| Duplicate guard | `IFIRMA_DUPLICATE_CHECK`, `IFIRMA_DUPLICATE_WINDOW_DAYS`, `IFIRMA_DUPLICATE_AMOUNT_TOLERANCE` |
+| Status and cron | `IFIRMA_SYNC_INTERVAL_MIN`, `IFIRMA_CRON_TOKEN`, `IFIRMA_CRON_MAX_CALLS`, `IFIRMA_NOTIFY_EMAIL` |
+| Rate limiting | `IFIRMA_RATE_MAX_PER_MIN`, `IFIRMA_RATE_WINDOW` |
+
+## API surface
+
+### How the iFirma API is used
+
+Authentication follows the official spec (<https://api.ifirma.pl/naglowek-autoryzacji/>):
+
+```
+message = url + user + keyName + requestContent      (query string stripped from url)
+hash    = HMAC-SHA1(message, hex2bin(key))
+header  = Authentication: IAPIS user=<user>, hmac-sha1=<hash>
+```
+
+| Action | HTTP | Endpoint | Key |
+|--------|------|----------|-----|
+| Create receipt | `POST` | `iapi/fakturakraj.json` (`fakturaparagon.json` is disabled for now) | `faktura` |
+| Download PDF | `GET` | `iapi/fakturaparagon/{id}.pdf` (`?typ=dup` = duplicate) | `faktura` |
+| Register payment (status) | `POST` | `iapi/faktury/wplaty/{type}/{id}.json` body `{"Kwota": …}` | `faktura` |
+| List documents (filters) | `GET` | `iapi/faktury.json?dataOd=…&dataDo=…&iloscNaStronie=…` (all three always sent) | `faktura` |
+| Document detail (JSON) | `GET` | `iapi/{type}/{id}.json` | `faktura` |
+| Send by e-mail | `POST` | `iapi/{type}/send/{id}.json` | `faktura` |
+| Daily API limit (optional) | `GET` | `iapi/abonent/limit.json` | `abonent` |
+
+Further calls made by the code (not in the reviewed table above): contractors with `GET iapi/kontrahenci/id/{identifier}.json`, `POST iapi/kontrahenci.json`, `PUT iapi/kontrahenci/{identifier}.json` and `GET iapi/kontrahenci/{phrase}.json` ([`IfirmaContractorService`](../classes/IfirmaContractorService.php)), and the KSeF submission `POST iapi/{type}/ksef/send/{id}.json` ([`IfirmaApiClient::sendToKsef()`](../classes/IfirmaApiClient.php)), all with the `faktura` key.
+
+Envelope: iFirma answers with a `response` object carrying `Kod` (non-zero is an error), `Informacja` and the result in `Wynik`; [`IfirmaApiClient`](../classes/IfirmaApiClient.php) reads these through `node()`. Error codes: [troubleshooting.md](troubleshooting.md).
+
+### Notes & assumptions (payload rules)
+
+- **Payment method follows the order.** `SposobZaplaty` is chosen per document: first from the order's payment module (the merchant map in `IFIRMA_PAYMENT_METHOD_MAP`, then the built-in defaults; an exact name or a `prefix*` wildcard), then from keywords in the order's payment method label, and finally the fallback code `IFIRMA_PAYMENT_METHOD`. Set the mode to `fixed` to always send the fallback code. The codes are GTK (cash), POB (cash on delivery), PRZ (bank transfer), KAR (card), PZA (direct debit), CZK (cheque), KOM (compensation), BAR (barter), DOT (DotPay), PAL (PayPal), ALG (PayU), P24 (Przelewy24), TPA (tpay.com) and ELE (electronic payment).
+- **Contractor registration.** iFirma treats a supplied `Kontrahent.Identyfikator` as a reference to an existing contractor (an unknown one is rejected with Kod 201, "Nie znaleziono kontrahenta"); it creates a contractor automatically only when the identifier is `null`. With `IFIRMA_CONTRACTOR_SYNC` on (default), the module first reads the contractor `PS-C<customer id>` (`GET kontrahenci/id/...`), creates it (`POST kontrahenci.json`) when missing, or refreshes the shop-owned fields (name, NIP, address, country, e-mail, private person flag) with a full-record `PUT` when they changed, and then issues the document with that identifier. If the contractor cannot be registered, or the document is still rejected with "Nie znaleziono kontrahenta", the document is created once with a `null` identifier so iFirma creates the contractor itself; the outcome (created / updated / kept / fallback) is shown in the order panel. Switch the option off to always send `null` and let iFirma create a new contractor from each document.
+- The **payment registration type token** varies per iFirma document/payment type. `prz_faktura_kraj` is a sensible default; verify yours against <https://api.ifirma.pl/rejestrowanie-wplat-do-faktur/> if the status update is rejected.
+- Product lines use the **gross** unit price (`LiczOd = BRT`). Shipping is added as a line.
+- **VAT rates on positions.** Every position is sent with `TypStawkiVat` `PRC`, never `ZW`: the fakturakraj table requires `PKWiU` for `ZW` positions and the shop holds no PKWiU codes, so 0% lines are sent as `PRC` with `StawkaVat` 0. The rate comes from the order line's stored tax rate when present (otherwise from gross/net) and is snapped to the documented values 0, 0.05, 0.08 and 0.23 when it is within half a percentage point, so rounding noise (for example 7.99%) becomes 0.08. A rate further away is sent unchanged so that iFirma reports it.
+- Business customers (company + VAT/NIP on the invoice address) are sent as `OsobaFizyczna = false` with their NIP; everyone else as a private person.
+- The contractor identifier the module creates is `PS-C{id_customer}` (at most 15 characters, iFirma's documented limit for new contractors). Existing contractors may carry longer identifiers; the module stores up to 64 characters, so the same customer always maps to the same iFirma contractor.
+- The order reference (`PS-ORDER-{id_order}-{reference}`) is stamped in `Uwagi` and in `DodatkoweUwagi` (`NUMER_ZAMOWIENIA`) of every document the module issues.
+- Text fields are truncated to iFirma's documented maxima before sending (e.g. buyer name 150, e-mail 65, street/city 65, product name 500, remarks 1000 characters).
+- An approved customer data-change request overrides the buyer data for the iFirma document only; the PrestaShop order and addresses are never modified.
+
+### Security notes
+
+- API keys are stored in `ps_configuration`; the *faktura* key is validated as a hexadecimal string before any request is signed.
+- Front-office PDF access requires an authenticated customer, a matching document token, and `id_customer` ownership - a customer can never fetch another's document.
+- Back-office actions run through `AdminIfirmaController`, protected by the standard PrestaShop admin token.
+- Every admin action (create, issue anyway, link, resend, refresh, approve/reject a request, PDF download) requires the `AdminIfirma` admin token; calls without it are refused by PrestaShop.
+- The cron endpoint is protected by a random secret token (`IFIRMA_CRON_TOKEN`, compared in constant time). Treat the URL like a password and regenerate the token in the module settings if it leaks.
+- The customer data-change request form carries a CSRF token which is verified before the request is accepted.
+- iFirma error bodies returned on a `.pdf` endpoint are detected so an error JSON is never streamed to the browser as a PDF.
+
+### PrestaShop 9.x notes
+
+The module is written to be legacy-safe on PS 9 (PHP 8.1+):
+
+- No `Tools::encrypt()` - download tokens use `random_bytes()` (CSPRNG).
+- No undeclared dynamic properties (PHP 8.2 safe); all model fields are declared.
+- Deprecated `Tools::strlen/substr/strtoupper` wrappers replaced by native `strlen` / `mb_*` calls.
+- Version compliance declared up to `9.99.99`.
+- The order panel renders through `displayAdminOrderMainBottom`; the deprecated `displayAdminOrder` hook is not used.
+
+## Test harness
+
+The PHPUnit suite runs without PrestaShop. Details of each part are in [development.md](development.md); the pieces are:
+
+- [`tests/bootstrap.php`](../tests/bootstrap.php) loads the stubs and preloads the core classes.
+- [`tests/Stubs/`](../tests/Stubs/README.md): hand-written PrestaShop stubs (`Db`, `Configuration`, `ObjectModel`, `Order`, `Module`, controllers and others). `IfirmaTestState::resetAll()` in `setUp()` resets all of them.
+- [`tests/Support/`](../tests/Support/): helpers, among them [`ScriptedTransport`](../tests/Support/ScriptedTransport.php) (a transport that answers from a script, so no test touches the network), [`IfirmaTestState`](../tests/Support/IfirmaTestState.php), [`ModuleLoader`](../tests/Support/ModuleLoader.php) and [`IfirmaGoldenPayloads`](../tests/Support/IfirmaGoldenPayloads.php).
+- [`tests/Unit/`](../tests/Unit/): the unit tests, one class under test per file group.
+- [`tests/fixtures/`](../tests/fixtures/README.md): golden payloads and other fixtures; `IFIRMA_GOLDEN_RECORD=1` rewrites the golden payloads.
+- [`tests/smoke/run.php`](../tests/smoke/run.php): the end-to-end script that runs inside the PrestaShop container against the mock; see [`tests/smoke/README.md`](../tests/smoke/README.md).
+
+## Test stack
+
+[`test-stack/`](../test-stack/README.md) is a git submodule (the repository `SecCodeSmith/test-stack`). Its own documentation is [`test-stack/README.md`](../test-stack/README.md); this section is the architectural summary only.
+
+- **Compose services** ([`test-stack/docker-compose.yml`](../test-stack/docker-compose.yml)): `db` (MariaDB), `prestashop` (the module checkout is bind-mounted at `/var/www/html/modules/ifirma`) and `ifirma-mock` (FastAPI, port 8001). The PrestaShop container reaches the mock at `http://ifirma-mock:8001/iapi/`, which is the value to set as the module's API base URL.
+- **Mock modules** (in [`test-stack/ifirma-mock/app/`](../test-stack/ifirma-mock/app/)): [`main.py`](../test-stack/ifirma-mock/app/main.py) (routes), [`auth.py`](../test-stack/ifirma-mock/app/auth.py) (signature check), [`store.py`](../test-stack/ifirma-mock/app/store.py) (documents, contractors, identifier sequences, test switches and call counters: the single owner of the mutable state, which announces every change to a listener), [`state.py`](../test-stack/ifirma-mock/app/state.py) (the JSON state file), [`ui.py`](../test-stack/ifirma-mock/app/ui.py) (the status page), [`pdf.py`](../test-stack/ifirma-mock/app/pdf.py) (minimal PDF), [`config.py`](../test-stack/ifirma-mock/app/config.py) (settings from `IFIRMA_MOCK_*`). Its pytest suite is in [`test-stack/ifirma-mock/tests/`](../test-stack/ifirma-mock/tests/).
+- **Signed-URL rule**: the mock rebuilds `IFIRMA_MOCK_BASE_URL + path` without the query string and verifies HMAC-SHA1 over that URL, the user, the key name and the raw body with the hex-decoded key, the same message the module signs (see the signing block above). `IFIRMA_MOCK_BASE_URL` must therefore match the base URL configured in the module.
+- **Test endpoints**: `/__mock/*` routes (seed documents and contractors, KSeF accept and reject, delete, reset, and the contractor, PDF and legacy switches). Each starts with a check that answers 404 when `IFIRMA_MOCK_TEST_ENDPOINTS` is `false`.
+- **State file and clean start**: when `IFIRMA_MOCK_STATE_FILE` is set, [`state.py`](../test-stack/ifirma-mock/app/state.py) registers itself at start-up as the store's change listener and rewrites the file atomically (`.tmp` plus rename) after every change, so documents, contractors, identifier sequences, the test switches and the served-call counter survive a restart; in the stack the file is `/data/ifirma-mock-state.json` on the `mock_data` volume. An empty variable means memory only (the pytest suite, a plain `uvicorn` run). An unreadable file or an unknown `version` is moved aside as `<file>.corrupt-<timestamp>` and the mock starts empty with a warning. `IFIRMA_MOCK_CLEAN_START=true` deletes the file at start-up (`make up-clean` in [`test-stack/Makefile`](../test-stack/Makefile)); the variable is read at start-up only and stays with the container until it is recreated. `POST /__mock/reset` clears the file too.
+- **Status page**: [`ui.py`](../test-stack/ifirma-mock/app/ui.py) renders `/__mock/status` from the dictionary that `status_data()` in `main.py` builds (settings, persistence state, call counters, switches, documents newest first, contractors), with a seed form, one form per switch and per-document KSeF and delete actions; every form posts to `/__mock/ui/...` and answers a 303 back to the page. `/__mock/status.json` returns the same dictionary. The page is a test endpoint (HTTP 404 when `IFIRMA_MOCK_TEST_ENDPOINTS` is `false`) and never counts as an API call.
+
+## Build and release
+
+`npm run build` makes the installable zip and the npm tarball ([`scripts/build-zip.mjs`](../scripts/build-zip.mjs) packs an allow-list of files under a top-level `ifirma/` folder), `npm run verify:package` ([`scripts/verify-package.mjs`](../scripts/verify-package.mjs)) checks the layout, and [`scripts/sync-version.mjs`](../scripts/sync-version.mjs) copies the version from `package.json` into `ifirma.php` and `config.xml`. CI ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)) has the jobs `lint`, `lint-php72`, `phpunit`, `coverage` (100% of changed lines), `build` and `mock` (the test-stack pytest suite); [`.github/workflows/release.yml`](../.github/workflows/release.yml) verifies, bumps the version, tags, builds and publishes the GitHub release. Commands and details: [development.md](development.md).
