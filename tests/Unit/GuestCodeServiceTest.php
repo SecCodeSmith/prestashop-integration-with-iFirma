@@ -21,6 +21,9 @@ class GuestCodeServiceTest extends TestCase
 {
     const TABLE = '`ps_ifirma_guest_code`';
 
+    /** The statement that counts an attempt, before the code is compared. */
+    const ATTEMPT_PATTERN = '/^UPDATE `ps_ifirma_guest_code` SET attempts = attempts \+ 1\s+WHERE id_ifirma_guest_code = (\d+) AND used_at IS NULL AND invalidated = 0\s+AND attempts < (\d+) AND expires_at > \'([^\']+)\'/';
+
     /** @var array[] id => row of the table */
     private $rows = array();
 
@@ -110,11 +113,16 @@ class GuestCodeServiceTest extends TestCase
 
             return true;
         });
-        $db->whenExecute('/^UPDATE ' . $t . ' SET attempts = attempts \+ 1 WHERE id_ifirma_guest_code = (\d+)/', function ($sql, $m) use ($self) {
+        $db->whenExecute(self::ATTEMPT_PATTERN, function ($sql, $m) use ($self) {
             $self->writes[] = $sql;
+            $row = $self->rows[(int) $m[1]];
+            // the conditions of the statement, as the database would apply them
+            if ($row['used_at'] !== null || $row['invalidated'] || $row['attempts'] >= (int) $m[2] || $row['expires_at'] <= $m[3]) {
+                return 0;
+            }
             $self->rows[(int) $m[1]]['attempts']++;
 
-            return true;
+            return 1;
         });
         $db->whenExecute('/^UPDATE ' . $t . ' SET invalidated = 1\s+WHERE id_ifirma_guest_code = (\d+) AND attempts >= (\d+)/', function ($sql, $m) use ($self) {
             $self->writes[] = $sql;
@@ -158,9 +166,9 @@ class GuestCodeServiceTest extends TestCase
 
             return $n;
         });
-        $db->whenGetRow('/^SELECT id_ifirma_guest_code, code_hash, salt FROM ' . $t . '\s+WHERE id_order = (\d+)\s+AND used_at IS NULL AND invalidated = 0\s+AND expires_at > \'([^\']+)\'/', function ($sql, $m) use ($self) {
+        $db->whenGetRow('/^SELECT id_ifirma_guest_code, code_hash, salt FROM ' . $t . '\s+WHERE id_order = (\d+)\s+AND used_at IS NULL AND invalidated = 0 AND attempts < (\d+)\s+AND expires_at > \'([^\']+)\'/', function ($sql, $m) use ($self) {
             foreach (array_reverse($self->rows, true) as $id => $row) {
-                if ((int) $row['id_order'] === (int) $m[1] && $row['used_at'] === null && !$row['invalidated'] && $row['expires_at'] > $m[2]) {
+                if ((int) $row['id_order'] === (int) $m[1] && $row['used_at'] === null && !$row['invalidated'] && $row['attempts'] < (int) $m[2] && $row['expires_at'] > $m[3]) {
                     return array('id_ifirma_guest_code' => $id, 'code_hash' => $row['code_hash'], 'salt' => $row['salt']);
                 }
             }
@@ -266,6 +274,53 @@ class GuestCodeServiceTest extends TestCase
         $this->assertTrue($service->verify(1, '123456'));
     }
 
+    /**
+     * Red team 1.6.0 F5: parallel guesses read the same row; only the one whose conditional UPDATE counts an
+     * attempt may compare, so a code never gets more than MAX_ATTEMPTS comparisons.
+     */
+    public function testAGuessWhoseAttemptWasNotCountedIsRefusedWithoutComparing()
+    {
+        $this->numbers = array(123456);
+        $service = $this->service();
+        $service->issue($this->order(1), '10.0.0.1');
+        // another request took the last attempt between our read and our UPDATE: 0 rows affected
+        Db::getInstance()->whenExecute(self::ATTEMPT_PATTERN, 0);
+        $before = $this->writes;
+
+        $this->assertFalse($service->verify(1, '123456'), 'even the right code is not compared');
+
+        $new = array_slice($this->writes, count($before));
+        $this->assertCount(0, $new, 'neither a use nor an invalidation was written');
+        $this->assertNull(reset($this->rows)['used_at']);
+        $queries = implode("\n", Db::getInstance()->executed);
+        $this->assertStringNotContainsString('SET used_at', $queries);
+    }
+
+    public function testTheAttemptIsCountedByAConditionalUpdateBeforeTheCodeIsCompared()
+    {
+        $this->numbers = array(123456);
+        $service = $this->service();
+        $service->issue($this->order(1), '10.0.0.1');
+        Db::getInstance()->executed = array();
+
+        $service->verify(1, '123456');
+
+        $executed = Db::getInstance()->executed;
+        $this->assertCount(2, $executed);
+        $this->assertMatchesRegularExpression(self::ATTEMPT_PATTERN, $executed[0]);
+        $this->assertStringContainsString('SET used_at', $executed[1]);
+    }
+
+    public function testACodeWithAllAttemptsCountedIsNotEvenReadWhenItWasNotYetInvalidated()
+    {
+        $this->numbers = array(123456);
+        $service = $this->service();
+        $service->issue($this->order(1), '10.0.0.1');
+        $this->rows[1]['attempts'] = IfirmaGuestCodeService::MAX_ATTEMPTS;
+
+        $this->assertFalse($service->verify(1, '123456'));
+        $this->assertNull($this->rows[1]['used_at']);
+    }
     // ---- the limits ----------------------------------------------------------------------------------
 
     public function testAnImmediateResendIsRefusedAndTheWindowOpensAfterAMinute()

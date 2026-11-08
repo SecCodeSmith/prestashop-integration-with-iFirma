@@ -196,25 +196,35 @@ class IfirmaGuestCodeService
         }
 
         $db = Db::getInstance();
+        $now = pSQL($this->stamp($this->now()));
         $row = $db->getRow(
             'SELECT id_ifirma_guest_code, code_hash, salt FROM ' . $this->table() . '
              WHERE id_order = ' . (int) $idOrder . '
-             AND used_at IS NULL AND invalidated = 0
-             AND expires_at > \'' . pSQL($this->stamp($this->now())) . '\'
+             AND used_at IS NULL AND invalidated = 0 AND attempts < ' . self::MAX_ATTEMPTS . '
+             AND expires_at > \'' . $now . '\'
              ORDER BY id_ifirma_guest_code DESC'
         ); // no LIMIT here: Db::getRow() appends its own "LIMIT 1" and a second one is a syntax error on MariaDB
         if (!is_array($row) || empty($row['id_ifirma_guest_code'])) {
-            // the same work as for a real row
-            hash_equals($this->codeHash(str_repeat('0', 32), $code), $this->codeHash(str_repeat('1', 32), $code));
-
-            return false;
+            return $this->refuseWithoutRow($code);
         }
 
         $id = (int) $row['id_ifirma_guest_code'];
+        // The attempt is counted by one conditional UPDATE BEFORE the comparison, and the comparison happens
+        // only for the request whose UPDATE changed the row: parallel guesses that read the same row cannot
+        // exceed MAX_ATTEMPTS comparisons.
+        $db->execute(
+            'UPDATE ' . $this->table() . ' SET attempts = attempts + 1
+             WHERE id_ifirma_guest_code = ' . $id . ' AND used_at IS NULL AND invalidated = 0
+             AND attempts < ' . self::MAX_ATTEMPTS . ' AND expires_at > \'' . $now . '\''
+        );
+        if ((int) $db->Affected_Rows() !== 1) {
+            return $this->refuseWithoutRow($code);
+        }
+
         if (hash_equals((string) $row['code_hash'], $this->codeHash((string) $row['salt'], $code))) {
             // consumed by one conditional UPDATE, so two parallel requests cannot both pass
             $db->execute(
-                'UPDATE ' . $this->table() . ' SET used_at = \'' . pSQL($this->stamp($this->now())) . '\'
+                'UPDATE ' . $this->table() . ' SET used_at = \'' . $now . '\'
                  WHERE id_ifirma_guest_code = ' . $id . ' AND used_at IS NULL AND invalidated = 0'
             );
 
@@ -222,12 +232,22 @@ class IfirmaGuestCodeService
         }
 
         $db->execute(
-            'UPDATE ' . $this->table() . ' SET attempts = attempts + 1 WHERE id_ifirma_guest_code = ' . $id
-        );
-        $db->execute(
             'UPDATE ' . $this->table() . ' SET invalidated = 1
              WHERE id_ifirma_guest_code = ' . $id . ' AND attempts >= ' . self::MAX_ATTEMPTS
         );
+
+        return false;
+    }
+
+    /**
+     * The same hash work as a real comparison, so a refusal costs the same.
+     *
+     * @param string $code
+     * @return bool false
+     */
+    private function refuseWithoutRow($code)
+    {
+        hash_equals($this->codeHash(str_repeat('0', 32), $code), $this->codeHash(str_repeat('1', 32), $code));
 
         return false;
     }
