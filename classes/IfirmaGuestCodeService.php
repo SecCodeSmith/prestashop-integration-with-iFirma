@@ -201,8 +201,8 @@ class IfirmaGuestCodeService
              WHERE id_order = ' . (int) $idOrder . '
              AND used_at IS NULL AND invalidated = 0
              AND expires_at > \'' . pSQL($this->stamp($this->now())) . '\'
-             ORDER BY id_ifirma_guest_code DESC LIMIT 1'
-        );
+             ORDER BY id_ifirma_guest_code DESC'
+        ); // no LIMIT here: Db::getRow() appends its own "LIMIT 1" and a second one is a syntax error on MariaDB
         if (!is_array($row) || empty($row['id_ifirma_guest_code'])) {
             // the same work as for a real row
             hash_equals($this->codeHash(str_repeat('0', 32), $code), $this->codeHash(str_repeat('1', 32), $code));

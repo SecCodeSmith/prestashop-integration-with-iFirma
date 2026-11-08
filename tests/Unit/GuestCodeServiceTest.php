@@ -368,6 +368,25 @@ class GuestCodeServiceTest extends TestCase
         $this->assertSame(array(), $this->rows);
     }
 
+    /**
+     * Db::getRow() appends its own "LIMIT 1"; a second LIMIT in the statement is a syntax error on MariaDB,
+     * which made every code check fail on a real shop (red team 1.6.0, dimension 1).
+     */
+    public function testTheVerifyQueryLeavesTheLimitToGetRow()
+    {
+        $this->service()->verify(77, '123456');
+
+        $select = null;
+        foreach (array_reverse(Db::getInstance()->queries) as $sql) {
+            if (strpos($sql, 'SELECT id_ifirma_guest_code') === 0) {
+                $select = $sql;
+                break;
+            }
+        }
+        $this->assertNotNull($select, 'the verification reads the newest active code with getRow()');
+        $this->assertStringNotContainsStringIgnoringCase('LIMIT', $select);
+    }
+
     // ---- housekeeping ----------------------------------------------------------------------------------
 
     private function seed($idOrder, $dateAdd, $expiresAt, $usedAt)
