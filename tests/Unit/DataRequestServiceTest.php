@@ -1571,7 +1571,7 @@ class DataRequestServiceTest extends TestCase
 
     public function testTokenHelper()
     {
-        $this->assertTrue(IfirmaDataRequestService::isValidToken('front-token'));
+        $this->assertTrue(IfirmaDataRequestService::isValidToken(IfirmaTestState::formToken()));
         $this->assertFalse(IfirmaDataRequestService::isValidToken('wrong'));
         $this->assertFalse(IfirmaDataRequestService::isValidToken(''));
         $this->assertFalse(IfirmaDataRequestService::isValidToken(false));
@@ -1616,7 +1616,7 @@ class DataRequestServiceTest extends TestCase
     public function testControllerSubmitsWithValidTokenAndRedirects()
     {
         $controller = $this->controller();
-        Tools::$values = array('id_order' => 15, 'submitIfirmaDataRequest' => '1', 'token' => 'front-token') + $this->companyInput();
+        Tools::$values = array('id_order' => 15, 'submitIfirmaDataRequest' => '1', 'token' => IfirmaTestState::formToken()) + $this->companyInput();
         try {
             $controller->postProcess();
             $this->fail('expected redirect');
@@ -1629,7 +1629,7 @@ class DataRequestServiceTest extends TestCase
     public function testControllerShowsFieldErrorsOnInvalidInput()
     {
         $controller = $this->controller();
-        Tools::$values = array('id_order' => 15, 'submitIfirmaDataRequest' => '1', 'token' => 'front-token') + $this->companyInput(array('vat_number' => ''));
+        Tools::$values = array('id_order' => 15, 'submitIfirmaDataRequest' => '1', 'token' => IfirmaTestState::formToken()) + $this->companyInput(array('vat_number' => ''));
         $controller->postProcess();
         $this->assertArrayHasKey('vat_number', $controller->fieldErrors);
         $this->assertSame(array(), IfirmaTestState::objects('ifirma_data_request'));
@@ -1658,7 +1658,7 @@ class DataRequestServiceTest extends TestCase
         $controller->initContent();
         $this->assertSame('module:ifirma/views/templates/front/datarequest.tpl', $controller->template);
         $vars = Context::getContext()->smarty->vars;
-        $this->assertSame('front-token', $vars['ifirma_token']);
+        $this->assertSame(IfirmaTestState::formToken(), $vars['ifirma_token']);
         $this->assertTrue($vars['ifirma_eligibility']['allowed']);
     }
 
@@ -1753,12 +1753,47 @@ class DataRequestServiceTest extends TestCase
     public function testControllerDoesNothingWhenTheFormWasNotPosted()
     {
         $controller = $this->controller();
-        Tools::$values = array('id_order' => 15, 'token' => 'front-token') + $this->companyInput();
+        Tools::$values = array('id_order' => 15, 'token' => IfirmaTestState::formToken()) + $this->companyInput();
 
         $this->assertNull($controller->postProcess());
         $this->assertSame(array(), $controller->errors);
         $this->assertSame(array(), $controller->fieldErrors);
         $this->assertSame(array(), $controller->submitted);
+        $this->assertSame(array(), IfirmaTestState::objects('ifirma_data_request'));
+    }
+
+    /**
+     * Red team 1.6.0 F2: a link or an image tag is a GET; no state may change over it, even with a valid token.
+     */
+    public function testControllerChangesNothingOverGetEvenWithAValidTokenAndEveryField()
+    {
+        $request = $this->submitPending();
+        Db::getInstance()->whenGetValue('/SELECT id_ifirma_data_request.*status = "pending"/s', (int) $request->id);
+        IfirmaTestState::clearWrites();
+        Mail::$sent = array();
+        $_SERVER['REQUEST_METHOD'] = 'GET';
+
+        foreach (array('submitIfirmaDataRequest', 'cancelIfirmaDataRequest') as $action) {
+            $controller = $this->controller();
+            Tools::$values = array('id_order' => 15, $action => '1', 'token' => IfirmaTestState::formToken()) + $this->companyInput();
+
+            $this->assertNull($controller->postProcess());
+            $this->assertSame(array(), $controller->errors);
+        }
+
+        $this->assertSame(array(), IfirmaTestState::writes('ifirma_data_request'));
+        $this->assertSame(IfirmaDataRequest::STATUS_PENDING, $request->status);
+        $this->assertSame(array(), Mail::$sent);
+    }
+
+    public function testControllerRefusesTheTokenOfAnotherVisitor()
+    {
+        $controller = $this->controller();
+        $foreign = IfirmaFormToken::forVisitor(new stdClass(), IfirmaFormToken::cookieKey());
+        Tools::$values = array('id_order' => 15, 'submitIfirmaDataRequest' => '1', 'token' => $foreign) + $this->companyInput();
+        $controller->postProcess();
+
+        $this->assertNotEmpty($controller->errors);
         $this->assertSame(array(), IfirmaTestState::objects('ifirma_data_request'));
     }
 
@@ -1768,7 +1803,7 @@ class DataRequestServiceTest extends TestCase
         Db::getInstance()->whenGetValue('/SELECT id_ifirma_data_request.*status = "pending"/s', (int) $request->id);
         IfirmaTestState::clearWrites();
         $controller = $this->controller();
-        Tools::$values = array('id_order' => 15, 'cancelIfirmaDataRequest' => '1', 'token' => 'front-token') + $this->companyInput();
+        Tools::$values = array('id_order' => 15, 'cancelIfirmaDataRequest' => '1', 'token' => IfirmaTestState::formToken()) + $this->companyInput();
         try {
             $controller->postProcess();
             $this->fail('expected redirect');
@@ -1787,7 +1822,7 @@ class DataRequestServiceTest extends TestCase
     public function testControllerRefusesToCancelWhenNothingIsPending()
     {
         $controller = $this->controller();
-        Tools::$values = array('id_order' => 15, 'cancelIfirmaDataRequest' => '1', 'token' => 'front-token');
+        Tools::$values = array('id_order' => 15, 'cancelIfirmaDataRequest' => '1', 'token' => IfirmaTestState::formToken());
         $controller->postProcess();
 
         $this->assertSame(array('This request is no longer pending.'), $controller->errors);
@@ -1799,7 +1834,7 @@ class DataRequestServiceTest extends TestCase
     {
         $controller = $this->controller();
         Tools::$values = array(
-            'stray' => 'ignored', 'id_order' => 15, 'submitIfirmaDataRequest' => '1', 'token' => 'front-token',
+            'stray' => 'ignored', 'id_order' => 15, 'submitIfirmaDataRequest' => '1', 'token' => IfirmaTestState::formToken(),
             'customer_note' => 'Call me', 'city' => 'Gdansk', 'company' => array('Not', 'text'),
         );
         $controller->postProcess();
@@ -1826,7 +1861,7 @@ class DataRequestServiceTest extends TestCase
     public function testControllerStoresTheRequestFromTheFormFields()
     {
         $controller = $this->controller();
-        Tools::$values = array('stray' => 'ignored', 'id_order' => 15, 'submitIfirmaDataRequest' => '1', 'token' => 'front-token')
+        Tools::$values = array('stray' => 'ignored', 'id_order' => 15, 'submitIfirmaDataRequest' => '1', 'token' => IfirmaTestState::formToken())
             + $this->companyInput();
         try {
             $controller->postProcess();
@@ -1864,7 +1899,7 @@ class DataRequestServiceTest extends TestCase
     {
         $controller = $this->controller();
         $posted = $this->companyInput(array('vat_number' => ''));
-        Tools::$values = array('id_order' => 15, 'submitIfirmaDataRequest' => '1', 'token' => 'front-token') + $posted;
+        Tools::$values = array('id_order' => 15, 'submitIfirmaDataRequest' => '1', 'token' => IfirmaTestState::formToken()) + $posted;
         $controller->postProcess();
         $controller->initContent();
 
@@ -1925,7 +1960,7 @@ class DataRequestServiceTest extends TestCase
     public function testCollectInputReadsEveryFieldInTheOrderOfFields()
     {
         Tools::$values = array(
-            'stray' => 'ignored', 'token' => 'front-token', 'id_order' => 15,
+            'stray' => 'ignored', 'token' => IfirmaTestState::formToken(), 'id_order' => 15,
             'customer_note' => 'Call me', 'city' => ' Gdansk ', 'company' => array('Not', 'text'),
             'want_invoice_for_company' => '1', 'id_country' => 14, 'address2' => '0', 'vat_number' => '',
         );
@@ -1950,7 +1985,7 @@ class DataRequestServiceTest extends TestCase
 
     public function testCollectInputReturnsAFullFormAsPosted()
     {
-        Tools::$values = array('id_order' => 15, 'token' => 'front-token') + $this->companyInput();
+        Tools::$values = array('id_order' => 15, 'token' => IfirmaTestState::formToken()) + $this->companyInput();
 
         $this->assertSame($this->companyInput(), $this->service->collectInput());
     }

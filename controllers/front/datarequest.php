@@ -14,6 +14,7 @@ if (!defined('_PS_VERSION_')) {
 }
 
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDataRequestService.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaFormToken.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaInput.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaIssuancePipeline.php';
 
@@ -131,6 +132,11 @@ class IfirmaDatarequestModuleFrontController extends ModuleFrontController
     {
         $this->requireLogin();
 
+        if (!IfirmaInput::isPost()) {
+            // a link or an image tag is a GET: nothing changes over it, whatever it carries
+            return;
+        }
+
         $submit = Tools::getValue('submitIfirmaDataRequest');
         $cancel = Tools::getValue('cancelIfirmaDataRequest');
         if (!$submit && !$cancel) {
@@ -138,7 +144,7 @@ class IfirmaDatarequestModuleFrontController extends ModuleFrontController
         }
 
         $order = $this->loadOrder();
-        if (!IfirmaDataRequestService::isValidToken($this->readToken())) {
+        if (!IfirmaFormToken::isValid($this->readToken(), $this->context->cookie, IfirmaFormToken::cookieKey())) {
             $this->errors[] = $this->service()->reasonMessage('invalid_token');
 
             return;
@@ -198,7 +204,7 @@ class IfirmaDatarequestModuleFrontController extends ModuleFrontController
             'ifirma_address' => $address,
             'ifirma_values' => $values,
             'ifirma_countries' => $countries,
-            'ifirma_token' => Tools::getToken(false),
+            'ifirma_token' => IfirmaFormToken::forVisitor($this->context->cookie, IfirmaFormToken::cookieKey()),
             'ifirma_errors' => $this->errors,
             'ifirma_field_errors' => $this->fieldErrors,
             'ifirma_form_action' => $this->context->link->getModuleLink($this->module->name, 'datarequest', array(), true),

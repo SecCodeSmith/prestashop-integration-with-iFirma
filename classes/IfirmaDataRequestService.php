@@ -20,6 +20,7 @@ require_once dirname(__FILE__) . '/IfirmaDataRequest.php';
 require_once dirname(__FILE__) . '/IfirmaDataRequestNotifier.php';
 require_once dirname(__FILE__) . '/IfirmaDataRequestAutoAccept.php';
 require_once dirname(__FILE__) . '/IfirmaSchema.php';
+require_once dirname(__FILE__) . '/IfirmaFormToken.php';
 
 /**
  * Business rules of the customer data-change request.
@@ -100,16 +101,14 @@ class IfirmaDataRequestService
     }
 
     /**
-     * Constant-time comparison of a submitted form token with the session token.
+     * Whether a submitted form token is the one of this visitor (see IfirmaFormToken; the controllers call that class directly).
      *
      * @param mixed $given
      * @return bool
      */
     public static function isValidToken($given)
     {
-        $expected = (string) Tools::getToken(false);
-
-        return is_string($given) && $given !== '' && $expected !== '' && hash_equals($expected, $given);
+        return IfirmaFormToken::isValid($given, Context::getContext()->cookie, IfirmaFormToken::cookieKey());
     }
 
     /**

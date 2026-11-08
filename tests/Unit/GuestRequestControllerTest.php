@@ -142,7 +142,7 @@ class GuestRequestControllerTest extends TestCase
     {
         return $this->request($over + array(
             'identifyIfirmaGuest' => '1',
-            'token' => 'front-token',
+            'token' => IfirmaTestState::formToken(),
             'reference' => 'ABCDEFGHI',
             'email' => 'jan@example.test',
         ));
@@ -152,7 +152,7 @@ class GuestRequestControllerTest extends TestCase
     {
         return $this->request(array(
             'verifyIfirmaGuest' => '1',
-            'token' => 'front-token',
+            'token' => IfirmaTestState::formToken(),
             'reference' => 'ABCDEFGHI',
             'email' => 'jan@example.test',
             'code' => $code,
@@ -170,7 +170,7 @@ class GuestRequestControllerTest extends TestCase
     {
         return $over + array(
             'id_order' => '15',
-            'token' => 'front-token',
+            'token' => IfirmaTestState::formToken(),
             'submitIfirmaDataRequest' => '1',
             'firstname' => 'Jan',
             'lastname' => 'K',
@@ -349,7 +349,7 @@ class GuestRequestControllerTest extends TestCase
      */
     public function testAStepWithoutTheTokenOrWithAWrongOneDoesNothing(array $values)
     {
-        foreach (array(array(), array('token' => ''), array('token' => 'wrong'), array('token' => array('front-token'))) as $token) {
+        foreach (array(array(), array('token' => ''), array('token' => 'wrong'), array('token' => array('x'))) as $token) {
             Mail::$sent = array();
             $this->request($values + $token);
 
@@ -361,6 +361,63 @@ class GuestRequestControllerTest extends TestCase
             $this->assertSame(array(), IfirmaTestState::objects('ifirma_data_request'));
             $this->assertNull($this->cookie());
         }
+    }
+
+    /**
+     * Red team 1.6.0 F2: the token of one visitor is useless for another.
+     *
+     * @dataProvider steps
+     */
+    public function testAStepWithTheTokenOfAnotherVisitorDoesNothing(array $values)
+    {
+        $foreign = IfirmaFormToken::forVisitor(new stdClass(), IfirmaFormToken::cookieKey());
+        $this->request(array());
+
+        $this->request($values + array('token' => $foreign));
+
+        $this->assertSame(array('Invalid form token.'), $this->vars()['ifirma_errors']);
+        $this->assertSame(array(), $this->codes()->issued);
+        $this->assertSame(array(), $this->codes()->verified);
+        $this->assertSame(array(), Mail::$sent);
+        $this->assertSame(array(), IfirmaTestState::objects('ifirma_data_request'));
+    }
+
+    public function testThePageHandsEveryVisitorHisOwnToken()
+    {
+        $this->request(array());
+        $first = $this->vars()['ifirma_token'];
+        $this->assertSame($first, IfirmaTestState::formToken());
+
+        Context::getContext()->cookie = new stdClass();
+        $this->request(array());
+
+        $this->assertNotSame($first, $this->vars()['ifirma_token']);
+        $this->assertNotSame('', $this->vars()['ifirma_token']);
+    }
+
+    /**
+     * Red team 1.6.0 F2: nothing may change over GET, a valid token and every field notwithstanding.
+     *
+     * @dataProvider steps
+     */
+    public function testAGetRequestCarryingAValidTokenAndEveryFieldChangesNothing(array $values)
+    {
+        $this->openSession();
+        $this->codes()->verified = array();
+        Mail::$sent = array();
+        $session = $this->cookie();
+        $_SERVER['REQUEST_METHOD'] = 'GET';
+
+        $controller = $this->request($values + $this->formValues() + array('code' => '123456', 'token' => IfirmaTestState::formToken()));
+
+        $this->assertSame(array(), $this->codes()->issued);
+        $this->assertSame(array(), $this->codes()->verified);
+        $this->assertSame(array(), Mail::$sent);
+        $this->assertSame(array(), IfirmaTestState::objects('ifirma_data_request'));
+        $this->assertSame(array(), $controller->resumed);
+        $this->assertSame(array(), $controller->errors);
+        $this->assertSame($session, $this->cookie());
+        $this->assertSame('form', $this->vars()['ifirma_step']);
     }
 
     // ---- verification --------------------------------------------------------------------------------
@@ -406,7 +463,7 @@ class GuestRequestControllerTest extends TestCase
     public function testAnUnknownOrderGetsTheSameAnswerAsAWrongCode()
     {
         $this->request(array(
-            'verifyIfirmaGuest' => '1', 'token' => 'front-token', 'reference' => 'ZZZZZZZZZ',
+            'verifyIfirmaGuest' => '1', 'token' => IfirmaTestState::formToken(), 'reference' => 'ZZZZZZZZZ',
             'email' => 'jan@example.test', 'code' => '123456',
         ));
 
@@ -543,7 +600,7 @@ class GuestRequestControllerTest extends TestCase
         $this->request(array());
         $this->assertNotNull($this->vars()['ifirma_pending']);
 
-        $this->request(array('cancelIfirmaDataRequest' => '1', 'token' => 'front-token', 'id_order' => '15'));
+        $this->request(array('cancelIfirmaDataRequest' => '1', 'token' => IfirmaTestState::formToken(), 'id_order' => '15'));
 
         $v = $this->vars();
         $this->assertSame('done', $v['ifirma_step']);
@@ -558,7 +615,7 @@ class GuestRequestControllerTest extends TestCase
     {
         $this->openSession();
 
-        $this->request(array('cancelIfirmaDataRequest' => '1', 'token' => 'front-token', 'id_order' => '15'));
+        $this->request(array('cancelIfirmaDataRequest' => '1', 'token' => IfirmaTestState::formToken(), 'id_order' => '15'));
 
         $this->assertSame('form', $this->vars()['ifirma_step']);
         $this->assertSame(array('This request is no longer pending.'), $this->vars()['ifirma_errors']);

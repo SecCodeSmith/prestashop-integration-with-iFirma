@@ -37,6 +37,8 @@ class IfirmaTestState
         PrestaShopLogger::reset();
         HelperForm::reset();
         Context::reset();
+        // a request is a POST unless the test says otherwise (the customer forms change state on POST only)
+        $_SERVER['REQUEST_METHOD'] = 'POST';
         IfirmaApiClient::setDefaultTransport(null);
         if (class_exists('IfirmaSchema', false)) {
             IfirmaSchema::resetEnsureCache();
@@ -51,6 +53,12 @@ class IfirmaTestState
             $p->setAccessible(true);
             $p->setValue(null, false);
         }
+    }
+
+    /** The form token of the current visitor (the cookie of the Context), created on first use. */
+    public static function formToken()
+    {
+        return IfirmaFormToken::forVisitor(Context::getContext()->cookie, IfirmaFormToken::cookieKey());
     }
 
     /** In-memory ObjectModel rows of a table (id => field array). */

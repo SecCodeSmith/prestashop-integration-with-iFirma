@@ -18,6 +18,7 @@
 define('_PS_VERSION_', '8.1.0');
 define('_DB_PREFIX_', 'ps_');
 define('_MYSQL_ENGINE_', 'InnoDB');
+define('_COOKIE_KEY_', 'unit-test-cookie-key-0123456789');
 // _PS_MODULE_DIR_ . 'ifirma/...' must resolve to this repository whatever the checkout folder is
 // called: PrestaShop installs the module as modules/ifirma, but a clone may be named after the
 // GitHub repository. When the folder is not 'ifirma', point _PS_MODULE_DIR_ at a temp directory
@@ -61,6 +62,7 @@ require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaContractorService.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaCustomerContractorService.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaReceiptService.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDownloadThrottle.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaFormToken.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaCustomerView.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaStatusSyncService.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDeliveryService.php';

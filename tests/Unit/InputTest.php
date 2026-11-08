@@ -87,4 +87,16 @@ class InputTest extends TestCase
     {
         $this->assertNull(IfirmaInput::decimal($value));
     }
+
+    public function testOnlyAPostIsAPost()
+    {
+        foreach (array('POST' => true, 'post' => true, 'GET' => false, 'HEAD' => false, '' => false) as $method => $expected) {
+            $_SERVER['REQUEST_METHOD'] = (string) $method;
+            $this->assertSame($expected, IfirmaInput::isPost(), var_export($method, true));
+        }
+
+        unset($_SERVER['REQUEST_METHOD']);
+        $this->assertFalse(IfirmaInput::isPost());
+        $_SERVER['REQUEST_METHOD'] = 'POST';
+    }
 }

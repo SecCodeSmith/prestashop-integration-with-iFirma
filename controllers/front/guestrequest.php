@@ -14,6 +14,7 @@ if (!defined('_PS_VERSION_')) {
 }
 
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDataRequestService.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaFormToken.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDataRequestNotifier.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaGuestCodeService.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaInput.php';
@@ -131,9 +132,9 @@ class IfirmaGuestrequestModuleFrontController extends ModuleFrontController
     /**
      * @return string
      */
-    private function cookieKey()
+    protected function cookieKey()
     {
-        return defined('_COOKIE_KEY_') ? (string) _COOKIE_KEY_ : '';
+        return IfirmaFormToken::cookieKey();
     }
 
     /**
@@ -236,6 +237,11 @@ class IfirmaGuestrequestModuleFrontController extends ModuleFrontController
         $this->reference = $this->input('reference');
         $this->email = $this->input('email');
 
+        if (!IfirmaInput::isPost()) {
+            // a link or an image tag is a GET: nothing changes over it, whatever it carries
+            return;
+        }
+
         $action = '';
         foreach (array('identifyIfirmaGuest', 'verifyIfirmaGuest', 'submitIfirmaDataRequest', 'cancelIfirmaDataRequest') as $name) {
             if (Tools::getValue($name)) {
@@ -252,7 +258,7 @@ class IfirmaGuestrequestModuleFrontController extends ModuleFrontController
 
             return;
         }
-        if (!IfirmaDataRequestService::isValidToken(IfirmaInput::scalar(Tools::getValue('token')))) {
+        if (!IfirmaFormToken::isValid(IfirmaInput::scalar(Tools::getValue('token')), $this->context->cookie, $this->cookieKey())) {
             $this->errors[] = $this->service()->reasonMessage('invalid_token');
             $this->step = $action === 'verifyIfirmaGuest' ? 'verify' : '';
 
@@ -424,7 +430,7 @@ class IfirmaGuestrequestModuleFrontController extends ModuleFrontController
         $vars = array(
             'ifirma_errors' => $this->errors,
             'ifirma_notice' => $this->notice,
-            'ifirma_token' => Tools::getToken(false),
+            'ifirma_token' => IfirmaFormToken::forVisitor($this->context->cookie, $this->cookieKey()),
             'ifirma_form_action' => $this->context->link->getModuleLink($this->module->name, 'guestrequest', array(), true),
             'ifirma_reference' => $this->reference !== '' ? $this->reference : $this->input('reference'),
             'ifirma_email' => $this->email,

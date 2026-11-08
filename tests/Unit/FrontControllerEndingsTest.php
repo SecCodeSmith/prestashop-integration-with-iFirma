@@ -172,7 +172,7 @@ class FrontControllerEndingsTest extends TestCase
         Country::register($country);
         Tools::$values = array(
             'id_order' => '15',
-            'token' => 'front-token',
+            'token' => IfirmaTestState::formToken(),
             'submitIfirmaDataRequest' => '1',
             'firstname' => 'Jan',
             'lastname' => 'K',

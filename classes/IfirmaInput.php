@@ -21,6 +21,14 @@ if (!defined('_PS_VERSION_')) {
 class IfirmaInput
 {
     /**
+     * @return bool whether the request is a POST (the only method that may change state)
+     */
+    public static function isPost()
+    {
+        return isset($_SERVER['REQUEST_METHOD']) && strtoupper((string) $_SERVER['REQUEST_METHOD']) === 'POST';
+    }
+
+    /**
      * @param mixed $value a request value
      * @return string '' for an array, an object, null or false; the string form of any other scalar
      */
