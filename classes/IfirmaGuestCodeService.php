@@ -14,12 +14,14 @@ if (!defined('_PS_VERSION_')) {
 }
 
 require_once dirname(__FILE__) . '/IfirmaSchema.php';
+require_once dirname(__FILE__) . '/IfirmaNamedLock.php';
 
 /**
  * The single-use codes that prove a guest controls the e-mail address of an order.
  *
  * Public contract:
- *  - issue(Order, clientAddress): the plain six-digit code (zero padded), or null when a limit refused it
+ *  - issue(Order, clientAddress): the plain six-digit code (zero padded), or null when a limit refused it or the
+ *    per-order lock (GET_LOCK, 2 s) was not granted
  *    (the newest code of the order is younger than RESEND_WINDOW seconds, ORDER_CAP_24H codes of the order
  *    exist in the last 24 hours, or IP_CAP_1H codes of the same client address exist in the last hour).
  *    The earlier unused codes of the order are invalidated. The plain code is returned once and never
@@ -136,20 +138,43 @@ class IfirmaGuestCodeService
     /**
      * @param Order  $order
      * @param string $clientAddress
-     * @return string|null the six-digit code, null when a limit refused it
+     * @return string|null the six-digit code, null when a limit refused it or the order lock was not granted
      */
     public function issue(Order $order, $clientAddress)
     {
         IfirmaSchema::ensureGuestCodeTable();
         $this->cleanup();
 
-        $now = $this->now();
         $idOrder = (int) $order->id;
         $code = str_pad((string) $this->randomNumber(), 6, '0', STR_PAD_LEFT);
         $salt = bin2hex(random_bytes(16));
         $hash = $this->codeHash($salt, $code);
         $ipHash = $this->addressHash($clientAddress);
 
+        // The caps are counted and the code is inserted under one lock per order, so parallel requests cannot
+        // all pass the counts before any of them has inserted.
+        $lock = 'ifirma_guest_' . $idOrder;
+        if (!IfirmaNamedLock::acquire($lock, 2)) {
+            return null;
+        }
+        try {
+            return $this->issueLocked($idOrder, $code, $salt, $hash, $ipHash);
+        } finally {
+            IfirmaNamedLock::release($lock);
+        }
+    }
+
+    /**
+     * @param int    $idOrder
+     * @param string $code
+     * @param string $salt
+     * @param string $hash
+     * @param string $ipHash
+     * @return string|null the code, null when a limit refused it
+     */
+    private function issueLocked($idOrder, $code, $salt, $hash, $ipHash)
+    {
+        $now = $this->now();
         $db = Db::getInstance();
         $recent = (int) $db->getValue(
             'SELECT COUNT(*) FROM ' . $this->table() . '
@@ -183,7 +208,6 @@ class IfirmaGuestCodeService
 
         return $code;
     }
-
     /**
      * @param int    $idOrder
      * @param string $code

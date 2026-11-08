@@ -130,6 +130,10 @@ class Db
     {
         $this->record($sql, false);
         list($found, $r) = $this->lookup('getValue', $sql);
+        if (!$found && preg_match('/^SELECT (GET|RELEASE)_LOCK\(/', $sql)) {
+            // an unscripted advisory lock is free and granted, as on a database nobody else uses
+            return '1';
+        }
         if (!$found && preg_match("/FROM `?\w*configuration`? WHERE `?name`? = '(\w+)'/", $sql, $m)) {
             // an unscripted read of one configuration row answers from the Configuration stub
             return Configuration::hasKey($m[1]) ? Configuration::get($m[1]) : false;

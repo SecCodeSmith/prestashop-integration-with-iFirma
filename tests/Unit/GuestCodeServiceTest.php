@@ -36,6 +36,9 @@ class GuestCodeServiceTest extends TestCase
     /** @var int[] numbers the random source hands out, then 0 */
     private $numbers = array();
 
+    /** @var bool whether the INSERT of a code raises an exception */
+    public $failInsert = false;
+
     /** @var string[] every statement that changes the table */
     private $writes = array();
 
@@ -45,6 +48,7 @@ class GuestCodeServiceTest extends TestCase
         $this->rows = array();
         $this->nextId = 1;
         $this->writes = array();
+        $this->failInsert = false;
         $this->numbers = array();
         $this->now = strtotime('2026-11-08 10:00:00');
         $this->installTable();
@@ -105,6 +109,9 @@ class GuestCodeServiceTest extends TestCase
             return true;
         });
         $db->whenExecute('/^INSERT INTO ' . $t . '.*VALUES \((\d+), \'(\w+)\', \'(\w+)\', 0, \'(\w+)\',\s+\'([^\']+)\', \'([^\']+)\', NULL, 0\)/s', function ($sql, $m) use ($self) {
+            if ($self->failInsert) {
+                throw new RuntimeException('the insert failed');
+            }
             $self->writes[] = $sql;
             $self->rows[$self->nextId++] = array(
                 'id_order' => (int) $m[1], 'code_hash' => $m[2], 'salt' => $m[3], 'attempts' => 0, 'ip_hash' => $m[4],
@@ -371,6 +378,79 @@ class GuestCodeServiceTest extends TestCase
         // an hour later the first address may ask again
         $this->now += 3601;
         $this->assertNotNull($service->issue($this->order(22), '10.0.0.1'));
+    }
+
+    // ---- serialised issuance (red team 1.6.0 F3) -------------------------------------------------------
+
+    /** @return string[] the lock, count and insert statements of the Db stub, in order */
+    private function lockAndCountStatements()
+    {
+        $out = array();
+        foreach (Db::getInstance()->queries as $sql) {
+            if (preg_match('/^SELECT (GET_LOCK|RELEASE_LOCK)\(|^SELECT COUNT|^INSERT INTO/', $sql)) {
+                $out[] = $sql;
+            }
+        }
+
+        return $out;
+    }
+
+    public function testIssuingHoldsTheOrderLockAroundTheCountsAndTheInsert()
+    {
+        $this->numbers = array(123456);
+
+        $this->assertNotNull($this->service()->issue($this->order(7), '10.0.0.1'));
+
+        $statements = $this->lockAndCountStatements();
+        $this->assertSame("SELECT GET_LOCK('ifirma_guest_7', 2)", $statements[0]);
+        $this->assertSame("SELECT RELEASE_LOCK('ifirma_guest_7')", $statements[count($statements) - 1]);
+        $inside = implode("\n", array_slice($statements, 1, -1));
+        $this->assertSame(3, substr_count($inside, 'SELECT COUNT'));
+        $this->assertSame(1, substr_count($inside, 'INSERT INTO'));
+        $this->assertStringNotContainsString('_LOCK', $inside);
+    }
+
+    /** @return array[] */
+    public function refusedLocks()
+    {
+        return array('timeout' => array('0'), 'error (NULL)' => array(null));
+    }
+
+    /**
+     * @dataProvider refusedLocks
+     */
+    public function testWhenTheLockIsNotGrantedNothingIsCountedOrInsertedAndTheAnswerIsARefusal($answer)
+    {
+        Db::getInstance()->whenGetValue('/^SELECT GET_LOCK/', $answer);
+
+        $this->assertNull($this->service()->issue($this->order(7), '10.0.0.1'));
+
+        $this->assertSame(array(), $this->rows);
+        $this->assertSame(array("SELECT GET_LOCK('ifirma_guest_7', 2)"), $this->lockAndCountStatements());
+    }
+
+    public function testTheLockIsReleasedWhenTheInsertFails()
+    {
+        $this->failInsert = true;
+
+        try {
+            $this->service()->issue($this->order(7), '10.0.0.1');
+            $this->fail('the failure reaches the caller');
+        } catch (RuntimeException $e) {
+            $this->assertSame('the insert failed', $e->getMessage());
+        }
+
+        $statements = $this->lockAndCountStatements();
+        $this->assertSame("SELECT RELEASE_LOCK('ifirma_guest_7')", $statements[count($statements) - 1]);
+    }
+
+    public function testTwoOrdersDoNotShareALock()
+    {
+        $this->service()->issue($this->order(7), '10.0.0.1');
+        $this->service()->issue($this->order(8), '10.0.0.1');
+
+        $locks = array_values(preg_grep('/GET_LOCK/', $this->lockAndCountStatements()));
+        $this->assertSame(array("SELECT GET_LOCK('ifirma_guest_7', 2)", "SELECT GET_LOCK('ifirma_guest_8', 2)"), $locks);
     }
 
     // ---- what is stored ------------------------------------------------------------------------------
