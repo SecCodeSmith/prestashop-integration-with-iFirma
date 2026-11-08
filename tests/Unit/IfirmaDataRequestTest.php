@@ -21,6 +21,36 @@ class IfirmaDataRequestTest extends TestCase
         require_once dirname(__DIR__, 2) . '/classes/IfirmaDataRequest.php';
     }
 
+    /**
+     * Red team 1.6.0 F10: json_encode() returns false for bytes that are not UTF-8; a request must never be
+     * stored with no fields.
+     */
+    public function testDataThatCannotBeEncodedIsRefusedInsteadOfStoredAsNothing()
+    {
+        $request = new IfirmaDataRequest();
+
+        foreach (array('setRequestedData', 'setApprovedData') as $setter) {
+            try {
+                $request->$setter(array('city' => "Warsza\xC3\x28wa"));
+                $this->fail($setter . ' accepted bytes that are not UTF-8');
+            } catch (IfirmaDataRequestException $e) {
+                $this->assertSame('invalid', $e->code_name);
+            }
+        }
+        $this->assertNotSame(false, $request->requested_data);
+        $this->assertEmpty($request->requested_data);
+        $this->assertEmpty($request->approved_data);
+    }
+
+    public function testUtf8DataIsStoredAsBefore()
+    {
+        $request = new IfirmaDataRequest();
+        $request->setRequestedData(array('city' => 'Łódź'));
+        $request->setApprovedData(array('city' => 'Gdańsk'));
+
+        $this->assertSame(array('city' => 'Łódź'), $request->getRequestedData());
+        $this->assertSame(array('city' => 'Gdańsk'), $request->getApprovedData());
+    }
     public function testSaveAndLoadRoundTrip()
     {
         $request = new IfirmaDataRequest();

@@ -131,7 +131,7 @@ class IfirmaDataRequest extends ObjectModel
      */
     public function setRequestedData(array $data)
     {
-        $this->requested_data = json_encode($data);
+        $this->requested_data = self::encode($data);
     }
 
     /**
@@ -147,7 +147,26 @@ class IfirmaDataRequest extends ObjectModel
      */
     public function setApprovedData(array $data)
     {
-        $this->approved_data = json_encode($data);
+        $this->approved_data = self::encode($data);
+    }
+
+    /**
+     * @param array $data
+     * @return string JSON
+     * @throws IfirmaDataRequestException when the data cannot be encoded (bytes that are not UTF-8): a request
+     *                                    must never be stored with no fields
+     */
+    private static function encode(array $data)
+    {
+        $json = json_encode($data);
+        if ($json === false) {
+            $e = new IfirmaDataRequestException('The request data could not be encoded.');
+            $e->code_name = 'invalid';
+
+            throw $e;
+        }
+
+        return $json;
     }
 
     /**

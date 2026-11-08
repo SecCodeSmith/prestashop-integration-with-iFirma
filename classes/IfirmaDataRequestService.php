@@ -378,6 +378,13 @@ class IfirmaDataRequestService
             }
         }
 
+        // bytes that are not UTF-8 cannot be stored as JSON; the field message wins over any other
+        foreach ($this->fields() as $field) {
+            if (isset($input[$field]) && is_string($input[$field]) && !mb_check_encoding($input[$field], 'UTF-8')) {
+                $errors[$field] = $invalid;
+            }
+        }
+
         return $errors;
     }
 

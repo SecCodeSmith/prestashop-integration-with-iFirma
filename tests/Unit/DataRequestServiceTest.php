@@ -1578,6 +1578,42 @@ class DataRequestServiceTest extends TestCase
         $this->assertFalse(IfirmaDataRequestService::isValidToken(null));
     }
 
+    /** @return array[] label => array(field) */
+    public function textFields()
+    {
+        $cases = array();
+        foreach (array('company', 'vat_number', 'firstname', 'lastname', 'address1', 'address2', 'postcode', 'city', 'customer_note') as $field) {
+            $cases[$field] = array($field);
+        }
+
+        return $cases;
+    }
+
+    /**
+     * Red team 1.6.0 F10: bytes that are not UTF-8 make json_encode() fail; the field is refused instead.
+     *
+     * @dataProvider textFields
+     */
+    public function testATextFieldThatIsNotUtf8IsRefusedAtTheField($field)
+    {
+        $input = $this->companyInput(array($field => "bad \xC3\x28 bytes", 'address2' => 'x'));
+        $input[$field] = "bad \xC3\x28 bytes";
+
+        $e = $this->assertRefused('invalid', function () use ($input) {
+            $this->submitPending($input);
+        });
+
+        $this->assertSame('This value contains characters that are not allowed.', $e->errors[$field]);
+        $this->assertSame(array(), IfirmaTestState::writes('ifirma_data_request'));
+        $this->assertSame(array(), Mail::$sent);
+    }
+
+    public function testValidUtf8TextIsStillAccepted()
+    {
+        $request = $this->submitPending($this->companyInput(array('company' => 'Zażółć gęślą jaźń Sp. z o.o.', 'city' => 'Łódź')));
+
+        $this->assertSame('Łódź', $request->getRequestedData()['city']);
+    }
     // ---- serialised submission (red team 1.6.0 F4) ----------------------------------------------------
 
     public function testSubmitChecksAndStoresUnderTheOrderLockAndMailsAfterItsRelease()
