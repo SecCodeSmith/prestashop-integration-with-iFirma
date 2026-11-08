@@ -511,7 +511,6 @@ return array(
     'The shop webpage must be an absolute http or https address without a user name or password.' => 'Strona sklepu musi być bezwzględnym adresem http lub https, bez nazwy użytkownika i hasła.',
     'Used as the link in the module e-mails, printed in the document comments and as the first part of PDF file names. Empty means the address of the shop itself.' => 'Używana jako odnośnik w e-mailach modułu, drukowana w uwagach dokumentu i jako pierwsza część nazw plików PDF. Puste oznacza adres samego sklepu.',
     'If the data matches an order, we have sent a code to its e-mail address.' => 'Jeśli dane pasują do zamówienia, wysłaliśmy kod na jego adres e-mail.',
-    'Your code to change the invoice data of order %s' => 'Twój kod do zmiany danych do faktury dla zamówienia %s',
     'Invalid or expired code. You can ask for a new one below.' => 'Nieprawidłowy lub wygasły kod. Możesz poprosić o nowy poniżej.',
     'Your verification has expired or does not match this order. Please identify the order again.' => 'Twoja weryfikacja wygasła lub nie dotyczy tego zamówienia. Zidentyfikuj zamówienie ponownie.',
     'Your change request has been cancelled.' => 'Twoja prośba o zmianę została anulowana.',
@@ -525,4 +524,6 @@ return array(
     'E-mail address' => 'Adres e-mail',
     'Send the code' => 'Wyślij kod',
     'Another request for this order is being processed. Please wait a moment and try again.' => 'Inna prośba dotycząca tego zamówienia jest właśnie przetwarzana. Poczekaj chwilę i spróbuj ponownie.',
+    'Your verification code from %s' => 'Twój kod weryfikacyjny ze sklepu %s',
+    'The request could not be saved. Please try again.' => 'Nie udało się zapisać prośby. Spróbuj ponownie.',
 );

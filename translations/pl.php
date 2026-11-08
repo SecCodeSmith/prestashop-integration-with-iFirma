@@ -406,8 +406,9 @@ $_MODULE['<{ifirma}prestashop>adminifirmacontroller_50c2d7ea9c31974b3c1ba842c020
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_d760d220c84012e8525622580ca299d3'] = 'Nie znaleziono dokumentu.';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_a7dafa6b31b3a00b7a1ffeae6e4d1e42'] = 'Błąd wewnętrzny; szczegóły są w logu PrestaShop.';
 $_MODULE['<{ifirma}prestashop>guestrequest_90061b39f8ad72129fddb0a53197bf0c'] = 'Jeśli dane pasują do zamówienia, wysłaliśmy kod na jego adres e-mail.';
-$_MODULE['<{ifirma}prestashop>guestrequest_1d93c38f15b380f914d1d6b0fdf86452'] = 'Twój kod do zmiany danych do faktury dla zamówienia %s';
+$_MODULE['<{ifirma}prestashop>guestrequest_bb8d00cce367a1c9567821ebc8f66c05'] = 'Twój kod weryfikacyjny ze sklepu %s';
 $_MODULE['<{ifirma}prestashop>guestrequest_ae14207abd99dba557cc827d03fca227'] = 'Nieprawidłowy lub wygasły kod. Możesz poprosić o nowy poniżej.';
+$_MODULE['<{ifirma}prestashop>guestrequest_8644ac105927b621fe3dddaf8ba20a44'] = 'Nie udało się zapisać prośby. Spróbuj ponownie.';
 $_MODULE['<{ifirma}prestashop>guestrequest_d3b543f0b004d6cf8590ec0e52588451'] = 'Twoja weryfikacja wygasła lub nie dotyczy tego zamówienia. Zidentyfikuj zamówienie ponownie.';
 $_MODULE['<{ifirma}prestashop>receipt_d760d220c84012e8525622580ca299d3'] = 'Nie znaleziono dokumentu.';
 $_MODULE['<{ifirma}prestashop>receipt_8ab423107f309dd2ab3b802ea35cba27'] = 'Poczekaj chwilę przed ponownym pobraniem dokumentu.';

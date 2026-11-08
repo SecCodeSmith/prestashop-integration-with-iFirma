@@ -367,7 +367,10 @@ class IfirmaGuestrequestModuleFrontController extends ModuleFrontController
             return $this->notifier()->sendCode(
                 $customer,
                 $order,
-                sprintf($this->module->l('Your code to change the invoice data of order %s', 'guestrequest'), (string) $order->reference),
+                sprintf(
+                    $this->module->l('Your verification code from %s', 'guestrequest'),
+                    trim((string) preg_replace('/\s+/', ' ', (string) Configuration::get('PS_SHOP_NAME')))
+                ),
                 array(
                     '{firstname}' => htmlspecialchars((string) $customer->firstname, ENT_QUOTES, 'UTF-8'),
                     '{order_reference}' => $reference,
@@ -449,6 +452,14 @@ class IfirmaGuestrequestModuleFrontController extends ModuleFrontController
         } catch (IfirmaDataRequestException $e) {
             $this->errors[] = $e->getMessage();
             $this->fieldErrors = $e->errors;
+            $this->step = 'form';
+
+            return;
+        } catch (Throwable $e) {
+            // anything else (a database error, a type error) must not reach the error page of the shop, which
+            // would show its text to a stranger: the log gets the class only
+            PrestaShopLogger::addLog('iFirma guest data request for order ' . (int) $order->id . ' failed: ' . get_class($e), 3);
+            $this->errors[] = $this->module->l('The request could not be saved. Please try again.', 'guestrequest');
             $this->step = 'form';
 
             return;

@@ -111,6 +111,7 @@ class IfirmaTestGuestController extends IfirmaGuestrequestModuleFrontController
 class GuestRequestControllerTest extends TestCase
 {
     use IfirmaWiringFixture;
+    use IfirmaThrowableProviders;
 
     const NEUTRAL = 'If the data matches an order, we have sent a code to its e-mail address.';
 
@@ -322,7 +323,9 @@ class GuestRequestControllerTest extends TestCase
         $mail = Mail::$sent[0];
         $this->assertSame('data_request_code', $mail['template']);
         $this->assertSame('jan@example.test', $mail['to']);
-        $this->assertSame('Your code to change the invoice data of order ABCDEFGHI', $mail['subject']);
+        // the reference is the second secret of the page: it stays out of the subject (red team 1.6.0 F12)
+        $this->assertSame('Your verification code from Test Shop', $mail['subject']);
+        $this->assertStringNotContainsString('ABCDEFGHI', $mail['subject']);
         $this->assertSame('123456', $mail['templateVars']['{code}']);
         $this->assertSame('ABCDEFGHI', $mail['templateVars']['{order_reference}']);
         $this->assertSame('Jan', $mail['templateVars']['{firstname}']);
@@ -336,6 +339,41 @@ class GuestRequestControllerTest extends TestCase
         $this->assertNull($this->cookie());
     }
 
+    public function testTheSubjectCarriesTheShopNameOnOneLine()
+    {
+        Configuration::updateValue('PS_SHOP_NAME', "Evil\r\nBcc: x@example.test");
+
+        $this->identify();
+
+        $this->assertSame('Your verification code from Evil Bcc: x@example.test', Mail::$sent[0]['subject']);
+    }
+
+    /**
+     * Red team 1.6.0 F13: whatever the submission raises, the visitor gets a neutral message and the log gets the
+     * class of the failure, not its text.
+     *
+     * @dataProvider throwables
+     */
+    public function testAFailureOfTheSubmissionIsAnsweredNeutrallyAndOnlyItsClassIsLogged(Throwable $failure)
+    {
+        $this->openSession();
+        Db::getInstance()->whenGetValue('/^SELECT GET_LOCK\(/', function () use ($failure) {
+            throw $failure;
+        });
+
+        $controller = $this->request($this->formValues());
+
+        $v = $this->vars();
+        $this->assertSame(array('The request could not be saved. Please try again.'), $v['ifirma_errors']);
+        $this->assertSame('form', $v['ifirma_step']);
+        $this->assertSame('', $v['ifirma_outcome']);
+        $this->assertNotNull($this->cookie(), 'the visitor may try again within the session');
+        $this->assertSame(array(), $controller->resumed);
+        $this->assertSame(array(), IfirmaTestState::objects('ifirma_data_request'));
+        $this->assertCount(1, PrestaShopLogger::$logs);
+        $this->assertStringContainsString(get_class($failure), PrestaShopLogger::$logs[0]['message']);
+        $this->assertStringNotContainsString($failure->getMessage(), PrestaShopLogger::$logs[0]['message']);
+    }
     public function testTheAnswerIsTheSameForAMatchAndForAMiss()
     {
         $this->identify();
