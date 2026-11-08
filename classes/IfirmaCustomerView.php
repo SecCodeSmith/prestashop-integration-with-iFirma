@@ -294,6 +294,7 @@ class IfirmaCustomerView
 
         return array(
             'number' => $this->numberOf($row),
+            'summary_only' => false,
             'number_known' => (bool) $this->prop($receipt, 'ifirma_number'),
             'ifirma_id' => (string) $this->prop($receipt, 'ifirma_id'),
             'issue_date' => $this->issueDateOf($row),

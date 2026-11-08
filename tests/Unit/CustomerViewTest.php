@@ -626,7 +626,8 @@ class CustomerViewTest extends TestCase
         foreach (array('ksef_number', 'issue_date', 'paid', 'sent', 'sent_at', 'download_url') as $key) {
             $this->assertArrayHasKey($key, $account);
         }
-        $this->assertArrayNotHasKey('summary_only', $account);
+        // the template reads the flag on both views, so the account view carries it as false (a missing key is a Smarty warning on a real shop)
+        $this->assertFalse($account['summary_only']);
     }
     public function testTheGuestViewOfAMissingDocumentHasNoDownloadLink()
     {

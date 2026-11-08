@@ -1824,17 +1824,19 @@ function scenarioO($module, $triggerState)
         ));
         assertTrue(strpos($ident['body'], 'If the data matches an order, we have sent a code') !== false && strpos($ident['body'], 'verifyIfirmaGuest') !== false,
             'right e-mail: the same neutral message and the code form', 'HTTP ' . $ident['code']);
+        // the subject names the shop only (red team F12): the reference is in the body
         $codeMails = mailFind(function ($m) {
-            return strpos((string) $m['subject'], 'Your code to change the invoice data of order') !== false;
+            return strpos((string) $m['subject'], 'Your verification code from') !== false;
         });
         if (!assertSame(1, count($codeMails), 'right e-mail: exactly one code mail in the sink')) {
             return;
         }
         assertMail($codeMails[0], array(
             'to' => array($customerEmail),
-            'subject_contains' => (string) $order->reference,
+            'subject_contains' => 'Your verification code from',
             'text_contains' => array((string) $order->reference),
         ), 'code mail');
+        assertTrue(strpos((string) $codeMails[0]['subject'], (string) $order->reference) === false, 'the subject does not carry the order reference');
         $code = preg_match('/order ' . preg_quote((string) $order->reference, '/') . ': (\d{6})/', (string) $codeMails[0]['text'], $m) ? $m[1] : '';
         if (!assertTrue($code !== '', 'the six digits are in the text part of the code mail', substr((string) $codeMails[0]['text'], 0, 200))) {
             return;
