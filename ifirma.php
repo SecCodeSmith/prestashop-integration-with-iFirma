@@ -49,7 +49,7 @@ class Ifirma extends Module
     {
         $this->name = 'ifirma';
         $this->tab = 'billing_invoicing';
-        $this->version = '1.5.0';
+        $this->version = '1.6.0';
         $this->author = 'SCM Jakub Berechowski';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = array('min' => '8.0.0', 'max' => '9.99.99');
@@ -468,6 +468,9 @@ class Ifirma extends Module
             'IFIRMA_PAYMENT_METHOD_MODE' => $this->l('The payment method mode must be "order" or "fixed".'),
             'IFIRMA_PAYMENT_METHOD' => $this->l('The fallback payment method must be one of the listed codes.'),
             'IFIRMA_PAYMENT_METHOD_MAP' => $this->l('Payment method map'),
+            'IFIRMA_DOC_TEMPLATE' => $this->l('The document template name must be one line of at most 100 characters.'),
+            'IFIRMA_ORDER_STAMP_PREFIX' => $this->l('The order stamp prefix must be 1 to 32 characters: letters, digits, dot, underscore or hyphen.'),
+            'IFIRMA_SHOP_URL' => $this->l('The shop webpage must be an absolute http or https address without a user name or password.'),
         );
 
         $errors = array();
@@ -832,6 +835,25 @@ class Ifirma extends Module
                 'values' => $this->yesNo(),
             ),
             array(
+                'type' => 'text',
+                'label' => $this->l('Document template'),
+                'name' => 'IFIRMA_DOC_TEMPLATE',
+                'desc' => $this->l('The name of the print template in your iFirma account. The template, including the logo it prints, is defined in the iFirma account. Leave empty for the iFirma default.'),
+            ),
+            array(
+                'type' => 'text',
+                'label' => $this->l('Order stamp prefix'),
+                'name' => 'IFIRMA_ORDER_STAMP_PREFIX',
+                'class' => 'fixed-width-xl',
+                'desc' => $this->l('The first segment of the order stamp written into the document comments. Each shop that shares one iFirma account needs its own prefix: set it before the shop issues its first document. Default: PS-ORDER.'),
+            ),
+            array(
+                'type' => 'text',
+                'label' => $this->l('Shop webpage'),
+                'name' => 'IFIRMA_SHOP_URL',
+                'desc' => $this->l('Used as the link in the module e-mails, printed in the document comments and as the first part of PDF file names. Empty means the address of the shop itself.'),
+            ),
+            array(
                 'type' => 'select',
                 'label' => $this->l('Delivery channel'),
                 'name' => 'IFIRMA_SEND_CHANNEL',
@@ -926,6 +948,21 @@ class Ifirma extends Module
                 'values' => $this->yesNo(),
             ),
             array(
+                'type' => 'select',
+                'label' => $this->l('Accept data change requests automatically'),
+                'name' => 'IFIRMA_DATA_REQUEST_AUTO_ACCEPT',
+                'desc' => $this->l('Safe approves requests that keep the company or private choice, the NIP and the company name and change only the name, address, postcode, city or country. All approves every valid request without review.'),
+                'options' => array(
+                    'query' => array(
+                        array('id' => 'none', 'name' => $this->l('Never (review every request)')),
+                        array('id' => 'safe', 'name' => $this->l('Safe changes only')),
+                        array('id' => 'all', 'name' => $this->l('Every valid request')),
+                    ),
+                    'id' => 'id',
+                    'name' => 'name',
+                ),
+            ),
+            array(
                 'type' => 'text',
                 'label' => $this->l('Notification e-mail'),
                 'name' => 'IFIRMA_NOTIFY_EMAIL',
@@ -1003,6 +1040,9 @@ class Ifirma extends Module
             'IFIRMA_DEFAULT_UNIT' => Configuration::get('IFIRMA_DEFAULT_UNIT'),
             'IFIRMA_AUTO_CREATE_STATE' => (int) Configuration::get('IFIRMA_AUTO_CREATE_STATE'),
             'IFIRMA_MARK_PAID_ON_CREATE' => (int) Configuration::get('IFIRMA_MARK_PAID_ON_CREATE'),
+            'IFIRMA_DOC_TEMPLATE' => (string) Configuration::get('IFIRMA_DOC_TEMPLATE'),
+            'IFIRMA_ORDER_STAMP_PREFIX' => Configuration::get('IFIRMA_ORDER_STAMP_PREFIX') ?: 'PS-ORDER',
+            'IFIRMA_SHOP_URL' => (string) Configuration::get('IFIRMA_SHOP_URL'),
             'IFIRMA_SEND_CHANNEL' => Configuration::get('IFIRMA_SEND_CHANNEL') ?: 'shop_mail',
             'IFIRMA_SEND_TEXT' => Configuration::get('IFIRMA_SEND_TEXT'),
             'IFIRMA_SEND_COPY_MODE' => Configuration::get('IFIRMA_SEND_COPY_MODE') ?: 'none',
@@ -1012,6 +1052,7 @@ class Ifirma extends Module
             'IFIRMA_DUPLICATE_WINDOW_DAYS' => (int) Configuration::get('IFIRMA_DUPLICATE_WINDOW_DAYS'),
             'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE' => Configuration::get('IFIRMA_DUPLICATE_AMOUNT_TOLERANCE'),
             'IFIRMA_ALLOW_DATA_REQUEST' => (int) Configuration::get('IFIRMA_ALLOW_DATA_REQUEST'),
+            'IFIRMA_DATA_REQUEST_AUTO_ACCEPT' => Configuration::get('IFIRMA_DATA_REQUEST_AUTO_ACCEPT') ?: 'none',
             'IFIRMA_NOTIFY_EMAIL' => Configuration::get('IFIRMA_NOTIFY_EMAIL'),
             'IFIRMA_SYNC_INTERVAL_MIN' => (int) Configuration::get('IFIRMA_SYNC_INTERVAL_MIN'),
             'IFIRMA_CRON_MAX_CALLS' => (int) Configuration::get('IFIRMA_CRON_MAX_CALLS'),
@@ -1114,6 +1155,7 @@ class Ifirma extends Module
         return array(
             'state' => $this->adminStateLabels(),
             'request_status' => $this->requestStatusLabels(),
+            'request_resolver' => $this->requestResolverLabels(),
             'request_fields' => $this->requestFieldLabels(),
             'contractor' => $this->contractorNoteLabels(),
         );
@@ -1153,6 +1195,17 @@ class Ifirma extends Module
             'city' => $this->l('City'),
             'id_country' => $this->l('Country'),
             'customer_note' => $this->l('Note for the shop (optional)'),
+        );
+    }
+
+    /**
+     * @return string[] auto-accept mode => label of the automatic resolver of a data request
+     */
+    private function requestResolverLabels()
+    {
+        return array(
+            'safe' => $this->l('automatic (safe fields)'),
+            'all' => $this->l('automatic (all)'),
         );
     }
 
@@ -1510,6 +1563,9 @@ class Ifirma extends Module
 
         $order = $params['order'];
         $idCustomer = (int) $this->context->customer->id;
+        if ($idCustomer <= 0 && !$this->context->customer->isLogged() && $this->isGuestTrackingPage()) {
+            return $this->guestOrderDetail($order);
+        }
         if ($idCustomer <= 0 || (int) $order->id_customer !== $idCustomer) {
             return '';
         }
@@ -1530,6 +1586,36 @@ class Ifirma extends Module
 
         $customerView = $this->customerView();
         $view = $customerView->forOrder($order, $receipt, $pending, $customerView->orderOptions());
+
+        $this->context->smarty->assign('ifirma_view', $view);
+
+        return $this->display(__FILE__, 'views/templates/hook/order_detail.tpl');
+    }
+
+    /**
+     * @return bool whether the page being served is the guest tracking page, which PrestaShop opens only
+     *              after matching the reference and the e-mail of the order itself
+     */
+    private function isGuestTrackingPage()
+    {
+        $controller = isset($this->context->controller) ? $this->context->controller : null;
+
+        return is_object($controller) && isset($controller->php_self) && $controller->php_self === 'guest-tracking';
+    }
+
+    /**
+     * The block of the guest tracking page: the state of the document, never the document itself.
+     *
+     * @param Order $order
+     * @return string
+     */
+    private function guestOrderDetail($order)
+    {
+        $receipt = IfirmaReceipt::getByOrder((int) $order->id);
+        $pending = IfirmaDataRequestService::build($this)->getPendingForOrder((int) $order->id);
+
+        $customerView = $this->customerView();
+        $view = $customerView->forGuestOrder($order, $receipt, $pending, $customerView->orderOptions());
 
         $this->context->smarty->assign('ifirma_view', $view);
 

@@ -111,6 +111,12 @@ them. After an upgrade from an earlier version, profiles other than these have n
 **What to do:** open **Advanced Parameters > Logs** and look for the lines that start with "iFirma". They hold the original
 class and message of the failure.
 
+### Create fails after setting a document template
+
+**Meaning:** the **Document template** setting sends the name to iFirma as `NazwaSzablonu`. iFirma has no list of templates the module could check against, so a name that does not exist in the account is only noticed when the document is created: iFirma answers with a create error, which the module records on the receipt and shows in the order's iFirma panel and in the issue feed.
+
+**What to do:** copy the exact name from the template settings in your iFirma account (spelling, capitals and spaces must match) and paste it into the setting. To return to the default template, clear the field and save.
+
 ### HTTP 429 on the customer's PDF download
 
 **Message:** "Please wait a moment before downloading the document again."

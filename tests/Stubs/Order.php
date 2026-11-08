@@ -94,6 +94,24 @@ class Order
         return $rows;
     }
 
+    /**
+     * Like core: the orders with the reference (a collection in core, an array of Order here).
+     *
+     * @param string $reference
+     * @return Order[] in registration order, empty for an unknown reference
+     */
+    public static function getByReference($reference)
+    {
+        $found = [];
+        foreach (static::$instances as $o) {
+            if ((string) $o->reference === (string) $reference) {
+                $found[] = $o;
+            }
+        }
+
+        return $found;
+    }
+
     public function getOrderDetailList()
     {
         return $this->details;

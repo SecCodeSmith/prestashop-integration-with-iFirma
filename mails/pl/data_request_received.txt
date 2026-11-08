@@ -1,4 +1,9 @@
+{shop_name}
+
 Klient poprosil o zmiane danych do dokumentu dla zamowienia {order_reference} (#{order_id}).
+
+{auto_line}
+
 Klient: {customer_name} ({customer_email})
 
 Zadane dane:
@@ -11,3 +16,5 @@ Uwagi klienta:
 {note}
 
 Rozpatrz prosbe w zamowieniu: {admin_link}
+
+{ifirma_shop_link}

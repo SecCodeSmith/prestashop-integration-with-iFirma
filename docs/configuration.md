@@ -33,10 +33,25 @@ Open the module configuration and fill in:
   *Do not send*. With the default channel, documents are e‑mailed to customers
   automatically on the next trigger; choose *Do not send* to disable. **E‑mail text** adds an
   optional message (up to 1000 characters).
+- **Document template** – the name of the print template in your iFirma account (up to 100 characters, one line).
+  The logo and the layout of the printed document belong to that template. They are configured in the iFirma
+  account, and the module only names the template: it does not upload a logo or edit a template. Leave the field
+  empty for the iFirma default.
+- **Order stamp prefix** – the first segment of the order stamp the module writes into the document comments
+  (default `PS-ORDER`; 1 to 32 characters of letters, digits, dot, underscore and hyphen; a trailing hyphen is
+  dropped). When several shops issue documents in one iFirma account, give each shop its own prefix, and set it
+  before the shop issues its first document. A prefix changed later does not rename the stamps already written.
+- **Shop webpage** – the address of the shop for people who read the documents, an absolute `http://` or `https://`
+  address (up to 255 characters, no user name or password). The module uses it in three places: as the link in
+  its e‑mails, printed in the document comments, and as the first part of the PDF file names. Empty means the
+  address of the shop itself.
 - **Duplicate check**, **window (days, 1‑365)** and **amount tolerance** – look for an existing
   iFirma document before issuing a new one.
-- **Allow customers to request billing data changes** and **Notification e‑mail** (empty or a
-  valid address; empty uses the shop address).
+- **Allow customers to request billing data changes**, **Accept data change requests automatically** and
+  **Notification e‑mail** (empty or a valid address; empty uses the shop address). The automatic mode is *Never*
+  (every request waits for review, the default), *Safe changes only* (a request that keeps the company or private
+  choice, the NIP and the company name, and changes only the name, address, postcode, city or country, is
+  approved at once) or *Every valid request* (approved without review).
 - **Status sync interval (1‑1440 minutes)** – how often an order page refreshes its document
   from iFirma; **Cron call budget (1‑90)** and **API calls per minute (1‑100)** – API usage caps.
 - **Cron endpoint** – the module shows the cron URL with its secret token and a crontab
@@ -78,7 +93,11 @@ Open the module configuration and fill in:
 | `IFIRMA_DUPLICATE_CHECK` (new) | `1` |
 | `IFIRMA_DUPLICATE_WINDOW_DAYS` (new) | `60` |
 | `IFIRMA_DUPLICATE_AMOUNT_TOLERANCE` (new) | `0.01` |
+| `IFIRMA_DOC_TEMPLATE` (new) | empty (the name of the print template in the iFirma account, sent as `NazwaSzablonu` when not empty; one line of at most 100 characters; the logo is part of the template and is configured in the iFirma account) |
+| `IFIRMA_ORDER_STAMP_PREFIX` (new) | `PS-ORDER` (first segment of the order stamp in the document comments; 1 to 32 characters of `A-Z a-z 0-9 . _ -`, a trailing `-` is dropped, empty becomes the default; one prefix per shop that shares an iFirma account, set before the first document) |
+| `IFIRMA_SHOP_URL` (new) | empty (shop webpage: an absolute `http` or `https` address without user information, at most 255 characters; the link in the module's e-mails, printed in the document comments and the first part of PDF file names; empty means the shop's own address) |
 | `IFIRMA_ALLOW_DATA_REQUEST` (new) | `1` |
+| `IFIRMA_DATA_REQUEST_AUTO_ACCEPT` (new) | `none` (`none`, `safe` or `all`; any other value is read as `none`) |
 | `IFIRMA_NOTIFY_EMAIL` (new) | empty |
 | `IFIRMA_SYNC_INTERVAL_MIN` (new) | `15` |
 | `IFIRMA_CRON_TOKEN` (new) | random 32 hex characters, generated on install/upgrade from the system's secure random generator (if that is unavailable, the install or upgrade fails with a message rather than using a weaker token) |

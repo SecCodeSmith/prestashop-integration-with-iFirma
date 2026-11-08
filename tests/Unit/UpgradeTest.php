@@ -32,6 +32,7 @@ class UpgradeTest extends TestCase
     const RECEIPT = 'ps_ifirma_receipt';
     const DATA_REQUEST = 'ps_ifirma_data_request';
     const CONTRACTOR_MAP = 'ps_ifirma_contractor_map';
+    const GUEST_CODE = 'ps_ifirma_guest_code';
 
     /** @var array table => (column => DDL fragment): the database the install and upgrade paths run on */
     private $schema = array();
@@ -57,6 +58,7 @@ class UpgradeTest extends TestCase
         require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.2.0.php';
         require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.4.0.php';
         require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.5.0.php';
+        require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.6.0.php';
     }
 
     protected function tearDown(): void
@@ -275,12 +277,13 @@ class UpgradeTest extends TestCase
 
         $this->assertEndsWithTheContractorMapAndTheKsefColumns();
         $this->assertSame($this->expectedSchema(), $this->schema);
-        // install() sends the three CREATE statements and nothing else: no ALTER, no probe
+        // install() sends the four CREATE statements and nothing else: no ALTER, no probe
         $sent = $this->sentQueries();
-        $this->assertCount(3, $sent);
+        $this->assertCount(4, $sent);
         $this->assertStringStartsWith('CREATE TABLE IF NOT EXISTS `ps_ifirma_receipt` (', $sent[0]);
         $this->assertStringStartsWith('CREATE TABLE IF NOT EXISTS `ps_ifirma_data_request` (', $sent[1]);
         $this->assertStringStartsWith('CREATE TABLE IF NOT EXISTS `ps_ifirma_contractor_map` (', $sent[2]);
+        $this->assertStringStartsWith('CREATE TABLE IF NOT EXISTS `ps_ifirma_guest_code` (', $sent[3]);
         $this->assertStringContainsString('`ksef_sent_at` DATETIME NULL', $sent[0]);
         $this->assertStringContainsString('`ksef_error` TEXT NULL', $sent[0]);
         $this->assertStringContainsString('`last_download_at` DATETIME NULL', $sent[0]);
@@ -307,6 +310,7 @@ class UpgradeTest extends TestCase
         $this->assertTrue(upgrade_module_1_2_0($module));
         $this->assertTrue(upgrade_module_1_4_0($module));
         $this->assertTrue(upgrade_module_1_5_0($module));
+        $this->assertTrue(upgrade_module_1_6_0($module));
 
         $this->assertEndsWithTheContractorMapAndTheKsefColumns();
         $sent = $this->sentQueries();
@@ -572,6 +576,46 @@ class UpgradeTest extends TestCase
         ), $this->alterStatementsOf($this->sentQueries()));
     }
 
+    // ---- upgrade-1.6.0.php: the guest code table and the four settings -------------------------------
+
+    public function testUpgrade160CreatesTheGuestCodeTableAndWritesTheFourDefaults()
+    {
+        $schema = $this->expectedSchema();
+        unset($schema[self::GUEST_CODE]);
+        $this->startFrom($schema);
+
+        $this->assertTrue(upgrade_module_1_6_0(new Module()));
+
+        $this->assertSame(IfirmaSchema::guestCodeColumns(), $this->schema[self::GUEST_CODE]);
+        $this->assertSame('none', Configuration::get('IFIRMA_DATA_REQUEST_AUTO_ACCEPT'));
+        $this->assertSame('', Configuration::get('IFIRMA_DOC_TEMPLATE'));
+        $this->assertSame('PS-ORDER', Configuration::get('IFIRMA_ORDER_STAMP_PREFIX'));
+        $this->assertSame('', Configuration::get('IFIRMA_SHOP_URL'));
+    }
+
+    public function testUpgrade160IsIdempotentAndKeepsValuesTheMerchantSet()
+    {
+        $schema = $this->expectedSchema();
+        unset($schema[self::GUEST_CODE]);
+        $this->startFrom($schema);
+        Configuration::updateValue('IFIRMA_ORDER_STAMP_PREFIX', 'scmedical');
+
+        $this->assertTrue(upgrade_module_1_6_0(new Module()));
+        $after = $this->schema;
+        $this->assertTrue(upgrade_module_1_6_0(new Module()));
+
+        $this->assertSame($after, $this->schema);
+        $this->assertSame('scmedical', Configuration::get('IFIRMA_ORDER_STAMP_PREFIX'));
+    }
+
+    public function testUpgrade160ReportsAFailedCreate()
+    {
+        // no simulated database: the CREATE statement is refused
+        Db::getInstance()->whenExecute('/ifirma_guest_code/', false);
+
+        $this->assertFalse(upgrade_module_1_6_0(new Module()));
+    }
+
     // ---- helpers: the database each path runs on ----------------------------------------------------
 
     /** What the module's own column lists say a complete install has. */
@@ -581,6 +625,7 @@ class UpgradeTest extends TestCase
             self::RECEIPT => IfirmaSchema::receiptColumns(),
             self::DATA_REQUEST => IfirmaSchema::dataRequestColumns(),
             self::CONTRACTOR_MAP => IfirmaSchema::contractorMapColumns(),
+            self::GUEST_CODE => IfirmaSchema::guestCodeColumns(),
         );
     }
 

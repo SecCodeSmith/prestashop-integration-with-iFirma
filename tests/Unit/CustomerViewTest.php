@@ -553,4 +553,63 @@ class CustomerViewTest extends TestCase
         $this->assertTrue($this->view->forOrder($this->order(100.0), $paid, null, $this->view->orderOptions())['document']['paid']);
         $this->assertFalse($this->view->forOrder($this->order(100.0), $paid, null)['document']['paid']);
     }
+
+    // ---- the guest tracking page ----------------------------------------------------------------
+
+    private function assertGuestLinks(array $view)
+    {
+        $this->assertStringContainsString('guestrequest', $view['request_url']);
+        $this->assertStringContainsString('reference=GUESTREF1', $view['request_url']);
+        $this->assertStringNotContainsString('datarequest', $view['request_url']);
+        $this->assertSame($view['request_url'], $view['cancel_url']);
+    }
+
+    private function guestOrder()
+    {
+        $o = $this->order();
+        $o->reference = 'GUESTREF1';
+
+        return $o;
+    }
+
+    public function testTheGuestViewOfAnUndocumentedOrderLinksToTheGuestPage()
+    {
+        $v = $this->view->forGuestOrder($this->guestOrder(), null, null, array('data_request_enabled' => true));
+
+        $this->assertSame('not_issued', $v['state']);
+        $this->assertTrue($v['can_request_change']);
+        $this->assertGuestLinks($v);
+        $this->assertSame($this->view->stateLabel('not_issued'), $v['state_label']);
+    }
+
+    public function testTheGuestViewOfAHeldOrderCancelsOnTheGuestPage()
+    {
+        $v = $this->view->forGuestOrder($this->guestOrder(), $this->receipt(), $this->pending(), array('data_request_enabled' => true));
+
+        $this->assertSame('held', $v['state']);
+        $this->assertGuestLinks($v);
+        $this->assertSame('2026-11-01 09:30:00', $v['pending_request']['date_add']);
+        $this->assertSame($this->view->stateLabel('held'), $v['state_label']);
+    }
+
+    public function testTheGuestViewOfAnIssuedOrderHasNoDownloadLink()
+    {
+        $v = $this->view->forGuestOrder($this->guestOrder(), $this->receipt(), null, array('data_request_enabled' => true));
+
+        $this->assertSame('issued', $v['state']);
+        $this->assertSame('', $v['document']['download_url']);
+        $this->assertSame('12/2026', $v['document']['number']);
+        $this->assertGuestLinks($v);
+        $this->assertSame($this->view->stateLabel('issued'), $v['state_label']);
+        // the account view of the same order does offer it
+        $this->assertStringContainsString('tok123', $this->view->forOrder($this->guestOrder(), $this->receipt(), null)['document']['download_url']);
+    }
+
+    public function testTheGuestViewOfAMissingDocumentHasNoDownloadLink()
+    {
+        $v = $this->view->forGuestOrder($this->guestOrder(), $this->receipt(array('remote_missing' => 1)), null);
+
+        $this->assertSame('missing', $v['state']);
+        $this->assertEmpty($v['document']['download_url']);
+    }
 }

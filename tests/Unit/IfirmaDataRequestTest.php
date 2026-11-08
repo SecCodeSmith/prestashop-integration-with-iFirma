@@ -169,6 +169,49 @@ class IfirmaDataRequestTest extends TestCase
         $this->assertSame('', $request->admin_note);
     }
 
+    public function testAnEmployeeApprovalRecordsNoAutoMode()
+    {
+        $request = $this->pendingRequest();
+        $this->assertFalse($request->isApproved());
+
+        $request->approve(4, array('company' => 'ACME'), 'ok', '2026-11-01 10:00:00');
+
+        $this->assertNull($request->auto_mode);
+        $this->assertTrue($request->isApproved());
+        $this->assertFalse($request->isAutoApproved());
+    }
+
+    public function testAnAutomaticApprovalRecordsTheModeAndTheSystemAsResolver()
+    {
+        $request = $this->pendingRequest();
+
+        $request->approve(0, array('city' => 'Lodz'), 'Approved automatically', '2026-11-01 10:00:00', 'safe');
+        $request->save();
+
+        $this->assertSame('safe', $request->auto_mode);
+        $this->assertSame(0, $request->resolved_by);
+        $this->assertTrue($request->isApproved());
+        $this->assertTrue($request->isAutoApproved());
+        $this->assertSame('safe', $this->savedRow($request)['auto_mode']);
+    }
+
+    public function testAnAutoModeWithAnEmployeeIsNotAnAutomaticApproval()
+    {
+        $request = $this->pendingRequest();
+        $request->approve(4, array('city' => 'Lodz'), '', '2026-11-01 10:00:00', 'all');
+
+        $this->assertFalse($request->isAutoApproved());
+    }
+
+    public function testAPendingRequestIsNeitherApprovedNorAutoApproved()
+    {
+        $request = $this->pendingRequest();
+        $request->auto_mode = 'safe';
+
+        $this->assertFalse($request->isApproved());
+        $this->assertFalse($request->isAutoApproved());
+    }
+
     /** @dataProvider resolvedStatuses */
     public function testApproveRefusesAResolvedRequestAndChangesNothing($status)
     {

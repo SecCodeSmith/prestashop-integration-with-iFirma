@@ -1,3 +1,5 @@
+{shop_name}
+
 Hello {firstname},
 
 Your request to change the invoice data of order {order_reference} has been rejected.
@@ -6,3 +8,5 @@ Reason:
 {reason}
 
 The document will be issued with the original invoice address.
+
+{ifirma_shop_link}

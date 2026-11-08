@@ -124,6 +124,75 @@ class ModuleHooksTest extends TestCase
         $this->assertSame(0, $this->listCalls());
     }
 
+    private function loggedOutOn($phpSelf)
+    {
+        $ctx = Context::getContext();
+        $ctx->customer = new Customer();
+        $ctx->customer->logged = false;
+        $ctx->controller->php_self = $phpSelf;
+    }
+
+    public function testOrderDetailShowsNothingToALoggedOutVisitorOnTheOrderPage()
+    {
+        $this->makeReceipt();
+        $this->loggedOutOn('order-detail');
+
+        $out = $this->module->hookDisplayOrderDetail(array('order' => Order::$instances[15]));
+
+        $this->assertSame('', $out);
+        $this->assertArrayNotHasKey('ifirma_view', $this->vars());
+    }
+
+    public function testOrderDetailShowsNothingToALoggedOutVisitorWhenThePageIsUnknown()
+    {
+        $this->loggedOutOn(null);
+        unset(Context::getContext()->controller->php_self);
+
+        $this->assertSame('', $this->module->hookDisplayOrderDetail(array('order' => Order::$instances[15])));
+
+        Context::getContext()->controller = null;
+        $this->assertSame('', $this->module->hookDisplayOrderDetail(array('order' => Order::$instances[15])));
+    }
+
+    public function testOrderDetailRendersTheGuestBlockOnTheGuestTrackingPage()
+    {
+        $this->makeReceipt();
+        $this->loggedOutOn('guest-tracking');
+
+        $out = $this->module->hookDisplayOrderDetail(array('order' => Order::$instances[15]));
+
+        $this->assertSame('<rendered:views/templates/hook/order_detail.tpl>', $out);
+        $view = $this->vars()['ifirma_view'];
+        $this->assertSame('issued', $view['state']);
+        $this->assertSame('', $view['document']['download_url']);
+        $this->assertStringContainsString('guestrequest', $view['request_url']);
+        $this->assertStringContainsString('reference=ABCDEFGHI', $view['request_url']);
+        $this->assertSame(0, $this->listCalls());
+    }
+
+    public function testOrderDetailOfTheGuestPageOffersTheGuestChangeLink()
+    {
+        $this->loggedOutOn('guest-tracking');
+
+        $this->module->hookDisplayOrderDetail(array('order' => Order::$instances[15]));
+
+        $view = $this->vars()['ifirma_view'];
+        $this->assertSame('not_issued', $view['state']);
+        $this->assertTrue($view['can_request_change']);
+        $this->assertStringContainsString('guestrequest', $view['request_url']);
+    }
+
+    public function testOrderDetailStaysEmptyForALoggedInStrangerEvenOnTheGuestTrackingPage()
+    {
+        $other = new Customer();
+        $other->id = 99;
+        $other->logged = true;
+        Context::getContext()->customer = $other;
+        Context::getContext()->controller->php_self = 'guest-tracking';
+
+        $this->assertSame('', $this->module->hookDisplayOrderDetail(array('order' => Order::$instances[15])));
+    }
+
     public function testOrderDetailNotIssuedShowsTriggerStateName()
     {
         $s = $this->stateObject(5);

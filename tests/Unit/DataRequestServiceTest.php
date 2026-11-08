@@ -745,6 +745,7 @@ class DataRequestServiceTest extends TestCase
                 . "lastname: Nowak -&gt; -\naddress1: Stara 1 -&gt; Nowa 5\npostcode: 00-001 -&gt; 00-950",
             '{note}' => 'Please use company data',
             '{admin_link}' => 'https://shop.test/admin/index.php?controller=AdminOrders&token=admin-token-AdminOrders',
+            '{auto_line}' => '',
         );
     }
 
@@ -778,7 +779,7 @@ class DataRequestServiceTest extends TestCase
             'idLang' => 1,
             'template' => 'data_request_received',
             'subject' => 'Invoice data change request ABCDEFGHI',
-            'templateVars' => $this->merchantVars(),
+            'templateVars' => $this->merchantVars() + array('{ifirma_shop_link}' => ''),
             'to' => 'merchant@example.test',
             'toName' => null,
             'idShop' => 1,
@@ -794,7 +795,7 @@ class DataRequestServiceTest extends TestCase
             'idLang' => 2,
             'template' => 'data_request_approved',
             'subject' => 'Your invoice data change was approved',
-            'templateVars' => $this->approvalVars(),
+            'templateVars' => $this->approvalVars() + array('{ifirma_shop_link}' => ''),
             'to' => 'buyer@example.test',
             'toName' => 'Anna Nowak',
             'idShop' => 1,
@@ -811,7 +812,7 @@ class DataRequestServiceTest extends TestCase
             'idLang' => 2,
             'template' => 'data_request_rejected',
             'subject' => 'Your invoice data change was rejected',
-            'templateVars' => array('{approved_data}' => '') + $this->approvalVars(),
+            'templateVars' => array('{approved_data}' => '', '{ifirma_shop_link}' => '') + $this->approvalVars(),
             'to' => 'buyer@example.test',
             'toName' => 'Anna Nowak',
             'idShop' => 1,
@@ -1298,6 +1299,196 @@ class DataRequestServiceTest extends TestCase
             array('Your invoice data change was approved', 'ifirmadatarequestservice'),
             array('Your invoice data change was rejected', 'ifirmadatarequestservice'),
         ), $module->asked);
+    }
+
+    // ---- automatic approval ------------------------------------------
+
+    private function autoMode($mode)
+    {
+        Configuration::updateValue('IFIRMA_DATA_REQUEST_AUTO_ACCEPT', $mode);
+    }
+
+    /** @return array[] the writes to the request table, in order */
+    private function requestWrites()
+    {
+        return array_values(array_filter(ObjectModel::$writeLog, function ($w) {
+            return $w['table'] === 'ifirma_data_request';
+        }));
+    }
+
+    public function testAutoAcceptSafeStoresThePendingRowFirstThenApproves()
+    {
+        $this->autoMode('safe');
+        $notifier = $this->recordingNotifier('ops@fake.test');
+
+        $request = $this->serviceWith($notifier)->submit($this->order, $this->customer, $this->privateInput());
+
+        $writes = $this->requestWrites();
+        $this->assertCount(2, $writes);
+        $this->assertSame('pending', $writes[0]['row']['status']);
+        $this->assertSame('approved', $writes[1]['row']['status']);
+        $this->assertTrue($request->isApproved());
+        $this->assertTrue($request->isAutoApproved());
+    }
+
+    public function testAutoAcceptSafeRecordsTheOutcome()
+    {
+        $this->autoMode('safe');
+
+        $request = $this->serviceWith($this->recordingNotifier())->submit($this->order, $this->customer, $this->privateInput());
+
+        $row = $this->storedRow($request);
+        $this->assertSame('approved', $row['status']);
+        $this->assertEmpty($row['resolved_by']);
+        $this->assertSame('safe', $row['auto_mode']);
+        $this->assertNotEmpty($row['date_resolved']);
+        $this->assertSame($request->getRequestedData(), json_decode($row['approved_data'], true));
+        $this->assertSame('Anna', json_decode($row['approved_data'], true)['firstname']);
+        $this->assertSame('Approved automatically: safe fields only', $row['admin_note']);
+    }
+
+    public function testAutoAcceptTellsTheCustomerAndTheMerchantOnce()
+    {
+        $this->autoMode('safe');
+        $notifier = $this->recordingNotifier('ops@fake.test');
+
+        $this->serviceWith($notifier)->submit($this->order, $this->customer, $this->privateInput());
+
+        $this->assertCount(1, $notifier->customer);
+        $this->assertSame('approved', $notifier->customer[0]['decision']);
+        $this->assertSame('approved', $notifier->customer[0]['stored'][array_keys($notifier->customer[0]['stored'])[0]]['status']);
+        $this->assertCount(1, $notifier->merchant);
+        $this->assertSame('Approved automatically (mode: safe).', $notifier->merchant[0]['vars']['{auto_line}']);
+    }
+
+    public function testAPendingSubmissionPassesAnEmptyAutoLine()
+    {
+        $this->autoMode('safe');
+        $notifier = $this->recordingNotifier('ops@fake.test');
+
+        $request = $this->serviceWith($notifier)->submit($this->order, $this->customer, $this->companyInput());
+
+        $this->assertSame('pending', $this->storedRow($request)['status']);
+        $this->assertSame(array(), $notifier->customer);
+        $this->assertSame('', $notifier->merchant[0]['vars']['{auto_line}']);
+        $this->assertCount(1, $this->requestWrites());
+    }
+
+    public function testModeNoneLeavesEveryRequestPending()
+    {
+        $this->autoMode('none');
+        $notifier = $this->recordingNotifier();
+
+        $request = $this->serviceWith($notifier)->submit($this->order, $this->customer, $this->privateInput());
+
+        $row = $this->storedRow($request);
+        $this->assertSame('pending', $row['status']);
+        $this->assertNull($row['auto_mode']);
+        $this->assertSame(array(), $notifier->customer);
+        $this->assertFalse($request->isApproved());
+    }
+
+    public function testAnUnknownModeBehavesAsNone()
+    {
+        $this->autoMode('everything');
+
+        $request = $this->serviceWith($this->recordingNotifier())->submit($this->order, $this->customer, $this->privateInput());
+
+        $this->assertSame('pending', $this->storedRow($request)['status']);
+    }
+
+    public function testModeSafeKeepsANipAdditionPending()
+    {
+        $this->autoMode('safe');
+        $notifier = $this->recordingNotifier();
+
+        $request = $this->serviceWith($notifier)->submit($this->order, $this->customer, $this->companyInput());
+
+        $this->assertSame('pending', $this->storedRow($request)['status']);
+        $this->assertSame(array(), $notifier->customer);
+    }
+
+    public function testModeAllApprovesANipChangeAndSaysSo()
+    {
+        $this->autoMode('all');
+        $notifier = $this->recordingNotifier('ops@fake.test');
+
+        $request = $this->serviceWith($notifier)->submit($this->order, $this->customer, $this->companyInput());
+
+        $row = $this->storedRow($request);
+        $this->assertSame('approved', $row['status']);
+        $this->assertSame('all', $row['auto_mode']);
+        $this->assertSame('Approved automatically: every valid request', $row['admin_note']);
+        $this->assertSame('Approved automatically (mode: all).', $notifier->merchant[0]['vars']['{auto_line}']);
+        $this->assertSame('5250001234', json_decode($row['approved_data'], true)['vat_number']);
+    }
+
+    public function testASeparatorOnlyNipDifferenceOfACompanyAddressIsApprovedInSafeMode()
+    {
+        $this->autoMode('safe');
+        $address = Address::$instances[3];
+        $address->company = 'ACME Sp. z o.o.';
+        $address->vat_number = '525-000-12-34';
+
+        $request = $this->serviceWith($this->recordingNotifier())->submit(
+            $this->order,
+            $this->customer,
+            $this->companyInput(array('vat_number' => '5250001234', 'address1' => 'Nowa 5'))
+        );
+
+        $this->assertSame('approved', $this->storedRow($request)['status']);
+    }
+
+    public function testAFailingCriteriaCheckLeavesTheRequestPending()
+    {
+        $criteria = new class extends IfirmaDataRequestAutoAccept {
+            public function mode()
+            {
+                return 'safe';
+            }
+
+            public function decide(array $requested, array $current)
+            {
+                throw new RuntimeException('criteria down');
+            }
+        };
+        $notifier = $this->recordingNotifier();
+        $service = new IfirmaDataRequestService(new Module(), null, $notifier, $criteria);
+
+        $request = $service->submit($this->order, $this->customer, $this->privateInput());
+
+        $this->assertSame('pending', $this->storedRow($request)['status']);
+        $this->assertSame(array(), $notifier->customer);
+    }
+
+    public function testASafeCountryOnlyChangeIsApproved()
+    {
+        $this->autoMode('safe');
+        $country = new Country();
+        $country->id = 15;
+        $country->iso_code = 'DE';
+        Country::register($country);
+
+        $request = $this->serviceWith($this->recordingNotifier())->submit(
+            $this->order,
+            $this->customer,
+            $this->privateInput(array('address1' => 'Stara 1', 'postcode' => '00-001', 'id_country' => '15'))
+        );
+
+        $this->assertSame('approved', $this->storedRow($request)['status']);
+    }
+
+    public function testTheAutoModeColumnIsEnsuredOnTheFirstSubmission()
+    {
+        IfirmaSchema::resetEnsureCache();
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'auto_mode'/", '0');
+
+        $this->serviceWith($this->recordingNotifier())->submit($this->order, $this->customer, $this->companyInput());
+
+        $alters = array_values(array_filter(Db::getInstance()->executed, function ($sql) {
+            return strpos($sql, 'ADD COLUMN `auto_mode`') !== false;
+        }));
+        $this->assertSame(array('ALTER TABLE `ps_ifirma_data_request` ADD COLUMN `auto_mode` VARCHAR(8) NULL'), $alters);
     }
 
     // ---- override --------------------------------------------------------

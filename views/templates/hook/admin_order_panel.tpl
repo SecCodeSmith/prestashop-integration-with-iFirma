@@ -392,6 +392,26 @@
                         {if $entry.admin_note}
                             <br><span class="text-muted">{l s='Admin note:' mod='ifirma'} {$entry.admin_note|escape:'html':'UTF-8'}</span>
                         {/if}
+                        {if isset($entry.accepted) && $entry.accepted}
+                        <table class="table ifirma-request-accepted">
+                            <thead>
+                                <tr>
+                                    <th>{l s='Field' mod='ifirma'}</th>
+                                    <th>{l s='Current' mod='ifirma'}</th>
+                                    <th>{l s='Requested' mod='ifirma'}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {foreach from=$entry.accepted item=change}
+                                <tr>
+                                    <td>{$change.field|escape:'html':'UTF-8'}</td>
+                                    <td>{$change.current|escape:'html':'UTF-8'}</td>
+                                    <td><strong>{$change.requested|escape:'html':'UTF-8'}</strong></td>
+                                </tr>
+                                {/foreach}
+                            </tbody>
+                        </table>
+                        {/if}
                     </li>
                     {/foreach}
                 </ul>

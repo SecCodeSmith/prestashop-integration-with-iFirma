@@ -90,8 +90,9 @@ class IfirmaSettingsTest extends TestCase
             'IFIRMA_PAYMENT_METHOD_MAP', 'IFIRMA_CONTRACTOR_SYNC', 'IFIRMA_PAYMENT_TYPE_TOKEN', 'IFIRMA_DEFAULT_UNIT',
             'IFIRMA_AUTO_CREATE_STATE', 'IFIRMA_MARK_PAID_ON_CREATE', 'IFIRMA_SEND_CHANNEL', 'IFIRMA_SEND_TEXT',
             'IFIRMA_SEND_COPY_MODE', 'IFIRMA_SEND_COPY_EMPLOYEE', 'IFIRMA_KSEF_MODE', 'IFIRMA_DUPLICATE_CHECK',
-            'IFIRMA_DUPLICATE_WINDOW_DAYS', 'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE', 'IFIRMA_ALLOW_DATA_REQUEST',
-            'IFIRMA_NOTIFY_EMAIL', 'IFIRMA_SYNC_INTERVAL_MIN', 'IFIRMA_CRON_MAX_CALLS', 'IFIRMA_RATE_MAX_PER_MIN',
+            'IFIRMA_DUPLICATE_WINDOW_DAYS', 'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE', 'IFIRMA_DOC_TEMPLATE',
+            'IFIRMA_ORDER_STAMP_PREFIX', 'IFIRMA_SHOP_URL', 'IFIRMA_ALLOW_DATA_REQUEST',
+            'IFIRMA_DATA_REQUEST_AUTO_ACCEPT', 'IFIRMA_NOTIFY_EMAIL', 'IFIRMA_SYNC_INTERVAL_MIN', 'IFIRMA_CRON_MAX_CALLS', 'IFIRMA_RATE_MAX_PER_MIN',
         ), array_keys(IfirmaSettings::fields()));
     }
 
@@ -150,7 +151,11 @@ class IfirmaSettingsTest extends TestCase
             'IFIRMA_DUPLICATE_CHECK' => 0,
             'IFIRMA_DUPLICATE_WINDOW_DAYS' => null,
             'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE' => null,
+            'IFIRMA_DOC_TEMPLATE' => '',
+            'IFIRMA_ORDER_STAMP_PREFIX' => 'PS-ORDER',
+            'IFIRMA_SHOP_URL' => '',
             'IFIRMA_ALLOW_DATA_REQUEST' => 0,
+            'IFIRMA_DATA_REQUEST_AUTO_ACCEPT' => 'none',
             'IFIRMA_NOTIFY_EMAIL' => '',
             'IFIRMA_SYNC_INTERVAL_MIN' => null,
             'IFIRMA_CRON_MAX_CALLS' => null,
@@ -1018,6 +1023,90 @@ class IfirmaSettingsTest extends TestCase
         } finally {
             IfirmaSettings::$devMode = null;
         }
+    }
+
+    // ---- document template, order stamp prefix, shop webpage, auto-accept (1.6.0) --------------
+
+    /**
+     * @return array[] name => array(key, posted, value)
+     */
+    public function acceptedNewSettings()
+    {
+        return array(
+            'a template is trimmed' => array('IFIRMA_DOC_TEMPLATE', ' logo ', 'logo'),
+            'a template of 100 characters' => array('IFIRMA_DOC_TEMPLATE', str_repeat('a', 100), str_repeat('a', 100)),
+            'an empty template' => array('IFIRMA_DOC_TEMPLATE', '', ''),
+            'a prefix loses its trailing hyphen' => array('IFIRMA_ORDER_STAMP_PREFIX', 'scmedical-', 'scmedical'),
+            'a prefix is trimmed' => array('IFIRMA_ORDER_STAMP_PREFIX', '  scm.med_1  ', 'scm.med_1'),
+            'an empty prefix is PS-ORDER' => array('IFIRMA_ORDER_STAMP_PREFIX', '', 'PS-ORDER'),
+            'a prefix of hyphens is PS-ORDER' => array('IFIRMA_ORDER_STAMP_PREFIX', '--', 'PS-ORDER'),
+            'a prefix of 32 characters' => array('IFIRMA_ORDER_STAMP_PREFIX', str_repeat('a', 32), str_repeat('a', 32)),
+            'a prefix that is not posted' => array('IFIRMA_ORDER_STAMP_PREFIX', false, 'PS-ORDER'),
+            'an https webpage' => array('IFIRMA_SHOP_URL', 'https://scmedical.pl', 'https://scmedical.pl'),
+            'an http webpage with a path, trimmed' => array('IFIRMA_SHOP_URL', ' http://shop.example.test/pl/ ', 'http://shop.example.test/pl/'),
+            'an empty webpage' => array('IFIRMA_SHOP_URL', '', ''),
+            'the safe mode' => array('IFIRMA_DATA_REQUEST_AUTO_ACCEPT', 'safe', 'safe'),
+            'the all mode, trimmed' => array('IFIRMA_DATA_REQUEST_AUTO_ACCEPT', ' all ', 'all'),
+            'an unknown mode is none' => array('IFIRMA_DATA_REQUEST_AUTO_ACCEPT', 'sometimes', 'none'),
+            'a mode that is not posted is none' => array('IFIRMA_DATA_REQUEST_AUTO_ACCEPT', false, 'none'),
+        );
+    }
+
+    /**
+     * @dataProvider acceptedNewSettings
+     */
+    public function testTheNewSettingsAreNormalised($key, $posted, $value)
+    {
+        $result = $this->fromRequest(array($key => $posted));
+
+        $this->assertSame($value, $result['values'][$key]);
+        $this->assertArrayNotHasKey($key, $result['errors']);
+    }
+
+    /**
+     * @return array[] name => array(key, posted)
+     */
+    public function refusedNewSettings()
+    {
+        return array(
+            'a template of 101 characters' => array('IFIRMA_DOC_TEMPLATE', str_repeat('a', 101)),
+            'a template with a control character' => array('IFIRMA_DOC_TEMPLATE', "lo\x07go"),
+            'a template with a line break' => array('IFIRMA_DOC_TEMPLATE', "lo\ngo"),
+            'a template that is an array' => array('IFIRMA_DOC_TEMPLATE', array('a')),
+            'a prefix with a space inside' => array('IFIRMA_ORDER_STAMP_PREFIX', 'sc medical'),
+            'a prefix of 33 characters' => array('IFIRMA_ORDER_STAMP_PREFIX', str_repeat('a', 33)),
+            'a prefix with a slash' => array('IFIRMA_ORDER_STAMP_PREFIX', 'sc/medical'),
+            'a prefix with a letter outside ASCII' => array('IFIRMA_ORDER_STAMP_PREFIX', "sc\u{0105}"),
+            'a webpage without a scheme' => array('IFIRMA_SHOP_URL', 'scmedical.pl'),
+            'a webpage with user information' => array('IFIRMA_SHOP_URL', 'https://user:pw@host.example'),
+            'a webpage over ftp' => array('IFIRMA_SHOP_URL', 'ftp://scmedical.pl'),
+            'a webpage without a host' => array('IFIRMA_SHOP_URL', 'https://'),
+            'a webpage with a space' => array('IFIRMA_SHOP_URL', 'https://scmedical.pl/a b'),
+            'a webpage longer than 255 characters' => array('IFIRMA_SHOP_URL', 'https://scmedical.pl/' . str_repeat('a', 240)),
+        );
+    }
+
+    /**
+     * @dataProvider refusedNewSettings
+     */
+    public function testTheNewSettingsRefuseWhatTheirRulesForbid($key, $posted)
+    {
+        $result = $this->fromRequest(array($key => $posted));
+
+        $this->assertNull($result['values'][$key]);
+        $this->assertSame('', $result['errors'][$key]);
+    }
+
+    public function testTheShopWebpageRuleIgnoresDeveloperModeAndLocalHosts()
+    {
+        IfirmaSettings::$devMode = false;
+        try {
+            $result = $this->fromRequest(array('IFIRMA_SHOP_URL' => 'http://shop.example.test'));
+        } finally {
+            IfirmaSettings::$devMode = null;
+        }
+
+        $this->assertSame('http://shop.example.test', $result['values']['IFIRMA_SHOP_URL']);
     }
 
     public function testTheDevModeSeamDefaultsToThePrestaShopConstant()

@@ -40,6 +40,7 @@ class AdminOrderPanelViewTest extends TestCase
         $keys = array(
             'state' => array('held', 'suspected', 'unknown', 'error', 'missing', 'paid', 'issued', 'not_issued'),
             'request_status' => array('pending', 'approved', 'rejected', 'cancelled'),
+            'request_resolver' => array('safe', 'all'),
             'request_fields' => $this->requestsService()->fields(),
             'contractor' => array(
                 'created', 'updated', 'kept', 'fallback', 'assigned', 'lookup_failed', 'update_failed', 'create_rejected',
@@ -232,6 +233,42 @@ class AdminOrderPanelViewTest extends TestCase
         $this->assertSame('L:company', $v['ifirma_request_fields'][1]['label']);
         $this->assertSame(array('L:pending', 'L:rejected'), array_reverse(array_column($v['ifirma_request_history'], 'status_label')));
         $this->assertSame('M:import nip', $v['ifirma_contractor_map']['matched_by_label']);
+    }
+
+    public function testAnAutomaticApprovalShowsItsResolverAndTheAcceptedDifferences()
+    {
+        $this->makeReceipt(array('status' => 'held', 'ifirma_id' => ''));
+        $request = $this->makeRequest('pending');
+        $request->approve(0, array(
+            'company' => '', 'vat_number' => '', 'firstname' => 'Jan', 'lastname' => 'K', 'address1' => 'Nowa 2',
+            'address2' => '', 'postcode' => '00-002', 'city' => 'Warszawa', 'id_country' => 14,
+        ), 'Approved automatically: safe fields only', '2026-11-03 09:30:00', 'safe');
+        $request->save();
+
+        $entry = $this->build()['ifirma_request_history'][0];
+
+        $this->assertSame('L:safe', $entry['employee']);
+        $this->assertSame(array(
+            array('field' => 'address1', 'current' => 'Prosta 1', 'requested' => 'Nowa 2'),
+            array('field' => 'postcode', 'current' => '00-001', 'requested' => '00-002'),
+        ), $entry['accepted']);
+    }
+
+    public function testAnEmployeeApprovalHasNoAcceptedDifferencesList()
+    {
+        $this->makeReceipt(array('status' => 'held', 'ifirma_id' => ''));
+        $request = $this->makeRequest('pending');
+        $request->approve(4, array('city' => 'Lodz'), '', '2026-11-03 09:30:00');
+        $request->save();
+
+        $this->assertArrayNotHasKey('accepted', $this->build()['ifirma_request_history'][0]);
+    }
+
+    public function testTheTemplateEscapesTheAcceptedDifferences()
+    {
+        $tpl = file_get_contents(dirname(__DIR__, 2) . '/views/templates/hook/admin_order_panel.tpl');
+
+        $this->assertMatchesRegularExpression('/foreach from=\$entry\.accepted item=change.*?\$change\.field\|escape.*?\$change\.current\|escape.*?\$change\.requested\|escape/s', $tpl);
     }
 
     public function testALinkWithACodeTheMatchLabelsDoNotKnowIsShownAsStored()

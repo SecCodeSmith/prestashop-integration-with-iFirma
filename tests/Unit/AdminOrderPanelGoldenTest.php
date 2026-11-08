@@ -302,6 +302,27 @@ class AdminOrderPanelGoldenTest extends TestCase
                     return $rows;
                 });
             }),
+            'automatically approved request' => array(array(), static function (self $t) {
+                $t->receipt(array('status' => 'held', 'ifirma_id' => ''));
+                $approved = array(
+                    'want_invoice_for_company' => false, 'company' => '', 'vat_number' => '', 'firstname' => 'Jan', 'lastname' => 'K',
+                    'address1' => 'Nowa 2', 'address2' => '', 'postcode' => '00-002', 'city' => 'Warszawa', 'id_country' => 14,
+                );
+                $t->request('approved', array(
+                    'resolved_by' => 0,
+                    'auto_mode' => 'safe',
+                    'date_resolved' => '2026-11-03 09:30:00',
+                    'admin_note' => 'Approved automatically: safe fields only',
+                    'approved_data' => json_encode($approved),
+                ), $approved);
+                $t->request('approved', array(
+                    'resolved_by' => 0,
+                    'auto_mode' => 'all',
+                    'date_resolved' => '2026-11-03 10:30:00',
+                    'admin_note' => 'Approved automatically: every valid request',
+                    'approved_data' => json_encode(array_merge($approved, array('company' => '<b>ACME</b>', 'vat_number' => '5260250274'))),
+                ));
+            }),
             'request with values of every kind' => array(array(), static function (self $t) {
                 $t->receipt(array('status' => 'held', 'ifirma_id' => ''));
                 $t->request('pending', array('customer_note' => 'Prosze o fakture'), array(

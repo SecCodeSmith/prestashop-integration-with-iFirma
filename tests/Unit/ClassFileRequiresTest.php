@@ -80,6 +80,9 @@ class ClassFileRequiresTest extends TestCase
             'the issue feed' => array('IfirmaIssueFeed'),
             'the request input reader' => array('IfirmaInput'),
             'the order grid indicator' => array('IfirmaOrderGridIndicator'),
+            'the shop link' => array('IfirmaShopLink'),
+            'the data request auto-accept criteria' => array('IfirmaDataRequestAutoAccept'),
+            'the guest code service' => array('IfirmaGuestCodeService'),
         );
     }
 

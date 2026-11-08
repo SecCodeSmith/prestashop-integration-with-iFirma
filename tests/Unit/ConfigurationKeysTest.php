@@ -39,6 +39,29 @@ class ConfigurationKeysTest extends TestCase
         }
     }
 
+    public function testTheFourOneSixZeroKeysAreInstalledWithTheirDefaultsAndRemoved()
+    {
+        $expected = array(
+            'IFIRMA_DATA_REQUEST_AUTO_ACCEPT' => 'none',
+            'IFIRMA_DOC_TEMPLATE' => '',
+            'IFIRMA_ORDER_STAMP_PREFIX' => 'PS-ORDER',
+            'IFIRMA_SHOP_URL' => '',
+        );
+        $module = IfirmaTestModuleLoader::loadModule();
+        $this->assertTrue($module->install());
+
+        foreach ($expected as $key => $default) {
+            $this->assertSame($default, IfirmaSchema::configurationDefaults()[$key], $key . ' default');
+            $this->assertTrue(Configuration::hasKey($key), $key . ' should be set');
+            $this->assertSame($default, Configuration::get($key), $key);
+        }
+
+        $this->assertTrue($module->uninstall());
+        foreach (array_keys($expected) as $key) {
+            $this->assertFalse(Configuration::hasKey($key), $key . ' should be removed');
+        }
+    }
+
     public function testAuthFailureDefaultIsEmptyAndUninstallRemovesIt()
     {
         $module = IfirmaTestModuleLoader::loadModule();

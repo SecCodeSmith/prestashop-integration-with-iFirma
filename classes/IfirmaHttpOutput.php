@@ -13,6 +13,8 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
+require_once dirname(__FILE__) . '/IfirmaShopLink.php';
+
 /**
  * Sends a PDF document as the response, for the front receipt controller and the admin
  * AdminIfirmaController: the one place that knows the headers of a PDF download.
@@ -39,16 +41,15 @@ class IfirmaHttpOutput
     /**
      * Discards the pending output buffer, sends the PDF headers and echoes the document.
      *
-     * The file name is built here from the raw document number or identifier: ifirma-<name>.pdf with
-     * every character outside 0-9A-Za-z._- replaced by an underscore, so no caller can put a quote,
-     * a slash or a line break into the header.
+     * The file name is built by IfirmaShopLink::pdfFileName() from the raw document number or identifier, so no caller
+     * can put a quote, a slash or a line break into the header.
      *
      * @param string $pdf  the PDF bytes
      * @param string $name the document number or, when there is none, the identifier (raw)
      */
     public static function pdf($pdf, $name)
     {
-        $filename = 'ifirma-' . preg_replace('/[^0-9A-Za-z._-]/', '_', (string) $name) . '.pdf';
+        $filename = IfirmaShopLink::pdfFileName($name);
 
         if (ob_get_level()) {
             ob_end_clean();

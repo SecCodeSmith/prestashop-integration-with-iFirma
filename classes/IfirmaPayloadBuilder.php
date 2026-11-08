@@ -100,7 +100,60 @@ class IfirmaPayloadBuilder
      */
     public static function buildOrderReference(Order $order)
     {
-        return self::ORDER_REFERENCE_PREFIX . (int) $order->id . '-' . $order->reference;
+        return self::stampPrefix() . '-' . (int) $order->id . '-' . $order->reference;
+    }
+
+    /**
+     * Every stamp that identifies the order's documents: the configured one first and, when the
+     * configured prefix is not the default, the legacy default-prefix stamp second (documents
+     * issued before the prefix was changed).
+     *
+     * @param Order $order
+     * @return string[]
+     */
+    public static function orderReferenceStamps(Order $order)
+    {
+        $stamps = array(self::buildOrderReference($order));
+        $legacy = self::ORDER_REFERENCE_PREFIX . (int) $order->id . '-' . $order->reference;
+        if ($legacy !== $stamps[0]) {
+            $stamps[] = $legacy;
+        }
+
+        return $stamps;
+    }
+
+    /**
+     * The configured stamp prefix, normalised: trimmed, trailing hyphens removed, default when empty.
+     *
+     * @return string
+     */
+    private static function stampPrefix()
+    {
+        $prefix = rtrim(trim((string) Configuration::get('IFIRMA_ORDER_STAMP_PREFIX')), '-');
+        if ($prefix === '') {
+            $prefix = rtrim(self::ORDER_REFERENCE_PREFIX, '-');
+        }
+
+        return $prefix;
+    }
+
+    /**
+     * The Uwagi text: the stamp, then the configured shop webpage when there is one. The stamp
+     * stays first and complete, the webpage is cut when the limit is exceeded.
+     *
+     * @param Order $order
+     * @param int   $limit
+     * @return string
+     */
+    private static function documentNote(Order $order, $limit)
+    {
+        $stamp = self::buildOrderReference($order);
+        $url = trim((string) Configuration::get('IFIRMA_SHOP_URL'));
+        if ($url !== '') {
+            $stamp .= ' ' . $url;
+        }
+
+        return self::truncate($stamp, $limit);
     }
 
     /**
@@ -259,7 +312,7 @@ class IfirmaPayloadBuilder
         $limits = self::fieldLimits();
         $paid = $this->getPaidAmount($order);
 
-        return array(
+        $header = array(
             'Zaplacono' => $paid,
             'ZaplaconoNaDokumencie' => $paid,
             'LiczOd' => 'BRT',
@@ -270,12 +323,18 @@ class IfirmaPayloadBuilder
             'RodzajPodpisuOdbiorcy' => IfirmaDocumentSettings::normalizeSignatureType(Configuration::get('IFIRMA_SIGNATURE_TYPE')),
             'WidocznyNumerBdo' => false,
             'Numer' => null,
-            'Uwagi' => self::truncate(self::buildOrderReference($order), $limits['Uwagi']),
+            'Uwagi' => self::documentNote($order, $limits['Uwagi']),
             'IdentyfikatorKontrahenta' => null,
             'NIPKontrahenta' => null,
             'Kontrahent' => $contractor,
             'Pozycje' => $positions,
         );
+        $template = trim((string) Configuration::get('IFIRMA_DOC_TEMPLATE'));
+        if ($template !== '') {
+            $header['NazwaSzablonu'] = $template;
+        }
+
+        return $header;
     }
 
     /**

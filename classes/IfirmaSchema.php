@@ -109,6 +109,7 @@ class IfirmaSchema
             'customer_note' => 'TEXT NULL',
             'admin_note' => 'TEXT NULL',
             'resolved_by' => 'INT(11) UNSIGNED NULL',
+            'auto_mode' => 'VARCHAR(8) NULL',
             'date_add' => 'DATETIME NOT NULL',
             'date_upd' => 'DATETIME NOT NULL',
             'date_resolved' => 'DATETIME NULL',
@@ -128,6 +129,25 @@ class IfirmaSchema
             'ifirma_name' => "VARCHAR(150) NOT NULL DEFAULT ''",
             'date_add' => 'DATETIME NOT NULL',
             'date_upd' => 'DATETIME NOT NULL',
+        );
+    }
+
+    /**
+     * @return array column name => DDL fragment, in table order
+     */
+    public static function guestCodeColumns()
+    {
+        return array(
+            'id_ifirma_guest_code' => 'INT(11) UNSIGNED NOT NULL AUTO_INCREMENT',
+            'id_order' => 'INT(11) UNSIGNED NOT NULL',
+            'code_hash' => 'CHAR(64) NOT NULL',
+            'salt' => 'CHAR(32) NOT NULL',
+            'attempts' => 'TINYINT(3) UNSIGNED NOT NULL DEFAULT 0',
+            'ip_hash' => "CHAR(64) NOT NULL DEFAULT ''",
+            'date_add' => 'DATETIME NOT NULL',
+            'expires_at' => 'DATETIME NOT NULL',
+            'used_at' => 'DATETIME NULL',
+            'invalidated' => 'TINYINT(1) NOT NULL DEFAULT 0',
         );
     }
 
@@ -193,6 +213,19 @@ class IfirmaSchema
     }
 
     /**
+     * @return string
+     */
+    public static function guestCodeCreateSql()
+    {
+        return 'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . 'ifirma_guest_code` (' . "\n"
+            . self::columnLines(self::guestCodeColumns()) . ",\n"
+            . "    PRIMARY KEY (`id_ifirma_guest_code`),\n"
+            . "    KEY `idx_order` (`id_order`),\n"
+            . "    KEY `idx_ip_date` (`ip_hash`, `date_add`)\n"
+            . ') ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8;';
+    }
+
+    /**
      * Whether a table of the current database has the named column.
      *
      * @param string $table  full table name, prefix included
@@ -220,6 +253,25 @@ class IfirmaSchema
             "SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE()"
             . " AND TABLE_NAME = '" . pSQL($table) . "' AND INDEX_NAME = '" . pSQL($index) . "'"
         ) !== 0;
+    }
+
+    /** @var bool the guest code table was already ensured in this request */
+    private static $guestCodeEnsured = false;
+
+    /**
+     * Creates the guest code table when missing (shops upgraded to 1.6.0 before it existed).
+     * Executes at most once per request.
+     *
+     * @return bool
+     */
+    public static function ensureGuestCodeTable()
+    {
+        if (self::$guestCodeEnsured) {
+            return true;
+        }
+        self::$guestCodeEnsured = (bool) Db::getInstance()->execute(self::guestCodeCreateSql());
+
+        return self::$guestCodeEnsured;
     }
 
     /** @var bool the contractor map table was already ensured in this request */
@@ -324,6 +376,32 @@ class IfirmaSchema
         return $ok;
     }
 
+    /** @var bool the auto_mode column was already ensured in this request */
+    private static $dataRequestAutoModeEnsured = false;
+
+    /**
+     * Adds the auto_mode column to the data request table when missing. Idempotent; at most once per request.
+     *
+     * @return bool
+     */
+    public static function ensureDataRequestAutoModeColumn()
+    {
+        if (self::$dataRequestAutoModeEnsured) {
+            return true;
+        }
+        $table = _DB_PREFIX_ . 'ifirma_data_request';
+        $ok = true;
+        if (!self::columnExists($table, 'auto_mode')) {
+            $columns = self::dataRequestColumns();
+            $ok = (bool) Db::getInstance()->execute(
+                'ALTER TABLE `' . $table . '` ADD COLUMN `auto_mode` ' . $columns['auto_mode']
+            );
+        }
+        self::$dataRequestAutoModeEnsured = $ok;
+
+        return $ok;
+    }
+
     /** @var bool the date index was already ensured in this request */
     private static $receiptDateIndexEnsured = false;
 
@@ -353,8 +431,10 @@ class IfirmaSchema
     public static function resetEnsureCache()
     {
         self::$contractorMapEnsured = false;
+        self::$guestCodeEnsured = false;
         self::$receiptKsefEnsured = false;
         self::$receiptDownloadEnsured = false;
+        self::$dataRequestAutoModeEnsured = false;
         self::$receiptDateIndexEnsured = false;
     }
 
@@ -390,7 +470,11 @@ class IfirmaSchema
             'IFIRMA_DUPLICATE_CHECK' => 1,
             'IFIRMA_DUPLICATE_WINDOW_DAYS' => 60,
             'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE' => '0.01',
+            'IFIRMA_DOC_TEMPLATE' => '',
+            'IFIRMA_ORDER_STAMP_PREFIX' => 'PS-ORDER',
+            'IFIRMA_SHOP_URL' => '',
             'IFIRMA_ALLOW_DATA_REQUEST' => 1,
+            'IFIRMA_DATA_REQUEST_AUTO_ACCEPT' => 'none',
             'IFIRMA_NOTIFY_EMAIL' => '',
             'IFIRMA_SYNC_INTERVAL_MIN' => 15,
             'IFIRMA_CRON_TOKEN' => null,

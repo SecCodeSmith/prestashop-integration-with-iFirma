@@ -47,6 +47,10 @@ class AdminPanelPresenterTest extends TestCase
                 'rejected' => 'L:rejected',
                 'cancelled' => 'L:cancelled',
             ),
+            'request_resolver' => array(
+                'safe' => 'L:automatic (safe fields)',
+                'all' => 'L:automatic (all)',
+            ),
             'request_fields' => array(
                 'want_invoice_for_company' => 'L:invoice',
                 'company' => 'L:company',
@@ -264,6 +268,38 @@ class AdminPanelPresenterTest extends TestCase
         $this->assertSame('#7', $this->presenter()->employeeName('7'));
         $this->assertSame('#9', $this->presenter()->employeeName(9), 'an employee that is not there');
         $this->assertSame('#8', $this->presenter()->employeeName('08'), 'the id as a number');
+    }
+
+    public function testAnEmployeeResolvesByName()
+    {
+        $this->employee(3, 'Anna', 'Nowak');
+
+        $this->assertSame('Anna Nowak', $this->presenter()->resolverLabel(3, 'approved', null));
+        $this->assertSame('Anna Nowak', $this->presenter()->resolverLabel(3, 'rejected', 'safe'), 'an employee wins over a mode');
+    }
+
+    public function testAnApprovedRequestWithoutAnEmployeeIsResolvedAutomatically()
+    {
+        $p = $this->presenter();
+
+        $this->assertSame('L:automatic (safe fields)', $p->resolverLabel(null, 'approved', 'safe'));
+        $this->assertSame('L:automatic (safe fields)', $p->resolverLabel(0, 'approved', 'safe'));
+        $this->assertSame('L:automatic (all)', $p->resolverLabel('0', 'approved', 'all'));
+        $this->assertSame(array(), Employee::$loads);
+    }
+
+    public function testNoResolverWithoutAnEmployeeOrAKnownAutoMode()
+    {
+        $p = $this->presenter();
+
+        $this->assertSame('', $p->resolverLabel(null, 'approved', null));
+        $this->assertSame('', $p->resolverLabel(0, 'approved', ''));
+        $this->assertSame('', $p->resolverLabel(0, 'approved', 'other'));
+        $this->assertSame('', $p->resolverLabel(0, 'cancelled', 'safe'));
+        $this->assertSame('', $p->resolverLabel(0, 'pending', 'all'));
+        $labels = $this->labels();
+        unset($labels['request_resolver']);
+        $this->assertSame('', (new IfirmaAdminPanelPresenter($labels))->resolverLabel(0, 'approved', 'safe'));
     }
 
     public function testNoEmployeeWhenThereIsNoId()

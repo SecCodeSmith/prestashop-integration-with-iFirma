@@ -18,6 +18,8 @@ require_once dirname(__FILE__) . '/IfirmaReceiptService.php';
 require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaDataRequest.php';
 require_once dirname(__FILE__) . '/IfirmaDataRequestNotifier.php';
+require_once dirname(__FILE__) . '/IfirmaDataRequestAutoAccept.php';
+require_once dirname(__FILE__) . '/IfirmaSchema.php';
 
 /**
  * Business rules of the customer data-change request.
@@ -55,16 +57,21 @@ class IfirmaDataRequestService
     /** @var IfirmaDataRequestNotifier */
     private $notifier;
 
+    /** @var IfirmaDataRequestAutoAccept */
+    private $autoAccept;
+
     /**
      * @param Module $module
      * @param callable|null $clock
      * @param IfirmaDataRequestNotifier|null $notifier delivers the e-mails; the default one sends them
+     * @param IfirmaDataRequestAutoAccept|null $autoAccept the auto-accept criteria
      */
-    public function __construct(Module $module, $clock = null, ?IfirmaDataRequestNotifier $notifier = null)
+    public function __construct(Module $module, $clock = null, ?IfirmaDataRequestNotifier $notifier = null, ?IfirmaDataRequestAutoAccept $autoAccept = null)
     {
         $this->module = $module;
         $this->clock = $clock;
         $this->notifier = $notifier ?: new IfirmaDataRequestNotifier();
+        $this->autoAccept = $autoAccept ?: new IfirmaDataRequestAutoAccept();
     }
 
     /**
@@ -453,13 +460,53 @@ class IfirmaDataRequestService
         $request->id_customer = (int) $customer->id;
         $request->id_shop = (int) $order->id_shop ?: 1;
         $request->status = IfirmaDataRequest::STATUS_PENDING;
-        $request->setRequestedData($this->normalizeData($input));
+        $normalized = $this->normalizeData($input);
+        $request->setRequestedData($normalized);
         $request->customer_note = $note;
+        IfirmaSchema::ensureDataRequestAutoModeColumn();
         $request->save();
+
+        $mode = $this->autoAcceptMode($normalized, $order);
+        if ($mode !== null) {
+            $request->approve(
+                0,
+                $normalized,
+                $mode === IfirmaDataRequestAutoAccept::MODE_ALL
+                    ? $this->module->l('Approved automatically: every valid request', 'ifirmadatarequestservice')
+                    : $this->module->l('Approved automatically: safe fields only', 'ifirmadatarequestservice'),
+                $this->now(),
+                $mode
+            );
+            $request->save();
+            $this->notifyCustomer($request, 'approved');
+        }
 
         $this->notifyMerchant($request, $order);
 
         return $request;
+    }
+
+    /**
+     * Asks the auto-accept criteria about a stored request. A failure of the check leaves the request
+     * pending: the employee decides.
+     *
+     * @param array $normalized the request's data
+     * @param Order $order
+     * @return string|null the mode that accepts it (safe|all); null when it waits for an employee
+     */
+    private function autoAcceptMode(array $normalized, Order $order)
+    {
+        try {
+            if ($this->autoAccept->mode() === IfirmaDataRequestAutoAccept::MODE_NONE) {
+                return null;
+            }
+
+            return $this->autoAccept->decide($normalized, $this->currentValues(new Address((int) $order->id_address_invoice)));
+        } catch (Exception $e) {
+            PrestaShopLogger::addLog('iFirma auto-accept check failed (order ' . (int) $order->id . '): ' . $e->getMessage(), 2);
+
+            return null;
+        }
     }
 
     /**
@@ -584,16 +631,16 @@ class IfirmaDataRequestService
     }
 
     /**
-     * @param array $requested
+     * The values of an address the comparison with a request works on.
+     *
      * @param Address $current
-     * @return array list of array('field', 'current', 'requested')
+     * @return array field => string; vat_number is normalised (digits only), id_country is the id as a string
      */
-    public function buildDiff(array $requested, Address $current)
+    public function currentValues(Address $current)
     {
-        $currentVat = $this->invoiceVat($current);
-        $currentValues = array(
+        return array(
             'company' => (string) $current->company,
-            'vat_number' => $this->normalizeNip($currentVat),
+            'vat_number' => $this->normalizeNip($this->invoiceVat($current)),
             'firstname' => (string) $current->firstname,
             'lastname' => (string) $current->lastname,
             'address1' => (string) $current->address1,
@@ -602,8 +649,17 @@ class IfirmaDataRequestService
             'city' => (string) $current->city,
             'id_country' => (string) (int) $current->id_country,
         );
+    }
+
+    /**
+     * @param array $requested
+     * @param Address $current
+     * @return array list of array('field', 'current', 'requested')
+     */
+    public function buildDiff(array $requested, Address $current)
+    {
         $diff = array();
-        foreach ($currentValues as $field => $value) {
+        foreach ($this->currentValues($current) as $field => $value) {
             $new = isset($requested[$field]) ? trim((string) $requested[$field]) : '';
             if ($field === 'id_country') {
                 $new = (string) (int) $new;
@@ -660,6 +716,7 @@ class IfirmaDataRequestService
             '{diff}' => $diffLines ? $this->esc(implode("\n", $diffLines)) : $this->module->l('No differences.', 'ifirmadatarequestservice'),
             '{note}' => $this->esc($request->customer_note),
             '{admin_link}' => $adminLink,
+            '{auto_line}' => $this->autoLine($request),
         );
 
         return $this->notifier->sendToMerchant(
@@ -668,6 +725,21 @@ class IfirmaDataRequestService
             $this->module->l('Invoice data change request', 'ifirmadatarequestservice') . ' ' . $order->reference,
             $vars
         );
+    }
+
+    /**
+     * @param IfirmaDataRequest $request
+     * @return string the merchant mail's line for an automatic approval; '' for any other request
+     */
+    private function autoLine(IfirmaDataRequest $request)
+    {
+        if (!$request->isAutoApproved()) {
+            return '';
+        }
+
+        return $request->auto_mode === IfirmaDataRequestAutoAccept::MODE_ALL
+            ? $this->module->l('Approved automatically (mode: all).', 'ifirmadatarequestservice')
+            : $this->module->l('Approved automatically (mode: safe).', 'ifirmadatarequestservice');
     }
 
     /**

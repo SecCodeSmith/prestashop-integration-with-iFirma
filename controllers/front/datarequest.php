@@ -15,6 +15,7 @@ if (!defined('_PS_VERSION_')) {
 
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDataRequestService.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaInput.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaIssuancePipeline.php';
 
 /**
  * Customer form to request a change of the invoice data of an order.
@@ -47,6 +48,31 @@ class IfirmaDatarequestModuleFrontController extends ModuleFrontController
         }
 
         return $this->service;
+    }
+
+    /**
+     * Resumes the issuance held by a request that was approved on submission. Never throws: the
+     * customer sees the confirmation whatever the pipeline does.
+     *
+     * @param IfirmaDataRequest $request
+     * @return void
+     */
+    protected function resumeIssuance(IfirmaDataRequest $request)
+    {
+        try {
+            $this->pipeline()->resumeAfterRequest($request);
+        } catch (Exception $e) {
+            // the pipeline records its own failures on the receipt; nothing is shown to the customer
+            PrestaShopLogger::addLog('iFirma resume after data request ' . (int) $request->id . ' failed: ' . $e->getMessage(), 2);
+        }
+    }
+
+    /**
+     * @return IfirmaIssuancePipeline
+     */
+    protected function pipeline()
+    {
+        return IfirmaIssuancePipeline::build($this->module);
     }
 
     /**
@@ -122,7 +148,11 @@ class IfirmaDatarequestModuleFrontController extends ModuleFrontController
             if ($submit) {
                 $input = $this->service()->collectInput();
                 $this->submitted = $input;
-                $this->service()->submit($order, $this->context->customer, $input);
+                $request = $this->service()->submit($order, $this->context->customer, $input);
+                if ($request->isApproved()) {
+                    // approved automatically: the issuance resumes as after an employee's approval
+                    $this->resumeIssuance($request);
+                }
             } else {
                 $request = $this->service()->getPendingForOrder((int) $order->id);
                 if (!$request) {

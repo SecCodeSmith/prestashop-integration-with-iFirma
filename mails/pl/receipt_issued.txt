@@ -1,3 +1,5 @@
+{shop_name}
+
 Witaj {firstname} {lastname},
 
 Dokument księgowy {document_number} do zamówienia {order_reference} przesyłamy w załączniku jako plik PDF.
@@ -5,3 +7,5 @@ Dokument księgowy {document_number} do zamówienia {order_reference} przesyłam
 Data wystawienia: {issue_date}
 
 Dziękujemy za zakupy w sklepie {shop_name}.
+
+{ifirma_shop_link}

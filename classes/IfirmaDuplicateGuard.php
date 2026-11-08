@@ -413,12 +413,12 @@ class IfirmaDuplicateGuard
         $scan = array(
             'candidates' => self::candidatesFrom($settings, $rows, $buyer, $gross, $iso),
             'reads' => array(),
-            'reference' => '',
+            'reference' => array(),
             'sale_date' => '',
             'lines' => array(),
         );
         if (!empty($scan['candidates'])) {
-            $scan['reference'] = IfirmaPayloadBuilder::buildOrderReference($order);
+            $scan['reference'] = IfirmaPayloadBuilder::orderReferenceStamps($order);
             $scan['sale_date'] = IfirmaPayloadBuilder::orderSaleDate($order);
             $scan['lines'] = IfirmaPayloadBuilder::orderProductLines($order);
             $scan['reads'] = $this->readDetails($scan, $settings);

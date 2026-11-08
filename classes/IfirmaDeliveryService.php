@@ -34,6 +34,7 @@ require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaReceiptService.php';
 require_once dirname(__FILE__) . '/IfirmaPayloadBuilder.php';
 require_once dirname(__FILE__) . '/IfirmaDeliveryResult.php';
+require_once dirname(__FILE__) . '/IfirmaShopLink.php';
 
 class IfirmaDeliveryService
 {
@@ -311,12 +312,12 @@ class IfirmaDeliveryService
             '{order_reference}' => htmlspecialchars((string) $order->reference, ENT_QUOTES, 'UTF-8'),
             '{shop_name}' => $shopName,
             '{issue_date}' => (string) $receipt->issue_date,
+            '{ifirma_shop_link}' => IfirmaShopLink::url(),
         );
 
-        $safe = trim((string) preg_replace('/[^A-Za-z0-9_-]+/', '-', $number !== '' ? $number : (string) $receipt->ifirma_id), '-');
         $attachment = array(
             'content' => $pdf,
-            'name' => 'ifirma-' . $safe . '.pdf',
+            'name' => IfirmaShopLink::pdfFileName($number !== '' ? $number : (string) $receipt->ifirma_id),
             'mime' => 'application/pdf',
         );
 

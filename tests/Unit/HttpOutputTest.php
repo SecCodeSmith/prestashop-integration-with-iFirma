@@ -64,6 +64,7 @@ class HttpOutputTest extends TestCase
     protected function setUp(): void
     {
         $this->wiringSetUp();
+        Configuration::$values['IFIRMA_SHOP_URL'] = 'https://www.ScMedical.pl/';
         $this->baseLevel = ob_get_level();
         $this->recordHeaders(0);
     }
@@ -134,7 +135,7 @@ class HttpOutputTest extends TestCase
         });
 
         // the length is a byte count
-        $this->assertSame($this->expectedHeaders('ifirma-7_2026.pdf'), $this->lines);
+        $this->assertSame($this->expectedHeaders('scmedical.pl-7_2026.pdf'), $this->lines);
         $this->expectOutputString(self::PDF);
     }
 
@@ -145,7 +146,7 @@ class HttpOutputTest extends TestCase
         });
 
         $this->assertContains('X-Content-Type-Options: nosniff', $this->lines);
-        $this->assertContains('Content-Disposition: attachment; filename="ifirma-7_2026.pdf"', $this->lines);
+        $this->assertContains('Content-Disposition: attachment; filename="scmedical.pl-7_2026.pdf"', $this->lines);
         $this->expectOutputString(self::PDF);
     }
 
@@ -155,7 +156,7 @@ class HttpOutputTest extends TestCase
             IfirmaHttpOutput::pdf(self::PDF, '12/ab');
         });
 
-        $this->assertSame('Content-Disposition: attachment; filename="ifirma-12_ab.pdf"', $this->lines[1]);
+        $this->assertSame('Content-Disposition: attachment; filename="scmedical.pl-12_ab.pdf"', $this->lines[1]);
         $this->assertContains('X-Content-Type-Options: nosniff', $this->lines);
         $this->expectOutputString(self::PDF);
     }
@@ -166,8 +167,38 @@ class HttpOutputTest extends TestCase
             IfirmaHttpOutput::pdf(self::PDF, "FV 7/2026\"\r\n;a.b-c_d");
         });
 
-        $this->assertSame('Content-Disposition: attachment; filename="ifirma-FV_7_2026____a.b-c_d.pdf"', $this->lines[1]);
+        $this->assertSame('Content-Disposition: attachment; filename="scmedical.pl-FV_7_2026____a.b-c_d.pdf"', $this->lines[1]);
         $this->expectOutputString(self::PDF);
+    }
+
+    public function testFileNameUsesTheShopDomainOfTheSettingAsPrefix()
+    {
+        Configuration::$values['IFIRMA_SHOP_URL'] = 'https://scmedical.pl/';
+        $this->withOwnBuffer(function () {
+            IfirmaHttpOutput::pdf(self::PDF, '12/ab');
+        });
+
+        $this->assertSame('Content-Disposition: attachment; filename="scmedical.pl-12_ab.pdf"', $this->lines[1]);
+        $this->assertContains('X-Content-Type-Options: nosniff', $this->lines);
+        $this->expectOutputString(self::PDF);
+    }
+
+    public function testFileNameWithoutAnyShopAddressFallsBackToIfirma()
+    {
+        Configuration::$values['IFIRMA_SHOP_URL'] = '';
+        $this->withOwnBuffer(function () {
+            IfirmaHttpOutput::pdf(self::PDF, '7_2026');
+        });
+
+        $this->assertSame('Content-Disposition: attachment; filename="ifirma-7_2026.pdf"', $this->lines[1]);
+        $this->expectOutputString(self::PDF);
+    }
+
+    public function testFileNameHelperEqualsTheDownloadName()
+    {
+        Configuration::$values['IFIRMA_SHOP_URL'] = 'https://scmedical.pl/';
+
+        $this->assertSame('scmedical.pl-FV_7_2026.pdf', IfirmaShopLink::pdfFileName('FV 7/2026'));
     }
 
     public function testTheHeadersGoOutBeforeAnyOfTheDocument()
@@ -252,8 +283,8 @@ class HttpOutputTest extends TestCase
     public function filenames()
     {
         return array(
-            'the number, unsafe characters replaced' => array('FV 7/2026-A.b_c', '77', 'ifirma-FV_7_2026-A.b_c.pdf'),
-            'no number: the identifier' => array('', 'A/7', 'ifirma-A_7.pdf'),
+            'the number, unsafe characters replaced' => array('FV 7/2026-A.b_c', '77', 'scmedical.pl-FV_7_2026-A.b_c.pdf'),
+            'no number: the identifier' => array('', 'A/7', 'scmedical.pl-A_7.pdf'),
         );
     }
 

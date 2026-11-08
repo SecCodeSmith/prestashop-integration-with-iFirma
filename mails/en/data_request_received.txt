@@ -1,4 +1,9 @@
+{shop_name}
+
 A customer asked to change the invoice data of order {order_reference} (#{order_id}).
+
+{auto_line}
+
 Customer: {customer_name} ({customer_email})
 
 Requested data:
@@ -11,3 +16,5 @@ Customer note:
 {note}
 
 Review the request in the order: {admin_link}
+
+{ifirma_shop_link}

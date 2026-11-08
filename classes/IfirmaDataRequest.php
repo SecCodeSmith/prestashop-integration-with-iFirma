@@ -69,6 +69,9 @@ class IfirmaDataRequest extends ObjectModel
     /** @var int|null */
     public $resolved_by;
 
+    /** @var string|null safe|all when the auto-accept criteria approved the request */
+    public $auto_mode;
+
     /** @var string */
     public $date_add;
 
@@ -94,6 +97,7 @@ class IfirmaDataRequest extends ObjectModel
             'customer_note' => array('type' => self::TYPE_HTML, 'size' => 1000),
             'admin_note' => array('type' => self::TYPE_HTML, 'size' => 1000),
             'resolved_by' => array('type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'allow_null' => true),
+            'auto_mode' => array('type' => self::TYPE_STRING, 'size' => 8, 'allow_null' => true),
             'date_add' => array('type' => self::TYPE_DATE, 'validate' => 'isDate'),
             'date_upd' => array('type' => self::TYPE_DATE, 'validate' => 'isDate'),
             'date_resolved' => array('type' => self::TYPE_DATE, 'validate' => 'isDate', 'allow_null' => true),
@@ -167,10 +171,11 @@ class IfirmaDataRequest extends ObjectModel
      * @param array  $final normalized buyer data the document is issued with
      * @param string $note  admin note, stored trimmed
      * @param string $now   "Y-m-d H:i:s"
+     * @param string|null $autoMode safe|all for an automatic approval (employee id 0), else null
      * @return void
      * @throws IfirmaDataRequestException not_pending
      */
-    public function approve($employeeId, array $final, $note, $now)
+    public function approve($employeeId, array $final, $note, $now, $autoMode = null)
     {
         $this->assertPending();
         $this->setApprovedData($final);
@@ -178,6 +183,24 @@ class IfirmaDataRequest extends ObjectModel
         $this->resolved_by = (int) $employeeId;
         $this->admin_note = trim((string) $note);
         $this->date_resolved = $now;
+        $this->auto_mode = $autoMode === null || $autoMode === '' ? null : (string) $autoMode;
+    }
+
+    /**
+     * @return bool
+     */
+    public function isApproved()
+    {
+        return $this->status === self::STATUS_APPROVED;
+    }
+
+    /**
+     * @return bool approved by the auto-accept criteria: no employee resolved it and a mode is recorded
+     */
+    public function isAutoApproved()
+    {
+        return $this->isApproved() && (int) $this->resolved_by === 0
+            && $this->auto_mode !== null && $this->auto_mode !== '';
     }
 
     /**

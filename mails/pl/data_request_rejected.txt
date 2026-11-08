@@ -1,3 +1,5 @@
+{shop_name}
+
 Dzien dobry {firstname},
 
 Twoja prosba o zmiane danych do dokumentu dla zamowienia {order_reference} zostala odrzucona.
@@ -6,3 +8,5 @@ Powod:
 {reason}
 
 Dokument zostanie wystawiony z pierwotnym adresem rozliczeniowym.
+
+{ifirma_shop_link}

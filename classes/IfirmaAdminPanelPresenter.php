@@ -42,6 +42,7 @@ class IfirmaAdminPanelPresenter
      * @param array $labels the translated words:
      *                      'state'          => STATE_* => label (every state)
      *                      'request_status' => data request status => label
+     *                      'request_resolver' => auto mode (safe, all) => label of the automatic resolver
      *                      'request_fields' => field of the data change request form => label
      *                      'contractor'     => the words of the contractor note: the actions (created,
      *                                          updated, kept, fallback), the sentences of the notes
@@ -146,6 +147,27 @@ class IfirmaAdminPanelPresenter
         $name = trim($employee->firstname . ' ' . $employee->lastname);
 
         return $name !== '' ? $name : '#' . $idEmployee;
+    }
+
+    /**
+     * Who resolved a data change request.
+     *
+     * @param int|null    $idEmployee
+     * @param string|null $status     the request status
+     * @param string|null $autoMode   safe|all when the auto-accept criteria approved it
+     * @return string the employee's name; "automatic (safe fields)" or "automatic (all)" for an approved request
+     *                with no employee and an auto mode; '' for none
+     */
+    public function resolverLabel($idEmployee, $status, $autoMode)
+    {
+        if ((int) $idEmployee > 0) {
+            return $this->employeeName($idEmployee);
+        }
+        if ($status === 'approved' && is_string($autoMode) && isset($this->labels['request_resolver'][$autoMode])) {
+            return $this->labels['request_resolver'][$autoMode];
+        }
+
+        return '';
     }
 
     /**

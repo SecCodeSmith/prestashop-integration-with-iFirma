@@ -1,0 +1,11 @@
+{shop_name}
+
+Hello {firstname},
+
+Your code to change the invoice data of order {order_reference}: {code}
+
+The code is valid for {minutes} minutes and can be used once.
+
+If you did not ask for this code, ignore this message: nothing will change.
+
+{ifirma_shop_link}

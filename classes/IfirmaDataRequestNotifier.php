@@ -13,6 +13,8 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
+require_once dirname(__FILE__) . '/IfirmaShopLink.php';
+
 /**
  * Delivers the e-mails of the customer data-change request: whom they go to, in which language and
  * with which template. What they say stays with IfirmaDataRequestService, which hands over the
@@ -53,6 +55,8 @@ class IfirmaDataRequestNotifier
      */
     public function sendToMerchant($to, Order $order, $subject, array $vars)
     {
+        $vars['{ifirma_shop_link}'] = IfirmaShopLink::url();
+
         return (bool) Mail::Send(
             (int) Context::getContext()->language->id,
             'data_request_received',
@@ -80,23 +84,10 @@ class IfirmaDataRequestNotifier
      */
     public function sendToCustomer($decision, Customer $customer, Order $order, $subject, array $vars)
     {
+        $vars['{ifirma_shop_link}'] = IfirmaShopLink::url();
         $template = 'data_request_' . $decision;
         $dir = $this->templateDir();
-
-        $idLang = (int) $order->id_lang;
-        $iso = $idLang ? Language::getIsoById($idLang) : false;
-        if (!$iso || !is_file($dir . $iso . '/' . $template . '.html')) {
-            $idLang = 0;
-            foreach (Language::getLanguages(false) as $lang) {
-                if ($lang['iso_code'] === 'en') {
-                    $idLang = (int) $lang['id_lang'];
-                    break;
-                }
-            }
-            if (!$idLang) {
-                $idLang = (int) Context::getContext()->language->id;
-            }
-        }
+        $idLang = $this->languageFor($order, $template, $dir);
 
         return (bool) Mail::Send(
             $idLang,
@@ -113,6 +104,61 @@ class IfirmaDataRequestNotifier
             false,
             (int) $order->id_shop ?: null
         );
+    }
+
+    /**
+     * Mails the one-time code of the guest page to the customer of the order.
+     *
+     * @param Customer $customer receives the mail
+     * @param Order $order the order the code is for
+     * @param string $subject translated
+     * @param array $vars '{placeholder}' => value, escaped by the caller
+     * @return bool
+     */
+    public function sendCode(Customer $customer, Order $order, $subject, array $vars)
+    {
+        $vars['{ifirma_shop_link}'] = IfirmaShopLink::url();
+        $template = 'data_request_code';
+        $dir = $this->templateDir();
+
+        return (bool) Mail::Send(
+            $this->languageFor($order, $template, $dir),
+            $template,
+            $subject,
+            $vars,
+            $customer->email,
+            trim($customer->firstname . ' ' . $customer->lastname),
+            null,
+            null,
+            null,
+            null,
+            $dir,
+            false,
+            (int) $order->id_shop ?: null
+        );
+    }
+
+    /**
+     * @param Order $order
+     * @param string $template template name without extension
+     * @param string $dir the folder of the mail templates
+     * @return int the language of the order when the module ships the template for it, else English, else the
+     *             language of the context
+     */
+    private function languageFor(Order $order, $template, $dir)
+    {
+        $idLang = (int) $order->id_lang;
+        $iso = $idLang ? Language::getIsoById($idLang) : false;
+        if ($iso && is_file($dir . $iso . '/' . $template . '.html')) {
+            return $idLang;
+        }
+        foreach (Language::getLanguages(false) as $lang) {
+            if ($lang['iso_code'] === 'en') {
+                return (int) $lang['id_lang'];
+            }
+        }
+
+        return (int) Context::getContext()->language->id;
     }
 
     /**

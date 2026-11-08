@@ -260,15 +260,33 @@ class IfirmaDuplicateMatcher
     }
 
     /**
-     * @param string $detailRaw raw JSON text of the document detail
-     * @param string $reference order reference
-     * @return bool
+     * @param string          $detailRaw raw JSON text of the document detail
+     * @param string|string[] $reference one order reference stamp, or a list of accepted stamps
+     * @return bool true when any stamp is found
      */
     public static function confirm($detailRaw, $reference)
     {
         $detailRaw = (string) $detailRaw;
-        $reference = (string) $reference;
-        if ($detailRaw === '' || $reference === '') {
+        if ($detailRaw === '') {
+            return false;
+        }
+        foreach ((array) $reference as $stamp) {
+            if (self::containsStamp($detailRaw, (string) $stamp)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param string $detailRaw
+     * @param string $reference
+     * @return bool
+     */
+    private static function containsStamp($detailRaw, $reference)
+    {
+        if ($reference === '') {
             return false;
         }
         if (strpos($detailRaw, $reference) !== false) {

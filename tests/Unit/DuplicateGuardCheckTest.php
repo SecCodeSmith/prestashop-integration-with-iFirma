@@ -897,6 +897,42 @@ class DuplicateGuardCheckTest extends TestCase
         $this->assertSame('', $summary['sale_date']);
     }
 
+    public function testAdoptionThroughTheConfiguredPrefixStamp()
+    {
+        Configuration::updateValue('IFIRMA_ORDER_STAMP_PREFIX', 'scmedical');
+        $this->queueList(array($this->row()));
+        $this->queueDetail('fakturaparagon', 77, '{"response":{"Uwagi":"scmedical-15-ABCDEFGHI"}}');
+
+        $res = $this->guard->check($this->order());
+
+        $this->assertSame(IfirmaGuardResult::OUTCOME_ADOPT, $res->outcome);
+        $this->assertSame('scmedical-15-ABCDEFGHI', $res->receipt->order_reference);
+    }
+
+    public function testAdoptionThroughTheLegacyStampAfterAPrefixChange()
+    {
+        Configuration::updateValue('IFIRMA_ORDER_STAMP_PREFIX', 'scmedical');
+        $this->queueList(array($this->row()));
+        $this->queueDetail('fakturaparagon', 77, $this->detailWithRef());
+
+        $res = $this->guard->check($this->order());
+
+        $this->assertSame(IfirmaGuardResult::OUTCOME_ADOPT, $res->outcome);
+        $this->assertSame('77', (string) $res->receipt->ifirma_id);
+        $this->assertSame('scmedical-15-ABCDEFGHI', $res->receipt->order_reference);
+    }
+
+    public function testNoAdoptionThroughAnotherShopsStamp()
+    {
+        Configuration::updateValue('IFIRMA_ORDER_STAMP_PREFIX', 'scmedical');
+        $this->queueList(array($this->row()));
+        $this->queueDetail('fakturaparagon', 77, '{"response":{"Uwagi":"hialumed-15-ABCDEFGHI"}}');
+
+        $res = $this->guard->check($this->order());
+
+        $this->assertNotSame(IfirmaGuardResult::OUTCOME_ADOPT, $res->outcome);
+    }
+
     public function testAdoptForgetsAnEarlierUnreadableDetailAndTheCandidatesKeptBeforeIt()
     {
         $this->queueList(array(

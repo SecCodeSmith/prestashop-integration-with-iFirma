@@ -1,0 +1,11 @@
+{shop_name}
+
+Dzien dobry {firstname},
+
+Twoj kod do zmiany danych do faktury dla zamowienia {order_reference}: {code}
+
+Kod jest wazny przez {minutes} minut i mozna go uzyc tylko raz.
+
+Jesli to nie Ty prosiles o ten kod, zignoruj te wiadomosc: nic sie nie zmieni.
+
+{ifirma_shop_link}

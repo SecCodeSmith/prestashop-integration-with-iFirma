@@ -21,7 +21,7 @@ class SchemaTest extends TestCase
         require_once dirname(__DIR__, 2) . '/classes/IfirmaContractorMap.php';
     }
 
-    public function testInstallCreatesThreeTables()
+    public function testInstallCreatesFourTables()
     {
         $result = include dirname(__DIR__, 2) . '/sql/install.php';
         $this->assertTrue($result);
@@ -29,8 +29,8 @@ class SchemaTest extends TestCase
         $creates = array_values(array_filter(Db::getInstance()->executed, function ($q) {
             return strpos($q, 'CREATE TABLE') === 0;
         }));
-        $this->assertCount(3, $creates);
-        $this->assertCount(3, Db::getInstance()->executed);
+        $this->assertCount(4, $creates);
+        $this->assertCount(4, Db::getInstance()->executed);
 
         foreach (array_keys(IfirmaSchema::receiptColumns()) as $col) {
             $this->assertStringContainsString('`' . $col . '`', $creates[0]);
@@ -45,6 +45,7 @@ class SchemaTest extends TestCase
         $this->assertStringContainsString('ps_ifirma_contractor_map', $creates[2]);
         $this->assertStringContainsString('ps_ifirma_receipt', $creates[0]);
         $this->assertStringContainsString('ps_ifirma_data_request', $creates[1]);
+        $this->assertStringContainsString('ps_ifirma_guest_code', $creates[3]);
     }
 
     public function testDefinitionsMatchColumns()
@@ -64,14 +65,65 @@ class SchemaTest extends TestCase
         $this->assertCount(20, IfirmaSchema::newReceiptColumnsFor110());
     }
 
-    public function testUninstallDropsThreeTables()
+    public function testUninstallDropsFourTables()
     {
         $this->assertTrue(include dirname(__DIR__, 2) . '/sql/uninstall.php');
 
         $drops = array_filter(Db::getInstance()->executed, function ($q) {
             return strpos($q, 'DROP TABLE') === 0;
         });
-        $this->assertCount(3, $drops);
+        $this->assertCount(4, $drops);
+        $this->assertContains('DROP TABLE IF EXISTS `ps_ifirma_guest_code`;', $drops);
+    }
+
+    public function testGuestCodeCreateSqlDeclaresEveryColumnAndBothKeys()
+    {
+        $sql = IfirmaSchema::guestCodeCreateSql();
+
+        $this->assertStringStartsWith('CREATE TABLE IF NOT EXISTS `ps_ifirma_guest_code` (', $sql);
+        $this->assertSame(array(
+            'id_ifirma_guest_code', 'id_order', 'code_hash', 'salt', 'attempts', 'ip_hash', 'date_add',
+            'expires_at', 'used_at', 'invalidated',
+        ), array_keys(IfirmaSchema::guestCodeColumns()));
+        foreach (array_keys(IfirmaSchema::guestCodeColumns()) as $column) {
+            $this->assertStringContainsString('`' . $column . '`', $sql);
+        }
+        $this->assertStringContainsString('`code_hash` CHAR(64) NOT NULL', $sql);
+        $this->assertStringContainsString('`salt` CHAR(32) NOT NULL', $sql);
+        $this->assertStringContainsString('`used_at` DATETIME NULL', $sql);
+        $this->assertStringContainsString('PRIMARY KEY (`id_ifirma_guest_code`)', $sql);
+        $this->assertStringContainsString('KEY `idx_order` (`id_order`)', $sql);
+        $this->assertStringContainsString('KEY `idx_ip_date` (`ip_hash`, `date_add`)', $sql);
+    }
+
+    public function testEnsureGuestCodeTableCreatesOnceAndIsIdempotent()
+    {
+        IfirmaSchema::resetEnsureCache();
+
+        $this->assertTrue(IfirmaSchema::ensureGuestCodeTable());
+        $this->assertTrue(IfirmaSchema::ensureGuestCodeTable());
+
+        $this->assertSame(array(IfirmaSchema::guestCodeCreateSql()), Db::getInstance()->executed);
+    }
+
+    public function testEnsureGuestCodeTableReportsAFailureAndTriesAgain()
+    {
+        IfirmaSchema::resetEnsureCache();
+        Db::getInstance()->whenExecute('/CREATE TABLE IF NOT EXISTS `ps_ifirma_guest_code`/', false);
+
+        $this->assertFalse(IfirmaSchema::ensureGuestCodeTable());
+        $this->assertFalse(IfirmaSchema::ensureGuestCodeTable());
+
+        $this->assertCount(2, Db::getInstance()->executed);
+    }
+
+    public function testTheGuestCodeTableAndItsDefaultsAreRemovedOnUninstall()
+    {
+        $defaults = IfirmaSchema::configurationDefaults();
+        $this->assertSame('none', $defaults['IFIRMA_DATA_REQUEST_AUTO_ACCEPT']);
+        $this->assertSame('', $defaults['IFIRMA_DOC_TEMPLATE']);
+        $this->assertSame('PS-ORDER', $defaults['IFIRMA_ORDER_STAMP_PREFIX']);
+        $this->assertSame('', $defaults['IFIRMA_SHOP_URL']);
     }
 
     private function modifyStatements()
@@ -454,6 +506,26 @@ class SchemaTest extends TestCase
 
         $this->assertTrue(IfirmaSchema::ensureReceiptDownloadColumn());
         $this->assertCount(2, $this->addColumnStatements());
+    }
+
+    public function testEnsureDataRequestAutoModeColumnAddsTheColumnOnce()
+    {
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'auto_mode'/", '0');
+
+        $this->assertTrue(IfirmaSchema::ensureDataRequestAutoModeColumn());
+        $this->assertTrue(IfirmaSchema::ensureDataRequestAutoModeColumn());
+
+        $this->assertSame(array(
+            'ALTER TABLE `ps_ifirma_data_request` ADD COLUMN `auto_mode` VARCHAR(8) NULL',
+        ), $this->addColumnStatements());
+    }
+
+    public function testEnsureDataRequestAutoModeColumnSkipsAnExistingColumn()
+    {
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'auto_mode'/", '1');
+
+        $this->assertTrue(IfirmaSchema::ensureDataRequestAutoModeColumn());
+        $this->assertSame(array(), $this->addColumnStatements());
     }
 
     public function testEnsureReceiptDateIndexAddsTheIndexOnce()

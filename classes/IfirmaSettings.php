@@ -84,6 +84,24 @@ class IfirmaSettings
     /** Whatever the callable `with` makes of the posted value; it is never an error. */
     const TYPE_NORMALISED = 'normalised';
 
+    /**
+     * Trimmed text of one line: more than max characters, or a control character, is an error (the text is refused,
+     * not cut). An empty text becomes the default.
+     */
+    const TYPE_LINE = 'line';
+
+    /**
+     * The first segment of the order stamp: spaces and a trailing `-` are stripped, an empty text becomes the
+     * default, and what is left must be 1 to 32 characters of A-Z a-z 0-9 . _ -
+     */
+    const TYPE_STAMP_PREFIX = 'stamp_prefix';
+
+    /** The address of the shop's webpage: empty, or an absolute http(s) URL (max characters) with a host and no user information. */
+    const TYPE_WEB_URL = 'web_url';
+
+    /** Longest order stamp prefix. */
+    const STAMP_PREFIX_MAX = 32;
+
     /** An iFirma payment method code (SposobZaplaty): trimmed, upper case, one of IfirmaPaymentMethodResolver::codes(). */
     const TYPE_PAYMENT_CODE = 'payment_code';
 
@@ -123,7 +141,11 @@ class IfirmaSettings
             'IFIRMA_DUPLICATE_CHECK' => array('type' => self::TYPE_SWITCH),
             'IFIRMA_DUPLICATE_WINDOW_DAYS' => array('type' => self::TYPE_RANGE, 'min' => 1, 'max' => 365),
             'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE' => array('type' => self::TYPE_DECIMAL, 'min' => 0),
+            'IFIRMA_DOC_TEMPLATE' => array('type' => self::TYPE_LINE, 'max' => 100, 'default' => ''),
+            'IFIRMA_ORDER_STAMP_PREFIX' => array('type' => self::TYPE_STAMP_PREFIX, 'default' => 'PS-ORDER'),
+            'IFIRMA_SHOP_URL' => array('type' => self::TYPE_WEB_URL, 'max' => 255, 'default' => ''),
             'IFIRMA_ALLOW_DATA_REQUEST' => array('type' => self::TYPE_SWITCH),
+            'IFIRMA_DATA_REQUEST_AUTO_ACCEPT' => array('type' => self::TYPE_CHOICE, 'options' => array('none', 'safe', 'all'), 'default' => 'none'),
             'IFIRMA_NOTIFY_EMAIL' => array('type' => self::TYPE_EMAIL, 'default' => ''),
             'IFIRMA_SYNC_INTERVAL_MIN' => array('type' => self::TYPE_RANGE, 'min' => 1, 'max' => 1440),
             'IFIRMA_CRON_MAX_CALLS' => array('type' => self::TYPE_RANGE, 'min' => 1, 'max' => 90),
@@ -212,6 +234,12 @@ class IfirmaSettings
                 return self::choice($row, $raw);
             case self::TYPE_NORMALISED:
                 return call_user_func($row['with'], is_scalar($raw) ? $raw : false);
+            case self::TYPE_LINE:
+                return self::line($row, $raw);
+            case self::TYPE_STAMP_PREFIX:
+                return self::stampPrefix($row, $raw);
+            case self::TYPE_WEB_URL:
+                return self::webUrl($row, $raw);
             case self::TYPE_PAYMENT_CODE:
                 return self::paymentCode($raw);
             case self::TYPE_PAYMENT_MAP:
@@ -329,6 +357,82 @@ class IfirmaSettings
         }
 
         return isset($row['max']) ? mb_substr($text, 0, $row['max']) : $text;
+    }
+
+    /**
+     * @param array $row
+     * @param mixed $raw
+     * @return string
+     * @throws InvalidArgumentException for a control character, or for more than max characters
+     */
+    private static function line(array $row, $raw)
+    {
+        $text = trim(self::scalarText($raw));
+        if ($text === '') {
+            return self::defaultOf($row);
+        }
+        if (preg_match('/[\x00-\x1F\x7F]/', $text) || mb_strlen($text) > $row['max']) {
+            throw new InvalidArgumentException('');
+        }
+
+        return $text;
+    }
+
+    /**
+     * @param array $row
+     * @param mixed $raw
+     * @return string
+     * @throws InvalidArgumentException when what is left is not 1 to 32 characters of A-Z a-z 0-9 . _ -
+     */
+    private static function stampPrefix(array $row, $raw)
+    {
+        $text = rtrim(trim(self::scalarText($raw)), '- ');
+        if ($text === '') {
+            return self::defaultOf($row);
+        }
+        if (strlen($text) > self::STAMP_PREFIX_MAX || !preg_match('/^[A-Za-z0-9._-]+$/D', $text)) {
+            throw new InvalidArgumentException('');
+        }
+
+        return $text;
+    }
+
+    /**
+     * @param array $row
+     * @param mixed $raw
+     * @return string
+     * @throws InvalidArgumentException when the text is not an absolute http(s) URL with a host and no user information
+     */
+    private static function webUrl(array $row, $raw)
+    {
+        $text = trim(self::scalarText($raw));
+        if ($text === '') {
+            return self::defaultOf($row);
+        }
+        if (mb_strlen($text) > $row['max'] || !self::isShopWebpage($text)) {
+            throw new InvalidArgumentException('');
+        }
+
+        return $text;
+    }
+
+    /**
+     * @param string $url
+     * @return bool an absolute http or https URL with a host and without user information (any host: no developer mode rule)
+     */
+    public static function isShopWebpage($url)
+    {
+        $url = (string) $url;
+        if (preg_match('/[\x00-\x20\x7F]/', $url) || filter_var($url, FILTER_VALIDATE_URL) === false) {
+            return false;
+        }
+        $parts = parse_url($url);
+        if (!is_array($parts) || empty($parts['host']) || isset($parts['user']) || isset($parts['pass'])) {
+            return false;
+        }
+        $scheme = isset($parts['scheme']) ? strtolower($parts['scheme']) : '';
+
+        return $scheme === 'http' || $scheme === 'https';
     }
 
     /**

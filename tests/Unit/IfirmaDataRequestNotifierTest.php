@@ -35,6 +35,7 @@ class IfirmaDataRequestNotifierTest extends TestCase
     protected function setUp(): void
     {
         IfirmaTestState::resetAll();
+        Configuration::$values['IFIRMA_SHOP_URL'] = 'https://www.Hialumed.pl/';
 
         $this->notifier = new IfirmaDataRequestNotifier();
 
@@ -110,6 +111,12 @@ class IfirmaDataRequestNotifierTest extends TestCase
         );
     }
 
+    /** @return array the variables as the notifier hands them to Mail::Send(): plus the shop link of the setting */
+    private function varsWithTheLink()
+    {
+        return $this->vars() + array('{ifirma_shop_link}' => 'https://www.Hialumed.pl/');
+    }
+
     /** @return array[] id_shop of the order => shop id handed to the mailer */
     public function shopIds()
     {
@@ -164,11 +171,41 @@ class IfirmaDataRequestNotifierTest extends TestCase
             'idLang' => 1,
             'template' => 'data_request_received',
             'subject' => 'The subject',
-            'templateVars' => $this->vars(),
+            'templateVars' => $this->varsWithTheLink(),
             'to' => 'merchant@example.test',
             'toName' => null,
             'idShop' => 1,
         ));
+    }
+
+    public function testEveryMailCarriesTheConfiguredShopLinkForTheTemplates()
+    {
+        $this->notifier->sendToMerchant('merchant@example.test', $this->order, 'The subject', $this->vars());
+        $this->notifier->sendToCustomer('approved', $this->customer, $this->order, 'The subject', $this->vars());
+        $this->notifier->sendToCustomer('rejected', $this->customer, $this->order, 'The subject', $this->vars());
+
+        $this->assertCount(3, Mail::$sent);
+        foreach (Mail::$sent as $mail) {
+            $this->assertSame('https://www.Hialumed.pl/', $mail['templateVars']['{ifirma_shop_link}']);
+        }
+    }
+
+    public function testTheShopLinkFallsBackToTheShopAddressWhenNoneIsConfigured()
+    {
+        Configuration::$values['IFIRMA_SHOP_URL'] = '';
+        IfirmaShopLink::useFallback(function () {
+            return 'https://shop.example.test/';
+        });
+
+        try {
+            $this->notifier->sendToMerchant('merchant@example.test', $this->order, 'The subject', $this->vars());
+            $this->notifier->sendToCustomer('approved', $this->customer, $this->order, 'The subject', $this->vars());
+        } finally {
+            IfirmaShopLink::useFallback(null);
+        }
+
+        $this->assertSame('https://shop.example.test/', Mail::$sent[0]['templateVars']['{ifirma_shop_link}']);
+        $this->assertSame('https://shop.example.test/', Mail::$sent[1]['templateVars']['{ifirma_shop_link}']);
     }
 
     public function testMerchantMailGoesOutInTheLanguageOfTheContext()
@@ -228,7 +265,7 @@ class IfirmaDataRequestNotifierTest extends TestCase
             'idLang' => 2,
             'template' => 'data_request_approved',
             'subject' => 'The subject',
-            'templateVars' => $this->vars(),
+            'templateVars' => $this->varsWithTheLink(),
             'to' => 'buyer@example.test',
             'toName' => 'Anna Nowak',
             'idShop' => 1,
@@ -245,7 +282,7 @@ class IfirmaDataRequestNotifierTest extends TestCase
             'idLang' => 2,
             'template' => 'data_request_rejected',
             'subject' => 'The subject',
-            'templateVars' => $this->vars(),
+            'templateVars' => $this->varsWithTheLink(),
             'to' => 'buyer@example.test',
             'toName' => 'Anna Nowak',
             'idShop' => 1,
@@ -358,6 +395,63 @@ class IfirmaDataRequestNotifierTest extends TestCase
         Mail::$result = 1;
         $this->assertTrue($this->notifier->sendToCustomer('approved', $this->customer, $this->order, 'The subject', $this->vars()));
         $this->assertCount(3, Mail::$sent);
+    }
+
+    // ---- the code mail of the guest page ------------------------------------------------------------
+
+    public function testTheCodeMailIsSentWithTheCodeTemplateAndTheShopLink()
+    {
+        $vars = array('{firstname}' => 'Anna', '{order_reference}' => 'ABCDEFGHI', '{code}' => '012345', '{minutes}' => '15');
+
+        $sent = $this->notifier->sendCode($this->customer, $this->order, 'The subject', $vars);
+
+        $this->assertTrue($sent);
+        $this->assertCount(1, Mail::$sent);
+        $this->assertMailSent(array(
+            'idLang' => 2,
+            'template' => 'data_request_code',
+            'subject' => 'The subject',
+            'templateVars' => $vars + array('{ifirma_shop_link}' => 'https://www.Hialumed.pl/'),
+            'to' => 'buyer@example.test',
+            'toName' => 'Anna Nowak',
+            'idShop' => 1,
+        ));
+    }
+
+    /**
+     * @dataProvider customerMailLanguages
+     */
+    public function testTheCodeMailFallsBackToEnglishThenToTheContextLanguage(array $languages, $orderLang, $expected)
+    {
+        Language::$languages = $languages;
+        Context::getContext()->language->id = 9;
+        $this->order->id_lang = $orderLang;
+
+        $this->assertTrue($this->notifier->sendCode($this->customer, $this->order, 'The subject', array()));
+
+        $this->assertSame($expected, Mail::$sent[0]['idLang']);
+    }
+
+    public function testTheCodeMailReportsWhetherTheMailWentOut()
+    {
+        Mail::$result = false;
+
+        $this->assertFalse($this->notifier->sendCode($this->customer, $this->order, 'The subject', array()));
+    }
+
+    public function testTheCodeTemplateCarriesNoLinkWithTheCode()
+    {
+        foreach (array('en', 'pl') as $iso) {
+            foreach (array('html', 'txt') as $ext) {
+                $body = file_get_contents($this->mailDir() . $iso . '/data_request_code.' . $ext);
+                $this->assertStringContainsString('{code}', $body);
+                $this->assertStringContainsString('{minutes}', $body);
+                $this->assertStringContainsString('{order_reference}', $body);
+                // the only links are the shop link: the code is never part of an address
+                $this->assertDoesNotMatchRegularExpression('/(?:https?:\/\/|href=")[^\s"]*\{code\}/', $body);
+                $this->assertDoesNotMatchRegularExpression('/\{ifirma_shop_link\}[^\s"]*\{code\}/', $body);
+            }
+        }
     }
 
     // ---- the templates ---------------------------------------------------------------------------

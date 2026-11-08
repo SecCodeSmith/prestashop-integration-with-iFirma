@@ -127,7 +127,7 @@ class IfirmaAdminOrderPanelView
             'summary' => $this->pendingSummary($pending),
             'diff' => $this->requestDiff($pending, $order),
             'fields' => $this->requestFields($pending),
-            'history' => $this->history($idOrder),
+            'history' => $this->history($idOrder, $order),
         );
     }
 
@@ -226,7 +226,7 @@ class IfirmaAdminOrderPanelView
      * @return array the summary of every request of the order, newest first, with the label of its status and the
      *               name of the employee who resolved it; a row whose request does not load is left out
      */
-    private function history($idOrder)
+    private function history($idOrder, $order = null)
     {
         $history = array();
         foreach (IfirmaDataRequest::getByOrder($idOrder) as $row) {
@@ -236,7 +236,11 @@ class IfirmaAdminOrderPanelView
             }
             $entry = $this->requests->summarize($request);
             $entry['status_label'] = $this->presenter->requestStatusLabel($request->status);
-            $entry['employee'] = $this->presenter->employeeName($request->resolved_by);
+            $entry['employee'] = $this->presenter->resolverLabel($request->resolved_by, $request->status, $request->auto_mode);
+            if ($request->isAutoApproved() && $order && Validate::isLoadedObject($order)) {
+                // the module never changes the PrestaShop address, so the comparison stays meaningful
+                $entry['accepted'] = $this->requests->buildDiff($request->getApprovedData(), new Address((int) $order->id_address_invoice));
+            }
             $history[] = $entry;
         }
 

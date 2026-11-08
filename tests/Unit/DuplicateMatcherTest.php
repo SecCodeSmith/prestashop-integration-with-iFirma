@@ -82,6 +82,32 @@ class DuplicateMatcherTest extends TestCase
         $this->assertTrue(IfirmaDuplicateMatcher::confirm('{"Uwagi":"PS-ORDER-15-AB\\/CD"}', $ref));
     }
 
+    public function testConfirmConfiguredStampFoundInList()
+    {
+        $stamps = array('scmedical-15-ABCDEFGHI', 'PS-ORDER-15-ABCDEFGHI');
+        $this->assertTrue(IfirmaDuplicateMatcher::confirm('{"Uwagi":"scmedical-15-ABCDEFGHI"}', $stamps));
+    }
+
+    public function testConfirmLegacyStampFoundAfterPrefixChange()
+    {
+        $stamps = array('scmedical-15-ABCDEFGHI', 'PS-ORDER-15-ABCDEFGHI');
+        $this->assertTrue(IfirmaDuplicateMatcher::confirm('{"Uwagi":"PS-ORDER-15-ABCDEFGHI"}', $stamps));
+    }
+
+    public function testConfirmAnotherShopsStampIsNotFound()
+    {
+        $stamps = array('scmedical-15-ABCDEFGHI', 'PS-ORDER-15-ABCDEFGHI');
+        $this->assertFalse(IfirmaDuplicateMatcher::confirm('{"Uwagi":"hialumed-15-ABCDEFGHI"}', $stamps));
+    }
+
+    public function testConfirmListWithEscapedVariantAndEmptyEntries()
+    {
+        $stamps = array('', 'scmedical-15-AB/CD');
+        $this->assertTrue(IfirmaDuplicateMatcher::confirm('{"Uwagi":"scmedical-15-AB\/CD"}', $stamps));
+        $this->assertFalse(IfirmaDuplicateMatcher::confirm('{"Uwagi":"x"}', array('')));
+        $this->assertFalse(IfirmaDuplicateMatcher::confirm('{"Uwagi":"x"}', array()));
+    }
+
     public function testSummarize()
     {
         $s = IfirmaDuplicateMatcher::summarize($this->row(array('Zaplacono' => 50)));

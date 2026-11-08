@@ -32,7 +32,11 @@
       "IFIRMA_DUPLICATE_CHECK": "1",
       "IFIRMA_DUPLICATE_WINDOW_DAYS": "45",
       "IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "0,05",
+      "IFIRMA_DOC_TEMPLATE": "logo",
+      "IFIRMA_ORDER_STAMP_PREFIX": "scmedical",
+      "IFIRMA_SHOP_URL": "https://scmedical.pl",
       "IFIRMA_ALLOW_DATA_REQUEST": "0",
+      "IFIRMA_DATA_REQUEST_AUTO_ACCEPT": "safe",
       "IFIRMA_NOTIFY_EMAIL": "biuro@example.test",
       "IFIRMA_SYNC_INTERVAL_MIN": "30",
       "IFIRMA_CRON_MAX_CALLS": "20",
@@ -62,7 +66,11 @@
       ["IFIRMA_DUPLICATE_CHECK", 1],
       ["IFIRMA_DUPLICATE_WINDOW_DAYS", 45],
       ["IFIRMA_DUPLICATE_AMOUNT_TOLERANCE", "0.05"],
+      ["IFIRMA_DOC_TEMPLATE", "logo"],
+      ["IFIRMA_ORDER_STAMP_PREFIX", "scmedical"],
+      ["IFIRMA_SHOP_URL", "https://scmedical.pl"],
       ["IFIRMA_ALLOW_DATA_REQUEST", 0],
+      ["IFIRMA_DATA_REQUEST_AUTO_ACCEPT", "safe"],
       ["IFIRMA_NOTIFY_EMAIL", "biuro@example.test"],
       ["IFIRMA_SYNC_INTERVAL_MIN", 30],
       ["IFIRMA_CRON_MAX_CALLS", 20],
@@ -137,7 +145,11 @@
         ["IFIRMA_DUPLICATE_CHECK", 0],
         ["IFIRMA_DUPLICATE_WINDOW_DAYS", 30],
         ["IFIRMA_DUPLICATE_AMOUNT_TOLERANCE", "0"],
+        ["IFIRMA_DOC_TEMPLATE", ""],
+        ["IFIRMA_ORDER_STAMP_PREFIX", "PS-ORDER"],
+        ["IFIRMA_SHOP_URL", ""],
         ["IFIRMA_ALLOW_DATA_REQUEST", 0],
+        ["IFIRMA_DATA_REQUEST_AUTO_ACCEPT", "none"],
         ["IFIRMA_NOTIFY_EMAIL", ""],
         ["IFIRMA_SYNC_INTERVAL_MIN", 15],
         ["IFIRMA_CRON_MAX_CALLS", 10],
@@ -559,6 +571,64 @@
       "name": "payment map with two bad lines after blank lines and a comment",
       "change": {"IFIRMA_PAYMENT_METHOD_MAP": "\n  \n# note\n\nps_checkpayment\nps_wirepayment=PRZ\nbad module=PRZ"},
       "notice": "<error>Payment method map: line 5: ps_checkpayment; line 7: bad module=PRZ</error>",
+      "writes": []
+    },
+    {
+      "name": "template and prefix are trimmed, a trailing hyphen is dropped, an unknown auto-accept mode becomes none",
+      "change": {
+        "IFIRMA_DOC_TEMPLATE": " logo ",
+        "IFIRMA_ORDER_STAMP_PREFIX": " scmedical- ",
+        "IFIRMA_DATA_REQUEST_AUTO_ACCEPT": "sometimes"
+      },
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {"IFIRMA_DATA_REQUEST_AUTO_ACCEPT": "none"}
+    },
+    {
+      "name": "empty prefix becomes PS-ORDER, empty template and webpage stay empty",
+      "change": {"IFIRMA_DOC_TEMPLATE": "", "IFIRMA_ORDER_STAMP_PREFIX": "", "IFIRMA_SHOP_URL": ""},
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {"IFIRMA_DOC_TEMPLATE": "", "IFIRMA_ORDER_STAMP_PREFIX": "PS-ORDER", "IFIRMA_SHOP_URL": ""}
+    },
+    {
+      "name": "all auto-accept mode is stored",
+      "change": {"IFIRMA_DATA_REQUEST_AUTO_ACCEPT": "all"},
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {"IFIRMA_DATA_REQUEST_AUTO_ACCEPT": "all"}
+    },
+    {
+      "name": "template longer than 100 characters",
+      "change": {"IFIRMA_DOC_TEMPLATE": {"repeat": "a", "times": 101}},
+      "notice": "<error>The document template name must be one line of at most 100 characters.</error>",
+      "writes": []
+    },
+    {
+      "name": "template with a control character",
+      "change": {"IFIRMA_DOC_TEMPLATE": "lo\u0007go"},
+      "notice": "<error>The document template name must be one line of at most 100 characters.</error>",
+      "writes": []
+    },
+    {
+      "name": "prefix with a space inside",
+      "change": {"IFIRMA_ORDER_STAMP_PREFIX": "sc medical"},
+      "notice": "<error>The order stamp prefix must be 1 to 32 characters: letters, digits, dot, underscore or hyphen.</error>",
+      "writes": []
+    },
+    {
+      "name": "prefix longer than 32 characters",
+      "change": {"IFIRMA_ORDER_STAMP_PREFIX": {"repeat": "a", "times": 33}},
+      "notice": "<error>The order stamp prefix must be 1 to 32 characters: letters, digits, dot, underscore or hyphen.</error>",
+      "writes": []
+    },
+    {
+      "name": "webpage without a scheme",
+      "change": {"IFIRMA_SHOP_URL": "scmedical.pl"},
+      "notice": "<error>The shop webpage must be an absolute http or https address without a user name or password.</error>",
+      "writes": []
+    },
+    {
+      "name": "webpage with user information",
+      "change": {"IFIRMA_SHOP_URL": "https://user:pw@host.example"},
+      "notice": "<error>The shop webpage must be an absolute http or https address without a user name or password.</error>",
       "writes": []
     },
     {

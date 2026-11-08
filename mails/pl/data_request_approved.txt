@@ -1,6 +1,10 @@
+{shop_name}
+
 Dzien dobry {firstname},
 
 Twoja prosba o zmiane danych do dokumentu dla zamowienia {order_reference} zostala zaakceptowana. Dokument zostanie wystawiony z nastepujacymi danymi:
 {approved_data}
 
 {reason}
+
+{ifirma_shop_link}

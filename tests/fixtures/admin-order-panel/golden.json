@@ -2591,6 +2591,188 @@
                 "ifirma_can_manage": true
             }
         },
+        "automatically approved request": {
+            "from": [],
+            "assignment": {
+                "ifirma_contractor_map": null,
+                "ifirma_id_order": 15,
+                "ifirma_receipt": {
+                    "__class": "IfirmaReceipt",
+                    "id": 1,
+                    "id_ifirma_receipt": 1,
+                    "id_order": 15,
+                    "id_customer": 5,
+                    "id_shop": null,
+                    "document_type": "fakturakraj",
+                    "ifirma_id": "",
+                    "ifirma_number": "7/2026",
+                    "status": "held",
+                    "paid_amount": null,
+                    "security_token": "tok123",
+                    "request_payload": null,
+                    "response_payload": null,
+                    "last_error": null,
+                    "date_add": "2026-11-03 09:30:00",
+                    "date_upd": "2026-11-03 09:30:00",
+                    "source": "module",
+                    "order_reference": "",
+                    "issue_date": "2026-11-03",
+                    "delivery_status": "none",
+                    "delivery_channel": "",
+                    "delivered_at": null,
+                    "delivery_error": null,
+                    "remote_paid_amount": null,
+                    "remote_sent": false,
+                    "remote_draft": false,
+                    "remote_missing": false,
+                    "ksef_status": "",
+                    "ksef_number": "",
+                    "ksef_sent_at": null,
+                    "ksef_error": null,
+                    "linked_document": "",
+                    "last_sync_at": "2026-11-03 09:30:00",
+                    "last_download_at": null,
+                    "sync_error": null,
+                    "duplicate_candidates": null,
+                    "id_data_request": null
+                },
+                "ifirma_payment_method": "",
+                "ifirma_contractor_note": "",
+                "ifirma_request_payload": "",
+                "ifirma_response_payload": "",
+                "ifirma_module_version": "<version of the module>",
+                "ifirma_build_stamp": "<modification time of ifirma.php>",
+                "ifirma_has_receipt": true,
+                "ifirma_is_issued": false,
+                "ifirma_is_external": false,
+                "ifirma_configured": true,
+                "ifirma_state": "held",
+                "ifirma_state_label": "On hold (data change request pending)",
+                "ifirma_can_create": false,
+                "ifirma_can_issue_anyway": false,
+                "ifirma_has_pending_request": false,
+                "ifirma_candidates": [],
+                "ifirma_resolution": null,
+                "ifirma_delivery_text": "Not sent",
+                "ifirma_ksef_text": "",
+                "ifirma_gross": 123.0,
+                "ifirma_pending_request": null,
+                "ifirma_request_diff": [],
+                "ifirma_request_fields": [],
+                "ifirma_request_history": [
+                    {
+                        "id": 2,
+                        "status": "approved",
+                        "date_add": "2026-11-03 09:30:00",
+                        "date_upd": "2026-11-03 09:30:00",
+                        "date_resolved": "2026-11-03 10:30:00",
+                        "requester": 5,
+                        "resolved_by": 0,
+                        "requested_data": {
+                            "company": "ACME Sp. z o.o.",
+                            "vat_number": "5260250274",
+                            "firstname": "Jan",
+                            "lastname": "Kowalski",
+                            "address1": "Nowa 2",
+                            "postcode": "00-002",
+                            "city": "Warszawa",
+                            "id_country": 14
+                        },
+                        "approved_data": {
+                            "want_invoice_for_company": false,
+                            "company": "<b>ACME</b>",
+                            "vat_number": "5260250274",
+                            "firstname": "Jan",
+                            "lastname": "K",
+                            "address1": "Nowa 2",
+                            "address2": "",
+                            "postcode": "00-002",
+                            "city": "Warszawa",
+                            "id_country": 14
+                        },
+                        "admin_note": "Approved automatically: every valid request",
+                        "customer_note": "",
+                        "status_label": "Approved",
+                        "employee": "automatic (all)",
+                        "accepted": [
+                            {
+                                "field": "company",
+                                "current": "",
+                                "requested": "<b>ACME</b>"
+                            },
+                            {
+                                "field": "vat_number",
+                                "current": "",
+                                "requested": "5260250274"
+                            },
+                            {
+                                "field": "address1",
+                                "current": "Prosta 1",
+                                "requested": "Nowa 2"
+                            },
+                            {
+                                "field": "postcode",
+                                "current": "00-001",
+                                "requested": "00-002"
+                            }
+                        ]
+                    },
+                    {
+                        "id": 1,
+                        "status": "approved",
+                        "date_add": "2026-11-03 09:30:00",
+                        "date_upd": "2026-11-03 09:30:00",
+                        "date_resolved": "2026-11-03 09:30:00",
+                        "requester": 5,
+                        "resolved_by": 0,
+                        "requested_data": {
+                            "want_invoice_for_company": false,
+                            "company": "",
+                            "vat_number": "",
+                            "firstname": "Jan",
+                            "lastname": "K",
+                            "address1": "Nowa 2",
+                            "address2": "",
+                            "postcode": "00-002",
+                            "city": "Warszawa",
+                            "id_country": 14
+                        },
+                        "approved_data": {
+                            "want_invoice_for_company": false,
+                            "company": "",
+                            "vat_number": "",
+                            "firstname": "Jan",
+                            "lastname": "K",
+                            "address1": "Nowa 2",
+                            "address2": "",
+                            "postcode": "00-002",
+                            "city": "Warszawa",
+                            "id_country": 14
+                        },
+                        "admin_note": "Approved automatically: safe fields only",
+                        "customer_note": "",
+                        "status_label": "Approved",
+                        "employee": "automatic (safe fields)",
+                        "accepted": [
+                            {
+                                "field": "address1",
+                                "current": "Prosta 1",
+                                "requested": "Nowa 2"
+                            },
+                            {
+                                "field": "postcode",
+                                "current": "00-001",
+                                "requested": "00-002"
+                            }
+                        ]
+                    }
+                ],
+                "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
+                "ifirma_token": "admin-token-AdminIfirma",
+                "ifirma_can_issue": true,
+                "ifirma_can_manage": true
+            }
+        },
         "request with values of every kind": {
             "from": [],
             "assignment": {

@@ -1,6 +1,10 @@
+{shop_name}
+
 Hello {firstname},
 
 Your request to change the invoice data of order {order_reference} has been approved. The document will be issued with the following data:
 {approved_data}
 
 {reason}
+
+{ifirma_shop_link}

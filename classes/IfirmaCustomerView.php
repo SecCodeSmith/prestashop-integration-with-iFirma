@@ -132,6 +132,35 @@ class IfirmaCustomerView
     }
 
     /**
+     * The block of the guest tracking page: the view of forOrder() without the document download (the page
+     * is open to anyone who knows the reference and the e-mail), and with the change and cancel links
+     * pointing at the guest page of the order.
+     *
+     * @param Order                  $order
+     * @param IfirmaReceipt|null     $receipt
+     * @param IfirmaDataRequest|null $pendingRequest
+     * @param array                  $context
+     * @return array
+     */
+    public function forGuestOrder($order, $receipt, $pendingRequest, array $context = array())
+    {
+        $view = $this->forOrder($order, $receipt, $pendingRequest, $context);
+        $guestUrl = $this->link->getModuleLink(
+            'ifirma',
+            'guestrequest',
+            array('reference' => (string) $this->prop($order, 'reference')),
+            true
+        );
+        $view['request_url'] = $guestUrl;
+        $view['cancel_url'] = $guestUrl;
+        if (isset($view['document'])) {
+            $view['document']['download_url'] = '';
+        }
+
+        return $view;
+    }
+
+    /**
      * The context of forOrder() for the order page of the customer: the data request and auto issue
      * switches, the name of the state that triggers the issuing, and the amount tolerance, as the
      * configuration holds them.

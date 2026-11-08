@@ -37,6 +37,56 @@ class IfirmaTestEndingReceiptController extends IfirmaReceiptModuleFrontControll
     }
 }
 
+require_once _PS_MODULE_DIR_ . 'ifirma/controllers/front/datarequest.php';
+
+/** The data request controller that records the issuance resumes instead of building the pipeline. */
+class IfirmaTestResumingDataRequestController extends IfirmaDatarequestModuleFrontController
+{
+    /** @var IfirmaDataRequest[] */
+    public $resumed = array();
+
+    protected function resumeIssuance(IfirmaDataRequest $request)
+    {
+        $this->resumed[] = $request;
+    }
+}
+
+/** The data request controller that runs the real resumeIssuance() against a pipeline it is given. */
+class IfirmaTestPipelineDataRequestController extends IfirmaDatarequestModuleFrontController
+{
+    /** @var IfirmaIssuancePipeline */
+    public $stubPipeline;
+
+    protected function pipeline()
+    {
+        return $this->stubPipeline;
+    }
+}
+
+/** A pipeline that records its resumes, and raises when told to. */
+class IfirmaTestRecordingPipeline extends IfirmaIssuancePipeline
+{
+    /** @var IfirmaDataRequest[] */
+    public $resumed = array();
+
+    /** @var bool */
+    public $raise = false;
+
+    public function __construct()
+    {
+    }
+
+    public function resumeAfterRequest(IfirmaDataRequest $request)
+    {
+        $this->resumed[] = $request;
+        if ($this->raise) {
+            throw new RuntimeException('pipeline down');
+        }
+
+        return null;
+    }
+}
+
 /**
  * The front controllers' guards: the login redirect and the answers that end the request.
  */
@@ -111,6 +161,94 @@ class FrontControllerEndingsTest extends TestCase
             $this->assertStringContainsString('authentication', $e->url);
             $this->assertStringContainsString('token%3Dtok123', $e->url);
         }
+    }
+
+    /** Posts a private person's address fix for order 15 as its logged-in owner; returns the controller. */
+    private function postDataRequest(IfirmaDatarequestModuleFrontController $controller = null)
+    {
+        $country = new Country();
+        $country->id = 14;
+        $country->iso_code = 'PL';
+        Country::register($country);
+        Tools::$values = array(
+            'id_order' => '15',
+            'token' => 'front-token',
+            'submitIfirmaDataRequest' => '1',
+            'firstname' => 'Jan',
+            'lastname' => 'K',
+            'address1' => 'Nowa 2',
+            'postcode' => '00-002',
+            'city' => 'Warszawa',
+            'id_country' => '14',
+        );
+        $controller = $controller ?: new IfirmaTestResumingDataRequestController();
+        try {
+            $controller->postProcess();
+            $this->fail('expected the redirect to the order page');
+        } catch (IfirmaTestRedirect $e) {
+            $this->assertStringContainsString('order-detail', $e->url);
+        }
+
+        return $controller;
+    }
+
+    public function testARequestApprovedOnSubmissionResumesTheIssuanceOnce()
+    {
+        Configuration::updateValue('IFIRMA_DATA_REQUEST_AUTO_ACCEPT', 'safe');
+
+        $controller = $this->postDataRequest();
+
+        $this->assertCount(1, $controller->resumed);
+        $this->assertTrue($controller->resumed[0]->isAutoApproved());
+        $this->assertSame(15, (int) $controller->resumed[0]->id_order);
+    }
+
+    public function testTheApprovedRequestIsHandedToThePipeline()
+    {
+        Configuration::updateValue('IFIRMA_DATA_REQUEST_AUTO_ACCEPT', 'safe');
+        $controller = new IfirmaTestPipelineDataRequestController();
+        $controller->stubPipeline = new IfirmaTestRecordingPipeline();
+
+        $this->postDataRequest($controller);
+
+        $this->assertCount(1, $controller->stubPipeline->resumed);
+        $this->assertTrue($controller->stubPipeline->resumed[0]->isApproved());
+    }
+
+    public function testAFailingPipelineNeverReachesTheCustomer()
+    {
+        Configuration::updateValue('IFIRMA_DATA_REQUEST_AUTO_ACCEPT', 'safe');
+        $controller = new IfirmaTestPipelineDataRequestController();
+        $controller->stubPipeline = new IfirmaTestRecordingPipeline();
+        $controller->stubPipeline->raise = true;
+
+        $this->postDataRequest($controller);
+
+        $this->assertCount(1, $controller->stubPipeline->resumed);
+        $this->assertSame(array(), $controller->errors);
+    }
+
+    public function testTheDefaultPipelineIsBuiltFromTheModule()
+    {
+        Configuration::updateValue('IFIRMA_DATA_REQUEST_AUTO_ACCEPT', 'safe');
+        $controller = new class extends IfirmaDatarequestModuleFrontController {
+            public function built()
+            {
+                return $this->pipeline();
+            }
+        };
+        $controller->module = $this->module;
+
+        $this->assertInstanceOf(IfirmaIssuancePipeline::class, $controller->built());
+    }
+
+    public function testAPendingRequestDoesNotResumeTheIssuance()
+    {
+        Configuration::updateValue('IFIRMA_DATA_REQUEST_AUTO_ACCEPT', 'none');
+
+        $controller = $this->postDataRequest();
+
+        $this->assertSame(array(), $controller->resumed);
     }
 
     public function testAnAnonymousVisitorToTheDataRequestIsSentToTheLoginWithTheOrderAsTheReturnTarget()

@@ -30,6 +30,7 @@ class DeliveryServiceTest extends TestCase
     protected function setUp(): void
     {
         IfirmaTestState::resetAll();
+        Configuration::$values['IFIRMA_SHOP_URL'] = 'https://www.Hialumed.pl/';
         $this->t = new ScriptedTransport();
         $client = new IfirmaApiClient('u@example.com', array('faktura' => str_repeat('1', 64)), 'http://ifirma-mock:8001/iapi/', 30, $this->t);
         $this->client = $client;
@@ -160,7 +161,8 @@ class DeliveryServiceTest extends TestCase
         $this->assertSame('ABCDEFGHI', $m['templateVars']['{order_reference}']);
         $this->assertSame('application/pdf', $m['fileAttachment']['mime']);
         $this->assertSame(self::PDF, $m['fileAttachment']['content']);
-        $this->assertSame('ifirma-7-2026.pdf', $m['fileAttachment']['name']);
+        $this->assertSame('hialumed.pl-7_2026.pdf', $m['fileAttachment']['name']);
+        $this->assertSame('https://www.Hialumed.pl/', $m['templateVars']['{ifirma_shop_link}']);
         $this->assertStringEndsWith('ifirma/mails/', str_replace('\\', '/', $m['templatePath']));
         $this->assertStringContainsString('Test Shop', $m['subject']);
         $this->assertStringContainsString('7/2026', $m['subject']);
@@ -170,6 +172,27 @@ class DeliveryServiceTest extends TestCase
         $this->assertSame('shop_mail', $row['delivery_channel']);
         $this->assertSame(date('Y-m-d H:i:s', 1800000000), $row['delivered_at']);
         $this->assertSame('', $row['delivery_error']);
+    }
+
+    public function testAttachmentIsNamedWithTheShopDomainAndTheNumber()
+    {
+        $this->pdfOk();
+        $r = $this->receipt();
+        $r->ifirma_number = 'FV 7/2026';
+        $this->svc->deliver($r);
+
+        $this->assertSame('hialumed.pl-FV_7_2026.pdf', Mail::$sent[0]['fileAttachment']['name']);
+        $this->assertSame(IfirmaShopLink::pdfFileName('FV 7/2026'), Mail::$sent[0]['fileAttachment']['name']);
+    }
+
+    public function testAttachmentWithoutANumberUsesTheIdentifier()
+    {
+        $this->pdfOk();
+        $r = $this->receipt();
+        $r->ifirma_number = '';
+        $this->svc->deliver($r);
+
+        $this->assertSame('hialumed.pl-77.pdf', Mail::$sent[0]['fileAttachment']['name']);
     }
 
     public function testTemplatesExistAndContainPlaceholders()

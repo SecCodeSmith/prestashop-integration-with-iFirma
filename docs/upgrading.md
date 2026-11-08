@@ -69,3 +69,13 @@ documents, Add lets them issue a document, and Edit lets them manage it (retry, 
 page, under *Modules*, the profile also needs the iFirma module's own View permission: PrestaShop runs a
 module's back-office hooks only for profiles that may view the module, so without it the panels stay hidden
 whatever the tab permissions say.
+
+## Upgrading to 1.6.0
+
+**Behaviour change: PDF file names.** The PDF of a document is now named `<shop-domain>-<number>.pdf`
+instead of `ifirma-<number>.pdf`, both when it is downloaded (by the customer or in the back office) and
+when it is attached to the e-mail of the shop-mail delivery. The shop domain is the host of the shop
+webpage set in the module settings (lower case, without a leading `www.`), or the shop's own domain when
+none is set; every character outside `0-9 A-Z a-z . _ -` becomes `_`. For example, document `FV 7/2026` of
+the shop `https://www.Hialumed.pl/` is `hialumed.pl-FV_7_2026.pdf`. Mail filters, scripts or archive
+rules that match the old `ifirma-` name must be changed.
