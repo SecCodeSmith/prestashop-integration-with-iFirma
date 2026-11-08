@@ -35,6 +35,9 @@ class IfirmaGuestrequestModuleFrontController extends ModuleFrontController
     const SESSION_SECONDS = 1800;
     const COOKIE_KEY = 'ifirma_guest';
 
+    /** The identification always takes at least this long, whatever the answer was (see identify()). */
+    const IDENTIFY_MIN_MS = 1500;
+
     /** @var bool */
     public $ssl = true;
 
@@ -101,6 +104,25 @@ class IfirmaGuestrequestModuleFrontController extends ModuleFrontController
     protected function now()
     {
         return time();
+    }
+
+    /**
+     * @return float seconds with microseconds, to measure how long a request took (a test seam)
+     */
+    protected function clock()
+    {
+        return microtime(true);
+    }
+
+    /**
+     * Waits (a test seam).
+     *
+     * @param int $microseconds
+     * @return void
+     */
+    protected function pause($microseconds)
+    {
+        usleep((int) $microseconds);
     }
 
     /**
@@ -233,6 +255,7 @@ class IfirmaGuestrequestModuleFrontController extends ModuleFrontController
 
     public function postProcess()
     {
+        $started = $this->clock();
         $this->guardLoggedIn();
         $this->reference = $this->input('reference');
         $this->email = $this->input('email');
@@ -267,7 +290,7 @@ class IfirmaGuestrequestModuleFrontController extends ModuleFrontController
 
         switch ($action) {
             case 'identifyIfirmaGuest':
-                $this->identify();
+                $this->identify($started);
                 break;
             case 'verifyIfirmaGuest':
                 $this->verify();
@@ -278,11 +301,15 @@ class IfirmaGuestrequestModuleFrontController extends ModuleFrontController
     }
 
     /**
-     * Sends a code when the data matches an eligible order. The visitor is told the same in every case.
+     * Sends a code when the data matches an eligible order. The visitor is told the same in every case,
+     * and after the same time: the mail is sent only for a matching order, which takes a while, so every
+     * branch is padded to IDENTIFY_MIN_MS (counted from the start of the request) and the answer time
+     * does not tell whether the reference and the e-mail matched.
      *
+     * @param float $started the clock() at the start of the request
      * @return void
      */
-    private function identify()
+    private function identify($started)
     {
         $found = $this->findOrder($this->reference, $this->email);
         $sent = false;
@@ -299,6 +326,19 @@ class IfirmaGuestrequestModuleFrontController extends ModuleFrontController
 
         $this->notice = $this->module->l('If the data matches an order, we have sent a code to its e-mail address.', 'guestrequest');
         $this->step = 'verify';
+        $this->padIdentify($started);
+    }
+
+    /**
+     * @param float $started the clock() at the start of the request
+     * @return void
+     */
+    private function padIdentify($started)
+    {
+        $remaining = (int) round(self::IDENTIFY_MIN_MS * 1000 - ($this->clock() - $started) * 1000000);
+        if ($remaining > 0) {
+            $this->pause($remaining);
+        }
     }
 
     /**

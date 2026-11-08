@@ -65,6 +65,22 @@ class IfirmaTestGuestController extends IfirmaGuestrequestModuleFrontController
     /** @var IfirmaDataRequest[] */
     public $resumed = array();
 
+    /** @var float[] readings of the clock, handed out in order; the real clock once they are used up */
+    public static $ticks = array();
+
+    /** @var int[] the waits the page asked for, in microseconds (nothing really sleeps) */
+    public static $slept = array();
+
+    protected function clock()
+    {
+        return self::$ticks ? array_shift(self::$ticks) : parent::clock();
+    }
+
+    protected function pause($microseconds)
+    {
+        self::$slept[] = $microseconds;
+    }
+
     protected function codeService()
     {
         return self::$codes;
@@ -96,6 +112,8 @@ class GuestRequestControllerTest extends TestCase
         Context::getContext()->customer->logged = false;
         IfirmaTestGuestController::$codes = new IfirmaTestFakeGuestCodes();
         IfirmaTestGuestController::$clock = 1800000000;
+        IfirmaTestGuestController::$ticks = array();
+        IfirmaTestGuestController::$slept = array();
         Tools::$values = array();
         $country = new Country();
         $country->id = 14;
@@ -420,6 +438,54 @@ class GuestRequestControllerTest extends TestCase
         $this->assertSame('form', $this->vars()['ifirma_step']);
     }
 
+    // ---- the answer time (red team 1.6.0 F7) -------------------------------------------------------------
+
+    /** @return array[] label => array(posted values over the identify defaults, codes the service hands out) */
+    public function identifyBranches()
+    {
+        return array(
+            'match, code mailed' => array(array(), '123456'),
+            'unknown reference' => array(array('reference' => 'ZZZZZZZZZ'), '123456'),
+            'e-mail of another customer' => array(array('email' => 'other@example.test'), '123456'),
+            'issuance refused' => array(array(), null),
+        );
+    }
+
+    /**
+     * @dataProvider identifyBranches
+     */
+    public function testEveryIdentifyBranchWaitsForTheRestOfTheMinimumTime(array $over, $code)
+    {
+        $this->codes()->code = $code;
+        // the work took 200 ms of the 1500 ms
+        IfirmaTestGuestController::$ticks = array(1000.000, 1000.200);
+
+        $this->identify($over);
+
+        $this->assertSame(array(1300000), IfirmaTestGuestController::$slept);
+    }
+
+    public function testASlowIdentifyIsNotDelayedFurther()
+    {
+        IfirmaTestGuestController::$ticks = array(1000.000, 1001.600);
+
+        $this->identify();
+
+        $this->assertSame(array(), IfirmaTestGuestController::$slept);
+    }
+
+    public function testTheOtherStepsAreNotPadded()
+    {
+        $this->verifyCode();
+        $this->request(array());
+
+        $this->assertSame(array(), IfirmaTestGuestController::$slept);
+    }
+
+    public function testTheMinimumIsOneAndAHalfSeconds()
+    {
+        $this->assertSame(1500, IfirmaGuestrequestModuleFrontController::IDENTIFY_MIN_MS);
+    }
     // ---- verification --------------------------------------------------------------------------------
 
     public function testTheRightCodeOpensTheFormOfTheOrder()
@@ -663,6 +729,13 @@ class GuestRequestControllerTest extends TestCase
         $this->assertInstanceOf('IfirmaGuestCodeService', $call('codeService'));
         $this->assertInstanceOf('IfirmaDataRequestNotifier', $call('notifier'));
         $this->assertEqualsWithDelta(time(), $call('now'), 5);
+        $this->assertEqualsWithDelta(microtime(true), $call('clock'), 5);
+
+        $pause = new ReflectionMethod($controller, 'pause');
+        $pause->setAccessible(true);
+        $before = microtime(true);
+        $pause->invoke($controller, 20000);
+        $this->assertGreaterThanOrEqual(0.015, microtime(true) - $before);
     }
 
     public function testTheDefaultResumeNeverThrows()
