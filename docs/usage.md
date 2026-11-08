@@ -462,11 +462,14 @@ Visitors who ordered without an account can change the invoice data at
 the reference filled in). Logged-in customers are redirected to their order history, where each order
 links to the account form. The page is available only while **Allow customers to request billing data changes**
 (`IFIRMA_ALLOW_DATA_REQUEST`) is on; otherwise it says that changes are not available and no code is
-created or sent.
+created or sent. It is also unavailable while the shop has no cookie key (the `cookie_key` parameter in
+`app/config/parameters.php` is empty), because the session, the form token and the code hashes are keyed with it.
 
 1. **Identify.** The visitor enters the order reference and the e-mail address of the order. The page
    always answers "If the data matches an order, we have sent a code to its e-mail address", whether or
-   not the order exists, the e-mail matches or an e-mail was sent, so nothing about the order is revealed.
+   not the order exists, the e-mail matches or an e-mail was sent, so nothing about the order is revealed;
+   the answer also always takes at least 1.5 seconds, so its timing reveals nothing either. The e-mail with
+   the code has the subject "Your verification code from <shop name>" and names the order only in its body.
 2. **Verify.** The visitor enters the six-digit code from the e-mail. It is valid for 15 minutes, works
    once, and is invalidated after 5 wrong attempts (a new one can be requested from the same page). A
    wrong, expired or used code gets the same "invalid or expired code" message. The e-mail contains no
@@ -479,7 +482,7 @@ created or sent.
 **Limits.** A new code can be requested at most once per 60 seconds per order, 5 times per order per 24
 hours, and 20 times per client address per hour. A refused request sends no e-mail and shows the same
 neutral message. Orders that already have an issued or adopted document get no code. Codes are stored
-only as salted hashes, and used or expired codes older than 24 hours are deleted whenever a new code is
+only as salted hashes keyed with the shop's cookie key, and used or expired codes older than 24 hours are deleted whenever a new code is
 issued. When a customer reports that no code arrived, see
 [Guest did not receive the code](troubleshooting.md#guest-did-not-receive-the-code).
 

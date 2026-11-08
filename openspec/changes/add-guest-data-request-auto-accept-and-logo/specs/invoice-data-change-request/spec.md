@@ -186,3 +186,50 @@ The module's block on the guest order-tracking page SHALL show the document stat
 #### Scenario: Guest tracking with an issued document
 - **WHEN** the order has an issued document
 - **THEN** the block shows the issued state with the document number, no download link and the contact-the-shop message
+
+### Requirement: Serialised submission
+The eligibility check, the saving of the pending request and its automatic approval SHALL run under one database lock per order, released on every exit, so parallel submissions cannot all pass the pending, cool-down and daily-cap checks. A submission that cannot get the lock within 2 seconds SHALL be refused with a message asking the customer to wait a moment.
+
+#### Scenario: Parallel submissions
+- **WHEN** several submissions for the same order arrive at the same moment
+- **THEN** they are checked and stored one after the other, the first is stored, the others are refused as pending, and the mails go out after the lock is released
+
+#### Scenario: Submission lock not granted
+- **WHEN** the order lock of the submission is not granted within 2 seconds
+- **THEN** the submission is refused with the "another request is being processed" message and nothing is stored or mailed
+
+### Requirement: Serialised resume of a held issuance
+Resuming a held issuance after a resolved request SHALL run under a database lock per order and SHALL look the document up again under that lock, so parallel resumes cannot issue the document twice.
+
+#### Scenario: Parallel resume
+- **WHEN** a second resume gets the order lock after the first resume issued the document
+- **THEN** it finds the issued document under the lock and creates nothing
+
+#### Scenario: Resume lock not granted
+- **WHEN** the resume lock is not granted within 5 seconds
+- **THEN** nothing is issued and the event is logged
+
+### Requirement: Form protection of the account form
+The account data-change form SHALL carry the same per-visitor form token as the guest page and SHALL change state on POST only.
+
+#### Scenario: Token of another visitor on the account form
+- **WHEN** the account form is posted with a token derived from another visitor's cookie
+- **THEN** it is refused with the token error and no request is stored
+
+#### Scenario: Account form over GET
+- **WHEN** a GET request carries a valid token and every field of the form
+- **THEN** no request is stored or cancelled
+
+### Requirement: Text encoding of the request
+Every text field of a data-change request SHALL be valid UTF-8; a field that is not SHALL be refused with the field-level message, and a request whose data cannot be encoded SHALL never be stored.
+
+#### Scenario: Bytes that are not UTF-8
+- **WHEN** a field of the submitted form holds bytes that are not valid UTF-8
+- **THEN** the submission is refused with the message "This value contains characters that are not allowed." on that field and nothing is stored
+
+### Requirement: Guest tracking shows the document number only
+For an issued document the block on the guest order-tracking page SHALL show the document number and nothing else about the document: no KSeF number, issue date, payment or delivery details and no download link.
+
+#### Scenario: Issued document on the guest page
+- **WHEN** a guest opens the tracking page of an order whose document has a KSeF number, is paid and was sent
+- **THEN** the block shows the issued state and the document number, and none of those details

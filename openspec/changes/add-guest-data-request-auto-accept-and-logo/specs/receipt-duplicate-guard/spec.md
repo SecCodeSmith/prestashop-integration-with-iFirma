@@ -71,3 +71,18 @@ The configuration page SHALL offer an "Order stamp prefix" setting, default `PS-
 #### Scenario: Default after upgrade
 - **WHEN** the module is upgraded from a version without the setting
 - **THEN** the prefix is `PS-ORDER` and the stamps are unchanged
+
+### Requirement: Stamp search outside the buyer block
+The order stamp SHALL be searched for in the values of the decoded document detail with the buyer block (`Kontrahent`, typed by the buyer) left out, and SHALL match only as a whole token: not preceded by a letter, digit, dot, underscore or hyphen, and not followed by a letter, digit, underscore or hyphen or by a dot and a digit. A detail that is not JSON SHALL be searched as raw text by the same rule.
+
+#### Scenario: Stamp typed into the buyer block
+- **WHEN** a candidate detail holds `PS-ORDER-15-ABCDEFGHI` only inside the buyer block, for example as the street typed by another buyer
+- **THEN** the candidate is not adopted by the stamp and goes through the detail verification
+
+#### Scenario: Stamp in the remarks
+- **WHEN** the stamp stands in the remarks (`Uwagi`) or in the additional remarks (`DodatkoweUwagi`), alone or followed by the shop webpage or a full stop
+- **THEN** the document is adopted
+
+#### Scenario: Stamp that is the prefix of another stamp
+- **WHEN** a candidate detail holds `PS-ORDER-15-ABCDEFGHIJ` and the order's stamp is `PS-ORDER-15-ABCDEFGHI`
+- **THEN** the candidate is not adopted by the stamp

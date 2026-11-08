@@ -117,6 +117,15 @@ Settings of the [Duplicate guard](usage.md#duplicate-guard):
 | `IFIRMA_DUPLICATE_WINDOW_DAYS` | `60` | largest window (days) for the unfiltered query |
 | `IFIRMA_DUPLICATE_AMOUNT_TOLERANCE` | `0.01` | allowed gross difference when matching |
 
+## Behind a reverse proxy
+
+The guest page limits the codes it sends per client address (20 per hour). The address is the one PrestaShop reports
+(`Tools::getRemoteAddr()`). Behind a reverse proxy or a CDN that address is the proxy's, or, when PrestaShop trusts a
+forwarded header such as `X-Forwarded-For` without checking where it came from, an address the visitor can choose. In both
+cases the per-address cap is weaker than it looks. Configure the trusted proxies of your PrestaShop and the web server so
+that the real client address is reported, and keep the per-order limits (one code per 60 seconds, 5 per 24 hours), which do
+not depend on the address, in mind as the cap that always holds.
+
 ## Permissions
 
 The module has three permission levels. They are the View, Add and Edit permissions that

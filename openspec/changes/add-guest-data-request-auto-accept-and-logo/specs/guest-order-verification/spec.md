@@ -148,3 +148,71 @@ Expired and used codes older than 24 hours SHALL be deleted whenever a new code 
 #### Scenario: Old rows removed
 - **WHEN** a code is issued and the table holds a used code from two days ago
 - **THEN** that old row is deleted
+
+### Requirement: Guest page needs the shop's cookie key
+The guest page SHALL state that changes are not available, and SHALL create and verify no code, while the shop's cookie key (`_COOKIE_KEY_`) is empty or undefined, because the session signature, the form token and the code hashes are keyed with it.
+
+#### Scenario: Shop without a cookie key
+- **WHEN** the shop's cookie key is empty and a visitor opens the page or posts any step to it
+- **THEN** the page states that changes are not available, no code is issued or verified, no mail is sent and no session is opened
+
+### Requirement: Minimum answer time of the identification
+The identification SHALL take at least 1.5 seconds, counted from the start of the request handling, on every branch, so the answer time does not tell whether the reference and the e-mail matched an order. An answer that is slower than that anyway SHALL NOT be delayed further.
+
+#### Scenario: Fast answer is padded
+- **WHEN** the identification is posted and the work took 0.2 seconds, whether the data matched an order, matched none, belonged to another customer or was refused by a limit
+- **THEN** the page waits for the remaining 1.3 seconds before it answers
+
+#### Scenario: Slow answer is not delayed
+- **WHEN** the identification already took 1.6 seconds
+- **THEN** the page does not wait any longer
+
+### Requirement: Keyed code hash
+The stored hash of a code SHALL be an HMAC-SHA-256 of the salt and the code keyed with the shop's cookie key, so a copy of the table alone does not allow the six digits to be brute-forced.
+
+#### Scenario: Hash depends on the cookie key
+- **WHEN** a code is issued under one cookie key and entered under another
+- **THEN** it is refused, and the stored hash differs from the unkeyed hash of the salt and the code
+
+### Requirement: Code e-mail subject without the reference
+The subject of the code e-mail SHALL name the shop and SHALL NOT contain the order reference, which stays in the body.
+
+#### Scenario: Subject without the reference
+- **WHEN** a code is mailed for order `ABCDEFGHI` by the shop "Test Shop"
+- **THEN** the subject is "Your verification code from Test Shop" and the reference appears in the body only
+
+### Requirement: Atomic attempt counting
+Each verification attempt SHALL be counted by one conditional database update (code unused, valid, not expired, fewer than 5 attempts) before the code is compared, and only the request whose update counted the attempt SHALL compare, so parallel guesses cannot exceed 5 comparisons per code.
+
+#### Scenario: Parallel guess after the last attempt
+- **WHEN** a guess read the code before another request took its fifth attempt, so its own attempt update changes no row
+- **THEN** the guess is refused without being compared, even when it is the right code, and nothing is written
+
+### Requirement: Serialised issuance
+The counts of the issuance limits and the insert of a code SHALL run under one database lock per order, released on every exit; a request that cannot get the lock within 2 seconds SHALL be refused like a limit.
+
+#### Scenario: Parallel identifications
+- **WHEN** several identifications for the same order arrive at the same moment
+- **THEN** they are served one after the other under the order lock, the resend window refuses all but the first, and only one code is mailed
+
+#### Scenario: Lock not granted
+- **WHEN** the order lock is not granted within 2 seconds
+- **THEN** no count is read, no code is stored, no e-mail is sent and the page shows the neutral message
+
+### Requirement: Form token per visitor and POST only
+The form token of every posted step SHALL be derived from a random value kept in the visitor's own cookie and the shop's cookie key (HMAC-SHA-256), a token handed to another visitor SHALL be refused, and a step SHALL change state only when the request method is POST.
+
+#### Scenario: Token of another visitor
+- **WHEN** a step is posted with the token that the page handed to a different visitor
+- **THEN** the step is refused with the token error and nothing changes
+
+#### Scenario: State change over GET
+- **WHEN** a request by GET carries a valid token and every field of a step, for example in a link or an image address
+- **THEN** no code is issued or verified, no request is stored or cancelled, no mail is sent and the page is only rendered
+
+### Requirement: Neutral failure of a submission
+An unexpected error while a verified guest's request is stored or cancelled SHALL be answered with a neutral message and logged by the class of the error only.
+
+#### Scenario: Unexpected error
+- **WHEN** storing a verified guest's request raises an unexpected error
+- **THEN** the form is shown again with "The request could not be saved. Please try again.", the session is kept, and the log names the class of the error without its text
