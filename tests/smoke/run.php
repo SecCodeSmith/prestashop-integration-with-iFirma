@@ -200,7 +200,7 @@ function mailFind(callable $filter)
 /**
  * One [ OK ] / [FAIL] per fact. Keys of $expected (all optional): from, to (array), bcc (array),
  * rcpt_tos (array, the SMTP envelope), subject_contains, text_contains (array), html_contains (array),
- * attachment_count (int), attachments (list of array('filename' => ..., 'content_type' => ...)).
+ * attachment_count (int), inline_count (int, the sink's "inline" list: cid: parts), attachments (list of array('filename' => ..., 'content_type' => ...)).
  * Addresses are compared lower-cased, the sink lower-cases them too.
  */
 function assertMail(array $mail, array $expected, $label)
@@ -234,6 +234,10 @@ function assertMail(array $mail, array $expected, $label)
     $attachments = isset($mail['attachments']) && is_array($mail['attachments']) ? $mail['attachments'] : array();
     if (isset($expected['attachment_count'])) {
         assertSame((int) $expected['attachment_count'], count($attachments), $label . ': attachment count');
+    }
+    if (isset($expected['inline_count'])) {
+        $inline = isset($mail['inline']) && is_array($mail['inline']) ? $mail['inline'] : array();
+        assertSame((int) $expected['inline_count'], count($inline), $label . ': inline part count');
     }
     foreach (isset($expected['attachments']) ? $expected['attachments'] : array() as $i => $att) {
         $got = isset($attachments[$i]) ? $attachments[$i] : array();
@@ -536,7 +540,8 @@ assertTrue(Module::isInstalled('ifirma'), 'module installed');
 // The module classes are normally loaded by the module file / controllers.
 foreach (array('IfirmaApiClient', 'IfirmaReceipt', 'IfirmaDataRequest', 'IfirmaReceiptService', 'IfirmaPayloadBuilder', 'IfirmaIssuancePipeline',
     'IfirmaDuplicateGuard', 'IfirmaDeliveryService', 'IfirmaStatusSyncService', 'IfirmaDataRequestService', 'IfirmaAdminActions',
-    'IfirmaBulkRunner', 'IfirmaIssueFeed', 'IfirmaDownloadThrottle', 'IfirmaPermission') as $class) {
+    'IfirmaBulkRunner', 'IfirmaIssueFeed', 'IfirmaDownloadThrottle', 'IfirmaPermission', 'IfirmaShopLink', 'IfirmaGuestCodeService',
+    'IfirmaDataRequestAutoAccept', 'IfirmaSchema') as $class) {
     if (!class_exists($class)) {
         require_once _PS_MODULE_DIR_ . 'ifirma/classes/' . $class . '.php';
     }
@@ -1345,7 +1350,6 @@ function scenarioN($module, $actions)
         }
         $number = (string) $receipt->ifirma_number;
         assertSame('sent', $receipt->delivery_status, 'delivery recorded as sent');
-        $safe = trim((string) preg_replace('/[^A-Za-z0-9_-]+/', '-', $number), '-');
         $rows = mailbox();
         if (assertSame(1, count($rows), 'copy none: exactly one message in the sink')) {
             $mail = mailGet($rows[0]['id']);
@@ -1356,9 +1360,10 @@ function scenarioN($module, $actions)
                 'rcpt_tos' => array($customerEmail),
                 'subject_contains' => $number,
                 'text_contains' => array($number, (string) $order->reference),
-                'html_contains' => array($number, (string) $order->reference),
+                'html_contains' => array($number, (string) $order->reference, 'cid:', IfirmaShopLink::url()),
+                'inline_count' => 1,
                 'attachment_count' => 1,
-                'attachments' => array(array('filename' => 'ifirma-' . $safe . '.pdf', 'content_type' => 'application/pdf')),
+                'attachments' => array(array('filename' => IfirmaShopLink::pdfFileName($number), 'content_type' => 'application/pdf')),
             ), 'copy none');
             $pdf = httpRequest('GET', $mockHost . '/__mock/mail/' . (int) $mail['id'] . '/attachments/0');
             $bytes = is_string($pdf['raw']) ? $pdf['raw'] : '';
@@ -1381,7 +1386,7 @@ function scenarioN($module, $actions)
                 'rcpt_tos' => array($customerEmail, $shopEmail),
                 'subject_contains' => $number,
                 'attachment_count' => 1,
-                'attachments' => array(array('filename' => 'ifirma-' . $safe . '.pdf', 'content_type' => 'application/pdf')),
+                'attachments' => array(array('filename' => IfirmaShopLink::pdfFileName($number), 'content_type' => 'application/pdf')),
             ), 'copy shop');
         }
         $receipt = receiptOf($order);
@@ -1577,6 +1582,535 @@ function scenarioM($module)
     }
 }
 
+// ---------------------------------------------------------------- scenarios O, P, Q: guest code, auto-accept, stamp prefix
+
+/** Sets a configuration value and returns the previous one (false when it was not set). */
+function smokeSetting($key, $value)
+{
+    $previous = Configuration::get($key);
+    Configuration::updateValue($key, $value);
+
+    return $previous;
+}
+
+function smokeRestoreSetting($key, $previous)
+{
+    if ($previous === false || $previous === null) {
+        Configuration::deleteByName($key);
+    } else {
+        Configuration::updateValue($key, $previous);
+    }
+}
+
+/**
+ * Minimal HTTP client for the shop's own front pages: calls the Apache of the container on 127.0.0.1
+ * with the shop domain as Host header and keeps a cookie jar between requests.
+ */
+class SmokeWeb
+{
+    private $jar;
+    private $host;
+
+    public function __construct()
+    {
+        $this->jar = tempnam(sys_get_temp_dir(), 'smkweb');
+        $this->host = (string) Configuration::get('PS_SHOP_DOMAIN');
+    }
+
+    public function __destruct()
+    {
+        @unlink($this->jar);
+    }
+
+    /**
+     * @param string     $method GET|POST
+     * @param string     $url    any URL of the shop; only path and query are used
+     * @param array|null $post   form fields
+     * @return array code, body, headers (raw header block of the last response), url (path used)
+     */
+    public function request($method, $url, array $post = null)
+    {
+        $parts = parse_url($url);
+        $path = (isset($parts['path']) ? $parts['path'] : '/') . (isset($parts['query']) ? '?' . $parts['query'] : '');
+        $out = array('code' => 0, 'body' => '', 'headers' => '', 'url' => $path);
+        for ($hop = 0; $hop < 4; $hop++) {
+            $ch = curl_init('http://127.0.0.1' . $path);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HEADER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+            curl_setopt($ch, CURLOPT_COOKIEJAR, $this->jar);
+            curl_setopt($ch, CURLOPT_COOKIEFILE, $this->jar);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, array('Host: ' . $this->host));
+            curl_setopt($ch, CURLOPT_USERAGENT, 'ifirma-smoke');
+            if ($method === 'POST' && $hop === 0) {
+                curl_setopt($ch, CURLOPT_POST, true);
+                curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($post === null ? array() : $post));
+            }
+            $raw = curl_exec($ch);
+            $out['code'] = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $size = (int) curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+            curl_close($ch);
+            if ($raw === false) {
+                $out['code'] = 0;
+
+                return $out;
+            }
+            $out['headers'] = substr($raw, 0, $size);
+            $out['body'] = (string) substr($raw, $size);
+            $out['url'] = $path;
+            if ($out['code'] >= 300 && $out['code'] < 400 && preg_match('/^Location:\s*(\S+)/mi', $out['headers'], $m)) {
+                $next = parse_url($m[1]);
+                $path = (isset($next['path']) ? $next['path'] : '/') . (isset($next['query']) ? '?' . $next['query'] : '');
+                continue;
+            }
+
+            return $out;
+        }
+
+        return $out;
+    }
+}
+
+/** @return string the module section of a rendered page (the whole page when it is not found) */
+function smokeSection($html)
+{
+    return preg_match('~<section id="ifirma-guest-request".*?</section>~s', $html, $m) ? $m[0] : $html;
+}
+
+/** @return string the value of the hidden "token" input of a rendered form; '' when there is none */
+function smokeFormToken($html)
+{
+    return preg_match('/name="token"\s+value="([^"]*)"/', $html, $m) ? html_entity_decode($m[1], ENT_QUOTES, 'UTF-8') : '';
+}
+
+/** A postcode in the format of the address's country that differs from the current one. */
+function smokeOtherPostcode(Address $address)
+{
+    $country = new Country((int) $address->id_country);
+    $format = trim((string) $country->zip_code_format);
+    if ($format === '') {
+        $format = 'NN-NNN';
+    }
+    foreach (array('95173', '38246') as $digits) {
+        $i = 0;
+        $zip = '';
+        foreach (str_split($format) as $c) {
+            if ($c === 'N') {
+                $zip .= $digits[$i++ % strlen($digits)];
+            } elseif ($c === 'L') {
+                $zip .= 'A';
+            } elseif ($c === 'C') {
+                $zip .= $country->iso_code;
+            } else {
+                $zip .= $c;
+            }
+        }
+        if ($zip !== (string) $address->postcode) {
+            return $zip;
+        }
+    }
+
+    return '99-999';
+}
+
+/**
+ * The form input of the invoice address of $order with $changes applied, in the shape of
+ * IfirmaDataRequestService::submit() (and, for the guest form, of the posted fields).
+ *
+ * @return array
+ */
+function smokeRequestInput($module, Order $order, array $changes = array())
+{
+    $service = IfirmaDataRequestService::build($module);
+    $values = $service->defaultsFromAddress(new Address((int) $order->id_address_invoice));
+    $input = array();
+    foreach ($values as $field => $value) {
+        $input[$field] = is_scalar($value) ? (string) $value : '';
+    }
+    $input['want_invoice_for_company'] = !empty($values['want_invoice_for_company']) ? '1' : '';
+    foreach ($changes as $field => $value) {
+        $input[$field] = $value;
+    }
+    if ($input['want_invoice_for_company'] === '') {
+        unset($input['want_invoice_for_company']);
+    }
+
+    return $input;
+}
+
+/** The detail node of a document as the mock answers it (the "response" object); null when it fails. */
+function smokeMockDetail($ifirmaId)
+{
+    $d = ifirmaClient()->getDetail('fakturakraj', (string) $ifirmaId);
+
+    return ($d && is_array($d['data']) && isset($d['data']['response'])) ? $d['data']['response'] : null;
+}
+
+/** @return array merchant "Invoice data change request" mails of the order, full records */
+function smokeMerchantMails(Order $order)
+{
+    return mailFind(function ($m) use ($order) {
+        return strpos((string) $m['subject'], (string) $order->reference) !== false && strpos((string) $m['subject'], 'Invoice data change request') !== false;
+    });
+}
+
+/** Puts the trigger status into the order history without running the pipeline (auto issue switched off meanwhile). */
+function smokeReachTriggerQuietly(Order $order, $triggerState)
+{
+    $previous = smokeSetting('IFIRMA_AUTO_CREATE_STATE', 0);
+    try {
+        changeState($order, $triggerState);
+    } finally {
+        smokeRestoreSetting('IFIRMA_AUTO_CREATE_STATE', $previous);
+    }
+}
+
+function scenarioO($module, $triggerState)
+{
+    $order = freshScenario('O. Guest one-time code: identify, verify, safe change approved automatically');
+    if (!$order) {
+        return;
+    }
+    $customer = new Customer((int) $order->id_customer);
+    $customerEmail = strtolower((string) $customer->email);
+    $originalGuest = (int) $customer->is_guest;
+    $previous = array(
+        'mode' => smokeSetting('IFIRMA_DATA_REQUEST_AUTO_ACCEPT', 'safe'),
+        'template' => smokeSetting('IFIRMA_DOC_TEMPLATE', 'logo'),
+    );
+    $db = Db::getInstance();
+    try {
+        // a guest customer; earlier runs leave requests and codes behind (daily cap, address cap of the codes)
+        $db->update('customer', array('is_guest' => 1), 'id_customer = ' . (int) $customer->id);
+        $db->delete('ifirma_data_request', 'id_customer = ' . (int) $customer->id);
+        IfirmaSchema::ensureGuestCodeTable();
+        $db->execute('DELETE FROM `' . _DB_PREFIX_ . 'ifirma_guest_code`');
+
+        // a consistent company buyer: the demo address has a company name but no NIP, which the form would read as a change of identity
+        $idAddress = (int) $order->id_address_invoice;
+        $originalAddress = $db->getRow('SELECT company, vat_number FROM `' . _DB_PREFIX_ . 'address` WHERE id_address = ' . $idAddress);
+        $db->update('address', array('company' => 'Smoke Guest Sp. z o.o.', 'vat_number' => '5250001234'), 'id_address = ' . $idAddress);
+        Cache::clean('objectmodel_Address_' . $idAddress . '_*');
+
+        // the trigger status is in the history, but nothing was issued: the request will resume the issuance
+        smokeReachTriggerQuietly($order, $triggerState);
+        assertTrue(!(receiptOf($order) && receiptOf($order)->isIssued()), 'the order has the trigger status and no issued document');
+        assertSame(0, IfirmaDataRequestService::build($module)->hasPendingForOrder((int) $order->id) ? 1 : 0, 'the order has no pending request');
+        assertSame('safe', Configuration::get('IFIRMA_DATA_REQUEST_AUTO_ACCEPT'), 'auto-accept mode is safe');
+        mailClear(); // order confirmation and status mails
+
+        $web = new SmokeWeb();
+        $pageUrl = Context::getContext()->link->getModuleLink('ifirma', 'guestrequest');
+        $page = $web->request('GET', $pageUrl);
+        if (!assertTrue($page['code'] === 200 && strpos($page['body'], 'identifyIfirmaGuest') !== false, 'guest page answers 200 with the identify form', 'HTTP ' . $page['code'] . ' ' . $page['url'] . ' ' . substr(strip_tags(smokeSection($page["body"])), 0, 160))) {
+            return;
+        }
+        $token = smokeFormToken($page['body']);
+        assertTrue($token !== '', 'the form carries a CSRF token');
+
+        // 1. the right reference with a WRONG e-mail: neutral answer, no mail
+        $wrong = $web->request('POST', $pageUrl, array(
+            'token' => $token, 'reference' => $order->reference, 'email' => 'nobody-smoke@example.invalid', 'identifyIfirmaGuest' => '1',
+        ));
+        assertTrue(strpos($wrong['body'], 'If the data matches an order, we have sent a code') !== false, 'wrong e-mail: the neutral message is shown', 'HTTP ' . $wrong['code']);
+        assertSame(0, count(mailbox()), 'wrong e-mail: the sink stays empty');
+        assertSame(0, (int) $db->getValue('SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'ifirma_guest_code` WHERE id_order = ' . (int) $order->id), 'wrong e-mail: no code row');
+
+        // 2. the right e-mail: one code mail
+        $token = smokeFormToken($wrong['body']) ?: $token;
+        $ident = $web->request('POST', $pageUrl, array(
+            'token' => $token, 'reference' => $order->reference, 'email' => $customerEmail, 'identifyIfirmaGuest' => '1',
+        ));
+        assertTrue(strpos($ident['body'], 'If the data matches an order, we have sent a code') !== false && strpos($ident['body'], 'verifyIfirmaGuest') !== false,
+            'right e-mail: the same neutral message and the code form', 'HTTP ' . $ident['code']);
+        $codeMails = mailFind(function ($m) {
+            return strpos((string) $m['subject'], 'Your code to change the invoice data of order') !== false;
+        });
+        if (!assertSame(1, count($codeMails), 'right e-mail: exactly one code mail in the sink')) {
+            return;
+        }
+        assertMail($codeMails[0], array(
+            'to' => array($customerEmail),
+            'subject_contains' => (string) $order->reference,
+            'text_contains' => array((string) $order->reference),
+        ), 'code mail');
+        $code = preg_match('/order ' . preg_quote((string) $order->reference, '/') . ': (\d{6})/', (string) $codeMails[0]['text'], $m) ? $m[1] : '';
+        if (!assertTrue($code !== '', 'the six digits are in the text part of the code mail', substr((string) $codeMails[0]['text'], 0, 200))) {
+            return;
+        }
+
+        // 3. a wrong code: the generic error, still the code form
+        $token = smokeFormToken($ident['body']) ?: $token;
+        $badCode = $code === '000000' ? '111111' : '000000';
+        $bad = $web->request('POST', $pageUrl, array(
+            'token' => $token, 'reference' => $order->reference, 'email' => $customerEmail, 'code' => $badCode, 'verifyIfirmaGuest' => '1',
+        ));
+        assertTrue(strpos($bad['body'], 'Invalid or expired code') !== false && strpos($bad['body'], 'submitIfirmaDataRequest') === false,
+            'wrong code: the generic error and no data form', 'HTTP ' . $bad['code']);
+
+        // 4. the right code: the form of the order
+        $token = smokeFormToken($bad['body']) ?: $token;
+        $ok = $web->request('POST', $pageUrl, array(
+            'token' => $token, 'reference' => $order->reference, 'email' => $customerEmail, 'code' => $code, 'verifyIfirmaGuest' => '1',
+        ));
+        if (!assertTrue(strpos($ok['body'], 'submitIfirmaDataRequest') !== false && strpos($ok['body'], (string) $order->reference) !== false,
+            'right code: the data form of the order is shown', 'HTTP ' . $ok['code'] . ' ' . substr(trim(preg_replace('/\s+/', ' ', strip_tags(smokeSection($ok["body"])))), 0, 200))) {
+            return;
+        }
+
+        // 5. only the postcode changes, the company / NIP choice stays as the invoice address has it
+        $newZip = smokeOtherPostcode(new Address((int) $order->id_address_invoice));
+        $post = smokeRequestInput($module, $order, array('postcode' => $newZip));
+        $post['token'] = smokeFormToken($ok['body']) ?: $token;
+        $post['id_order'] = (string) (int) $order->id;
+        $post['submitIfirmaDataRequest'] = '1';
+        $done = $web->request('POST', $pageUrl, $post);
+        $plain = trim(preg_replace('/\s+/', ' ', strip_tags(smokeSection($done["body"]))));
+        assertTrue(strpos($done['body'], 'Your change request has been received') !== false, 'the confirmation page is shown', 'HTTP ' . $done['code'] . ' ' . substr($plain, 0, 240));
+
+        // 6. the request: approved on submission by the safe mode, no employee
+        $rows = IfirmaDataRequest::getByOrder((int) $order->id);
+        assertSame(1, count($rows), 'one data request exists for the order');
+        $row = $rows ? $rows[0] : array();
+        assertSame('approved', isset($row['status']) ? $row['status'] : null, 'the request is approved');
+        assertSame('safe', isset($row['auto_mode']) ? $row['auto_mode'] : null, 'auto_mode is safe');
+        assertSame(0, isset($row['resolved_by']) ? (int) $row['resolved_by'] : -1, 'no employee resolved it (resolved_by 0)');
+
+        $approved = mailFind(function ($m) use ($customerEmail) {
+            return strpos((string) $m['subject'], 'Your invoice data change was approved') !== false && in_array($customerEmail, array_map('strtolower', (array) $m['to']), true);
+        });
+        assertSame(1, count($approved), 'the customer got the approval mail');
+        $merchant = smokeMerchantMails($order);
+        if (assertSame(1, count($merchant), 'the merchant got the notification')) {
+            assertMail($merchant[0], array('text_contains' => array('Approved automatically (mode: safe).')), 'merchant mail');
+        }
+
+        // 7. the pipeline resumed: a document with the approved buyer and the template
+        $receipt = receiptOf($order);
+        if (!assertTrue($receipt && $receipt->isIssued(), 'the issuance resumed: a document is issued', $receipt ? $receipt->status . ' ' . $receipt->last_error : 'no receipt')) {
+            return;
+        }
+        assertSame(1, remoteDocumentCount(), 'one document in iFirma');
+        $detail = smokeMockDetail($receipt->ifirma_id);
+        assertSame($newZip, is_array($detail) && isset($detail['Kontrahent']['KodPocztowy']) ? $detail['Kontrahent']['KodPocztowy'] : null, 'the document carries the approved postcode');
+        assertSame('logo', is_array($detail) && isset($detail['NazwaSzablonu']) ? $detail['NazwaSzablonu'] : null, 'the document carries NazwaSzablonu logo');
+        assertTrue(strpos((string) $receipt->request_payload, $newZip) !== false, 'request_payload carries the approved postcode');
+    } finally {
+        if (isset($originalAddress) && is_array($originalAddress)) {
+            $db->update('address', array('company' => $originalAddress['company'], 'vat_number' => $originalAddress['vat_number']), 'id_address = ' . (int) $order->id_address_invoice);
+            Cache::clean('objectmodel_Address_' . (int) $order->id_address_invoice . '_*');
+        }
+        $db->update('customer', array('is_guest' => $originalGuest), 'id_customer = ' . (int) $customer->id);
+        smokeRestoreSetting('IFIRMA_DATA_REQUEST_AUTO_ACCEPT', $previous['mode']);
+        smokeRestoreSetting('IFIRMA_DOC_TEMPLATE', $previous['template']);
+    }
+}
+
+function scenarioP($module, $triggerState)
+{
+    $order = freshScenario('P. Auto-accept keeps identity changes pending');
+    if (!$order) {
+        return;
+    }
+    $customer = new Customer((int) $order->id_customer);
+    $customer->logged = 1;
+    Context::getContext()->customer = $customer;
+    $db = Db::getInstance();
+    $previousMode = smokeSetting('IFIRMA_DATA_REQUEST_AUTO_ACCEPT', 'safe');
+    $service = IfirmaDataRequestService::build($module);
+    try {
+        $db->delete('ifirma_data_request', 'id_customer = ' . (int) $customer->id);
+        $address = new Address((int) $order->id_address_invoice);
+        $currentNip = preg_replace('/\D/', '', preg_replace('/^\s*PL/i', '', (string) ($address->vat_number !== '' ? $address->vat_number : $address->dni)));
+        $newNip = $currentNip === '5250001234' ? '1234563218' : '5250001234';
+
+        // 1. mode safe, the NIP (and so the buyer identity) changes: the request waits
+        $input = smokeRequestInput($module, $order, array(
+            'want_invoice_for_company' => '1',
+            'company' => trim((string) $address->company) !== '' ? $address->company : 'Smoke Sp. z o.o.',
+            'vat_number' => $newNip,
+        ));
+        $request = null;
+        try {
+            $request = $service->submit($order, $customer, $input);
+        } catch (Exception $e) {
+            assertTrue(false, 'safe mode: NIP change submitted', $e->getMessage() . ' ' . json_encode(isset($e->errors) ? $e->errors : array()));
+        }
+        if ($request) {
+            assertSame('pending', $request->status, 'safe mode, NIP changed: the request stays pending');
+            assertTrue(!$request->isAutoApproved(), 'safe mode, NIP changed: not approved automatically');
+            $merchant = smokeMerchantMails($order);
+            if (assertSame(1, count($merchant), 'safe mode, NIP changed: the merchant notification is sent')) {
+                $both = (string) $merchant[0]['text'] . (string) $merchant[0]['html'];
+                assertTrue(strpos($both, 'Approved automatically') === false, 'safe mode, NIP changed: the merchant mail has no automatic line');
+                assertTrue(strpos((string) $merchant[0]['text'], $newNip) !== false || strpos((string) $merchant[0]['text'], 'Smoke Sp. z o.o.') !== false || strpos((string) $merchant[0]['text'], $input['company']) !== false,
+                    'safe mode, NIP changed: the merchant mail carries the requested data');
+            }
+            changeState($order, $triggerState);
+            $receipt = receiptOf($order);
+            assertSame('held', $receipt ? $receipt->status : null, 'safe mode, NIP changed: the pipeline holds the issuance');
+            assertTrue(!$receipt || !$receipt->isIssued(), 'safe mode, NIP changed: no document issued');
+            assertSame(0, remoteDocumentCount(), 'safe mode, NIP changed: nothing created in iFirma');
+        }
+
+        // 2. mode none, only the postcode changes: pending as before (a second order of the same customer)
+        smokeSetting('IFIRMA_DATA_REQUEST_AUTO_ACCEPT', 'none');
+        $order2 = createOrder();
+        if (!assertTrue($order2 instanceof Order && Validate::isLoadedObject($order2), 'second order created')) {
+            return;
+        }
+        $db->delete('ifirma_data_request', 'id_customer = ' . (int) $customer->id);
+        mailClear();
+        $input2 = smokeRequestInput($module, $order2, array('postcode' => smokeOtherPostcode(new Address((int) $order2->id_address_invoice))));
+        $request2 = null;
+        try {
+            $request2 = $service->submit($order2, $customer, $input2);
+        } catch (Exception $e) {
+            assertTrue(false, 'none mode: postcode change submitted', $e->getMessage() . ' ' . json_encode(isset($e->errors) ? $e->errors : array()));
+        }
+        if ($request2) {
+            assertSame('pending', $request2->status, 'none mode, postcode only: the request is pending');
+            assertTrue(!$request2->isAutoApproved() && (string) $request2->auto_mode === '', 'none mode: auto_mode stays empty');
+            $merchant2 = smokeMerchantMails($order2);
+            if (assertSame(1, count($merchant2), 'none mode: the merchant notification is sent')) {
+                assertTrue(strpos((string) $merchant2[0]['text'] . (string) $merchant2[0]['html'], 'Approved automatically') === false, 'none mode: the merchant mail has no automatic line');
+            }
+            changeState($order2, $triggerState);
+            $receipt2 = receiptOf($order2);
+            assertSame('held', $receipt2 ? $receipt2->status : null, 'none mode: the pipeline holds the issuance');
+        }
+    } finally {
+        smokeRestoreSetting('IFIRMA_DATA_REQUEST_AUTO_ACCEPT', $previousMode);
+    }
+}
+
+function scenarioQ($module, $actions)
+{
+    $order = freshScenario('Q. Stamp prefix and shop webpage');
+    if (!$order) {
+        return;
+    }
+    $previous = array(
+        'prefix' => smokeSetting('IFIRMA_ORDER_STAMP_PREFIX', 'smoke'),
+        'url' => smokeSetting('IFIRMA_SHOP_URL', 'https://smoke.example'),
+        'copy' => smokeSetting('IFIRMA_SEND_COPY_MODE', 'none'),
+    );
+    try {
+        // 1. a document of the shop: Uwagi with the stamp and the webpage, the bare stamp in NUMER_ZAMOWIENIA
+        mailClear();
+        $stamp = 'smoke-' . (int) $order->id . '-' . $order->reference;
+        assertSame($stamp, IfirmaPayloadBuilder::buildOrderReference($order), 'the order stamp uses the configured prefix');
+        $result = IfirmaIssuancePipeline::build($module)->run($order, array('trigger' => 'manual'));
+        $receipt = receiptOf($order);
+        if (!assertTrue($result->ok && $receipt && $receipt->isIssued(), 'document issued', $result->message)) {
+            return;
+        }
+        $detail = smokeMockDetail($receipt->ifirma_id);
+        assertSame($stamp . ' https://smoke.example', is_array($detail) && isset($detail['Uwagi']) ? $detail['Uwagi'] : null, 'Uwagi is "<stamp> <shop webpage>"');
+        $note = is_array($detail) && isset($detail['DodatkoweUwagi']) ? $detail['DodatkoweUwagi'] : array();
+        $info = isset($note['Info']) ? $note['Info'] : (isset($note[0]['Info']) ? $note[0]['Info'] : null);
+        assertSame($stamp, $info, 'DodatkoweUwagi Info is the bare stamp');
+        assertSame($stamp, (string) $receipt->order_reference, 'the stamp is stored on the receipt');
+
+        // 2. the delivery mail attachment and the customer download carry the shop-domain name
+        $number = (string) $receipt->ifirma_number;
+        $expectedName = 'smoke.example-' . preg_replace('/[^0-9A-Za-z._-]/', '_', $number) . '.pdf';
+        assertSame($expectedName, IfirmaShopLink::pdfFileName($number), 'pdfFileName() gives smoke.example-<number>.pdf');
+        $mails = mailFind(function ($m) use ($number) {
+            return strpos((string) $m['subject'], $number) !== false;
+        });
+        if (assertSame(1, count($mails), 'the delivery mail is in the sink')) {
+            assertMail($mails[0], array(
+                'attachment_count' => 1,
+                'attachments' => array(array('filename' => $expectedName, 'content_type' => 'application/pdf')),
+                'html_contains' => array('https://smoke.example'),
+            ), 'delivery mail');
+        }
+        smokeCustomerDownloadCheck($order, $receipt, $expectedName);
+
+        // 3. a remote document stamped with the default prefix (legacy stamp) is adopted, nothing is created
+        $order2 = createOrder();
+        if (!assertTrue($order2 instanceof Order && Validate::isLoadedObject($order2), 'second order created for the legacy stamp')) {
+            return;
+        }
+        mockReset();
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', '');
+        $address = new Address((int) $order2->id_address_invoice);
+        $seedId = seedDocument(array(
+            'doc_type' => 'fakturakraj',
+            'contractor' => array('Nazwa' => trim($address->firstname . ' ' . $address->lastname), 'Identyfikator' => 'EXT1'),
+            'gross' => round((float) $order2->total_paid_tax_incl, 2),
+            'currency' => currencyIso($order2),
+            'uwagi' => 'PS-ORDER-' . (int) $order2->id . '-' . $order2->reference,
+            'created_by' => 'external',
+        ));
+        assertTrue($seedId !== '', 'document stamped with the default prefix seeded', 'id=' . $seedId);
+        $result2 = IfirmaIssuancePipeline::build($module)->run($order2, array('trigger' => 'manual'));
+        assertSame('adopted', $result2->outcome, 'the legacy-stamped document is adopted');
+        $receipt2 = receiptOf($order2);
+        assertSame($seedId, $receipt2 ? (string) $receipt2->ifirma_id : null, 'the receipt carries the seeded id');
+        assertSame(1, remoteDocumentCount(), 'no document was created (still 1 in iFirma)');
+
+        // 4. a document stamped by another shop's prefix is not adopted by the stamp
+        $order3 = createOrder();
+        if (!assertTrue($order3 instanceof Order && Validate::isLoadedObject($order3), 'third order created for the foreign stamp')) {
+            return;
+        }
+        mockReset();
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', '');
+        $otherId = seedDocument(array(
+            'doc_type' => 'fakturakraj',
+            'contractor' => array('Nazwa' => 'Smoke Customer', 'Identyfikator' => guardIdentifierFor($order3)),
+            'currency' => currencyIso($order3),
+            'sale_date' => IfirmaPayloadBuilder::orderSaleDate($order3),
+            'Pozycje' => seedPositionsFor($order3),
+            'uwagi' => 'other-' . (int) $order3->id . '-' . $order3->reference,
+            'created_by' => 'external',
+        ));
+        assertTrue($otherId !== '', 'document stamped other-... seeded', 'id=' . $otherId);
+        $result3 = IfirmaIssuancePipeline::build($module)->run($order3, array('trigger' => 'manual'));
+        assertTrue($result3->outcome !== 'adopted', 'the foreign stamp does not adopt the document', 'outcome ' . $result3->outcome);
+        assertSame('suspected', $result3->outcome, 'it goes through the detail verification: the buyer\'s same-day document is a suspected duplicate');
+        $receipt3 = receiptOf($order3);
+        assertSame(array($otherId), candidateIds($receipt3), 'the document is recorded as a candidate');
+        assertTrue(!$receipt3 || (string) $receipt3->source !== 'external', 'the receipt is not linked to it');
+        assertSame(1, remoteDocumentCount(), 'nothing was created (still 1 in iFirma)');
+    } finally {
+        smokeRestoreSetting('IFIRMA_ORDER_STAMP_PREFIX', $previous['prefix']);
+        smokeRestoreSetting('IFIRMA_SHOP_URL', $previous['url']);
+        smokeRestoreSetting('IFIRMA_SEND_COPY_MODE', $previous['copy']);
+        mockReset();
+    }
+}
+
+/**
+ * Logs the order's customer in over HTTP (the demo customer's password) and downloads the document
+ * through the front controller; the Content-Disposition name must equal the attachment name. Skips when
+ * the login does not work for this customer.
+ */
+function smokeCustomerDownloadCheck(Order $order, $receipt, $expectedName)
+{
+    $customer = new Customer((int) $order->id_customer);
+    $context = Context::getContext();
+    $web = new SmokeWeb();
+    $login = $web->request('GET', $context->link->getPageLink('authentication'));
+    $web->request('POST', $context->link->getPageLink('authentication'), array(
+        'email' => $customer->email, 'password' => '123456789', 'submitLogin' => '1', 'back' => 'my-account',
+    ));
+    unset($login);
+    $url = $context->link->getModuleLink('ifirma', 'receipt', array('token' => $receipt->security_token));
+    $pdf = $web->request('GET', $url);
+    if ($pdf['code'] !== 200 || substr($pdf['body'], 0, 5) !== '%PDF-') {
+        skip('customer download name', 'the customer could not be logged in over HTTP with the demo password (HTTP ' . $pdf['code'] . ' at ' . $pdf['url'] . ')');
+
+        return;
+    }
+    $disposition = preg_match('/^Content-Disposition:\s*(.+)$/mi', $pdf['headers'], $m) ? trim($m[1]) : '';
+    assertTrue(strpos($disposition, 'filename="' . $expectedName . '"') !== false || strpos($disposition, 'filename=' . $expectedName) !== false,
+        'the customer download answers the name ' . $expectedName, $disposition);
+}
+
 $scenarios = array(
     'J' => function () use ($module) {
         scenarioJ($module);
@@ -1622,6 +2156,15 @@ $scenarios = array(
     },
     'N' => function () use ($module, $actions) {
         scenarioN($module, $actions);
+    },
+    'O' => function () use ($module, $triggerState) {
+        scenarioO($module, $triggerState);
+    },
+    'P' => function () use ($module, $triggerState) {
+        scenarioP($module, $triggerState);
+    },
+    'Q' => function () use ($module, $actions) {
+        scenarioQ($module, $actions);
     },
 );
 
