@@ -260,6 +260,11 @@ class IfirmaDuplicateMatcher
     }
 
     /**
+     * Whether the detail of a document carries one of the order stamps. A detail that decodes as JSON is
+     * searched value by value, with the buyer block (`Kontrahent`, typed by the buyer) left out, and the
+     * stamp must stand alone as a token (see containsToken()). A detail that is not JSON is searched as raw
+     * text, with the JSON-escaped forms of the stamp as well.
+     *
      * @param string          $detailRaw raw JSON text of the document detail
      * @param string|string[] $reference one order reference stamp, or a list of accepted stamps
      * @return bool true when any stamp is found
@@ -267,11 +272,31 @@ class IfirmaDuplicateMatcher
     public static function confirm($detailRaw, $reference)
     {
         $detailRaw = (string) $detailRaw;
-        if ($detailRaw === '') {
+        $stamps = array();
+        foreach ((array) $reference as $stamp) {
+            if ((string) $stamp !== '') {
+                $stamps[] = (string) $stamp;
+            }
+        }
+        if ($detailRaw === '' || empty($stamps)) {
             return false;
         }
-        foreach ((array) $reference as $stamp) {
-            if (self::containsStamp($detailRaw, (string) $stamp)) {
+
+        $decoded = json_decode($detailRaw, true);
+        if (is_array($decoded)) {
+            foreach (self::textsOutsideBuyer($decoded) as $text) {
+                foreach ($stamps as $stamp) {
+                    if (self::containsToken($text, $stamp)) {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        foreach ($stamps as $stamp) {
+            if (self::rawContainsStamp($detailRaw, $stamp)) {
                 return true;
             }
         }
@@ -280,31 +305,62 @@ class IfirmaDuplicateMatcher
     }
 
     /**
-     * @param string $detailRaw
-     * @param string $reference
+     * @param mixed $node a decoded JSON node
+     * @return string[] every string value of the node, the `Kontrahent` subtrees left out at any depth
+     */
+    private static function textsOutsideBuyer($node)
+    {
+        if (is_string($node)) {
+            return array($node);
+        }
+        $texts = array();
+        if (is_array($node)) {
+            foreach ($node as $key => $value) {
+                if ($key === 'Kontrahent') {
+                    continue;
+                }
+                $texts = array_merge($texts, self::textsOutsideBuyer($value));
+            }
+        }
+
+        return $texts;
+    }
+
+    /**
+     * @param string $text
+     * @param string $stamp
+     * @return bool whether the stamp stands in the text as a whole token: not preceded by a letter, digit,
+     *              dot, underscore or hyphen, and not followed by a letter, digit, underscore or hyphen nor
+     *              by a dot and a digit (a sentence may end with the stamp and a full stop)
+     */
+    private static function containsToken($text, $stamp)
+    {
+        return (bool) preg_match(
+            '/(?<![A-Za-z0-9._-])' . preg_quote($stamp, '/') . '(?![A-Za-z0-9_-])(?!\.[A-Za-z0-9])/',
+            $text
+        );
+    }
+
+    /**
+     * @param string $detailRaw not JSON
+     * @param string $stamp
      * @return bool
      */
-    private static function containsStamp($detailRaw, $reference)
+    private static function rawContainsStamp($detailRaw, $stamp)
     {
-        if ($reference === '') {
-            return false;
-        }
-        if (strpos($detailRaw, $reference) !== false) {
-            return true;
-        }
         $variants = array(
-            substr((string) json_encode($reference), 1, -1),
-            substr((string) json_encode($reference, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), 1, -1),
+            $stamp,
+            substr((string) json_encode($stamp), 1, -1),
+            substr((string) json_encode($stamp, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), 1, -1),
         );
-        foreach ($variants as $v) {
-            if ($v !== '' && $v !== $reference && strpos($detailRaw, $v) !== false) {
+        foreach ($variants as $variant) {
+            if ($variant !== '' && self::containsToken($detailRaw, $variant)) {
                 return true;
             }
         }
 
         return false;
     }
-
     /**
      * @param array $row
      * @return array

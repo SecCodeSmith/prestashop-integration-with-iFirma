@@ -82,6 +82,114 @@ class DuplicateMatcherTest extends TestCase
         $this->assertTrue(IfirmaDuplicateMatcher::confirm('{"Uwagi":"PS-ORDER-15-AB\\/CD"}', $ref));
     }
 
+    // ---- the stamp is searched as a whole token outside the buyer block (red team 1.6.0 F6) ----------
+
+    private function detailJson(array $node)
+    {
+        return json_encode(array('response' => $node + array('Kod' => 0)));
+    }
+
+    public function testAStampTypedIntoTheBuyerBlockIsNotConfirmed()
+    {
+        $stamp = 'PS-ORDER-15-ABCDEFGHI';
+        foreach (array('Ulica', 'Nazwa', 'Miejscowosc', 'Email') as $field) {
+            $raw = $this->detailJson(array(
+                'Uwagi' => 'something else',
+                'Kontrahent' => array($field => 'Dom ' . $stamp),
+            ));
+            $this->assertFalse(IfirmaDuplicateMatcher::confirm($raw, $stamp), $field);
+        }
+        // the buyer block at the top level of the detail is left out as well
+        $this->assertFalse(IfirmaDuplicateMatcher::confirm(json_encode(array('Kontrahent' => array('Ulica' => $stamp))), $stamp));
+    }
+
+    public function testTheStampIsConfirmedInUwagiAndInDodatkoweUwagiWhateverTheBuyerBlockHolds()
+    {
+        $stamp = 'PS-ORDER-15-ABCDEFGHI';
+        $buyer = array('Ulica' => 'Testowa 1');
+
+        $this->assertTrue(IfirmaDuplicateMatcher::confirm(
+            $this->detailJson(array('Uwagi' => $stamp . ' https://shop.example', 'Kontrahent' => $buyer)),
+            $stamp
+        ));
+        $this->assertTrue(IfirmaDuplicateMatcher::confirm(
+            $this->detailJson(array('DodatkoweUwagi' => array('Typ' => 'NUMER_ZAMOWIENIA', 'Info' => $stamp), 'Kontrahent' => $buyer)),
+            $stamp
+        ));
+        // the stamp in the buyer block as well changes nothing
+        $this->assertTrue(IfirmaDuplicateMatcher::confirm(
+            $this->detailJson(array('Uwagi' => $stamp, 'Kontrahent' => array('Ulica' => $stamp))),
+            $stamp
+        ));
+    }
+
+    public function testAStampThatIsOnlyThePrefixOfAnotherStampIsNotConfirmed()
+    {
+        $raw = $this->detailJson(array('Uwagi' => 'PS-ORDER-15-ABCDEFGHIJ', 'DodatkoweUwagi' => array('Info' => 'PS-ORDER-15-ABCDEFGHIJ')));
+
+        $this->assertFalse(IfirmaDuplicateMatcher::confirm($raw, 'PS-ORDER-15-ABCDEFGHI'));
+        $this->assertTrue(IfirmaDuplicateMatcher::confirm($raw, 'PS-ORDER-15-ABCDEFGHIJ'));
+        // a stamp that continues a longer word on the left is another token too
+        $this->assertFalse(IfirmaDuplicateMatcher::confirm($this->detailJson(array('Uwagi' => 'XPS-ORDER-15-ABCDEFGHI')), 'PS-ORDER-15-ABCDEFGHI'));
+    }
+
+    /** @return array[] label => array(text around the stamp, confirmed) */
+    public function boundaries()
+    {
+        return array(
+            'whole text' => array('%s', true),
+            'space and url' => array('%s https://shop.example/', true),
+            'sentence end' => array('Order: %s.', true),
+            'colon and comma' => array('(%s), ok', true),
+            'digit continues' => array('%s0', false),
+            'letter continues' => array('%sX', false),
+            'hyphen continues' => array('%s-2', false),
+            'dot and digit continue' => array('%s.5', false),
+            'letter before' => array('X%s', false),
+            'underscore before' => array('_%s', false),
+        );
+    }
+
+    /**
+     * @dataProvider boundaries
+     */
+    public function testTheStampMustStandAloneInTheText($pattern, $confirmed)
+    {
+        $stamp = 'PS-ORDER-15-ABCDEFGHI';
+        $raw = $this->detailJson(array('Uwagi' => sprintf($pattern, $stamp)));
+
+        $this->assertSame($confirmed, IfirmaDuplicateMatcher::confirm($raw, $stamp));
+    }
+
+    public function testAListOfStampsIsSearchedOutsideTheBuyerBlockToo()
+    {
+        $stamps = array('scmedical-15-ABCDEFGHI', 'PS-ORDER-15-ABCDEFGHI');
+
+        $this->assertTrue(IfirmaDuplicateMatcher::confirm($this->detailJson(array('Uwagi' => 'PS-ORDER-15-ABCDEFGHI')), $stamps));
+        $this->assertFalse(IfirmaDuplicateMatcher::confirm(
+            $this->detailJson(array('Kontrahent' => array('Ulica' => 'scmedical-15-ABCDEFGHI'))),
+            $stamps
+        ));
+    }
+
+    public function testADetailThatIsNotJsonIsSearchedAsRawTextByWholeToken()
+    {
+        $stamp = 'PS-ORDER-15-ABCDEFGHI';
+
+        $this->assertTrue(IfirmaDuplicateMatcher::confirm('plain text: ' . $stamp . ' end', $stamp));
+        $this->assertFalse(IfirmaDuplicateMatcher::confirm('plain text: ' . $stamp . 'J end', $stamp));
+        // the JSON-escaped form is looked for in the raw text only
+        $this->assertTrue(IfirmaDuplicateMatcher::confirm('broken {"Uwagi":"PS-ORDER-15-AB\/CD"', 'PS-ORDER-15-AB/CD'));
+        $this->assertFalse(IfirmaDuplicateMatcher::confirm('broken {"Uwagi":"PS-ORDER-15-AB\/CDX"', 'PS-ORDER-15-AB/CD'));
+        // a scalar JSON value is not a document: raw text
+        $this->assertTrue(IfirmaDuplicateMatcher::confirm('"' . $stamp . '"', $stamp));
+    }
+
+    public function testAnEscapedStampInsideADecodedStringIsConfirmed()
+    {
+        $this->assertTrue(IfirmaDuplicateMatcher::confirm('{"response":{"Uwagi":"x PS-ORDER-15-AB\/CD y","Kontrahent":{}}}', 'PS-ORDER-15-AB/CD'));
+        $this->assertTrue(IfirmaDuplicateMatcher::confirm('{"Uwagi":"sklep łódź PS-ORDER-15-ŁODZ"}', 'PS-ORDER-15-ŁODZ'));
+    }
     public function testConfirmConfiguredStampFoundInList()
     {
         $stamps = array('scmedical-15-ABCDEFGHI', 'PS-ORDER-15-ABCDEFGHI');
