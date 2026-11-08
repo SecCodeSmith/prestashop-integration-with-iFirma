@@ -15,6 +15,11 @@ PDF back to the customer and keeps the payment and KSeF status in line with iFir
 | **Payment and status sync** (register the payment, read it back) | Back office → iFirma panel → “Update status in iFirma”, “Refresh from iFirma”, and a cron URL |
 | **KSeF submission** of issued invoices | Pipeline step `ksef`; “Send to KSeF” in the order panel |
 | **Customer data‑change requests** before a document is issued | Front office → *Order detail* → “Request a change to billing data”; review in the order panel |
+| **Guest data-change requests** with a one-time code e-mailed to the order address | Front office → *guest order tracking* → “Change invoice data” (`/module/ifirma/guestrequest`) |
+| **Automatic approval** of data-change requests (`none`, `safe`, `all`) | Module configuration → *Accept data change requests automatically* |
+| **iFirma print template** (logo and layout of the document) | Module configuration → *Document template* |
+| **Order stamp prefix** for several shops in one iFirma account | Module configuration → *Order stamp prefix* |
+| **Shop webpage** in the e-mails, the document comments and the PDF file names (`<shop-domain>-<number>.pdf`) | Module configuration → *Shop webpage* |
 | **Contractor linking** to contractors that already exist in iFirma | Module configuration (CSV import) and the back‑office customer page |
 
 The iFirma column in the back‑office Orders list shows at a glance which orders have a document:
@@ -118,9 +123,9 @@ Advanced Parameters > Logs (messages start with "iFirma"); neither contains API 
 |------|----------|
 | [docs/architecture.md](docs/architecture.md) | How the module is built: hooks, controllers, classes, the issuance pipeline, data model, API surface, test harness |
 | [docs/configuration.md](docs/configuration.md) | Settings walk-through (API key fields, base URL, cron header, the pause after a rejected key), every configuration key, the permission levels, duplicate guard settings, rate limits |
-| [docs/usage.md](docs/usage.md) | Issuing documents, orders list and its Issue action, the iFirma documents list with bulk actions, monitoring, the notification tab and cron, duplicate guard, what the customer sees and the download limits, delivery, KSeF, customer page, data‑change requests and their limits |
+| [docs/usage.md](docs/usage.md) | Issuing documents, orders list and its Issue action, the iFirma documents list with bulk actions, monitoring, the notification tab and cron, duplicate guard, what the customer sees and the download limits, delivery, KSeF, customer page, data‑change requests, auto-accept and guest orders, and their limits |
 | [docs/contractors.md](docs/contractors.md) | Linking existing iFirma contractors: CSV import, matching while issuing, manual links |
-| [docs/upgrading.md](docs/upgrading.md) | What to do when upgrading from 1.0.x, to 1.2.0, 1.4.0, 1.4.1 and 1.5.0 |
+| [docs/upgrading.md](docs/upgrading.md) | What to do when upgrading from 1.0.x, to 1.2.0, 1.4.0, 1.4.1, 1.5.0 and 1.6.0 |
 | [docs/development.md](docs/development.md) | Unit tests, package builds, the test‑stack submodule, releases, dev dependencies |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | iFirma error codes and fixes for the common problems, the pause after a rejected key, rate-limited bulk runs, permission messages, download limits |
 | [test-stack/README.md](test-stack/README.md) | The mock iFirma API and the Docker test stack |
@@ -128,6 +133,13 @@ Advanced Parameters > Logs (messages start with "iFirma"); neither contains API 
 | [tests/Stubs/README.md](tests/Stubs/README.md) | The PrestaShop stubs used by the unit tests |
 
 ## Changelog
+
+### 1.6.0
+
+- **Guest data-change requests**: visitors who ordered without an account change the invoice data after a six-digit code sent to the order e-mail (valid 15 minutes, single use, limited resends). See [Guest orders](docs/usage.md#guest-orders).
+- **Auto-accept** of data-change requests (`none` by default, `safe` or `all`); see [Customer data-change requests](docs/usage.md#customer-data-change-requests).
+- **iFirma print template**, **order stamp prefix** and **shop webpage** settings ([configuration](docs/configuration.md#settings-walk-through)); the webpage and the shop logo also brand the module's e-mails.
+- **PDF file names** are now `<shop-domain>-<number>.pdf`. See [Upgrading to 1.6.0](docs/upgrading.md#upgrading-to-160).
 
 ### 1.5.0
 

@@ -101,3 +101,19 @@ dependencies installed in a module root shadow PrestaShop's own classes (observe
 breaking PrestaShop 9's module parser, and test stubs replacing `Module`). Composer therefore installs into
 `tests/vendor/` (`config.vendor-dir`), a path PrestaShop never loads. Do not move it back, and never deploy a
 `vendor/` directory; the release zip and the npm tarball exclude `tests/`.
+
+### Guest requests, auto-accept and the smoke suite (1.6.0)
+
+The Docker smoke suite (`tests/smoke/run.php`, described in [tests/smoke/README.md](../tests/smoke/README.md)) runs one lettered scenario per area. Since 1.6.0 it has three more:
+
+| Letter | Scenario | What it proves |
+|---|---|---|
+| `O` | Guest one-time code | A guest order is identified with a wrong e-mail (nothing in the mail sink, neutral message), then with the right one; the six-digit code is read from the sink, a wrong code is refused, the right one opens the form; a safe change in mode `safe` is approved automatically, the customer approval mail and the merchant mail with the automatic line arrive, and the pipeline resumes. |
+| `P` | Auto-accept keeps identity changes pending | In mode `safe` a request that changes the NIP stays pending, the hold is recorded and the merchant mail has no automatic line; in mode `none` every request stays pending as before. |
+| `Q` | Stamp prefix and shop webpage | With a custom prefix and webpage the mock's document shows `Uwagi` as the stamp, a space and the webpage, and `NUMER_ZAMOWIENIA` as the bare stamp; a remote document with the legacy `PS-ORDER-` stamp is adopted, one with another shop's prefix is not; the delivery attachment and the customer download are named `<shop-domain>-<number>.pdf`. |
+
+Run one scenario with `SMOKE_ONLY=<letter>`, for example `SMOKE_ONLY=O`. Scenario `N` (e-mails) also checks the inline logo and the shop link of the module's e-mails.
+
+**Shared form partial.** The invoice-data fields of the customer form live in `views/templates/front/_datarequest_fields.tpl`. Both `datarequest.tpl` (logged-in customers) and `guestrequest.tpl` (guests) include it, so the field list, the messages and the pre-filling cannot drift apart.
+
+**Guest code table.** `ifirma_guest_code` (with the shop's table prefix) holds the one-time codes: order, a salted SHA-256 hash of the code and its salt (never the code), creation and expiry time, the attempt count, the time it was used, an invalidated flag and a keyed hash of the client address for the per-address limit; the indexes `idx_order` and `idx_ip_date` serve the limits. It is created on install and by `upgrade/upgrade-1.6.0.php`, dropped on uninstall, and rows older than 24 hours are deleted whenever a code is issued (`IfirmaGuestCodeService`). Data requests approved by the auto-accept mode are marked in the new `auto_mode` column of `ifirma_data_request`.

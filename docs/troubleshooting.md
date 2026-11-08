@@ -136,5 +136,13 @@ PDF repeatedly, such as a link preview or a script.
 
 **On the test stack:** the shop sends to the mock's SMTP sink, not to a real mail server. Open `http://localhost:8001/__mock/status` and read the Mail section, or call `GET /__mock/mail`. `tests/smoke/run.php` leaves the shop pointed at the sink, so mail from the shop keeps going there after a smoke run until its mail settings are changed back.
 
+### Guest did not receive the code
+
+**Meaning:** the guest request page answers "If the data matches an order, we have sent a code" whether or not a code was sent, so a missing e-mail has one of these causes: the reference or the e-mail did not match the order exactly (the e-mail is compared ignoring case, the reference as typed), the order already has an issued or adopted document, the data-change switch is off, or a limit refused the request (one code per order per 60 seconds, 5 codes per order per 24 hours, 20 codes per client address per hour). A code is valid for 15 minutes and is invalidated after 5 wrong attempts; the page then offers a new one.
+
+**What to do on a production shop:** check the shop's mail method under Advanced Parameters > E-mail and the Logs for lines starting with "iFirma guest code" (they name the order id, never the address). When a limit was hit, wait for its window to pass; the customer can also log in or create an account and use the account form, which needs no code.
+
+**On the test stack:** the code mail lands in the mock's SMTP sink (`GET /__mock/mail`, text part); the smoke scenario O reads it from there.
+
 **Reporting a problem.** Copy the diagnostics block (request, response, contractor step, last error) and the
 relevant lines from Advanced Parameters > Logs (messages start with "iFirma"). Neither contains API keys.

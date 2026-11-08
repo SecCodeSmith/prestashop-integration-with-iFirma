@@ -1,6 +1,6 @@
 # Usage
 
-How the module is used day to day: issuing documents, states that need attention, the Orders list, the iFirma documents list with its bulk actions, monitoring and the notification tab, the duplicate guard, what the customer sees, delivery, KSeF, the back-office customer page and customer data-change requests.
+How the module is used day to day: issuing documents, states that need attention, the Orders list, the iFirma documents list with its bulk actions, monitoring and the notification tab, the duplicate guard, what the customer sees, delivery, KSeF, the back-office customer page, customer data-change requests (with automatic approval) and guest orders.
 
 [Back to README](../README.md)
 
@@ -23,6 +23,11 @@ the outcome of every step is stored on the order's receipt record:
    and stores the returned `Identyfikator`. If iFirma answers `Kod 201` naming `DodatkoweUwagi`,
    or `Kod 200` while `DodatkoweUwagi` was sent, the request is repeated once without that object
    (the reference stays in `Uwagi`); any other rejection is recorded as an error.
+   If your iFirma account has more than one print template, enter the exact name of the one to use in
+   **Document template** ([settings](configuration.md#settings-walk-through)); the module sends it with every
+   document and iFirma prints the logo and layout defined in that template. Leave the field empty to use the
+   default template. A name that does not exist in your iFirma account makes document creation fail (see
+   [Create fails after setting a document template](troubleshooting.md#create-fails-after-setting-a-document-template)).
 4. **Number** - the document number is read from iFirma and stored.
 5. **KSeF** - submits the invoice to KSeF through iFirma when the mode asks for it (see "KSeF (e-invoicing)"). The step is non-blocking: a failure is recorded on the receipt and delivery still runs.
 6. **Deliver** - the document is sent through the configured channel (see "Delivery").
@@ -207,9 +212,17 @@ Before the module creates a document it checks whether the order already has one
 whether created by this module earlier, by iFirma's own e-commerce integrator or by
 hand. How it works:
 
-1. **Reference stamping.** Every document the module creates carries
-   `PS-ORDER-{id_order}-{order reference}` in `Uwagi` and as a `NUMER_ZAMOWIENIA`
-   additional remark.
+1. **Reference stamping.** Every document the module creates carries the order stamp
+   `{prefix}-{id_order}-{order reference}` in `Uwagi` and as a `NUMER_ZAMOWIENIA`
+   additional remark. The prefix is the **Order stamp prefix** setting
+   ([settings](configuration.md#settings-walk-through)) and defaults to `PS-ORDER`.
+   When several shops share one iFirma account, give each shop its own prefix (for example
+   `scmedical`) so the duplicate check never mixes up their orders; a stamp with another shop's
+   prefix is never a match. Documents issued earlier with the default `PS-ORDER` stamp are still
+   recognised after you change the prefix: the guard looks for the configured stamp and for
+   `PS-ORDER-{id_order}-{order reference}`. If **Shop webpage** is set, it is printed in `Uwagi`
+   after the stamp (stamp, a space, the address; the 1000-character limit cuts the address, never
+   the stamp). The `NUMER_ZAMOWIENIA` entry holds only the stamp.
 2. **Local record first.** An order with an issued local receipt record never triggers a
    remote lookup.
 3. **List window.** `faktury.json` is queried from one day before the order date to today
@@ -293,6 +306,19 @@ After a document is issued the module e-mails it to the order customer as the la
 - `none`: nothing is sent and delivery is recorded as skipped.
 
 Documents adopted from iFirma (created elsewhere) are never auto-delivered; they are recorded as skipped (external). A failed delivery never undoes the issuance; the error is shown only in the back office. Use **Send again** in the order panel to resend any issued document, including adopted ones, through the configured channel (refused with a message when the channel is `none`).
+
+**File names.** The PDF of a document is named `<shop-domain>-<number>.pdf`, for example
+`hialumed.pl-FV_7_2026.pdf`, both when it is downloaded (by the customer or in the back office) and
+when it is attached to the e-mail. The shop domain is the host of the **Shop webpage** setting (lower
+case, without `www.`), or the shop's own domain when the setting is empty; characters other than
+letters, digits, `.`, `_` and `-` become `_`. Mail filters or scripts that match the old `ifirma-*.pdf`
+names must be changed (see [Upgrading to 1.6.0](upgrading.md#upgrading-to-160)).
+
+**E-mail branding.** The e-mails of the module show the shop logo and name at the top and the shop
+webpage at the bottom. The address comes from the **Shop webpage** setting
+([settings](configuration.md#settings-walk-through)); empty means the shop's own address. The logo on
+the printed document is a different thing: it comes from the print template of your iFirma account (see
+**Document template** under [Issuing documents](#issuing-documents-back-office)).
 
 With `shop_mail`, the PDF is fetched up to 3 times, waiting 3 s and then 7 s between attempts (10 s in total, inside the order-status request). Attempts are retried on no response or a transport error, HTTP 5xx, 404, 429, a non-PDF answer and an iFirma "document not found" code. Authentication and configuration errors (`Kod` 400, 401, 402, 403, 499, 500) and refusals by the module's own rate guard are not retried. After the last failure the delivery error reads "Could not download the PDF after 3 attempts: <last iFirma message>". The customer-page download keeps a single attempt, and a PDF that takes minutes to appear still needs **Send again**.
 
@@ -391,6 +417,22 @@ an order **before** the document is issued. Enabled by `IFIRMA_ALLOW_DATA_REQUES
   pointing to the request. When the request is approved or rejected, the pipeline runs
   immediately if automatic issuance is enabled and the trigger status was already
   reached; otherwise the next trigger or a manual Create issues the document.
+- **Automatic approval:** **Accept data change requests automatically**
+  (`IFIRMA_DATA_REQUEST_AUTO_ACCEPT`, [settings](configuration.md#settings-walk-through)) has three
+  modes, default `none`. With `none` every request waits for an employee. With `all` every valid
+  request is approved at once. With `safe` a request is approved at once only when it keeps the buyer
+  identity: the company / private choice (an address counts as a company when it has a company name or
+  a NIP), the NIP (compared without separators; both empty counts as unchanged) and the company name
+  stay as they are, while first name, last name, address lines, postcode, city and country may
+  change. Adding or changing a NIP, changing the company name and switching between company and
+  private person leave the request pending for the employee. An automatic approval is stored like any
+  other (the requested data becomes the approved data) and the order panel shows it as "automatic (safe
+  fields)" or "automatic (all)" with the accepted differences instead of an employee name. The customer
+  gets the approval e-mail, the merchant e-mail carries the line "Approved automatically (mode: safe)."
+  (or "(mode: all)."), and the issuance resumes at once when automatic issuance is on and the trigger
+  status was already reached; otherwise the next trigger or a manual Create issues the document. A
+  failure of the resumed issuance is recorded on the receipt as usual and shows the customer no error
+  text.
 - **Merchant notification:** a new request e-mails `IFIRMA_NOTIFY_EMAIL` (falls back to
   the shop e-mail) with the order reference, the requested data and the differences
   against the current invoice address.
@@ -412,3 +454,39 @@ an order **before** the document is issued. Enabled by `IFIRMA_ALLOW_DATA_REQUES
   "You have reached the limit of requests for today."
 - **Admin text.** The note written on approval and the reason of a rejection are limited to 1000 characters. An
   approval whose note is too long keeps the request pending.
+
+### Guest orders
+
+Visitors who ordered without an account can change the invoice data at
+`/module/ifirma/guestrequest` (the "Request a change to billing data" button on the guest tracking page leads there with
+the reference filled in). Logged-in customers are redirected to their order history, where each order
+links to the account form. The page is available only while **Allow customers to request billing data changes**
+(`IFIRMA_ALLOW_DATA_REQUEST`) is on; otherwise it says that changes are not available and no code is
+created or sent.
+
+1. **Identify.** The visitor enters the order reference and the e-mail address of the order. The page
+   always answers "If the data matches an order, we have sent a code to its e-mail address", whether or
+   not the order exists, the e-mail matches or an e-mail was sent, so nothing about the order is revealed.
+2. **Verify.** The visitor enters the six-digit code from the e-mail. It is valid for 15 minutes, works
+   once, and is invalidated after 5 wrong attempts (a new one can be requested from the same page). A
+   wrong, expired or used code gets the same "invalid or expired code" message. The e-mail contains no
+   link that verifies the code by itself.
+3. **Edit.** The visitor sees the same form as a logged-in customer, filled from the invoice address,
+   with the same checks, the 10-minute cool-down and the daily cap of 10 requests (counted on the
+   order's customer). The verified session is bound to that one order, lasts 30 minutes and ends on
+   submit, cancel or login. The form shows only the order reference and the invoice address fields.
+
+**Limits.** A new code can be requested at most once per 60 seconds per order, 5 times per order per 24
+hours, and 20 times per client address per hour. A refused request sends no e-mail and shows the same
+neutral message. Orders that already have an issued or adopted document get no code. Codes are stored
+only as salted hashes, and used or expired codes older than 24 hours are deleted whenever a new code is
+issued. When a customer reports that no code arrived, see
+[Guest did not receive the code](troubleshooting.md#guest-did-not-receive-the-code).
+
+**What the guest tracking page shows.** The module's block on the guest tracking page uses the same
+state wording as the account order page and links to the guest request page while a request is possible
+(not issued) or can be cancelled (held). It offers no PDF download there; for an issued document it
+shows the number and asks the guest to contact the shop.
+
+**What the merchant sees.** A guest request is reviewed like any other: it appears in the order panel,
+holds the issuance while pending and is covered by the auto-accept mode above.
