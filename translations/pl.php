@@ -290,6 +290,7 @@ $_MODULE['<{ifirma}prestashop>ifirmadatarequestservice_0f645cbb3cba9c4eab75ed7db
 $_MODULE['<{ifirma}prestashop>ifirmadatarequestservice_59c80a66438b887b562eb3a7661bec7a'] = 'Nieprawidłowy token formularza.';
 $_MODULE['<{ifirma}prestashop>ifirmadatarequestservice_51ce825eb18b8faee0d76dd9486550cc'] = 'Poczekaj 10 minut przed wysłaniem kolejnej prośby dotyczącej tego zamówienia.';
 $_MODULE['<{ifirma}prestashop>ifirmadatarequestservice_56dc8b6d267b296683e691979e10135b'] = 'Osiągnięto dzienny limit próśb.';
+$_MODULE['<{ifirma}prestashop>ifirmadatarequestservice_6f36dcfdd75aa83ddb90031550c61a4d'] = 'Inna prośba dotycząca tego zamówienia jest właśnie przetwarzana. Poczekaj chwilę i spróbuj ponownie.';
 $_MODULE['<{ifirma}prestashop>ifirmadatarequestservice_e2e8d0a2b79a779bb06656d2a6f39a00'] = 'Nie udało się przetworzyć prośby.';
 $_MODULE['<{ifirma}prestashop>ifirmadatarequestservice_9303c9bd4f8178680dc382adbfcd62af'] = 'To pole jest wymagane.';
 $_MODULE['<{ifirma}prestashop>ifirmadatarequestservice_aac396d165f583b079b53e0615b135bb'] = 'NIP musi składać się z dokładnie 10 cyfr.';

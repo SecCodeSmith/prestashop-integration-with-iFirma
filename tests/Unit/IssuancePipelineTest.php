@@ -829,6 +829,83 @@ class IssuancePipelineTest extends TestCase
         $this->assertNull($this->pipeline->resumeAfterRequest($req));
     }
 
+    // ---- serialised resume (red team 1.6.0 F4) --------------------------------------------------------
+
+    private function resolvedRequestAtTheTrigger()
+    {
+        $req = $this->pendingRequest();
+        Db::getInstance()->whenGetValue('/SELECT id_ifirma_data_request.*status = "pending"/s', false);
+        $o = $this->order();
+        $o->current_state = 5;
+        Order::register($o);
+
+        return $req;
+    }
+
+    public function testTheResumeRunsUnderTheOrderLock()
+    {
+        $req = $this->resolvedRequestAtTheTrigger();
+        $this->queueFullSuccess();
+        $steps = array();
+        $db = Db::getInstance();
+        $db->whenGetValue('/^SELECT GET_LOCK\(/', function ($sql) use (&$steps) {
+            $steps[] = array($sql, count($this->t->calls));
+
+            return '1';
+        });
+        $db->whenGetValue('/^SELECT RELEASE_LOCK\(/', function ($sql) use (&$steps) {
+            $steps[] = array($sql, count($this->t->calls));
+
+            return '1';
+        });
+
+        $r = $this->pipeline->resumeAfterRequest($req);
+
+        $this->assertSame('issued', $r->outcome);
+        $this->assertCount(2, $steps);
+        $this->assertSame(array("SELECT GET_LOCK('ifirma_order_15', 5)", 0), $steps[0]);
+        $this->assertSame("SELECT RELEASE_LOCK('ifirma_order_15')", $steps[1][0]);
+        $this->assertGreaterThan(0, $steps[1][1], 'the document was issued before the lock was given back');
+    }
+
+    public function testTheResumeChecksAgainUnderTheLockWhetherAParallelRunAlreadyIssued()
+    {
+        $req = $this->resolvedRequestAtTheTrigger();
+        $this->queueFullSuccess();
+        // while this request waited for the lock, a parallel resume issued the document
+        Db::getInstance()->whenGetValue('/^SELECT GET_LOCK\(/', function () {
+            $receipt = new IfirmaReceipt();
+            $receipt->id_order = 15;
+            $receipt->ifirma_id = 4711;
+            $receipt->status = 'created';
+            $receipt->save();
+
+            return '1';
+        });
+
+        $this->assertNull($this->pipeline->resumeAfterRequest($req));
+
+        $this->assertCount(0, $this->t->calls, 'no second document is created');
+        $this->assertCount(1, IfirmaTestState::objects('ifirma_receipt'));
+        $queries = Db::getInstance()->queries;
+        $this->assertSame("SELECT RELEASE_LOCK('ifirma_order_15')", end($queries));
+    }
+
+    public function testTheResumeDoesNothingAndLogsWhenTheOrderLockIsNotGranted()
+    {
+        $req = $this->resolvedRequestAtTheTrigger();
+        $this->queueFullSuccess();
+        Db::getInstance()->whenGetValue('/^SELECT GET_LOCK\(/', '0');
+
+        $this->assertNull($this->pipeline->resumeAfterRequest($req));
+
+        $this->assertCount(0, $this->t->calls);
+        $this->assertSame(array(), IfirmaTestState::objects('ifirma_receipt'));
+        $this->assertCount(1, PrestaShopLogger::$logs);
+        $this->assertStringContainsString('lock of order 15 was not granted', PrestaShopLogger::$logs[0]['message']);
+        $this->assertSame(array(), preg_grep('/RELEASE_LOCK/', Db::getInstance()->queries));
+    }
+
     // ---- unknown outcome -----------------------------------------------------------------
 
     public function testCreateTimeoutIsUnknownWithSinglePost()

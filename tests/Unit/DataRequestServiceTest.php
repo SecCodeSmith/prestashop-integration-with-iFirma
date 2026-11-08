@@ -1578,6 +1578,65 @@ class DataRequestServiceTest extends TestCase
         $this->assertFalse(IfirmaDataRequestService::isValidToken(null));
     }
 
+    // ---- serialised submission (red team 1.6.0 F4) ----------------------------------------------------
+
+    public function testSubmitChecksAndStoresUnderTheOrderLockAndMailsAfterItsRelease()
+    {
+        Configuration::updateValue('IFIRMA_DATA_REQUEST_AUTO_ACCEPT', 'all');
+        $steps = array();
+        $db = Db::getInstance();
+        $db->whenGetValue('/^SELECT GET_LOCK\(/', function ($sql) use (&$steps) {
+            $steps[] = array($sql, count(IfirmaTestState::writes('ifirma_data_request')), count(Mail::$sent));
+
+            return '1';
+        });
+        $db->whenGetValue('/^SELECT RELEASE_LOCK\(/', function ($sql) use (&$steps) {
+            $steps[] = array($sql, count(IfirmaTestState::writes('ifirma_data_request')), count(Mail::$sent));
+
+            return '1';
+        });
+
+        $request = $this->submitPending();
+
+        $this->assertTrue($request->isApproved());
+        $this->assertSame(array(
+            array("SELECT GET_LOCK('ifirma_request_15', 2)", 0, 0),
+            // the pending save and the automatic approval are inside the lock, the mails are not
+            array("SELECT RELEASE_LOCK('ifirma_request_15')", 2, 0),
+        ), $steps);
+        $this->assertNotEmpty(Mail::$sent);
+    }
+
+    public function testSubmitIsRefusedAsBusyWhenTheOrderLockIsNotGranted()
+    {
+        $db = Db::getInstance();
+        $db->whenGetValue('/^SELECT GET_LOCK\(/', '0');
+
+        $e = $this->assertRefused('busy', function () {
+            $this->submitPending();
+        });
+
+        $this->assertSame('Another request for this order is being processed. Please wait a moment and try again.', $e->getMessage());
+        $this->assertSame(array(), IfirmaTestState::writes('ifirma_data_request'));
+        $this->assertSame(array(), Mail::$sent);
+        $this->assertSame(array(), preg_grep('/RELEASE_LOCK/', $db->queries), 'a lock that was not granted is not released');
+    }
+
+    public function testTheOrderLockIsReleasedWhenTheRequestIsRefused()
+    {
+        $request = $this->submitPending();
+        Db::getInstance()->whenGetValue('/SELECT id_ifirma_data_request.*status = "pending"/s', (int) $request->id);
+
+        $this->assertRefused('pending_exists', function () {
+            $this->submitPending();
+        });
+
+        $queries = Db::getInstance()->queries;
+        $this->assertSame("SELECT RELEASE_LOCK('ifirma_request_15')", end($queries));
+        $this->assertCount(2, preg_grep('/GET_LOCK/', $queries));
+        $this->assertCount(2, preg_grep('/RELEASE_LOCK/', $queries));
+    }
+
     // ---- controller --------------------------------------------------------
 
     private function controller()

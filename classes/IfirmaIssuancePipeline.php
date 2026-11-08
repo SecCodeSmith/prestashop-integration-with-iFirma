@@ -21,6 +21,7 @@ require_once dirname(__FILE__) . '/IfirmaDuplicateGuard.php';
 require_once dirname(__FILE__) . '/IfirmaDeliveryService.php';
 require_once dirname(__FILE__) . '/IfirmaKsefService.php';
 require_once dirname(__FILE__) . '/IfirmaDataRequestService.php';
+require_once dirname(__FILE__) . '/IfirmaNamedLock.php';
 
 require_once dirname(__FILE__) . '/IfirmaPipelineResult.php';
 
@@ -191,15 +192,27 @@ class IfirmaIssuancePipeline
             if (!Validate::isLoadedObject($order)) {
                 return null;
             }
-            $existing = IfirmaReceipt::getByOrder((int) $order->id);
-            if ($existing && $existing->isIssued()) {
-                return null;
-            }
-            if (!$this->shouldResume($order) || !$this->hasCredentials()) {
-                return null;
-            }
+            // One resume per order at a time: the document is looked up again under the lock, so parallel
+            // resumes cannot both pass "not issued yet" and issue twice.
+            $lock = 'ifirma_order_' . (int) $order->id;
+            if (!IfirmaNamedLock::acquire($lock, 5)) {
+                $this->log('iFirma pipeline resume: the lock of order ' . (int) $order->id . ' was not granted, another run is busy');
 
-            return $this->run($order, array('trigger' => self::TRIGGER_RESUME));
+                return null;
+            }
+            try {
+                $existing = IfirmaReceipt::getByOrder((int) $order->id);
+                if ($existing && $existing->isIssued()) {
+                    return null;
+                }
+                if (!$this->shouldResume($order) || !$this->hasCredentials()) {
+                    return null;
+                }
+
+                return $this->run($order, array('trigger' => self::TRIGGER_RESUME));
+            } finally {
+                IfirmaNamedLock::release($lock);
+            }
         } catch (Throwable $e) {
             $this->log('iFirma pipeline resume: ' . $e->getMessage());
         }

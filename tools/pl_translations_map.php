@@ -524,4 +524,5 @@ return array(
     'Order reference' => 'Numer referencyjny zamówienia',
     'E-mail address' => 'Adres e-mail',
     'Send the code' => 'Wyślij kod',
+    'Another request for this order is being processed. Please wait a moment and try again.' => 'Inna prośba dotycząca tego zamówienia jest właśnie przetwarzana. Poczekaj chwilę i spróbuj ponownie.',
 );

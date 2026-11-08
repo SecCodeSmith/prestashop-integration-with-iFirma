@@ -21,6 +21,7 @@ require_once dirname(__FILE__) . '/IfirmaDataRequestNotifier.php';
 require_once dirname(__FILE__) . '/IfirmaDataRequestAutoAccept.php';
 require_once dirname(__FILE__) . '/IfirmaSchema.php';
 require_once dirname(__FILE__) . '/IfirmaFormToken.php';
+require_once dirname(__FILE__) . '/IfirmaNamedLock.php';
 
 /**
  * Business rules of the customer data-change request.
@@ -218,6 +219,8 @@ class IfirmaDataRequestService
                 return $this->module->l('Please wait 10 minutes before sending another request for this order.', 'ifirmadatarequestservice');
             case 'daily_cap':
                 return $this->module->l('You have reached the limit of requests for today.', 'ifirmadatarequestservice');
+            case 'busy':
+                return $this->module->l('Another request for this order is being processed. Please wait a moment and try again.', 'ifirmadatarequestservice');
         }
 
         return $this->module->l('The request could not be processed.', 'ifirmadatarequestservice');
@@ -444,6 +447,36 @@ class IfirmaDataRequestService
      */
     public function submit(Order $order, Customer $customer, array $input)
     {
+        // The eligibility check and the save run under one lock per order: parallel submissions cannot all
+        // pass "nothing pending / cool-down / daily cap" before any of them has stored its request.
+        $lock = 'ifirma_request_' . (int) $order->id;
+        if (!IfirmaNamedLock::acquire($lock, 2)) {
+            throw $this->fail('busy');
+        }
+        try {
+            $request = $this->store($order, $customer, $input);
+        } finally {
+            IfirmaNamedLock::release($lock);
+        }
+        if ($request->isApproved()) {
+            $this->notifyCustomer($request, 'approved');
+        }
+        $this->notifyMerchant($request, $order);
+
+        return $request;
+    }
+
+    /**
+     * Checks, stores and (when the criteria say so) approves the request. Runs under the order lock of submit().
+     *
+     * @param Order $order
+     * @param Customer $customer
+     * @param array $input
+     * @return IfirmaDataRequest
+     * @throws IfirmaDataRequestException
+     */
+    private function store(Order $order, Customer $customer, array $input)
+    {
         $verdict = $this->canRequest($order, $customer);
         if (!$verdict['allowed']) {
             throw $this->fail($verdict['reason']);
@@ -477,10 +510,7 @@ class IfirmaDataRequestService
                 $mode
             );
             $request->save();
-            $this->notifyCustomer($request, 'approved');
         }
-
-        $this->notifyMerchant($request, $order);
 
         return $request;
     }
