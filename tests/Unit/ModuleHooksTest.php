@@ -164,7 +164,7 @@ class ModuleHooksTest extends TestCase
         $this->assertSame('<rendered:views/templates/hook/order_detail.tpl>', $out);
         $view = $this->vars()['ifirma_view'];
         $this->assertSame('issued', $view['state']);
-        $this->assertSame('', $view['document']['download_url']);
+        $this->assertSame(array('number', 'summary_only'), array_keys($view['document']));
         $this->assertStringContainsString('guestrequest', $view['request_url']);
         $this->assertStringContainsString('reference=ABCDEFGHI', $view['request_url']);
         $this->assertSame(0, $this->listCalls());

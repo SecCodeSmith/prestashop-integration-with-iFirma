@@ -597,7 +597,7 @@ class CustomerViewTest extends TestCase
         $v = $this->view->forGuestOrder($this->guestOrder(), $this->receipt(), null, array('data_request_enabled' => true));
 
         $this->assertSame('issued', $v['state']);
-        $this->assertSame('', $v['document']['download_url']);
+        $this->assertArrayNotHasKey('download_url', $v['document']);
         $this->assertSame('12/2026', $v['document']['number']);
         $this->assertGuestLinks($v);
         $this->assertSame($this->view->stateLabel('issued'), $v['state_label']);
@@ -605,11 +605,34 @@ class CustomerViewTest extends TestCase
         $this->assertStringContainsString('tok123', $this->view->forOrder($this->guestOrder(), $this->receipt(), null)['document']['download_url']);
     }
 
+    /**
+     * Red team 1.6.0 F11: the page is open to anyone who knows the reference and the e-mail; it shows the state
+     * and the number of the document and nothing else about it.
+     */
+    public function testTheGuestViewOfAnIssuedDocumentKeepsOnlyTheNumber()
+    {
+        $receipt = $this->receipt(array('ksef_number' => '1234567890-20261101-ABCDEF-12', 'delivery_status' => 'sent', 'delivered_at' => '2026-11-02 10:00:00'));
+
+        $v = $this->view->forGuestOrder($this->guestOrder(), $receipt, null, array('data_request_enabled' => true));
+
+        $this->assertSame('issued', $v['state']);
+        $this->assertSame(array('number', 'summary_only'), array_keys($v['document']));
+        $this->assertSame('12/2026', $v['document']['number']);
+        $this->assertTrue($v['document']['summary_only']);
+        $this->assertStringNotContainsString('1234567890-20261101', json_encode($v));
+        $this->assertStringNotContainsString('tok123', json_encode($v));
+        // the account view keeps all of it
+        $account = $this->view->forOrder($this->guestOrder(), $receipt, null)['document'];
+        foreach (array('ksef_number', 'issue_date', 'paid', 'sent', 'sent_at', 'download_url') as $key) {
+            $this->assertArrayHasKey($key, $account);
+        }
+        $this->assertArrayNotHasKey('summary_only', $account);
+    }
     public function testTheGuestViewOfAMissingDocumentHasNoDownloadLink()
     {
         $v = $this->view->forGuestOrder($this->guestOrder(), $this->receipt(array('remote_missing' => 1)), null);
 
         $this->assertSame('missing', $v['state']);
-        $this->assertEmpty($v['document']['download_url']);
+        $this->assertArrayNotHasKey('download_url', $v['document']);
     }
 }

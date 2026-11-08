@@ -19,6 +19,7 @@
         {assign var='doc' value=$ifirma_view.document}
         <p>
             <strong>{$doc.number|escape:'html':'UTF-8'}</strong>
+            {if !$doc.summary_only}
             {if $doc.paid}
                 <span class="ifirma-badge ifirma-badge-paid">{l s='Paid' mod='ifirma'}</span>
             {else}
@@ -27,7 +28,9 @@
             {if $doc.is_external}
                 <span class="ifirma-badge ifirma-badge-external">{l s='Issued outside the shop (imported from iFirma)' mod='ifirma'}</span>
             {/if}
+            {/if}
         </p>
+        {if !$doc.summary_only}
         <p>{l s='Issue date' mod='ifirma'}: {$doc.issue_date|escape:'html':'UTF-8'}</p>
         {if $doc.ksef_number}
             <p>{l s='KSeF number' mod='ifirma'}: {$doc.ksef_number|escape:'html':'UTF-8'}</p>
@@ -39,7 +42,8 @@
                 {l s='Not yet sent' mod='ifirma'}
             {/if}
         </p>
-        {if $doc.download_url}
+        {/if}
+        {if !$doc.summary_only && $doc.download_url}
             <a class="btn btn-primary" href="{$doc.download_url|escape:'html':'UTF-8'}" target="_blank" rel="noopener">
                 <i class="material-icons" aria-hidden="true">&#xE2C4;</i>
                 {l s='Download receipt (PDF)' mod='ifirma'}

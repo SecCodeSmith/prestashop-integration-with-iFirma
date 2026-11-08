@@ -132,9 +132,9 @@ class IfirmaCustomerView
     }
 
     /**
-     * The block of the guest tracking page: the view of forOrder() without the document download (the page
-     * is open to anyone who knows the reference and the e-mail), and with the change and cancel links
-     * pointing at the guest page of the order.
+     * The block of the guest tracking page: the view of forOrder() with the document reduced to its number
+     * (document = number, summary_only; the page is open to anyone who knows the reference and the e-mail),
+     * and with the change and cancel links pointing at the guest page of the order.
      *
      * @param Order                  $order
      * @param IfirmaReceipt|null     $receipt
@@ -154,7 +154,8 @@ class IfirmaCustomerView
         $view['request_url'] = $guestUrl;
         $view['cancel_url'] = $guestUrl;
         if (isset($view['document'])) {
-            $view['document']['download_url'] = '';
+            // the state and the number, nothing else: no link, KSeF number, dates, payment or delivery details
+            $view['document'] = array('number' => $view['document']['number'], 'summary_only' => true);
         }
 
         return $view;
