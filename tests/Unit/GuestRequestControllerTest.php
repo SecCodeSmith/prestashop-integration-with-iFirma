@@ -71,6 +71,14 @@ class IfirmaTestGuestController extends IfirmaGuestrequestModuleFrontController
     /** @var int[] the waits the page asked for, in microseconds (nothing really sleeps) */
     public static $slept = array();
 
+    /** @var string|null the cookie key of the page; null is the key of the test bootstrap */
+    public static $key;
+
+    protected function cookieKey()
+    {
+        return self::$key !== null ? self::$key : parent::cookieKey();
+    }
+
     protected function clock()
     {
         return self::$ticks ? array_shift(self::$ticks) : parent::clock();
@@ -114,6 +122,7 @@ class GuestRequestControllerTest extends TestCase
         IfirmaTestGuestController::$clock = 1800000000;
         IfirmaTestGuestController::$ticks = array();
         IfirmaTestGuestController::$slept = array();
+        IfirmaTestGuestController::$key = null;
         Tools::$values = array();
         $country = new Country();
         $country->id = 14;
@@ -438,6 +447,33 @@ class GuestRequestControllerTest extends TestCase
         $this->assertSame('form', $this->vars()['ifirma_step']);
     }
 
+    /**
+     * Red team 1.6.0 F8: without a cookie key the session signature and the address hash would be unkeyed.
+     */
+    public function testWithoutACookieKeyThePageSaysTheFeatureIsNotAvailableAndDoesNothing()
+    {
+        $this->request(array());
+        $token = $this->vars()['ifirma_token'];
+        IfirmaTestGuestController::$key = '';
+
+        $this->request(array());
+        $v = $this->vars();
+        $this->assertSame('disabled', $v['ifirma_step']);
+        $this->assertSame('Changing the invoice data is not available.', $v['ifirma_reason_message']);
+
+        foreach (array('identifyIfirmaGuest', 'verifyIfirmaGuest', 'submitIfirmaDataRequest', 'cancelIfirmaDataRequest') as $action) {
+            $this->request(array(
+                $action => '1', 'token' => $token, 'reference' => 'ABCDEFGHI', 'email' => 'jan@example.test',
+                'code' => '123456', 'id_order' => '15',
+            ));
+            $this->assertSame('disabled', $this->vars()['ifirma_step'], $action);
+        }
+        $this->assertSame(array(), $this->codes()->issued);
+        $this->assertSame(array(), $this->codes()->verified);
+        $this->assertSame(array(), Mail::$sent);
+        $this->assertSame(array(), IfirmaTestState::objects('ifirma_data_request'));
+        $this->assertNull($this->cookie());
+    }
     // ---- the answer time (red team 1.6.0 F7) -------------------------------------------------------------
 
     /** @return array[] label => array(posted values over the identify defaults, codes the service hands out) */

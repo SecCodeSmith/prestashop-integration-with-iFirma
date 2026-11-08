@@ -15,6 +15,7 @@ if (!defined('_PS_VERSION_')) {
 
 require_once dirname(__FILE__) . '/IfirmaSchema.php';
 require_once dirname(__FILE__) . '/IfirmaNamedLock.php';
+require_once dirname(__FILE__) . '/IfirmaFormToken.php';
 
 /**
  * The single-use codes that prove a guest controls the e-mail address of an order.
@@ -32,8 +33,12 @@ require_once dirname(__FILE__) . '/IfirmaNamedLock.php';
  *    touching a row.
  *  - cleanup(): deletes the rows whose expiry or use is older than 24 hours.
  *
- * The clock (a callable returning a unix timestamp) and the random source (a callable taking the highest
- * value and returning an integer from 0 to it) are test seams. There is no weaker generator than
+ * The code is stored as hash_hmac('sha256', salt . code, cookie key): a copy of the table alone does not let
+ * anyone brute-force the six digits. Without a cookie key (empty or undefined _COOKIE_KEY_) issue() returns
+ * null and verify() returns false, touching nothing.
+ *
+ * The clock (a callable returning a unix timestamp), the random source (a callable taking the highest
+ * value and returning an integer from 0 to it) and the key (a string) are test seams. There is no weaker generator than
  * random_int() / random_bytes(): when they fail the exception reaches the caller.
  */
 class IfirmaGuestCodeService
@@ -51,14 +56,27 @@ class IfirmaGuestCodeService
     /** @var callable|null */
     private $random;
 
+    /** @var string|null */
+    private $key;
+
     /**
      * @param callable|null $clock  returns a unix timestamp
      * @param callable|null $random takes the highest value, returns an integer from 0 to it
+     * @param string|null   $key    the cookie key; null takes the shop's _COOKIE_KEY_
      */
-    public function __construct($clock = null, $random = null)
+    public function __construct($clock = null, $random = null, $key = null)
     {
         $this->clock = $clock;
         $this->random = $random;
+        $this->key = $key === null ? null : (string) $key;
+    }
+
+    /**
+     * @return string the cookie key, '' when the shop has none
+     */
+    private function key()
+    {
+        return $this->key !== null ? $this->key : IfirmaFormToken::cookieKey();
     }
 
     /**
@@ -92,9 +110,7 @@ class IfirmaGuestCodeService
      */
     private function addressHash($clientAddress)
     {
-        $key = defined('_COOKIE_KEY_') ? (string) _COOKIE_KEY_ : '';
-
-        return hash('sha256', $key . (string) $clientAddress);
+        return hash('sha256', $this->key() . (string) $clientAddress);
     }
 
     /**
@@ -104,7 +120,7 @@ class IfirmaGuestCodeService
      */
     private function codeHash($salt, $code)
     {
-        return hash('sha256', $salt . $code);
+        return hash_hmac('sha256', $salt . $code, $this->key());
     }
 
     /**
@@ -142,6 +158,9 @@ class IfirmaGuestCodeService
      */
     public function issue(Order $order, $clientAddress)
     {
+        if ($this->key() === '') {
+            return null;
+        }
         IfirmaSchema::ensureGuestCodeTable();
         $this->cleanup();
 
@@ -215,7 +234,7 @@ class IfirmaGuestCodeService
      */
     public function verify($idOrder, $code)
     {
-        if (!is_string($code) || !preg_match('/^[0-9]{6}$/', $code)) {
+        if (!is_string($code) || !preg_match('/^[0-9]{6}$/', $code) || $this->key() === '') {
             return false;
         }
 

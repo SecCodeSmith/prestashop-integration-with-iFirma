@@ -160,6 +160,15 @@ class IfirmaGuestrequestModuleFrontController extends ModuleFrontController
     }
 
     /**
+     * @return bool whether the page works: the feature is switched on and the shop has a cookie key (the
+     *              session signature, the form token and the code hashes are keyed with it)
+     */
+    private function isAvailable()
+    {
+        return $this->service()->isEnabled() && $this->cookieKey() !== '';
+    }
+
+    /**
      * @param int $idOrder
      * @param int $expiry
      * @return string
@@ -276,7 +285,7 @@ class IfirmaGuestrequestModuleFrontController extends ModuleFrontController
             return;
         }
 
-        if (!$this->service()->isEnabled()) {
+        if (!$this->isAvailable()) {
             $this->errors[] = $this->service()->reasonMessage('disabled');
 
             return;
@@ -486,7 +495,7 @@ class IfirmaGuestrequestModuleFrontController extends ModuleFrontController
         );
 
         $step = $this->step;
-        if (!$service->isEnabled()) {
+        if (!$this->isAvailable()) {
             $step = 'disabled';
             $vars['ifirma_errors'] = array();
             $vars['ifirma_reason_message'] = $service->reasonMessage('disabled');

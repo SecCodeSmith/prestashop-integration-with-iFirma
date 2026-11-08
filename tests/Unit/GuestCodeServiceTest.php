@@ -59,7 +59,10 @@ class GuestCodeServiceTest extends TestCase
         return date('Y-m-d H:i:s', $ts);
     }
 
-    private function service()
+    /**
+     * @param string|null $key the cookie key of the service; null is the key of the test bootstrap
+     */
+    private function service($key = null)
     {
         $self = $this;
 
@@ -69,7 +72,8 @@ class GuestCodeServiceTest extends TestCase
             },
             function ($max) use ($self) {
                 return $self->numbers ? array_shift($self->numbers) : 0;
-            }
+            },
+            $key
         );
     }
 
@@ -463,7 +467,7 @@ class GuestCodeServiceTest extends TestCase
         $this->assertSame('481516', $code);
 
         $row = reset($this->rows);
-        $this->assertSame(hash('sha256', $row['salt'] . $code), $row['code_hash']);
+        $this->assertSame(hash_hmac('sha256', $row['salt'] . $code, _COOKIE_KEY_), $row['code_hash']);
         $this->assertMatchesRegularExpression('/^[0-9a-f]{32}$/', $row['salt']);
         $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $row['ip_hash']);
         $this->assertNotSame('203.0.113.9', $row['ip_hash']);
@@ -522,6 +526,63 @@ class GuestCodeServiceTest extends TestCase
         $this->assertStringNotContainsStringIgnoringCase('LIMIT', $select);
     }
 
+    // ---- the cookie key (red team 1.6.0 F8, F9) ---------------------------------------------------------
+
+    public function testTheStoredHashDependsOnTheKeySoADumpAloneDoesNotRevealTheCode()
+    {
+        $this->numbers = array(123456, 123456);
+        $this->service('key-one')->issue($this->order(1), '10.0.0.1');
+        $this->now += 120;
+        $this->service('key-two')->issue($this->order(2), '10.0.0.1');
+        $rows = array_values($this->rows);
+
+        $this->assertSame(hash_hmac('sha256', $rows[0]['salt'] . '123456', 'key-one'), $rows[0]['code_hash']);
+        $this->assertSame(hash_hmac('sha256', $rows[1]['salt'] . '123456', 'key-two'), $rows[1]['code_hash']);
+        // the unkeyed hash of the salt and the six digits, which a dump would let one brute-force, matches neither
+        $this->assertNotSame(hash('sha256', $rows[0]['salt'] . '123456'), $rows[0]['code_hash']);
+        $this->assertNotSame(hash('sha256', $rows[1]['salt'] . '123456'), $rows[1]['code_hash']);
+    }
+
+    public function testACodeIssuedUnderOneKeyIsRefusedUnderAnother()
+    {
+        $this->numbers = array(123456);
+        $this->service('key-one')->issue($this->order(1), '10.0.0.1');
+
+        $this->assertFalse($this->service('key-two')->verify(1, '123456'));
+        $this->assertTrue($this->service('key-one')->verify(1, '123456'));
+    }
+
+    public function testWithoutACookieKeyNothingIsIssuedAndNothingIsVerified()
+    {
+        $this->numbers = array(123456);
+        $queriesBefore = count(Db::getInstance()->queries);
+        $service = $this->service('');
+
+        $this->assertNull($service->issue($this->order(1), '10.0.0.1'));
+        $this->assertSame(array(), $this->rows);
+        $this->assertSame(array(), $this->writes);
+
+        // a code that exists (issued under a key) is not verified by a service without one
+        $this->service('key-one')->issue($this->order(1), '10.0.0.1');
+        $before = count(Db::getInstance()->queries);
+        $this->assertFalse($service->verify(1, '123456'));
+        $this->assertSame($before, count(Db::getInstance()->queries), 'not even a read');
+        $this->assertSame(0, reset($this->rows)['attempts']);
+        $this->assertGreaterThan($queriesBefore, $before);
+    }
+
+    public function testTheDefaultKeyIsTheCookieKeyConstant()
+    {
+        $this->numbers = array(123456);
+        $service = new IfirmaGuestCodeService(function () {
+            return $this->now;
+        }, function () {
+            return 123456;
+        });
+
+        $this->assertSame('123456', $service->issue($this->order(1), '10.0.0.1'));
+        $this->assertSame(hash_hmac('sha256', reset($this->rows)['salt'] . '123456', _COOKIE_KEY_), reset($this->rows)['code_hash']);
+    }
     // ---- housekeeping ----------------------------------------------------------------------------------
 
     private function seed($idOrder, $dateAdd, $expiresAt, $usedAt)
