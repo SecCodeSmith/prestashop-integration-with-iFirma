@@ -221,4 +221,21 @@ class CronRunnerTest extends TestCase
         $this->assertSame('minute', $summary['rate_limited_window']);
         $this->assertSame(array('delivery:skip'), $this->log);
     }
+    public function testTheJobReportKnowsItsName()
+    {
+        $this->assertSame('queue', IfirmaCronJobReport::counts('queue', 0, 0, 0, 0)->getName());
+    }
+
+    public function testTheBuiltRunnerChecksTheCredentialPauseBeforeEveryQueuedOrder()
+    {
+        Configuration::updateValue('IFIRMA_AUTH_FAILURE', time() . '|Invalid signature');
+        $runner = IfirmaCronRunner::build(new Module());
+        $jobs = new ReflectionProperty(IfirmaCronRunner::class, 'jobs');
+        $jobs->setAccessible(true);
+        $queueJob = $jobs->getValue($runner)[0];
+        $probe = new ReflectionProperty(IfirmaIssueQueueJob::class, 'authBlocked');
+        $probe->setAccessible(true);
+
+        $this->assertTrue(call_user_func($probe->getValue($queueJob)));
+    }
 }

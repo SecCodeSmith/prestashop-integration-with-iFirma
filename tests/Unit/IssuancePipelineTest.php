@@ -1785,9 +1785,11 @@ class IssuancePipelineTest extends TestCase
         $this->queueGuardNone();
         $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"ok","Identyfikator":"77"}}'));
         $this->queueNumber();
-        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => json_encode(array('response' => array(
-            'Kod' => 0, 'KsefStatus' => $detailState, 'KsefNumer' => $detailState === 'PRZYJETA' ? '5260001122-20261101-ABC-01' : '',
-        )))));
+        $this->t->queue('GET', '#fakturakraj/77\.json#', $detailState === null
+            ? array('status' => 0, 'error' => 'timeout')
+            : array('body' => json_encode(array('response' => array(
+                'Kod' => 0, 'KsefStatus' => $detailState, 'KsefNumer' => $detailState === 'PRZYJETA' ? '5260001122-20261101-ABC-01' : '',
+            )))));
         $this->t->queue('POST', '#ksef/send/77\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"Faktura wyslana"}}'));
         $this->queuePdf();
         // the buyer has a NIP: the contractor block of the stored payload carries it
@@ -1896,5 +1898,20 @@ class IssuancePipelineTest extends TestCase
         $this->pipeline->run($this->order());
 
         $this->assertSame('awaiting_ksef', $seen['delivery_status'], 'already held when the KSeF request goes out');
+    }
+    public function testAnUnreadableKsefStateSkipsTheStepAndTheDeliveryWaitsForTheCron()
+    {
+        Configuration::updateValue('IFIRMA_KSEF_MODE', 'b2b');
+        $this->businessOrderIssuanceScript(null);
+
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertTrue($r->ok);
+        $this->assertSame('ksef:skipped', $this->stepNames($r)[4]);
+        $this->assertSame('KSeF state unavailable, retried by the cron', $r->steps[4]['message']);
+        $this->assertSame('awaiting_ksef', $this->dbRow()['delivery_status']);
+        $this->assertSame(array(), array_filter($this->posts(), function ($p) {
+            return strpos($p['url'], 'ksef') !== false;
+        }), 'nothing was sent to KSeF');
     }
 }

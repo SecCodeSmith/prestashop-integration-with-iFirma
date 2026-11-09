@@ -377,4 +377,14 @@ class KsefCronJobsTest extends TestCase
         $this->assertSame(1, $summary['delivery']['handled']);
         $this->assertSame(0, $summary['ksef']['handled'], 'an invoice that is already sent is not submitted again');
     }
+    public function testASubmissionThatIsRefusedWithoutCallingIfirmaCountsAsFailed()
+    {
+        $this->invoice(70, 1);
+        $this->remote('ODRZUCONA');
+
+        $report = $this->ksefJob()->run($this->context());
+
+        $this->assertSame(array(), $this->posts());
+        $this->assertSame(array('handled' => 1, 'succeeded' => 0, 'failed' => 1, 'left' => 0), $report->block());
+    }
 }
