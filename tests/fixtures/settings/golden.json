@@ -40,6 +40,7 @@
       "IFIRMA_NOTIFY_EMAIL": "biuro@example.test",
       "IFIRMA_SYNC_INTERVAL_MIN": "30",
       "IFIRMA_CRON_MAX_CALLS": "20",
+      "IFIRMA_CRON_MAX_ITEMS": "15",
       "IFIRMA_RATE_MAX_PER_MIN": "60",
       "IFIRMA_RATE_MAX_PER_DAY": "12000"
     },
@@ -75,6 +76,7 @@
       ["IFIRMA_NOTIFY_EMAIL", "biuro@example.test"],
       ["IFIRMA_SYNC_INTERVAL_MIN", 30],
       ["IFIRMA_CRON_MAX_CALLS", 20],
+      ["IFIRMA_CRON_MAX_ITEMS", 15],
       ["IFIRMA_RATE_MAX_PER_MIN", 60],
       ["IFIRMA_RATE_MAX_PER_DAY", 12000]
     ]
@@ -120,6 +122,7 @@
         "IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "0",
         "IFIRMA_SYNC_INTERVAL_MIN": "15",
         "IFIRMA_CRON_MAX_CALLS": "10",
+        "IFIRMA_CRON_MAX_ITEMS": "10",
         "IFIRMA_RATE_MAX_PER_MIN": "60",
         "IFIRMA_RATE_MAX_PER_DAY": "12000"
       },
@@ -156,6 +159,7 @@
         ["IFIRMA_NOTIFY_EMAIL", ""],
         ["IFIRMA_SYNC_INTERVAL_MIN", 15],
         ["IFIRMA_CRON_MAX_CALLS", 10],
+        ["IFIRMA_CRON_MAX_ITEMS", 10],
         ["IFIRMA_RATE_MAX_PER_MIN", 60],
         ["IFIRMA_RATE_MAX_PER_DAY", 12000]
       ]
@@ -212,6 +216,7 @@
         "IFIRMA_NOTIFY_EMAIL": "  biuro@example.test  ",
         "IFIRMA_SYNC_INTERVAL_MIN": " 30 ",
         "IFIRMA_CRON_MAX_CALLS": " 20 ",
+        "IFIRMA_CRON_MAX_ITEMS": " 15 ",
         "IFIRMA_RATE_MAX_PER_MIN": " 60 ",
         "IFIRMA_RATE_MAX_PER_DAY": " 12000 "
       },
@@ -299,6 +304,7 @@
         "IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "0",
         "IFIRMA_SYNC_INTERVAL_MIN": "1",
         "IFIRMA_CRON_MAX_CALLS": "1",
+        "IFIRMA_CRON_MAX_ITEMS": "1",
         "IFIRMA_RATE_MAX_PER_MIN": "1",
         "IFIRMA_RATE_MAX_PER_DAY": "1"
       },
@@ -308,6 +314,7 @@
         "IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "0",
         "IFIRMA_SYNC_INTERVAL_MIN": 1,
         "IFIRMA_CRON_MAX_CALLS": 1,
+        "IFIRMA_CRON_MAX_ITEMS": 1,
         "IFIRMA_RATE_MAX_PER_MIN": 1,
         "IFIRMA_RATE_MAX_PER_DAY": 1
       }
@@ -319,6 +326,7 @@
         "IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "1234.56789",
         "IFIRMA_SYNC_INTERVAL_MIN": "1440",
         "IFIRMA_CRON_MAX_CALLS": "90",
+        "IFIRMA_CRON_MAX_ITEMS": "50",
         "IFIRMA_RATE_MAX_PER_MIN": "100",
         "IFIRMA_RATE_MAX_PER_DAY": "15000"
       },
@@ -328,6 +336,7 @@
         "IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "1234.5679",
         "IFIRMA_SYNC_INTERVAL_MIN": 1440,
         "IFIRMA_CRON_MAX_CALLS": 90,
+        "IFIRMA_CRON_MAX_ITEMS": 50,
         "IFIRMA_RATE_MAX_PER_MIN": 100,
         "IFIRMA_RATE_MAX_PER_DAY": 15000
       }
@@ -529,6 +538,18 @@
       "writes": []
     },
     {
+      "name": "cron items above 50",
+      "change": {"IFIRMA_CRON_MAX_ITEMS": "51"},
+      "notice": "<error>The cron item limit must be a whole number between 1 and 50.</error>",
+      "writes": []
+    },
+    {
+      "name": "cron items below 1",
+      "change": {"IFIRMA_CRON_MAX_ITEMS": "0"},
+      "notice": "<error>The cron item limit must be a whole number between 1 and 50.</error>",
+      "writes": []
+    },
+    {
       "name": "rate limit above 100",
       "change": {"IFIRMA_RATE_MAX_PER_MIN": "101"},
       "notice": "<error>The API rate limit must be a whole number between 1 and 100 calls per minute.</error>",
@@ -663,13 +684,14 @@
         "IFIRMA_NOTIFY_EMAIL": "no",
         "IFIRMA_SYNC_INTERVAL_MIN": "0",
         "IFIRMA_CRON_MAX_CALLS": "0",
+        "IFIRMA_CRON_MAX_ITEMS": "0",
         "IFIRMA_RATE_MAX_PER_MIN": "0",
         "IFIRMA_RATE_MAX_PER_DAY": "0",
         "IFIRMA_PAYMENT_METHOD_MODE": "never",
         "IFIRMA_PAYMENT_METHOD": "XYZ",
         "IFIRMA_PAYMENT_METHOD_MAP": "ps_checkpayment=XYZ"
       },
-      "notice": "<error>The iFirma login is required.<br>The invoice API key must be a hexadecimal string.<br>Choose an active employee for the delivery copy.<br>The duplicate-check window must be a whole number of days between 1 and 365.<br>The amount tolerance must be a number greater than or equal to 0.<br>The notification e-mail address is not valid.<br>The sync interval must be a whole number of minutes between 1 and 1440.<br>The cron call budget must be a whole number between 1 and 90.<br>The API rate limit must be a whole number between 1 and 100 calls per minute.<br>The API daily limit must be a whole number between 1 and 15000 calls per day.<br>The payment method mode must be \"order\" or \"fixed\".<br>The fallback payment method must be one of the listed codes.<br>Payment method map: line 1: ps_checkpayment=XYZ</error>",
+      "notice": "<error>The iFirma login is required.<br>The invoice API key must be a hexadecimal string.<br>Choose an active employee for the delivery copy.<br>The duplicate-check window must be a whole number of days between 1 and 365.<br>The amount tolerance must be a number greater than or equal to 0.<br>The notification e-mail address is not valid.<br>The sync interval must be a whole number of minutes between 1 and 1440.<br>The cron call budget must be a whole number between 1 and 90.<br>The cron item limit must be a whole number between 1 and 50.<br>The API rate limit must be a whole number between 1 and 100 calls per minute.<br>The API daily limit must be a whole number between 1 and 15000 calls per day.<br>The payment method mode must be \"order\" or \"fixed\".<br>The fallback payment method must be one of the listed codes.<br>Payment method map: line 1: ps_checkpayment=XYZ</error>",
       "writes": []
     }
   ]

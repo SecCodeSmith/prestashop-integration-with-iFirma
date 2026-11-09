@@ -135,6 +135,8 @@ class IfirmaReceipt extends ObjectModel
     const DELIVERY_SENT = 'sent';
     const DELIVERY_FAILED = 'failed';
     const DELIVERY_SKIPPED = 'skipped';
+    /** The document goes to KSeF and is delivered to the customer once KSeF has accepted it. */
+    const DELIVERY_AWAITING_KSEF = 'awaiting_ksef';
 
     public static $definition = array(
         'table' => 'ifirma_receipt',
@@ -277,7 +279,7 @@ class IfirmaReceipt extends ObjectModel
             'SELECT id_ifirma_receipt FROM `' . _DB_PREFIX_ . 'ifirma_receipt`
              WHERE ifirma_id != \'\' AND status != \'error\'
              AND (status != \'paid\' OR remote_sent = 0 OR last_sync_at IS NULL
-                  OR last_sync_at < \'' . pSQL($staleBefore) . '\')
+                  OR last_sync_at < \'' . pSQL($staleBefore) . '\' OR delivery_status = \'' . self::DELIVERY_AWAITING_KSEF . '\')
              ORDER BY last_sync_at ASC, id_ifirma_receipt ASC
              LIMIT ' . max(1, (int) $limit)
         );
@@ -291,6 +293,41 @@ class IfirmaReceipt extends ObjectModel
         }
 
         return $receipts;
+    }
+
+    /**
+     * The queue: records in the state queued, the one that has waited longest first.
+     *
+     * @param int $limit at most this many records, and at least one
+     * @return IfirmaReceipt[]
+     */
+    public static function findQueued($limit)
+    {
+        $rows = Db::getInstance()->executeS(
+            'SELECT id_ifirma_receipt FROM `' . _DB_PREFIX_ . 'ifirma_receipt` WHERE status = \'' . self::STATUS_QUEUED . '\'
+             ORDER BY date_upd ASC, id_ifirma_receipt ASC
+             LIMIT ' . max(1, (int) $limit)
+        );
+
+        $records = array();
+        foreach ((array) $rows as $row) {
+            $record = new self((int) $row['id_ifirma_receipt']);
+            if (!empty($record->id)) {
+                $records[] = $record;
+            }
+        }
+
+        return $records;
+    }
+
+    /**
+     * @return int how many records are queued
+     */
+    public static function countQueued()
+    {
+        return (int) Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'ifirma_receipt` WHERE status = \'' . self::STATUS_QUEUED . '\''
+        );
     }
 
     /**

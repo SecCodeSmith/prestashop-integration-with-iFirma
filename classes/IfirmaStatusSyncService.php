@@ -321,6 +321,23 @@ class IfirmaStatusSyncService
     }
 
     /**
+     * The cron summary of a run that did nothing.
+     *
+     * @param int $now unix time
+     * @return array
+     */
+    public static function emptySummary($now)
+    {
+        return array(
+            'receipts_checked' => 0, 'updated' => 0, 'marked_paid' => 0, 'marked_missing' => 0,
+            'errors' => 0, 'rate_limited' => 0, 'calls' => 0,
+            'dates_total' => 0, 'dates_processed' => 0, 'held_orders' => 0,
+            'started_at' => date('c', (int) $now), 'finished_at' => '',
+            'auth_blocked' => false, 'message' => '',
+        );
+    }
+
+    /**
      * @param int|null $maxCalls
      * @return array
      */
@@ -333,13 +350,7 @@ class IfirmaStatusSyncService
             }
         }
 
-        $summary = array(
-            'receipts_checked' => 0, 'updated' => 0, 'marked_paid' => 0, 'marked_missing' => 0,
-            'errors' => 0, 'rate_limited' => 0, 'calls' => 0,
-            'dates_total' => 0, 'dates_processed' => 0, 'held_orders' => 0,
-            'started_at' => date('c', $this->now()), 'finished_at' => '',
-            'auth_blocked' => false, 'message' => '',
-        );
+        $summary = self::emptySummary($this->now());
 
         if ($this->client->isAuthBlocked()) {
             // iFirma rejected the credentials a moment ago: touch neither the receipts nor the API.

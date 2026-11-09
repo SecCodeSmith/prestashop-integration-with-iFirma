@@ -421,7 +421,8 @@ class IfirmaReceiptTest extends TestCase
             'SELECT id_ifirma_receipt FROM `ps_ifirma_receipt`',
             "             WHERE ifirma_id != '' AND status != 'error'",
             "             AND (status != 'paid' OR remote_sent = 0 OR last_sync_at IS NULL",
-            "                  OR last_sync_at < '" . $staleBefore . "')",
+            // deliberate change (task 5.3): a document that waits for KSeF is always due, so the cron sees its acceptance
+            "                  OR last_sync_at < '" . $staleBefore . "' OR delivery_status = 'awaiting_ksef')",
             '             ORDER BY last_sync_at ASC, id_ifirma_receipt ASC',
             '             LIMIT ' . $limit,
         ));
@@ -567,5 +568,43 @@ class IfirmaReceiptTest extends TestCase
         $this->assertTrue($receipt->canCreate());
         $this->assertFalse($receipt->canIssueAnyway());
         $this->assertFalse($receipt->isIssued());
+    }
+
+    public function testFindQueuedAsksForTheQueuedRecordsOldestFirstUpToTheLimit()
+    {
+        IfirmaReceipt::findQueued(25);
+
+        $this->assertSame(array(implode("\n", array(
+            "SELECT id_ifirma_receipt FROM `ps_ifirma_receipt` WHERE status = 'queued'",
+            '             ORDER BY date_upd ASC, id_ifirma_receipt ASC',
+            '             LIMIT 25',
+        ))), $this->sentQueries());
+    }
+
+    public function testFindQueuedRaisesALimitBelowOneToOne()
+    {
+        IfirmaReceipt::findQueued(0);
+
+        $this->assertStringContainsString('LIMIT 1', $this->sentQueries()[0]);
+    }
+
+    public function testFindQueuedReturnsTheStoredRecordsInTheOrderOfTheRows()
+    {
+        $first = $this->storedReceipt(41);
+        $second = $this->storedReceipt(42);
+        $this->dueRowsAre(array($second->id, $first->id));
+
+        $records = IfirmaReceipt::findQueued(10);
+
+        $this->assertSame(array(42, 41), array_map(function ($record) {
+            return $record->id_order;
+        }, $records));
+    }
+
+    public function testCountQueuedCountsOnlyTheQueuedRecords()
+    {
+        Db::getInstance()->whenGetValue('/SELECT COUNT\(\*\) FROM `ps_ifirma_receipt` WHERE status = \'queued\'/', '4');
+
+        $this->assertSame(4, IfirmaReceipt::countQueued());
     }
 }

@@ -53,9 +53,11 @@ Open the module configuration and fill in:
   choice, the NIP and the company name, and changes only the name, address, postcode, city or country, is
   approved at once) or *Every valid request* (approved without review).
 - **Status sync interval (1‑1440 minutes)** – how often an order page refreshes its document
-  from iFirma; **Cron call budget (1‑90)** and **API calls per minute (1‑100)** – API usage caps.
+  from iFirma; **Cron call budget (1‑90)**, **Cron items per job (1‑50)**, **API calls per minute (1‑100)** and
+  **API calls per day (1‑15000)** – API usage caps and the size of one cron run.
 - **Cron endpoint** – the module shows the cron URL with its secret token and a crontab
-  example (`*/15 * * * * curl -fsS "<url>"`); *Regenerate cron token* replaces the token.
+  example (`*/15 * * * * curl -fsS "<url>"`); *Regenerate cron token* replaces the token. Call it every 1 to 5 minutes:
+  it issues the queued orders, so a longer interval delays them (see [Cron jobs](#cron-jobs)).
   The same page also shows the token-in-header form, which keeps the token out of the web server's access log:
 
   ```
@@ -101,7 +103,8 @@ Open the module configuration and fill in:
 | `IFIRMA_NOTIFY_EMAIL` (new) | empty |
 | `IFIRMA_SYNC_INTERVAL_MIN` (new) | `15` |
 | `IFIRMA_CRON_TOKEN` (new) | random 32 hex characters, generated on install/upgrade from the system's secure random generator (if that is unavailable, the install or upgrade fails with a message rather than using a weaker token) |
-| `IFIRMA_CRON_MAX_CALLS` (new) | `40` |
+| `IFIRMA_CRON_MAX_CALLS` (new) | `40` (list calls of the status sync per run) |
+| `IFIRMA_CRON_MAX_ITEMS` (new) | `10` (1 to 50: the most queued orders, KSeF submissions or deliveries each of those jobs handles in one cron run) |
 | `IFIRMA_RATE_MAX_PER_MIN` (new) | `80` (1 to 100) |
 | `IFIRMA_RATE_MAX_PER_DAY` (new) | `14000` (1 to 15000) |
 | `IFIRMA_RATE_WINDOW` (new) | empty (internal rate-limit state of the minute: `<minute>:<count>`, incremented by one atomic database statement, so two requests at the same time cannot both pass the cap) |
@@ -157,6 +160,43 @@ The **Configure** permission of the module page (Modules > Module Manager) is se
 may open and save the settings and does not give any of the three levels.
 
 Link, Unlink and Register on the customer page need, on top of View, the Edit permission on **Customers**.
+
+## Cron jobs
+
+One request to the cron endpoint (`/module/ifirma/cron`, token in the query or in the `X-Ifirma-Token` header) runs four jobs in
+a fixed order, under a run lock, and answers with one JSON summary. The order is chosen so that work reaches the customer
+as early as possible: customer-facing issuance first, a KSeF submission before the sync that reads its state, delivery last so
+that an acceptance read by the sync is delivered in the same run.
+
+| # | Job | What it does |
+|---|-----|--------------|
+| 1 | `queue` | Issues queued orders, oldest first, through the whole issuance pipeline (duplicate guard included), under each order's lock, at most `IFIRMA_CRON_MAX_ITEMS` per run. Stops at the first rate limit refusal. See [Queued issuance](usage.md#queued-issuance). |
+| 2 | `ksef` | Submits invoices to KSeF whose submission was deferred (submitter `module`, no KSeF state yet). See [KSeF](usage.md#ksef-e-invoicing). |
+| 3 | `sync` | The status sync of issued documents (documents that wait for KSeF are always due), within `IFIRMA_CRON_MAX_CALLS` list calls. |
+| 4 | `delivery` | Delivers documents that wait for KSeF acceptance and were accepted, at most `IFIRMA_CRON_MAX_ITEMS`. |
+
+All four share the rate guard (the minute and the day cap and the back-off). After a job reports that the rate limit stopped
+it, the later jobs do not start and only report what is left. **Only one cron run works at a time**: a request that arrives
+while another run holds the run lock makes no iFirma request and answers `{"skipped": "another cron run is busy"}`. An order
+whose own lock is held (an employee clicking Create, a status change) is skipped by the queue job and stays queued.
+
+The answer keeps the keys of the status sync at its top level, unchanged (`receipts_checked`, `updated`, `marked_paid`,
+`marked_missing`, `errors`, `rate_limited`, `calls`, `dates_total`, `dates_processed`, `held_orders`, `started_at`,
+`finished_at`, `auth_blocked`, `message`), and adds:
+
+```json
+{
+  "queue":    {"handled": 4, "succeeded": 4, "failed": 0, "left": 12},
+  "ksef":     {"handled": 0, "succeeded": 0, "failed": 0, "left": 0},
+  "delivery": {"handled": 1, "succeeded": 1, "failed": 0, "left": 0},
+  "rate_limited": 0,
+  "rate_limited_window": ""
+}
+```
+
+`handled` counts the items the job tried, `left` what still waits. `rate_limited` is 1 when the rate limit stopped the run
+(the sync's own count, when it was the one, is kept), and `rate_limited_window` then says which window: `minute`, `day` or
+`backoff`. A job that did not run because an earlier one was rate limited reports zeros and its `left`.
 
 ## Rate limits
 

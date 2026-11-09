@@ -21,6 +21,7 @@ flowchart LR
     subgraph MOD["Module classes"]
         ACT["IfirmaAdminActions"]
         PIPE["IfirmaIssuancePipeline"]
+        RUN["IfirmaCronRunner and its jobs"]
         SYNC["IfirmaStatusSyncService"]
         API["IfirmaApiClient and IfirmaHttpTransport"]
     end
@@ -30,7 +31,7 @@ flowchart LR
     ACT --> PIPE
     HOOK --> PIPE
     CUS --> DB
-    CRON --> SYNC
+    CRON --> RUN
     SET --> DB
     PNL --> DB
     PIPE --> API
@@ -88,7 +89,7 @@ Two plain JavaScript files in [`views/js/admin/`](../views/js/admin/) hold no te
 |------|---------|
 | [`controllers/front/receipt.php`](../controllers/front/receipt.php) | Customer PDF download (authenticated customer, matching token, owner check). |
 | [`controllers/front/datarequest.php`](../controllers/front/datarequest.php) | Customer form to request a change of the invoice data of an order; all rules live in [`IfirmaDataRequestService`](../classes/IfirmaDataRequestService.php). |
-| [`controllers/front/cron.php`](../controllers/front/cron.php) | Status synchronisation at `/module/ifirma/cron?token=IFIRMA_CRON_TOKEN`; a wrong token answers 403, a right one runs `IfirmaStatusSyncService::runCron()`. |
+| [`controllers/front/cron.php`](../controllers/front/cron.php) | The cron endpoint at `/module/ifirma/cron?token=IFIRMA_CRON_TOKEN`; a wrong token answers 403 (no job runs), a right one runs `IfirmaCronRunner`. |
 
 **Upgrades:** [`upgrade/upgrade-1.1.0.php`](../upgrade/upgrade-1.1.0.php) (columns, two tables, defaults), [`upgrade/upgrade-1.2.0.php`](../upgrade/upgrade-1.2.0.php) (hook swap, drops PrestaShop 1.7), [`upgrade/upgrade-1.4.0.php`](../upgrade/upgrade-1.4.0.php) (the three Orders-list hooks), [`upgrade/upgrade-1.5.0.php`](../upgrade/upgrade-1.5.0.php) (the tab moves under Orders, the script hook, the download column and the date index, the default of the pause mark).
 
@@ -195,11 +196,19 @@ Two plain JavaScript files in [`views/js/admin/`](../views/js/admin/) hold no te
 | [`IfirmaInput`](../classes/IfirmaInput.php) | Reads one request value safely: `scalar()` gives `''` for an array or an object, `decimal()` parses an amount (or null). |
 | [`IfirmaDownloadThrottle`](../classes/IfirmaDownloadThrottle.php) | The customer PDF limits: one fetch per document every 30 seconds, ten per customer per 60 seconds (HTTP 429). |
 
-**Status sync**
+**Status sync and the cron jobs**
 
 | Class | Role |
 |-------|------|
 | [`IfirmaStatusSyncService`](../classes/IfirmaStatusSyncService.php) | Mirrors the remote state of issued documents (cron, opportunistic on the customer's order page). |
+| [`IfirmaCronRunner`](../classes/IfirmaCronRunner.php) | Runs the `IfirmaCronJob`s in order under the run lock `ifirma_cron` (no wait), builds the JSON summary (the sync keys at the top level, a block per other job, `rate_limited`, `rate_limited_window`), and has the later jobs only report after a rate-limited one. |
+| [`IfirmaCronJob`](../classes/IfirmaCronJob.php), [`IfirmaCronContext`](../classes/IfirmaCronContext.php), [`IfirmaCronJobReport`](../classes/IfirmaCronJobReport.php) | The job interface (`name()`, `run()`, `skip()`), what a run shares (the item cap, the clock) and what a job reports (handled, succeeded, failed, left, rate limited). |
+| [`IfirmaIssueQueueJob`](../classes/IfirmaIssueQueueJob.php) | Job 1: issues queued orders, oldest first, under the order lock, through `IfirmaIssuancePipeline::run()` with trigger `queue`. |
+| [`IfirmaStatusSyncJob`](../classes/IfirmaStatusSyncJob.php) | Job 3: an adapter around `IfirmaStatusSyncService::runCron()`. |
+
+The cron request flow: `cron.php` checks the token, `IfirmaCronRunner::build()` creates the jobs, `run()` takes the run lock, calls the
+jobs in order (queue, KSeF retry, sync, delivery) and releases the lock. A job asks the shared rate guard before every iFirma request, so the minute and the
+day cap and a back-off apply to the whole run.
 
 ## Issuance pipeline
 
@@ -285,7 +294,7 @@ Configuration keys (defaults in `IfirmaSchema`; the settings walk-through is in 
 | Delivery | `IFIRMA_SEND_CHANNEL`, `IFIRMA_SEND_TEXT`, `IFIRMA_SEND_COPY_MODE`, `IFIRMA_SEND_COPY_EMPLOYEE` |
 | KSeF | `IFIRMA_KSEF_MODE` |
 | Duplicate guard | `IFIRMA_DUPLICATE_CHECK`, `IFIRMA_DUPLICATE_WINDOW_DAYS`, `IFIRMA_DUPLICATE_AMOUNT_TOLERANCE` |
-| Status and cron | `IFIRMA_SYNC_INTERVAL_MIN`, `IFIRMA_CRON_TOKEN`, `IFIRMA_CRON_MAX_CALLS`, `IFIRMA_NOTIFY_EMAIL` |
+| Status and cron | `IFIRMA_SYNC_INTERVAL_MIN`, `IFIRMA_CRON_TOKEN`, `IFIRMA_CRON_MAX_CALLS`, `IFIRMA_CRON_MAX_ITEMS`, `IFIRMA_NOTIFY_EMAIL` |
 | Rate limiting | `IFIRMA_RATE_MAX_PER_MIN`, `IFIRMA_RATE_MAX_PER_DAY`, `IFIRMA_RATE_WINDOW`, `IFIRMA_RATE_DAY_WINDOW` (each counter is incremented by one atomic statement; `IfirmaRateGuard` checks the minute, then the day) |
 | Internal state | `IFIRMA_AUTH_FAILURE` (the pause mark after a rejected key, `<unix time>|<message>`), `IFIRMA_SEEN_<id_employee>` (the notification seen mark) |
 

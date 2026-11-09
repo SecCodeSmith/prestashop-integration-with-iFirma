@@ -464,6 +464,7 @@ class Ifirma extends Module
             'IFIRMA_NOTIFY_EMAIL' => $this->l('The notification e-mail address is not valid.'),
             'IFIRMA_SYNC_INTERVAL_MIN' => $this->l('The sync interval must be a whole number of minutes between 1 and 1440.'),
             'IFIRMA_CRON_MAX_CALLS' => $this->l('The cron call budget must be a whole number between 1 and 90.'),
+            'IFIRMA_CRON_MAX_ITEMS' => $this->l('The cron item limit must be a whole number between 1 and 50.'),
             'IFIRMA_RATE_MAX_PER_MIN' => $this->l('The API rate limit must be a whole number between 1 and 100 calls per minute.'),
             'IFIRMA_RATE_MAX_PER_DAY' => $this->l('The API daily limit must be a whole number between 1 and 15000 calls per day.'),
             'IFIRMA_PAYMENT_METHOD_MODE' => $this->l('The payment method mode must be "order" or "fixed".'),
@@ -985,6 +986,13 @@ class Ifirma extends Module
             ),
             array(
                 'type' => 'text',
+                'label' => $this->l('Cron items per job'),
+                'name' => 'IFIRMA_CRON_MAX_ITEMS',
+                'class' => 'fixed-width-sm',
+                'desc' => $this->l('Most queued orders, KSeF submissions and deliveries one cron run handles per job (1-50).'),
+            ),
+            array(
+                'type' => 'text',
                 'label' => $this->l('API calls per minute'),
                 'name' => 'IFIRMA_RATE_MAX_PER_MIN',
                 'class' => 'fixed-width-sm',
@@ -1064,6 +1072,7 @@ class Ifirma extends Module
             'IFIRMA_NOTIFY_EMAIL' => Configuration::get('IFIRMA_NOTIFY_EMAIL'),
             'IFIRMA_SYNC_INTERVAL_MIN' => (int) Configuration::get('IFIRMA_SYNC_INTERVAL_MIN'),
             'IFIRMA_CRON_MAX_CALLS' => (int) Configuration::get('IFIRMA_CRON_MAX_CALLS'),
+            'IFIRMA_CRON_MAX_ITEMS' => (int) Configuration::get('IFIRMA_CRON_MAX_ITEMS'),
             'IFIRMA_RATE_MAX_PER_MIN' => (int) Configuration::get('IFIRMA_RATE_MAX_PER_MIN'),
             'IFIRMA_RATE_MAX_PER_DAY' => (int) Configuration::get('IFIRMA_RATE_MAX_PER_DAY'),
         );

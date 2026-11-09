@@ -223,6 +223,7 @@ class SettingsGoldenTest extends TestCase
             'The notification e-mail address is not valid.',
             'The sync interval must be a whole number of minutes between 1 and 1440.',
             'The cron call budget must be a whole number between 1 and 90.',
+            'The cron item limit must be a whole number between 1 and 50.',
             'The API rate limit must be a whole number between 1 and 100 calls per minute.',
             'The API daily limit must be a whole number between 1 and 15000 calls per day.',
             'The payment method mode must be "order" or "fixed".',

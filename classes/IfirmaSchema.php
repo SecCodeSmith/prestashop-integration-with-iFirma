@@ -479,6 +479,7 @@ class IfirmaSchema
             'IFIRMA_SYNC_INTERVAL_MIN' => 15,
             'IFIRMA_CRON_TOKEN' => null,
             'IFIRMA_CRON_MAX_CALLS' => 40,
+            'IFIRMA_CRON_MAX_ITEMS' => 10,
             'IFIRMA_RATE_MAX_PER_MIN' => 80,
             'IFIRMA_RATE_MAX_PER_DAY' => 14000,
             'IFIRMA_RATE_WINDOW' => '',

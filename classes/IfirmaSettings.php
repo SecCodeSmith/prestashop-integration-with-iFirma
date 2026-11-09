@@ -149,6 +149,7 @@ class IfirmaSettings
             'IFIRMA_NOTIFY_EMAIL' => array('type' => self::TYPE_EMAIL, 'default' => ''),
             'IFIRMA_SYNC_INTERVAL_MIN' => array('type' => self::TYPE_RANGE, 'min' => 1, 'max' => 1440),
             'IFIRMA_CRON_MAX_CALLS' => array('type' => self::TYPE_RANGE, 'min' => 1, 'max' => 90),
+            'IFIRMA_CRON_MAX_ITEMS' => array('type' => self::TYPE_RANGE, 'min' => 1, 'max' => 50),
             'IFIRMA_RATE_MAX_PER_MIN' => array('type' => self::TYPE_RANGE, 'min' => 1, 'max' => 100),
             'IFIRMA_RATE_MAX_PER_DAY' => array('type' => self::TYPE_RANGE, 'min' => 1, 'max' => 15000),
         );
