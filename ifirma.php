@@ -50,7 +50,7 @@ class Ifirma extends Module
     {
         $this->name = 'ifirma';
         $this->tab = 'billing_invoicing';
-        $this->version = '1.9.0';
+        $this->version = '1.9.1';
         $this->author = 'SCM Jakub Berechowski';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = array('min' => '8.0.0', 'max' => '9.99.99');
