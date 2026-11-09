@@ -920,6 +920,20 @@ class Ifirma extends Module
                 ),
             ),
             array(
+                'type' => 'select',
+                'label' => $this->l('KSeF submitter'),
+                'name' => 'IFIRMA_KSEF_SUBMITTER',
+                'desc' => $this->l('Who sends the invoices to KSeF. Choose iFirma when your iFirma account submits API invoices to KSeF on its own: the module then never calls the KSeF send endpoint and only waits for the state iFirma reports.'),
+                'options' => array(
+                    'query' => array(
+                        array('id' => 'module', 'name' => $this->l('The module sends them')),
+                        array('id' => 'ifirma', 'name' => $this->l('iFirma sends them (the module waits)')),
+                    ),
+                    'id' => 'id',
+                    'name' => 'name',
+                ),
+            ),
+            array(
                 'type' => 'switch',
                 'label' => $this->l('Duplicate check'),
                 'name' => 'IFIRMA_DUPLICATE_CHECK',
@@ -1064,6 +1078,7 @@ class Ifirma extends Module
             'IFIRMA_SEND_COPY_MODE' => Configuration::get('IFIRMA_SEND_COPY_MODE') ?: 'none',
             'IFIRMA_SEND_COPY_EMPLOYEE' => (int) Configuration::get('IFIRMA_SEND_COPY_EMPLOYEE'),
             'IFIRMA_KSEF_MODE' => IfirmaKsefService::normalizeMode(Configuration::get('IFIRMA_KSEF_MODE')),
+            'IFIRMA_KSEF_SUBMITTER' => IfirmaKsefService::normalizeSubmitter(Configuration::get('IFIRMA_KSEF_SUBMITTER')),
             'IFIRMA_DUPLICATE_CHECK' => (int) Configuration::get('IFIRMA_DUPLICATE_CHECK'),
             'IFIRMA_DUPLICATE_WINDOW_DAYS' => (int) Configuration::get('IFIRMA_DUPLICATE_WINDOW_DAYS'),
             'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE' => Configuration::get('IFIRMA_DUPLICATE_AMOUNT_TOLERANCE'),

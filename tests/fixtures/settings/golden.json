@@ -29,6 +29,7 @@
       "IFIRMA_SEND_COPY_MODE": "employee",
       "IFIRMA_SEND_COPY_EMPLOYEE": "3",
       "IFIRMA_KSEF_MODE": "all",
+      "IFIRMA_KSEF_SUBMITTER": "ifirma",
       "IFIRMA_DUPLICATE_CHECK": "1",
       "IFIRMA_DUPLICATE_WINDOW_DAYS": "45",
       "IFIRMA_DUPLICATE_AMOUNT_TOLERANCE": "0,05",
@@ -65,6 +66,7 @@
       ["IFIRMA_SEND_COPY_MODE", "employee"],
       ["IFIRMA_SEND_COPY_EMPLOYEE", 3],
       ["IFIRMA_KSEF_MODE", "all"],
+      ["IFIRMA_KSEF_SUBMITTER", "ifirma"],
       ["IFIRMA_DUPLICATE_CHECK", 1],
       ["IFIRMA_DUPLICATE_WINDOW_DAYS", 45],
       ["IFIRMA_DUPLICATE_AMOUNT_TOLERANCE", "0.05"],
@@ -148,6 +150,7 @@
         ["IFIRMA_SEND_COPY_MODE", "none"],
         ["IFIRMA_SEND_COPY_EMPLOYEE", 0],
         ["IFIRMA_KSEF_MODE", "b2b"],
+        ["IFIRMA_KSEF_SUBMITTER", "module"],
         ["IFIRMA_DUPLICATE_CHECK", 0],
         ["IFIRMA_DUPLICATE_WINDOW_DAYS", 30],
         ["IFIRMA_DUPLICATE_AMOUNT_TOLERANCE", "0"],
@@ -572,6 +575,12 @@
       "change": {"IFIRMA_RATE_MAX_PER_DAY": "0"},
       "notice": "<error>The API daily limit must be a whole number between 1 and 15000 calls per day.</error>",
       "writes": []
+    },
+    {
+      "name": "unknown submitter becomes the module",
+      "change": {"IFIRMA_KSEF_SUBMITTER": "both"},
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {"IFIRMA_KSEF_SUBMITTER": "module"}
     },
     {
       "name": "payment mode unknown",

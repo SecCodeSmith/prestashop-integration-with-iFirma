@@ -912,6 +912,10 @@ class ModuleHooksTest extends TestCase
         }
         $this->assertSame(array('b2b', 'all', 'off'), $modes);
         $this->assertSame('b2b', HelperForm::$lastHelper->fields_value['IFIRMA_KSEF_MODE']);
+        $this->assertArrayHasKey('IFIRMA_KSEF_SUBMITTER', $inputs);
+        $this->assertSame('select', $inputs['IFIRMA_KSEF_SUBMITTER']['type']);
+        $this->assertSame(array('module', 'ifirma'), array_column($inputs['IFIRMA_KSEF_SUBMITTER']['options']['query'], 'id'));
+        $this->assertSame('module', HelperForm::$lastHelper->fields_value['IFIRMA_KSEF_SUBMITTER']);
     }
 
     public function testKsefModeIsSavedNormalised()

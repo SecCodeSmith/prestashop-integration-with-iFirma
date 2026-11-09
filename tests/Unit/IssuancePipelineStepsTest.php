@@ -541,6 +541,7 @@ class IssuancePipelineStepsTest extends TestCase
         $this->queueGuardNone();
         $this->queueCreateOk();
         $this->queueNumber();
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Kod":0,"KsefStatus":"","KsefNumer":""}}'));
         $this->t->queue('POST', '#ksef/send/77\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"Faktura wyslana"}}'));
         $this->queuePdf();
 
@@ -558,14 +559,15 @@ class IssuancePipelineStepsTest extends TestCase
                 'create:ok:',
                 'number:ok:',
                 'ksef:ok:Faktura wyslana',
-                'deliver:ok:sent',
+                'deliver:skipped:waiting for KSeF acceptance',
             ),
             'receipt' => '#1 created module 7/2026',
             'guard' => 'proceed',
-            'delivery' => 'ok|sent|shop_mail|',
+            'delivery' => null,
         ), $this->snapshot($r));
+        // deliberate change (task 6.5): the invoice goes to KSeF and is delivered after acceptance, so no PDF is fetched now
         $this->assertSame(
-            array('GET /iapi/faktury.json', 'POST /iapi/fakturakraj.json', 'GET /iapi/faktury.json', 'POST /iapi/fakturakraj/ksef/send/77.json', 'GET /iapi/fakturakraj/77.pdf'),
+            array('GET /iapi/faktury.json', 'POST /iapi/fakturakraj.json', 'GET /iapi/faktury.json', 'GET /iapi/fakturakraj/77.json', 'POST /iapi/fakturakraj/ksef/send/77.json'),
             $this->requests()
         );
     }
@@ -576,6 +578,7 @@ class IssuancePipelineStepsTest extends TestCase
         $this->queueGuardNone();
         $this->queueCreateOk();
         $this->queueNumber();
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Kod":0,"KsefStatus":"","KsefNumer":""}}'));
         $this->t->queue('POST', '#ksef/send#', array('body' => '{"response":{"Kod":200,"Informacja":"KSeF niedostepny"}}'));
         $this->queuePdf();
 
@@ -596,11 +599,11 @@ class IssuancePipelineStepsTest extends TestCase
                 'create:ok:',
                 'number:ok:',
                 'ksef:failed:' . $error,
-                'deliver:ok:sent',
+                'deliver:skipped:waiting for KSeF acceptance',
             ),
             'receipt' => '#1 created module 7/2026',
             'guard' => 'proceed',
-            'delivery' => 'ok|sent|shop_mail|',
+            'delivery' => null,
         ), $this->snapshot($r));
     }
 
@@ -843,6 +846,7 @@ class IssuancePipelineStepsTest extends TestCase
         $this->queueGuardNone();
         $this->queueCreateOk();
         $this->queueNumber();
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Kod":0,"KsefStatus":"","KsefNumer":""}}'));
         $this->t->queue('POST', '#ksef/send#', array('body' => '{"response":{"Kod":200,"Informacja":"KSeF niedostepny"}}'));
 
         $r = $this->pipeline->run($this->order(), array('skip_delivery' => true));

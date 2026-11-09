@@ -358,27 +358,42 @@ With `shop_mail`, a copy of each delivery e-mail (with the PDF) can be sent as a
 
 ## KSeF (e-invoicing)
 
-From 2026, B2B invoices must be submitted to the National e-Invoicing System (KSeF). The module can submit issued invoices through iFirma (`POST {type}/ksef/send/{id}.json`, body `{"DataWysylki": null}`, meaning send now). The setting is `IFIRMA_KSEF_MODE`:
+From 2026, B2B invoices must be submitted to the National e-Invoicing System (KSeF). iFirma can submit them for you, and since April 2026 it can also submit API-issued invoices on its own, at a time set in its account settings, and it refuses to e-mail an invoice that belongs in KSeF. Two settings decide what the module does, and they are independent:
 
-- `b2b` (default): submit invoices whose buyer has a NIP. The buyer NIP is read from the stored request payload (`Kontrahent.NIP`), and when the payload has none, from the order's invoice address. Invoices to private buyers are skipped.
-- `all`: submit every issued invoice, including invoices to private buyers. Private invoices are not required to be sent to KSeF, so use this only deliberately.
-- `off`: never submit automatically. The manual button stays available.
+- **Which documents go to KSeF** - `IFIRMA_KSEF_MODE`:
+  - `b2b` (default): invoices whose buyer has a NIP. The buyer NIP is read from the stored request payload (`Kontrahent.NIP`), and when the payload has none, from the order's invoice address. Invoices to private buyers do not go.
+  - `all`: every issued invoice, including invoices to private buyers. Private invoices are not required to be sent to KSeF, so use this only deliberately.
+  - `off`: no document goes to KSeF automatically. The manual button stays available.
+  - Any other stored value is treated as `b2b`.
+- **Who submits them** - `IFIRMA_KSEF_SUBMITTER` (**KSeF submitter** on the settings page): `module` (default) or `ifirma`. With `ifirma`, choose it when your iFirma account sends API invoices to KSeF by itself: the module never calls the KSeF send endpoint and only waits for the KSeF state iFirma reports. Any other stored value is treated as `module`. The mode still decides which documents wait for acceptance, so it must not be `off` for the module to wait. With the mode `off`, no document is treated as going to KSeF whatever the submitter is.
 
-Any other stored value is treated as `b2b`.
+**No double submission.** With the submitter `module`, the module reads the document's current KSeF state from iFirma (`GET {type}/{id}.json`, the fields `KsefStatus` and `KsefNumer`) before every submission and submits only when that state is empty. When iFirma already reports the invoice as sent (`WYSLANA`), scheduled (`ZAPLANOWANA`), accepted (`PRZYJETA`, or a number) or in any status the module does not know, nothing is sent and the reported state is stored on the receipt. When the state cannot be read (a timeout, an error answer, the rate limit), nothing is sent either: the step is skipped with the reason "KSeF state unavailable, retried by the cron" and the [cron endpoint](configuration.md#cron-jobs) reads the state again and submits. A rejected invoice (`ODRZUCONA`, `BLAD`) is never submitted again automatically.
 
-**Pipeline step `ksef`.** The issuing pipeline runs the `ksef` step between `number` and `deliver`. The step is skipped with a recorded reason when submission is disabled (`off`), the buyer is private in `b2b` mode, the document is already in KSeF, or the document type does not support KSeF submission. When iFirma accepts the submission (`Kod` 0), the receipt records `ksef_status` = `WYSLANA` and `ksef_sent_at`. When the submission fails, the step is non-blocking: delivery still runs, the document stays issued, the result message carries `KSeF: <error>`, and the receipt records `ksef_status` = `BLAD` and `ksef_error`.
+**Pipeline step `ksef`.** The issuing pipeline runs the `ksef` step between `number` and `deliver`. The step is skipped with a recorded reason when submission is disabled (`off`), the buyer is private in `b2b` mode, the submitter is iFirma ("sent by iFirma"), the document is already in KSeF, iFirma already sent it ("already sent by iFirma"), its state could not be read, or the document type does not support KSeF submission. When iFirma accepts the submission (`Kod` 0), the receipt records `ksef_status` = `WYSLANA` and `ksef_sent_at`. When the submission fails, the step is non-blocking: the document stays issued, the result message carries `KSeF: <error>`, and the receipt records `ksef_status` = `BLAD` and `ksef_error`.
 
-**Order panel.** The KSeF row shows one state: not sent (with the reason), sent at (awaiting iFirma), accepted (with the KSeF number), or error (with the message). **Send to KSeF** submits the document regardless of the mode. It is never offered for a document that is already accepted.
+**Delivery after KSeF acceptance.** An invoice that goes to KSeF is **not** e-mailed at issuance, because an invoice given outside KSeF should carry its KSeF number. The `deliver` step is skipped with the reason "waiting for KSeF acceptance" and the receipt's delivery state becomes `awaiting_ksef`. The cron delivers it once status sync reports it accepted (a KSeF number, or `PRZYJETA`); an acceptance read by the sync is delivered in the same run. Until then:
+
+- the customer's order page shows no download link and the download answers "not found";
+- a rejected submission (`BLAD`, `ODRZUCONA`) keeps the delivery waiting and is not delivered automatically, and a wait longer than 48 hours needs attention (notification tab and documents-list preset);
+- an e-mail that fails after acceptance is recorded as failed and the cron does not retry it; use **Send again**;
+- **Send again** delivers at once on the employee's decision and ends the wait (the panel warns that the document is not yet accepted in KSeF); the cron then sends no second e-mail.
+
+Receipts, invoices to private buyers in `b2b` mode, every document in mode `off`, and every document when the delivery channel is `none` are delivered (or recorded as skipped) at issuance as before and never wait.
+
+**Order panel.** The KSeF row shows exactly one of five states: not sent (with the reason), waiting for iFirma (submitter `ifirma`, no state reported yet), sent and awaiting acceptance (sent at `ksef_sent_at`, or reported by iFirma with its status, for example scheduled), accepted (with the KSeF number), or error (`BLAD` with the message, or `ODRZUCONA`, rejected by KSeF). **Send to KSeF** submits the document regardless of the mode and the submitter, after reading its state: it refuses when iFirma reports the document as sent, scheduled or accepted, and allows a new submission after a rejection. It is never offered for a document that is already accepted.
 
 **Customer order page.** The KSeF number is shown when one is present. KSeF errors are not shown to the customer.
 
 **Status values.**
 
-- `WYSLANA`: the module submitted the invoice and iFirma has not yet reported a KSeF status. The marker is kept until status sync receives a non-empty `KsefStatus`.
+- `WYSLANA`: sent and awaiting acceptance. The module submitted the invoice, or iFirma did, and no KSeF number has been reported yet.
+- `ZAPLANOWANA`: iFirma scheduled the submission for a later time (set in its account settings).
 - `PRZYJETA`: iFirma reports that KSeF accepted the invoice; `KsefNumer` is stored with it.
 - `BLAD`: the last submission failed. The message is in `ksef_error` and in the order panel.
+- `ODRZUCONA`: KSeF rejected the invoice.
+- Any other value iFirma reports is shown as it is and counts as in progress: it causes neither a resubmission nor a delivery.
 
-> Warning: a KSeF submission cannot be withdrawn through the API or the module. Before enabling `all`, decide whether private-buyer invoices should go to KSeF, and check whether the iFirma account already submits invoices to KSeF on its own; the module does not detect that setting, so a second submission is possible.
+> Warning: a KSeF submission cannot be withdrawn through the API or the module. Before enabling `all`, decide whether private-buyer invoices should go to KSeF. If your iFirma account submits invoices to KSeF on its own, set the submitter to `iFirma`: the module reads the state before it submits, but a real iFirma answer that lacks the KSeF fields reads as "no state", and then only the submitter setting keeps the module from submitting too.
 
 ## Customer page
 

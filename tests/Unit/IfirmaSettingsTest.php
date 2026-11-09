@@ -91,7 +91,7 @@ class IfirmaSettingsTest extends TestCase
             'IFIRMA_DOC_TYPE', 'IFIRMA_SIGNATURE_TYPE', 'IFIRMA_PAYMENT_METHOD', 'IFIRMA_PAYMENT_METHOD_MODE',
             'IFIRMA_PAYMENT_METHOD_MAP', 'IFIRMA_CONTRACTOR_SYNC', 'IFIRMA_PAYMENT_TYPE_TOKEN', 'IFIRMA_DEFAULT_UNIT',
             'IFIRMA_AUTO_CREATE_STATE', 'IFIRMA_MARK_PAID_ON_CREATE', 'IFIRMA_SEND_CHANNEL', 'IFIRMA_SEND_TEXT',
-            'IFIRMA_SEND_COPY_MODE', 'IFIRMA_SEND_COPY_EMPLOYEE', 'IFIRMA_KSEF_MODE', 'IFIRMA_DUPLICATE_CHECK',
+            'IFIRMA_SEND_COPY_MODE', 'IFIRMA_SEND_COPY_EMPLOYEE', 'IFIRMA_KSEF_MODE', 'IFIRMA_KSEF_SUBMITTER', 'IFIRMA_DUPLICATE_CHECK',
             'IFIRMA_DUPLICATE_WINDOW_DAYS', 'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE', 'IFIRMA_DOC_TEMPLATE',
             'IFIRMA_ORDER_STAMP_PREFIX', 'IFIRMA_SHOP_URL', 'IFIRMA_ALLOW_DATA_REQUEST',
             'IFIRMA_DATA_REQUEST_AUTO_ACCEPT', 'IFIRMA_NOTIFY_EMAIL', 'IFIRMA_SYNC_INTERVAL_MIN', 'IFIRMA_CRON_MAX_CALLS', 'IFIRMA_CRON_MAX_ITEMS', 'IFIRMA_RATE_MAX_PER_MIN',
@@ -151,6 +151,7 @@ class IfirmaSettingsTest extends TestCase
             'IFIRMA_SEND_COPY_MODE' => 'none',
             'IFIRMA_SEND_COPY_EMPLOYEE' => 0,
             'IFIRMA_KSEF_MODE' => 'b2b',
+            'IFIRMA_KSEF_SUBMITTER' => 'module',
             'IFIRMA_DUPLICATE_CHECK' => 0,
             'IFIRMA_DUPLICATE_WINDOW_DAYS' => null,
             'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE' => null,
@@ -710,6 +711,14 @@ class IfirmaSettingsTest extends TestCase
         foreach (array('IFIRMA_DOC_TYPE', 'IFIRMA_SIGNATURE_TYPE', 'IFIRMA_KSEF_MODE') as $key) {
             $this->assertNull($this->errorOf($key, $posted), $key);
         }
+    }
+
+    public function testTheSubmitterIsWhatItsOwnClassMakesOfIt()
+    {
+        $this->assertSame('ifirma', $this->valueOf('IFIRMA_KSEF_SUBMITTER', ' IFIRMA '));
+        $this->assertSame('module', $this->valueOf('IFIRMA_KSEF_SUBMITTER', 'both'));
+        $this->assertSame('module', $this->valueOf('IFIRMA_KSEF_SUBMITTER', false));
+        $this->assertNull($this->errorOf('IFIRMA_KSEF_SUBMITTER', 'both'));
     }
 
     public function testTheseThreeAreTheNormalisersOfTheirOwnClassesAndNotACopy()

@@ -104,6 +104,7 @@ Open the module configuration and fill in:
 | `IFIRMA_SYNC_INTERVAL_MIN` (new) | `15` |
 | `IFIRMA_CRON_TOKEN` (new) | random 32 hex characters, generated on install/upgrade from the system's secure random generator (if that is unavailable, the install or upgrade fails with a message rather than using a weaker token) |
 | `IFIRMA_CRON_MAX_CALLS` (new) | `40` (list calls of the status sync per run) |
+| `IFIRMA_KSEF_SUBMITTER` (new) | `module` (`module` or `ifirma`; any other value is read as `module`). Who sends the invoices that go to KSeF under `IFIRMA_KSEF_MODE`: with `ifirma` the module never calls the KSeF send endpoint and only waits for the state iFirma reports. See [KSeF](usage.md#ksef-e-invoicing) |
 | `IFIRMA_CRON_MAX_ITEMS` (new) | `10` (1 to 50: the most queued orders, KSeF submissions or deliveries each of those jobs handles in one cron run) |
 | `IFIRMA_RATE_MAX_PER_MIN` (new) | `80` (1 to 100) |
 | `IFIRMA_RATE_MAX_PER_DAY` (new) | `14000` (1 to 15000) |

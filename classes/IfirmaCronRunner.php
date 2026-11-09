@@ -17,6 +17,8 @@ require_once dirname(__FILE__) . '/IfirmaCronJob.php';
 require_once dirname(__FILE__) . '/IfirmaNamedLock.php';
 require_once dirname(__FILE__) . '/IfirmaIssueQueueJob.php';
 require_once dirname(__FILE__) . '/IfirmaStatusSyncJob.php';
+require_once dirname(__FILE__) . '/IfirmaKsefRetryJob.php';
+require_once dirname(__FILE__) . '/IfirmaAwaitingDeliveryJob.php';
 
 /**
  * Runs the jobs of the cron endpoint one after the other, under a run lock so two cron requests never overlap.
@@ -57,7 +59,9 @@ class IfirmaCronRunner
             new IfirmaIssueQueueJob(IfirmaIssuancePipeline::build($module), function () use ($client) {
                 return $client->isAuthBlocked();
             }),
+            new IfirmaKsefRetryJob(IfirmaKsefService::build($module)),
             new IfirmaStatusSyncJob(IfirmaStatusSyncService::build($module)),
+            new IfirmaAwaitingDeliveryJob(IfirmaDeliveryService::build($module)),
         ));
     }
 

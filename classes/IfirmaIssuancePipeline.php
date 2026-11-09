@@ -23,6 +23,7 @@ require_once dirname(__FILE__) . '/IfirmaKsefService.php';
 require_once dirname(__FILE__) . '/IfirmaDataRequestService.php';
 require_once dirname(__FILE__) . '/IfirmaNamedLock.php';
 require_once dirname(__FILE__) . '/IfirmaIssueQueue.php';
+require_once dirname(__FILE__) . '/IfirmaKsefDeliveryGate.php';
 require_once dirname(__FILE__) . '/IfirmaRateLimitedException.php';
 
 require_once dirname(__FILE__) . '/IfirmaPipelineResult.php';
@@ -584,6 +585,18 @@ class IfirmaIssuancePipeline
 
             return;
         }
+        $outcome = isset($k['outcome']) ? (string) $k['outcome'] : '';
+        if ($outcome === 'deferred') {
+            // nothing was sent and nothing changed: the cron reads the state again and submits
+            $result->addStep(self::STEP_KSEF, 'skipped', $this->module->l('KSeF state unavailable, retried by the cron', 'ifirmaissuancepipeline'));
+
+            return;
+        }
+        if ($outcome === 'already' || $outcome === 'refused') {
+            $result->addStep(self::STEP_KSEF, 'skipped', $message);
+
+            return;
+        }
         $result->addStep(self::STEP_KSEF, 'failed', $message);
         $result->message = rtrim((string) $result->message) . ' KSeF: ' . ($message !== '' ? $message : 'KSeF submission failed');
     }
@@ -600,6 +613,14 @@ class IfirmaIssuancePipeline
     {
         if (!empty($options['skip_delivery'])) {
             $result->addStep(self::STEP_DELIVER, 'skipped', 'delivery skipped by caller');
+
+            return;
+        }
+        if ((new IfirmaKsefDeliveryGate($this->ksef))->mustWait($result->receipt, $order)) {
+            // an invoice given outside KSeF should carry its KSeF number: the cron delivers it after acceptance
+            $result->receipt->markAwaitingKsef();
+            $result->receipt->save();
+            $result->addStep(self::STEP_DELIVER, 'skipped', 'waiting for KSeF acceptance');
 
             return;
         }

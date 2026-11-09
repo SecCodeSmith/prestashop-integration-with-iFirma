@@ -321,6 +321,98 @@ class IfirmaReceipt extends ObjectModel
     }
 
     /**
+     * Issued documents whose delivery waits for KSeF and that have no KSeF state yet: their submission was deferred.
+     * Oldest first.
+     *
+     * @param int $limit at most this many records, and at least one
+     * @return IfirmaReceipt[]
+     */
+    public static function findAwaitingKsefSubmission($limit)
+    {
+        return self::findWhere(self::awaitingSubmissionCondition(), $limit);
+    }
+
+    /**
+     * @return int how many documents wait for their deferred KSeF submission
+     */
+    public static function countAwaitingKsefSubmission()
+    {
+        return self::countWhere(self::awaitingSubmissionCondition());
+    }
+
+    /**
+     * Documents whose delivery waits for KSeF and that KSeF has accepted (a KSeF number, or the status PRZYJETA).
+     * Oldest first.
+     *
+     * @param int $limit at most this many records, and at least one
+     * @return IfirmaReceipt[]
+     */
+    public static function findAwaitingDelivery($limit)
+    {
+        return self::findWhere(self::acceptedAwaitingDeliveryCondition(), $limit);
+    }
+
+    /**
+     * @return int how many accepted documents still wait for their delivery
+     */
+    public static function countAwaitingDelivery()
+    {
+        return self::countWhere(self::acceptedAwaitingDeliveryCondition());
+    }
+
+    /**
+     * @return string
+     */
+    private static function awaitingSubmissionCondition()
+    {
+        return 'delivery_status = \'' . self::DELIVERY_AWAITING_KSEF . '\' AND ifirma_id != \'\''
+            . ' AND (ksef_status IS NULL OR ksef_status = \'\') AND (ksef_number IS NULL OR ksef_number = \'\')';
+    }
+
+    /**
+     * @return string
+     */
+    private static function acceptedAwaitingDeliveryCondition()
+    {
+        return 'delivery_status = \'' . self::DELIVERY_AWAITING_KSEF . '\''
+            . ' AND (ksef_number != \'\' OR ksef_status = \'PRZYJETA\')';
+    }
+
+    /**
+     * @param string $condition a fixed SQL condition built from constants
+     * @param int    $limit
+     * @return IfirmaReceipt[]
+     */
+    private static function findWhere($condition, $limit)
+    {
+        $rows = Db::getInstance()->executeS(
+            'SELECT id_ifirma_receipt FROM `' . _DB_PREFIX_ . 'ifirma_receipt` WHERE ' . $condition
+            . ' ORDER BY date_add ASC, id_ifirma_receipt ASC LIMIT ' . max(1, (int) $limit)
+        );
+
+        $records = array();
+        foreach ((array) $rows as $row) {
+            $record = new self((int) $row['id_ifirma_receipt']);
+            if (!empty($record->id)) {
+                $records[] = $record;
+            }
+        }
+
+        return $records;
+    }
+
+    /**
+     * @param string $condition a fixed SQL condition built from constants
+     * @return int
+     */
+    private static function countWhere($condition)
+    {
+        return (int) Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'ifirma_receipt` WHERE ' . $condition
+        );
+    }
+
+    /**
      * @return int how many records are queued
      */
     public static function countQueued()
@@ -517,6 +609,17 @@ class IfirmaReceipt extends ObjectModel
     public function markPaid()
     {
         $this->status = self::STATUS_PAID;
+    }
+
+    /**
+     * Marks the delivery as waiting for KSeF acceptance: the document goes to KSeF and is e-mailed to the customer once
+     * KSeF has accepted it. Sets the fields only; the caller saves.
+     */
+    public function markAwaitingKsef()
+    {
+        $this->delivery_status = self::DELIVERY_AWAITING_KSEF;
+        $this->delivered_at = null;
+        $this->delivery_error = '';
     }
 
     /**

@@ -467,6 +467,7 @@ class IfirmaSchema
             'IFIRMA_SEND_COPY_MODE' => 'none',
             'IFIRMA_SEND_COPY_EMPLOYEE' => 0,
             'IFIRMA_KSEF_MODE' => 'b2b',
+            'IFIRMA_KSEF_SUBMITTER' => 'module',
             'IFIRMA_DUPLICATE_CHECK' => 1,
             'IFIRMA_DUPLICATE_WINDOW_DAYS' => 60,
             'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE' => '0.01',

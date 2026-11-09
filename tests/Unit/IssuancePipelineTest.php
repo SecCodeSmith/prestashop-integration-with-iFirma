@@ -597,6 +597,7 @@ class IssuancePipelineTest extends TestCase
         $this->queueGuardNone();
         $this->queueCreateOk();
         $this->queueNumber();
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Kod":0,"KsefStatus":"","KsefNumer":""}}'));
         $this->t->queue('POST', '#ksef/send/77\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"Faktura wyslana"}}'));
         $this->queuePdf();
 
@@ -605,9 +606,10 @@ class IssuancePipelineTest extends TestCase
         $this->assertTrue($r->ok);
         $this->assertSame('issued', $r->outcome);
         $this->assertSame(
-            array('hold:ok', 'guard:ok', 'create:ok', 'number:ok', 'ksef:ok', 'deliver:ok'),
+            array('hold:ok', 'guard:ok', 'create:ok', 'number:ok', 'ksef:ok', 'deliver:skipped'),
             $this->stepNames($r)
         );
+        $this->assertSame('awaiting_ksef', $this->dbRow()['delivery_status']);
         $this->assertSame('Faktura wyslana', $r->steps[4]['message']);
         $this->assertSame('WYSLANA', $this->dbRow()['ksef_status']);
     }
@@ -643,12 +645,13 @@ class IssuancePipelineTest extends TestCase
         $this->assertSame('', $this->dbRow()['ksef_status']);
     }
 
-    public function testKsefFailureDoesNotStopDelivery()
+    public function testKsefFailureDoesNotStopTheRunAndTheDeliveryWaitsForKsef()
     {
         $this->businessAddress();
         $this->queueGuardNone();
         $this->queueCreateOk();
         $this->queueNumber();
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Kod":0,"KsefStatus":"","KsefNumer":""}}'));
         $this->t->queue('POST', '#ksef/send#', array('body' => '{"response":{"Kod":200,"Informacja":"KSeF niedostepny"}}'));
         $this->queuePdf();
 
@@ -658,12 +661,13 @@ class IssuancePipelineTest extends TestCase
         $this->assertSame('issued', $r->outcome);
         $this->assertNull($r->stoppedAt);
         $this->assertSame(
-            array('hold:ok', 'guard:ok', 'create:ok', 'number:ok', 'ksef:failed', 'deliver:ok'),
+            array('hold:ok', 'guard:ok', 'create:ok', 'number:ok', 'ksef:failed', 'deliver:skipped'),
             $this->stepNames($r)
         );
         $this->assertStringContainsString('KSeF', $r->message);
         $this->assertStringContainsString('KSeF: ', $r->message);
-        $this->assertSame('sent', $this->dbRow()['delivery_status']);
+        // a failed submission does not stop the run, and the document, which still goes to KSeF, waits for acceptance
+        $this->assertSame('awaiting_ksef', $this->dbRow()['delivery_status']);
         $this->assertSame('BLAD', $this->dbRow()['ksef_status']);
         $this->assertStringContainsString('KSeF submission failed', $this->pipeline->describe($r));
     }
@@ -687,6 +691,7 @@ class IssuancePipelineTest extends TestCase
         $this->queueCreateOk();
         $this->queueNumber();
         // only the KSeF send request raises; the real IfirmaKsefService turns that into the step's outcome
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Kod":0,"KsefStatus":"","KsefNumer":""}}'));
         $this->t->queue('POST', '#ksef/send#', function () use ($failure) {
             throw $failure;
         });
@@ -698,7 +703,7 @@ class IssuancePipelineTest extends TestCase
         $this->assertSame(IfirmaPipelineResult::OUTCOME_ISSUED, $r->outcome);
         $this->assertNull($r->stoppedAt);
         $this->assertSame(
-            array('hold:ok', 'guard:ok', 'create:ok', 'number:ok', 'ksef:failed', 'deliver:ok'),
+            array('hold:ok', 'guard:ok', 'create:ok', 'number:ok', 'ksef:failed', 'deliver:skipped'),
             $this->stepNames($r)
         );
         $this->assertSame('iFirma did not confirm the KSeF submission', $r->steps[4]['message']);
@@ -708,7 +713,7 @@ class IssuancePipelineTest extends TestCase
             $this->pipeline->describe($r)
         );
         $row = $this->dbRow();
-        $this->assertSame('sent', $row['delivery_status']);
+        $this->assertSame('awaiting_ksef', $row['delivery_status']);
         $this->assertSame('BLAD', $row['ksef_status']);
         $this->assertSame('iFirma did not confirm the KSeF submission', $row['ksef_error']);
         $this->assertEmpty($row['ksef_sent_at']);
@@ -1772,5 +1777,107 @@ class IssuancePipelineTest extends TestCase
 
         $this->assertSame('error', $this->dbRow()['status']);
         $this->assertSame('db exploded', $this->dbRow()['last_error']);
+    }
+    // ---- a document that goes to KSeF is delivered after KSeF accepted it (design D6) ----------------------
+
+    private function businessOrderIssuanceScript($detailState = '')
+    {
+        $this->queueGuardNone();
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"ok","Identyfikator":"77"}}'));
+        $this->queueNumber();
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => json_encode(array('response' => array(
+            'Kod' => 0, 'KsefStatus' => $detailState, 'KsefNumer' => $detailState === 'PRZYJETA' ? '5260001122-20261101-ABC-01' : '',
+        )))));
+        $this->t->queue('POST', '#ksef/send/77\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"Faktura wyslana"}}'));
+        $this->queuePdf();
+        // the buyer has a NIP: the contractor block of the stored payload carries it
+        Address::register($this->addressWithNip());
+    }
+
+    private function addressWithNip()
+    {
+        $a = new Address();
+        $a->id = 7;
+        $a->id_customer = 5;
+        $a->firstname = 'Jan';
+        $a->lastname = 'K';
+        $a->company = 'ACME';
+        $a->vat_number = '5260001122';
+        $a->id_country = 14;
+
+        return $a;
+    }
+
+    public function testABusinessInvoiceIsHeldBackFromTheCustomerUntilKsefAcceptsIt()
+    {
+        Configuration::updateValue('IFIRMA_KSEF_MODE', 'b2b');
+        $this->businessOrderIssuanceScript();
+
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertSame('issued', $r->outcome);
+        $this->assertSame('ksef:ok', $this->stepNames($r)[4]);
+        $this->assertSame('deliver:skipped', $this->stepNames($r)[5]);
+        $this->assertSame('waiting for KSeF acceptance', $r->steps[5]['message']);
+        $this->assertSame('awaiting_ksef', $this->dbRow()['delivery_status']);
+        $this->assertCount(0, Mail::$sent);
+        $this->assertNull($r->delivery);
+    }
+
+    public function testAnInvoiceThatKsefAlreadyAcceptedIsDeliveredInTheSameRun()
+    {
+        Configuration::updateValue('IFIRMA_KSEF_MODE', 'b2b');
+        $this->businessOrderIssuanceScript('PRZYJETA');
+
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertSame('ksef:skipped', $this->stepNames($r)[4]);
+        $this->assertSame('deliver:ok', $this->stepNames($r)[5]);
+        $this->assertSame('sent', $this->dbRow()['delivery_status']);
+        $this->assertSame('5260001122-20261101-ABC-01', $this->dbRow()['ksef_number']);
+        $this->assertCount(1, Mail::$sent);
+    }
+
+    public function testADocumentThatDoesNotGoToKsefIsDeliveredAtIssuance()
+    {
+        Configuration::updateValue('IFIRMA_KSEF_MODE', 'off');
+        $this->queueFullSuccess();
+
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertSame('deliver:ok', $this->stepNames($r)[5]);
+        $this->assertSame('sent', $this->dbRow()['delivery_status']);
+        $this->assertCount(1, Mail::$sent);
+    }
+
+    public function testTheChannelNoneIsRecordedAsSkippedAndTheDocumentNeverWaits()
+    {
+        Configuration::updateValue('IFIRMA_KSEF_MODE', 'b2b');
+        Configuration::updateValue('IFIRMA_SEND_CHANNEL', 'none');
+        $this->businessOrderIssuanceScript();
+
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertSame('skipped', $this->dbRow()['delivery_status']);
+        $this->assertNotSame('waiting for KSeF acceptance', $r->steps[5]['message']);
+    }
+
+    public function testAManualResendOfAWaitingDocumentEndsTheWait()
+    {
+        Configuration::updateValue('IFIRMA_KSEF_MODE', 'b2b');
+        $this->businessOrderIssuanceScript();
+        $this->pipeline->run($this->order());
+        $this->assertSame('awaiting_ksef', $this->dbRow()['delivery_status']);
+
+        $module = new Module();
+        $delivery = new IfirmaDeliveryService($this->client, $this->service, $module, null, function () {
+        });
+        $this->queuePdf();
+        $receipt = IfirmaReceipt::getByOrder(15);
+        $result = $delivery->resend($receipt, $this->order());
+
+        $this->assertTrue($result->isSent());
+        $this->assertSame('sent', $this->dbRow()['delivery_status']);
+        $this->assertFalse((new IfirmaKsefDeliveryGate(new IfirmaKsefService($this->client, $module)))->isWaiting(IfirmaReceipt::getByOrder(15)));
     }
 }

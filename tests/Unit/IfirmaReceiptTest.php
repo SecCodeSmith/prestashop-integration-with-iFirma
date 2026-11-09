@@ -607,4 +607,17 @@ class IfirmaReceiptTest extends TestCase
 
         $this->assertSame(4, IfirmaReceipt::countQueued());
     }
+    public function testMarkAwaitingKsefSetsTheDeliveryStateAndClearsTheTimeAndTheErrorOnly()
+    {
+        $receipt = $this->receipt();
+        $before = get_object_vars($receipt);
+
+        $receipt->markAwaitingKsef();
+
+        $this->assertOnlySet(
+            array('delivery_status' => 'awaiting_ksef', 'delivered_at' => null, 'delivery_error' => ''),
+            $before,
+            $receipt
+        );
+    }
 }

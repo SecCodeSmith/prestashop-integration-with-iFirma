@@ -326,6 +326,7 @@ class AdminActionsTest extends TestCase
     {
         Configuration::updateValue('IFIRMA_KSEF_MODE', 'off');
         $this->makeReceipt();
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Kod":0,"KsefStatus":"","KsefNumer":""}}'));
         $this->t->queue('POST', '#fakturakraj/ksef/send/77\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"Wyslano"}}'));
 
         $r = $this->actions->sendToKsef(15);
@@ -342,6 +343,7 @@ class AdminActionsTest extends TestCase
     public function testSendToKsefReportsFailure()
     {
         $this->makeReceipt();
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Kod":0,"KsefStatus":"","KsefNumer":""}}'));
         $this->t->queue('POST', '#ksef/send#', array('body' => '{"response":{"Kod":200,"Informacja":"Odmowa"}}'));
 
         $r = $this->actions->sendToKsef(15);
