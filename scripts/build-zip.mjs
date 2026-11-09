@@ -16,9 +16,9 @@
 //   IFIRMA_BUILD_CHANNEL  local (default) | test | release
 //   IFIRMA_BUILD_NUMBER   required for test: monotonically increasing integer (CI run number)
 //   IFIRMA_BUILD_COMMIT   commit hash (cut to 7 chars); falls back to `git rev-parse HEAD`
-import archiver from "archiver";
 import { execSync } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { createZip } from "./zip-writer.mjs";
 
 const MODULE = "ifirma";
 const CHANNELS = ["local", "test", "release"];
@@ -32,11 +32,22 @@ const DIRS = ["classes", "controllers", "mails", "sql", "translations", "upgrade
 const NESTED_DEV_DIRS = ["node_modules", ".git", "tests"];
 const JUNK_FILE = /^(\.DS_Store|Thumbs\.db|\.env(\..*)?)$/;
 
-/** archiver directory() entry filter: false skips the entry. */
-function shipped(entry) {
-  const segments = entry.name.split(/[\\/]/);
+/** True for a path (relative, "/"-separated) that may ship. */
+function shipped(path) {
+  const segments = path.split("/");
   if (segments.some((s) => NESTED_DEV_DIRS.includes(s))) return false;
-  return JUNK_FILE.test(segments[segments.length - 1]) ? false : entry;
+  return !JUNK_FILE.test(segments[segments.length - 1]);
+}
+
+/** Every shippable file below `dir`, as "/"-separated paths in a stable order. */
+function listFiles(dir) {
+  return readdirSync(dir)
+    .sort()
+    .flatMap((name) => {
+      const path = `${dir}/${name}`;
+      if (!shipped(path)) return [];
+      return statSync(path).isDirectory() ? listFiles(path) : [path];
+    });
 }
 
 function gitCommit() {
@@ -73,26 +84,10 @@ if (missing.length) {
 
 mkdirSync("dist", { recursive: true });
 const outPath = `dist/${MODULE}-${version}${suffix}.zip`;
-const output = createWriteStream(outPath);
-const archive = archiver("zip", { zlib: { level: 9 } });
+const paths = [...FILES, ...DIRS.flatMap(listFiles)];
+const entries = paths.map((path) => ({ name: `${MODULE}/${path}`, data: readFileSync(path) }));
+entries.push({ name: `${MODULE}/BUILD`, data: Buffer.from(JSON.stringify(info, null, 2) + "\n") });
 
-output.on("close", () => {
-  const kb = (archive.pointer() / 1024).toFixed(1);
-  console.log(`Built ${outPath} (${kb} kB, files rooted at ${MODULE}/, channel ${info.channel})`);
-});
-archive.on("warning", (err) => {
-  if (err.code !== "ENOENT") throw err;
-});
-archive.on("error", (err) => {
-  throw err;
-});
-
-archive.pipe(output);
-for (const file of FILES) {
-  archive.file(file, { name: `${MODULE}/${file}` });
-}
-for (const dir of DIRS) {
-  archive.directory(dir, `${MODULE}/${dir}`, shipped);
-}
-archive.append(JSON.stringify(info, null, 2) + "\n", { name: `${MODULE}/BUILD` });
-await archive.finalize();
+const zip = createZip(entries, new Date(info.builtAt));
+writeFileSync(outPath, zip);
+console.log(`Built ${outPath} (${(zip.length / 1024).toFixed(1)} kB, files rooted at ${MODULE}/, channel ${info.channel})`);

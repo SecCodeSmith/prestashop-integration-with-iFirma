@@ -29,8 +29,5 @@
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "version": "node scripts/sync-version.mjs && git add ifirma.php config.xml",
     "postversion": "node -e \"console.log('Bumped to v'+require('./package.json').version+' — push with: git push --follow-tags')\""
-  },
-  "devDependencies": {
-    "archiver": "^7.0.1"
   }
 }
