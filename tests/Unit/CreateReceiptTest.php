@@ -116,12 +116,21 @@ class CreateReceiptTest extends TestCase
      * @param string $op the one write the path must make: add or update
      * @return array that write: op, table, id, row
      */
-    private function onlyReceiptWrite($op)
+    private function onlyReceiptWrite($op, $marked = true)
     {
         $writes = IfirmaTestState::writes('ifirma_receipt');
-        $this->assertSame(array($op), array_column($writes, 'op'));
+        if (!$marked) {
+            // refused before the request was sent: no marker, one write
+            $this->assertSame(array($op), array_column($writes, 'op'));
 
-        return $writes[0];
+            return $writes[0];
+        }
+        // Deliberate change (4.4): the record is saved as unknown right before the create request is sent, so
+        // the path writes the marker first and then the outcome, which is always an update.
+        $this->assertSame(array($op, 'update'), array_column($writes, 'op'));
+        $this->assertSame('unknown', $writes[0]['row']['status'], 'the in-flight marker');
+
+        return $writes[1];
     }
 
     public function testRejectionRecordsTheInformacjaInOneWrite()
@@ -211,7 +220,7 @@ class CreateReceiptTest extends TestCase
         }
 
         $this->assertFalse($client->lastRequestWasSent());
-        $write = $this->onlyReceiptWrite('add');
+        $write = $this->onlyReceiptWrite('add', false);
         $this->assertSame('error', $write['row']['status']);
         $this->assertSame('Missing iFirma API key "faktura".', $write['row']['last_error']);
         $this->assertSame(array(), $this->t->calls);
@@ -592,5 +601,137 @@ class CreateReceiptTest extends TestCase
 
         $override = $this->service->contractorHints($this->order(), $contractor, array('vat_number' => '123-456-78-90'));
         $this->assertSame('1234567890', $override['nip']);
+    }
+    // ---- the rate limit queues, the marker covers the create in flight -----------------------------------
+
+    private function clientAtMinuteCap()
+    {
+        $fixed = mktime(10, 15, 20, 11, 1, 2026);
+        $client = new IfirmaApiClient('u@example.com', array('faktura' => str_repeat('1', 64)), 'http://ifirma-mock:8001/iapi/', 30, $this->t);
+        $client->setClock(function () use ($fixed) {
+            return $fixed;
+        });
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi', $fixed) . ':80');
+
+        return $client;
+    }
+
+    public function testACreateRefusedByTheLocalRateLimitIsQueuedAndNotAnError()
+    {
+        // Deliberate change (task 4.2): a rate limit refusal was recorded as an error before. It is the
+        // "Transient error not persisted" scenario of ifirma-api-compliance.
+        $service = new IfirmaReceiptService($this->clientAtMinuteCap(), new Module());
+
+        try {
+            $service->createReceipt($this->order());
+            $this->fail('expected IfirmaRateLimitedException');
+        } catch (IfirmaRateLimitedException $e) {
+            $this->assertSame(IfirmaRateDecision::WINDOW_MINUTE, $e->getWindow());
+            $this->assertStringContainsString('(cap 80)', $e->getMessage());
+        }
+
+        $rows = IfirmaTestState::objects('ifirma_receipt');
+        $this->assertCount(1, $rows);
+        $row = reset($rows);
+        $this->assertSame('queued', $row['status']);
+        $this->assertStringContainsString('(cap 80)', $row['last_error']);
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testACreateRefusedByIfirmaWith429IsQueuedAndNotUnknown()
+    {
+        $this->t->queue('POST', '#fakturakraj\.json#', array(
+            'status' => 429,
+            'body' => '{"response":{"Kod":100,"Informacja":"Przekroczono limit zapytań (limit minutowy: 100)"}}',
+            'headers' => array('Retry-After' => '20'),
+        ));
+
+        try {
+            $this->service->createReceipt($this->order());
+            $this->fail('expected IfirmaRateLimitedException');
+        } catch (IfirmaRateLimitedException $e) {
+            $this->assertSame(IfirmaRateDecision::WINDOW_SERVER, $e->getWindow());
+        }
+
+        $rows = IfirmaTestState::objects('ifirma_receipt');
+        $row = reset($rows);
+        $this->assertSame('queued', $row['status']);
+        $this->assertNotSame('iFirma has not answered the create request yet.', $row['last_error']);
+        $this->assertCount(1, $this->t->calls);
+    }
+
+    public function testTheRecordIsUnknownWhileTheCreateRequestIsInFlight()
+    {
+        $seen = array();
+        $this->t->queue('POST', '#fakturakraj\.json#', function () use (&$seen) {
+            $rows = IfirmaTestState::objects('ifirma_receipt');
+            $seen = reset($rows);
+
+            return array('body' => '{"response":{"Kod":0,"Informacja":"ok","Identyfikator":"77"}}');
+        });
+        $this->t->queue('GET', '#faktury\.json#', array('body' => json_encode(array('response' => array(
+            'Kod' => 0,
+            'Wynik' => array(array('FakturaId' => 77, 'PelnyNumer' => '7/2026')),
+        )))));
+
+        $receipt = $this->service->createReceipt($this->order());
+
+        $this->assertSame('unknown', $seen['status']);
+        $this->assertSame('iFirma has not answered the create request yet.', $seen['last_error']);
+        $this->assertSame('created', $receipt->status);
+        $this->assertSame('', $receipt->last_error);
+        $rows = IfirmaTestState::objects('ifirma_receipt');
+        $row = reset($rows);
+        $this->assertSame(array('created', ''), array($row['status'], $row['last_error']), 'the answer is stored over the marker');
+    }
+
+    public function testARequestThatDiesLeavesTheMarkerWithTheRealError()
+    {
+        $this->t->queue('POST', '#fakturakraj\.json#', array('status' => 0, 'error' => 'timeout'));
+
+        try {
+            $this->service->createReceipt($this->order());
+            $this->fail('expected exception');
+        } catch (Exception $e) {
+            $this->assertStringContainsString('timeout', $e->getMessage());
+        }
+
+        $rows = IfirmaTestState::objects('ifirma_receipt');
+        $row = reset($rows);
+        $this->assertSame('unknown', $row['status']);
+        $this->assertStringContainsString('timeout', $row['last_error']);
+    }
+
+    public function testNoMarkerIsWrittenWhenTheRequestIsRefusedBeforeItIsSent()
+    {
+        $service = new IfirmaReceiptService($this->clientAtMinuteCap(), new Module());
+
+        try {
+            $service->createReceipt($this->order());
+        } catch (IfirmaRateLimitedException $e) {
+            // expected
+        }
+
+        $this->assertSame(array('add'), array_column(IfirmaTestState::writes('ifirma_receipt'), 'op'));
+        $this->assertSame('queued', IfirmaTestState::writes('ifirma_receipt')[0]['row']['status']);
+    }
+
+    public function testTheMarkerIsWrittenOnceWhenTheCreateIsRetried()
+    {
+        // Kod 201 naming DodatkoweUwagi: the module posts again without it; one marker covers both posts
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"DodatkoweUwagi: invalid"}}'));
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"ok","Identyfikator":"77"}}'));
+        $this->t->queue('GET', '#faktury\.json#', array('body' => json_encode(array('response' => array(
+            'Kod' => 0,
+            'Wynik' => array(array('FakturaId' => 77, 'PelnyNumer' => '7/2026')),
+        )))));
+
+        $this->service->createReceipt($this->order());
+
+        $statuses = array();
+        foreach (IfirmaTestState::writes('ifirma_receipt') as $write) {
+            $statuses[] = $write['row']['status'];
+        }
+        $this->assertSame(array('unknown', 'created'), $statuses);
     }
 }

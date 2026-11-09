@@ -528,4 +528,44 @@ class IfirmaReceiptTest extends TestCase
     {
         $this->assertSame(array(), IfirmaReceipt::findDueForSync('2026-10-31 12:00:00', 500));
     }
+    public function testMarkQueuedSetsStatusAndMessageOnly()
+    {
+        $receipt = $this->receipt();
+        $receipt->ifirma_id = '';
+        $before = get_object_vars($receipt);
+
+        $receipt->markQueued('iFirma rate limit guard: 80 requests in the current minute (cap 80). Retry shortly.');
+
+        $this->assertOnlySet(
+            array('status' => 'queued', 'last_error' => 'iFirma rate limit guard: 80 requests in the current minute (cap 80). Retry shortly.'),
+            $before,
+            $receipt
+        );
+    }
+
+    public function testAnIssuedRecordCannotBeQueued()
+    {
+        $receipt = $this->receipt();
+        $before = get_object_vars($receipt);
+
+        try {
+            $receipt->markQueued('refused');
+            $this->fail('expected LogicException');
+        } catch (LogicException $e) {
+            $this->assertSame('A document that is already issued cannot be queued.', $e->getMessage());
+        }
+
+        $this->assertOnlySet(array(), $before, $receipt);
+    }
+
+    public function testAQueuedRecordCanStillBeCreatedAndIsNotOfferedIssueAnyway()
+    {
+        $receipt = $this->receipt();
+        $receipt->ifirma_id = '';
+        $receipt->markQueued('');
+
+        $this->assertTrue($receipt->canCreate());
+        $this->assertFalse($receipt->canIssueAnyway());
+        $this->assertFalse($receipt->isIssued());
+    }
 }

@@ -15,6 +15,7 @@ require_once dirname(__FILE__) . '/IfirmaCreateResponse.php';
 require_once dirname(__FILE__) . '/IfirmaDocumentSettings.php';
 require_once dirname(__FILE__) . '/IfirmaInput.php';
 require_once dirname(__FILE__) . '/IfirmaPayloadBuilder.php';
+require_once dirname(__FILE__) . '/IfirmaRateLimitedException.php';
 
 class IfirmaReceiptService
 {
@@ -93,7 +94,7 @@ class IfirmaReceiptService
 
         list($response, $payload, $contractorInfo) = $this->postWithRetries($receipt, $order, $options, $payload, $contractorInfo);
         if ($response === null) {
-            throw $this->unreachable($receipt);
+            throw $this->client->isRateLimited() ? $this->refusedByRateLimit($receipt) : $this->unreachable($receipt);
         }
         $created = $this->parseCreateResponse($response);
         $this->applyCreateResponse($receipt, $order, $created, $payload, $contractorInfo);
@@ -117,7 +118,7 @@ class IfirmaReceiptService
      */
     private function postWithRetries(IfirmaReceipt $receipt, Order $order, array $options, array $payload, $contractorInfo)
     {
-        $response = $this->sendDocument($receipt, $payload, $contractorInfo);
+        $response = $this->sendDocument($receipt, $payload, $contractorInfo, true);
 
         // Kod 201 naming DodatkoweUwagi: retry exactly once without that object.
         if ($response !== null && empty($options['skip_dodatkowe_uwagi']) && $this->dodatkoweUwagiRejected($response, $payload)) {
@@ -156,18 +157,47 @@ class IfirmaReceiptService
 
     /**
      * One request that creates the document: stores on the receipt what is about to be sent (the
-     * payload plus the private _contractor note), then sends it.
+     * payload plus the private _contractor note), then sends it. With $markInFlight the record is saved as
+     * unknown right before the request goes out (never for a request that is refused locally), so a request
+     * that dies while the create is in flight can never lead to a blind second create.
      *
      * @param IfirmaReceipt                   $receipt
      * @param array                           $payload
      * @param IfirmaContractorResolution|null $contractorInfo
+     * @param bool                            $markInFlight
      * @return array|null decoded response; null when iFirma gave none
      */
-    private function sendDocument(IfirmaReceipt $receipt, array $payload, $contractorInfo)
+    private function sendDocument(IfirmaReceipt $receipt, array $payload, $contractorInfo, $markInFlight = false)
     {
         $receipt->request_payload = $this->encodeRequest($payload, $contractorInfo);
+        if ($markInFlight) {
+            $this->client->beforeNextRequest(function () use ($receipt) {
+                $receipt->markUnknown($this->l('iFirma has not answered the create request yet.'));
+                $receipt->save();
+            });
+        }
 
-        return $this->client->post($receipt->document_type . '.json', 'faktura', $this->sendable($payload));
+        try {
+            return $this->client->post($receipt->document_type . '.json', 'faktura', $this->sendable($payload));
+        } finally {
+            $this->client->beforeNextRequest(null);
+        }
+    }
+
+    /**
+     * The rate limit refused the create (the local cap, a back-off, or an iFirma limit answer): the document
+     * does not exist. The record is queued with the refusal message and saved.
+     *
+     * @param IfirmaReceipt $receipt
+     * @return IfirmaRateLimitedException the one to throw
+     */
+    private function refusedByRateLimit(IfirmaReceipt $receipt)
+    {
+        $message = $this->client->getLastError();
+        $receipt->markQueued($message);
+        $receipt->save();
+
+        return new IfirmaRateLimitedException($message, $this->client->rateLimitWindow());
     }
 
     /**

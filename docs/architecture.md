@@ -209,23 +209,29 @@ Three triggers:
 
 | Trigger | Entry point | Started by |
 |---------|-------------|------------|
-| `status` | `onOrderStatusChange()` | the `actionOrderStatusPostUpdate` hook; does nothing when `IFIRMA_AUTO_CREATE_STATE` is 0, differs from the new state, or credentials are missing |
+| `status` | `onOrderStatusChange()` | the `actionOrderStatusPostUpdate` hook; does nothing when `IFIRMA_AUTO_CREATE_STATE` is 0, differs from the new state, or credentials are missing. Otherwise `IfirmaIssueQueue::enqueue()` records the order as `queued` first, then the run takes the order lock (`ifirma_order_<id>`, no wait; busy: the order stays queued) |
+| `queue` | `run()` | the cron queue job: queued orders, oldest first, under the same order lock |
 | `manual` / `issue_anyway` | `run()` | the "Create" and "Issue anyway" buttons of the order panel |
 | `resume` | `resumeAfterRequest()` | approving or rejecting a data-change request, when the order is in (or went through) the trigger state and has no issued document |
 
 ```mermaid
 flowchart TD
+    HOOK["status hook: trigger status reached"] --> ENQ["IfirmaIssueQueue::enqueue: record queued, no request yet"]
+    ENQ --> LOCK{"order lock free? (no wait)"}
+    LOCK -- "busy" --> QUEUED["stays queued: the cron issues it"]
+    LOCK -- "granted" --> START
     START["run order"] --> HOLD{"hold: pending data request?"}
     HOLD -- "already issued" --> GUARD
     HOLD -- "yes" --> HELD["stop: held, row marked held"]
     HOLD -- "no" --> GUARD{"guard: duplicate check"}
     GUARD -- "local record already issued" --> DONE1["stop: already_issued, later steps skipped"]
     GUARD -- "unconfirmed candidates" --> SUSP["stop: suspected, status duplicate_suspected"]
-    GUARD -- "list call failed" --> INC["stop: inconclusive or rate_limited"]
+    GUARD -- "list call failed" --> INC["stop: inconclusive (error) or rate_limited (record queued)"]
     GUARD -- "confirmed match" --> ADOPT["adopted"]
     GUARD -- "disabled, bypassed or nothing found" --> CREATE
     ADOPT --> NUMBER
-    CREATE{"create: POST to iFirma"} -- "rejected or unreachable" --> ERR["stop: error or unknown"]
+    CREATE{"create: POST to iFirma, record unknown just before it is sent"} -- "rejected or unreachable" --> ERR["stop: error or unknown"]
+    CREATE -- "refused by the rate limit" --> RL["stop: rate_limited, record queued"]
     CREATE -- "accepted" --> NUMBER["number: issued"]
     NUMBER --> KSEF{"ksef: mode and buyer allow submission?"}
     KSEF -- "no, or skip_ksef" --> DELIVER
@@ -240,7 +246,7 @@ What each step reads and writes (verified in the step methods):
 
 - **hold**: reads the data-request table. A pending request for the order stops the run with outcome `held` and marks the row held. An order with an issued record skips the step.
 - **guard**: [`IfirmaDuplicateGuard::check()`](../classes/IfirmaDuplicateGuard.php), outcomes `LOCAL_ISSUED`, `DISABLED`, `BYPASSED`, `PROCEED`, `ADOPT`, `SUSPECTED`, `INCONCLUSIVE`. `LOCAL_ISSUED` skips all later steps; `SUSPECTED` and `INCONCLUSIVE` stop; `ADOPT` marks the run adopted so `create` and `number` are skipped.
-- **create**: [`IfirmaReceiptService::createReceipt()`](../classes/IfirmaReceiptService.php) (applies an approved data-request override). An exception stops the run with `unknown` when the row status is `unknown`, otherwise `error`. After a bypassed guard the resolution `issue_anyway` is recorded.
+- **create**: [`IfirmaReceiptService::createReceipt()`](../classes/IfirmaReceiptService.php) (applies an approved data-request override). Right before the create request is sent (`IfirmaApiClient::beforeNextRequest()`, so never for a request refused locally) the row is saved as `unknown` with the message "iFirma has not answered the create request yet"; the answer overwrites it. A refusal by the rate limit throws `IfirmaRateLimitedException`: the row is queued and the run ends with outcome `rate_limited`. Any other exception stops the run with `unknown` when the row status is `unknown`, otherwise `error`. After a bypassed guard the resolution `issue_anyway` is recorded.
 - **number**: records whether the number is available yet and marks the run issued.
 - **ksef**: skipped when the caller passes `skip_ksef`, there is no document, or [`IfirmaKsefService::skipReason()`](../classes/IfirmaKsefService.php) is not empty. A failed submission does not stop the run: the step is `failed`, delivery still runs and the message ends with `KSeF: <error>`.
 - **deliver**: [`IfirmaDeliveryService::deliver()`](../classes/IfirmaDeliveryService.php), skipped on `skip_delivery`. A failed delivery sets `stoppedAt = deliver` but never changes `ok` or the outcome.
@@ -263,7 +269,7 @@ The "Create" button on the order panel, from the browser to the HTTP transport:
 
 The schema is defined once in [`classes/IfirmaSchema.php`](../classes/IfirmaSchema.php) and used by [`sql/install.php`](../sql/install.php) and the upgrade scripts.
 
-`ps_ifirma_receipt` - one row per iFirma document (issued by the module or discovered in iFirma). Core columns: order/customer/shop link, `document_type`, `ifirma_id` and `ifirma_number`, `status` (`created` / `paid` / `error` / `unknown` / `duplicate_suspected`), `paid_amount`, a download `security_token` and the full request/response payloads for auditing. Since 1.1.0 the table also holds: `source` (`module` or `external`) and `order_reference`, which tell where a document came from; `delivery_status`, `delivery_channel`, `delivered_at` and `delivery_error`, which track sending the document to the customer; `remote_paid_amount`, `remote_sent`, `remote_draft`, `remote_missing`, `ksef_status`, `ksef_number`, `linked_document`, `last_sync_at` and `sync_error`, which mirror the state last read from iFirma by the synchronisation job; `duplicate_candidates` (JSON list of possible existing documents found before issuing); and `id_data_request`, the link to the buyer-data request that produced the document. Indexes: `idx_order`, `idx_customer`, `idx_token`, and since 1.5.0 `idx_date_upd` (on `date_upd`, for the documents list, the notification feed and its unseen count). Since 1.5.0 the table also holds `last_download_at` (`DATETIME NULL`), the time of the last customer PDF download, which the download throttle reads. Fresh installs get both from the schema; on upgraded shops the 1.5.0 upgrade adds them, and the customer download also adds the column on first use (`IfirmaSchema::ensureReceiptDownloadColumn()`).
+`ps_ifirma_receipt` - one row per iFirma document (issued by the module or discovered in iFirma). Core columns: order/customer/shop link, `document_type`, `ifirma_id` and `ifirma_number`, `status` (`created` / `paid` / `error` / `unknown` / `duplicate_suspected` / `held` / `queued`), `paid_amount`, a download `security_token` and the full request/response payloads for auditing. Since 1.1.0 the table also holds: `source` (`module` or `external`) and `order_reference`, which tell where a document came from; `delivery_status`, `delivery_channel`, `delivered_at` and `delivery_error`, which track sending the document to the customer; `remote_paid_amount`, `remote_sent`, `remote_draft`, `remote_missing`, `ksef_status`, `ksef_number`, `linked_document`, `last_sync_at` and `sync_error`, which mirror the state last read from iFirma by the synchronisation job; `duplicate_candidates` (JSON list of possible existing documents found before issuing); and `id_data_request`, the link to the buyer-data request that produced the document. Indexes: `idx_order`, `idx_customer`, `idx_token`, and since 1.5.0 `idx_date_upd` (on `date_upd`, for the documents list, the notification feed and its unseen count). Since 1.5.0 the table also holds `last_download_at` (`DATETIME NULL`), the time of the last customer PDF download, which the download throttle reads. Fresh installs get both from the schema; on upgraded shops the 1.5.0 upgrade adds them, and the customer download also adds the column on first use (`IfirmaSchema::ensureReceiptDownloadColumn()`).
 
 `ps_ifirma_contractor_map` (new in 1.1.0) - one row per customer linking it to an iFirma contractor: `id_customer` (unique), `ifirma_identifier`, `matched_by` (`module`, `nip`, `name`, `email`, `import-nip`, `import-email`, `import-name`, `manual`), `ifirma_name`. Created on install, on upgrade and, when missing, on first use. See [Linking existing contractors](contractors.md).
 

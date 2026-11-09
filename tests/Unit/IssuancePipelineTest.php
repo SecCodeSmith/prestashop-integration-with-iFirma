@@ -1348,9 +1348,9 @@ class IssuancePipelineTest extends TestCase
             $this->deliveryFields($r)
         );
         $this->assertStringContainsString('Delivery step failed: mail server down', $pipeline->describe($r));
-        // the delivery never ran, so it recorded nothing
+        // the delivery never ran, so it recorded nothing; the receipt was written twice: the in-flight marker and the document
         $this->assertSame('none', $this->dbRow()['delivery_status']);
-        $this->assertSame(array('add'), $this->receiptWriteOps());
+        $this->assertSame(array('add', 'update'), $this->receiptWriteOps());
     }
 
     public function testAnErrorFromTheDeliveryFailsTheWholeRunAsAnError()
@@ -1386,8 +1386,10 @@ class IssuancePipelineTest extends TestCase
         $this->assertSame('deliver', $r->stoppedAt);
     }
 
-    public function testRateLimitedGuardCreatesNoRow()
+    public function testRateLimitedGuardQueuesTheOrderAndCreatesNoDocument()
     {
+        // Deliberate change (task 4.4): a guard check refused by the rate limit used to leave no record. The
+        // order is now queued with the refusal message ("Transient error not persisted", "Inconclusive guard").
         $fixed = 1700000000;
         Configuration::updateValue('IFIRMA_RATE_MAX_PER_MIN', 1);
         Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi', $fixed) . ':1');
@@ -1398,7 +1400,8 @@ class IssuancePipelineTest extends TestCase
         $r = $this->pipeline->run($this->order());
         $this->assertSame('rate_limited', $r->outcome);
         $this->assertSame('guard', $r->stoppedAt);
-        $this->assertSame(array(), IfirmaTestState::objects('ifirma_receipt'));
+        $this->assertSame('queued', $this->dbRow()['status']);
+        $this->assertStringContainsString('(cap 1)', $this->dbRow()['last_error']);
         $this->assertCount(0, $this->t->calls);
     }
 
@@ -1529,5 +1532,245 @@ class IssuancePipelineTest extends TestCase
         $r->save();
         $this->expectException(Exception::class);
         $this->service->updateStatusPaid($r, 10);
+    }
+    // ---- queue first: the record exists before any request (design D3) -----------------------------------
+
+    private function clientAtTheMinuteCap()
+    {
+        $fixed = mktime(10, 15, 20, 11, 1, 2026);
+        $this->client->setClock(function () use ($fixed) {
+            return $fixed;
+        });
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi', $fixed) . ':80');
+    }
+
+    private function seedQueuedRow()
+    {
+        $row = new IfirmaReceipt();
+        $row->id_order = 15;
+        $row->id_customer = 5;
+        $row->id_shop = 1;
+        $row->markQueued('earlier refusal');
+        $row->save();
+        IfirmaTestState::clearWrites();
+
+        return $row;
+    }
+
+    public function testTheOrderIsQueuedBeforeTheFirstRequestOfTheRun()
+    {
+        $seen = array();
+        $self = $this;
+        $this->t->queue('GET', '#faktury\.json#', function () use (&$seen, $self) {
+            $rows = IfirmaTestState::objects('ifirma_receipt');
+            $first = $rows ? reset($rows) : null;
+            $seen[] = $first ? $first['status'] : null;
+
+            return array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array()))));
+        });
+        $this->queueCreateOk();
+        $this->queueNumber();
+        $this->queuePdf();
+
+        $this->pipeline->onOrderStatusChange(15, 5);
+
+        $this->assertSame('queued', $seen[0], 'the record is queued when the first iFirma request goes out');
+    }
+
+    public function testTheStatusChangeIssuesAtOnceWhenTheLimitsAllow()
+    {
+        $this->queueFullSuccess();
+
+        $r = $this->pipeline->onOrderStatusChange(15, 5);
+
+        $this->assertSame('issued', $r->outcome);
+        $this->assertSame('created', $this->dbRow()['status']);
+        $this->assertSame('', $this->dbRow()['last_error']);
+    }
+
+    public function testABusyOrderLockLeavesTheOrderQueuedWithoutAnyRequest()
+    {
+        Db::getInstance()->whenGetValue('/^SELECT GET_LOCK\(/', 0);
+
+        $this->assertNull($this->pipeline->onOrderStatusChange(15, 5));
+
+        $this->assertSame(array(), $this->t->calls);
+        $this->assertSame('queued', $this->dbRow()['status']);
+    }
+
+    public function testTheStatusChangeDoesNotWaitForTheOrderLock()
+    {
+        $asked = null;
+        Db::getInstance()->whenGetValue('/^SELECT GET_LOCK\(/', function ($sql) use (&$asked) {
+            $asked = $sql;
+
+            return 1;
+        });
+        $this->queueFullSuccess();
+
+        $this->pipeline->onOrderStatusChange(15, 5);
+
+        $this->assertSame("SELECT GET_LOCK('ifirma_order_15', 0)", $asked);
+    }
+
+    public function testTheOrderLockIsReleasedAfterTheRun()
+    {
+        $this->queueFullSuccess();
+
+        $this->pipeline->onOrderStatusChange(15, 5);
+
+        $released = array_filter(Db::getInstance()->queries, function ($sql) {
+            return strpos($sql, "RELEASE_LOCK('ifirma_order_15')") !== false;
+        });
+        $this->assertCount(1, $released);
+    }
+
+    public function testAHeldOrderIsHeldAndNotQueued()
+    {
+        $this->pendingRequest();
+
+        $r = $this->pipeline->onOrderStatusChange(15, 5);
+
+        $this->assertSame('held', $r->outcome);
+        $this->assertSame('held', $this->dbRow()['status']);
+        $this->assertSame(array(), $this->posts());
+    }
+
+    public function testNothingIsRecordedWhenIssuanceIsNotConfigured()
+    {
+        Configuration::updateValue('IFIRMA_AUTO_CREATE_STATE', 0);
+        $this->assertNull($this->pipeline->onOrderStatusChange(15, 5));
+        Configuration::updateValue('IFIRMA_AUTO_CREATE_STATE', 5);
+        Configuration::updateValue('IFIRMA_USER', '');
+        $this->assertNull($this->pipeline->onOrderStatusChange(15, 5));
+
+        $this->assertSame(array(), IfirmaTestState::objects('ifirma_receipt'));
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testAnOrderThatAlreadyHasADocumentIsNeverQueued()
+    {
+        $this->queueFullSuccess();
+        $this->pipeline->onOrderStatusChange(15, 5);
+
+        $again = $this->pipeline->onOrderStatusChange(15, 5);
+
+        $this->assertSame('already_issued', $again->outcome);
+        $this->assertSame('created', $this->dbRow()['status']);
+        $this->assertCount(1, $this->posts(), 'the order never ends with two documents');
+    }
+
+    public function testAnUnknownOutcomeIsNotTurnedIntoAQueueEntry()
+    {
+        $this->leaveUnknownRow();
+        $this->queueGuardNone();
+        $this->t->queue('POST', '#fakturakraj\.json#', array('status' => 0, 'error' => 'timeout'));
+
+        $this->pipeline->onOrderStatusChange(15, 5);
+
+        $this->assertSame('unknown', $this->dbRow()['status']);
+    }
+
+    // ---- refusals queue (design D3) ------------------------------------------------------------------------
+
+    public function testAGuardCheckRefusedByTheLocalCapQueuesTheOrderAtTheStatusChange()
+    {
+        $this->clientAtTheMinuteCap();
+
+        $r = $this->pipeline->onOrderStatusChange(15, 5);
+
+        $this->assertSame('rate_limited', $r->outcome);
+        $this->assertSame('guard', $r->stoppedAt);
+        $this->assertSame('queued', $this->dbRow()['status']);
+        $this->assertStringContainsString('(cap 80)', $this->dbRow()['last_error']);
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testACreateRefusedByIfirmaQueuesTheOrder()
+    {
+        $this->queueGuardNone();
+        $this->t->queue('POST', '#fakturakraj\.json#', array(
+            'status' => 429,
+            'body' => '{"response":{"Kod":100,"Informacja":"Przekroczono limit zapytań"}}',
+        ));
+
+        $r = $this->pipeline->onOrderStatusChange(15, 5);
+
+        $this->assertSame('rate_limited', $r->outcome);
+        $this->assertSame('create', $r->stoppedAt);
+        $this->assertSame('queued', $this->dbRow()['status']);
+        $this->assertSame('queued', $r->receipt->status);
+    }
+
+    public function testAnEmployeeCreateRefusedByTheCapQueuesTheOrderAndShowsTheRefusal()
+    {
+        $this->clientAtTheMinuteCap();
+
+        $r = $this->pipeline->run($this->order(), array('trigger' => 'manual'));
+
+        $this->assertFalse($r->ok);
+        $this->assertSame('rate_limited', $r->outcome);
+        $this->assertStringContainsString('(cap 80)', $this->pipeline->describe($r));
+        $this->assertSame('queued', $this->dbRow()['status']);
+        $this->assertFalse($r->receipt->canIssueAnyway());
+    }
+
+    public function testARefusalOnARecordThatIsAlreadyQueuedWritesNothing()
+    {
+        $this->seedQueuedRow();
+        $this->clientAtTheMinuteCap();
+
+        $r = $this->pipeline->run($this->order(), array('trigger' => 'queue'));
+
+        $this->assertSame('rate_limited', $r->outcome);
+        $this->assertSame(array(), IfirmaTestState::writes('ifirma_receipt'), 'the record keeps its place in the queue');
+    }
+
+    public function testAQueuedOrderThatFailsForAnotherReasonLeavesTheQueueAsAnError()
+    {
+        $this->seedQueuedRow();
+        $this->t->queue('GET', '#faktury\.json#', array('status' => 0, 'error' => 'connection refused'));
+
+        $r = $this->pipeline->run($this->order(), array('trigger' => 'queue'));
+
+        $this->assertSame('inconclusive', $r->outcome);
+        $this->assertSame('error', $this->dbRow()['status']);
+    }
+
+    public function testAQueuedOrderRejectedByIfirmaLeavesTheQueueAsAnError()
+    {
+        $this->seedQueuedRow();
+        $this->queueGuardNone();
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"bad data"}}'));
+
+        $r = $this->pipeline->run($this->order(), array('trigger' => 'queue'));
+
+        $this->assertSame('error', $r->outcome);
+        $this->assertSame('error', $this->dbRow()['status']);
+        $this->assertStringContainsString('bad data', $this->dbRow()['last_error']);
+    }
+
+    public function testADocumentCreatedByAnEarlierRefusedRequestIsAdoptedFromTheQueue()
+    {
+        $this->seedQueuedRow();
+        // the guard finds the matching document in iFirma and confirms it by the order stamp
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row())));
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Uwagi":"PS-ORDER-15-ABCDEFGHI"}}'));
+
+        $r = $this->pipeline->run($this->order(), array('trigger' => 'queue'));
+
+        $this->assertSame('adopted', $r->outcome);
+        $this->assertSame(array(), $this->posts(), 'no second document is created');
+    }
+
+    public function testAnExceptionRunningAQueuedOrderRecordsItAsAnError()
+    {
+        $this->seedQueuedRow();
+        $pipeline = $this->pipelineWhoseHoldCheckRaises(new RuntimeException('db exploded'));
+
+        $pipeline->run($this->order(), array('trigger' => 'queue'));
+
+        $this->assertSame('error', $this->dbRow()['status']);
+        $this->assertSame('db exploded', $this->dbRow()['last_error']);
     }
 }

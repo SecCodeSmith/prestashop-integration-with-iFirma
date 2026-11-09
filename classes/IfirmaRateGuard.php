@@ -77,6 +77,28 @@ class IfirmaRateGuard
     }
 
     /**
+     * What keeps requests from starting right now, without counting a request: a running back-off, else a window
+     * whose counter has reached its cap.
+     *
+     * @return string one of the IfirmaRateDecision::WINDOW_* constants, WINDOW_NONE when nothing blocks
+     */
+    public function blockedBy()
+    {
+        $now = $this->now();
+        if ($this->backoffEnd($now) > 0) {
+            return IfirmaRateDecision::WINDOW_BACKOFF;
+        }
+        foreach ($this->windows() as $window) {
+            $parts = explode(':', (string) Configuration::get($window->getCounterKey()), 2);
+            if (count($parts) === 2 && $parts[0] === $window->bucketAt($now) && (int) $parts[1] >= $window->getCap()) {
+                return $window->getName();
+            }
+        }
+
+        return IfirmaRateDecision::WINDOW_NONE;
+    }
+
+    /**
      * Starts the back-off after iFirma refused a request for exceeding its limit.
      *
      * @param string $retryAfter the Retry-After header of the answer, '' when there was none

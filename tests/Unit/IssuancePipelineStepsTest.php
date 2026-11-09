@@ -734,7 +734,7 @@ class IssuancePipelineStepsTest extends TestCase
         $this->assertSame(array('add'), $this->receiptWriteOps());
     }
 
-    public function testARateLimitedRunStopsAtTheGuardStepWithoutAReceipt()
+    public function testARateLimitedRunStopsAtTheGuardStepAndQueuesTheOrder()
     {
         $fixed = 1700000000;
         Configuration::updateValue('IFIRMA_RATE_MAX_PER_MIN', 1);
@@ -754,11 +754,12 @@ class IssuancePipelineStepsTest extends TestCase
             'message' => $error,
             'trigger' => 'manual',
             'steps' => array('hold:ok:', 'guard:stopped:' . $error),
-            'receipt' => null,
+            'receipt' => '#1 queued module ',
             'guard' => 'inconclusive',
             'delivery' => null,
         ), $this->snapshot($r));
-        $this->assertSame(array(), IfirmaTestState::writes('ifirma_receipt'));
+        // deliberate change (task 4.4): the refusal queues the order, one write
+        $this->assertSame(array('add'), array_column(IfirmaTestState::writes('ifirma_receipt'), 'op'));
     }
 
     public function testAnUnknownRunStopsAtTheCreateStepWithTheUnknownRow()
@@ -1269,7 +1270,7 @@ class IssuancePipelineStepsTest extends TestCase
         ), $this->snapshot($r));
     }
 
-    public function testARateLimitedGuardAnswerEndsTheRunWithTheGuardErrorAndNoReceipt()
+    public function testARateLimitedGuardAnswerEndsTheRunWithTheGuardErrorAndQueuesTheOrder()
     {
         $pipeline = $this->scripted(array('guard' => $this->guardAnswer(
             IfirmaGuardResult::OUTCOME_INCONCLUSIVE,
@@ -1285,12 +1286,13 @@ class IssuancePipelineStepsTest extends TestCase
             'message' => 'rate limit guard: 80 requests in the current minute',
             'trigger' => 'manual',
             'steps' => array('hold:ok:', 'guard:stopped:rate limit guard: 80 requests in the current minute'),
-            'receipt' => null,
+            'receipt' => '#1 queued module ',
             'guard' => 'inconclusive',
             'delivery' => null,
         ), $this->snapshot($r));
         $this->assertSame(array('requests.hasPending', 'guard.check'), $this->traced());
-        $this->assertSame(array(), IfirmaTestState::writes('ifirma_receipt'));
+        // deliberate change (task 4.4): the refusal queues the order, one write
+        $this->assertSame(array('add'), array_column(IfirmaTestState::writes('ifirma_receipt'), 'op'));
     }
 
     public function testARateLimitedGuardAnswerWithoutAnErrorStopsWithAnEmptyMessage()

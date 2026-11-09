@@ -90,6 +90,51 @@
                 "matched_by": "import-nip",
                 "identifier": "KOWALSKI-01"
             }
+        },
+        {
+            "Zaplacono": 0,
+            "ZaplaconoNaDokumencie": 0,
+            "LiczOd": "BRT",
+            "DataWystawienia": "{today}",
+            "DataSprzedazy": "2026-03-04",
+            "FormatDatySprzedazy": "DZN",
+            "SposobZaplaty": "PRZ",
+            "RodzajPodpisuOdbiorcy": "BPO",
+            "WidocznyNumerBdo": false,
+            "Numer": null,
+            "Uwagi": "PS-ORDER-15-ABCDEFGHI",
+            "IdentyfikatorKontrahenta": "KOWALSKI-01",
+            "Kontrahent": {
+                "Nazwa": "Jan K",
+                "NIP": "",
+                "Ulica": "",
+                "KodPocztowy": "",
+                "Kraj": "Polska",
+                "KodKraju": "PL",
+                "Miejscowosc": "",
+                "Email": "a@example.test",
+                "OsobaFizyczna": true
+            },
+            "Pozycje": [
+                {
+                    "StawkaVat": 0,
+                    "Ilosc": 1,
+                    "CenaJednostkowa": 10,
+                    "NazwaPelna": "W",
+                    "Jednostka": "szt.",
+                    "TypStawkiVat": "PRC"
+                }
+            ],
+            "DodatkoweUwagi": {
+                "Typ": "NUMER_ZAMOWIENIA",
+                "Info": "PS-ORDER-15-ABCDEFGHI"
+            },
+            "_contractor": {
+                "action": "kept",
+                "message": "",
+                "matched_by": "import-nip",
+                "identifier": "KOWALSKI-01"
+            }
         }
     ],
     "threw": null

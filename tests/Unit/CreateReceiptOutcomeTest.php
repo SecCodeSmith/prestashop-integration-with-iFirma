@@ -87,15 +87,20 @@ class CreateReceiptOutcomeTest extends TestCase
     }
 
     /**
-     * @param string $op the one write the path must make: add or update
-     * @return array that write: op, table, id, row
+     * Deliberate change (add-rate-limit-queue-and-ksef-confirmed-delivery 4.4): the record is saved as unknown
+     * right before the create request is sent, and the answer is stored over it. A create therefore writes twice:
+     * the marker (an add for a new record, an update for an existing one) and then the outcome, always an update.
+     *
+     * @param string $op the first write of the path: add (a new record) or update (an existing one)
+     * @return array the last write: op, table, id, row
      */
     private function onlyWrite($op)
     {
         $writes = IfirmaTestState::writes('ifirma_receipt');
-        $this->assertSame(array($op), array_column($writes, 'op'));
+        $this->assertSame(array($op, 'update'), array_column($writes, 'op'));
+        $this->assertSame('unknown', $writes[0]['row']['status'], 'the in-flight marker');
 
-        return $writes[0];
+        return $writes[1];
     }
 
     /** @return array[] the POSTs that create the document */

@@ -246,6 +246,8 @@ $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_89d63871e8355a56d84d843743ecc740'
 $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_efb56ed22b73c2e76fffc3cd65ec8341'] = 'Odświeżono z iFirma.';
 $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_5d3438ed5c149e85d6b53246e385cba7'] = 'nie podjęto próby (odrzucone dane logowania)';
 $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_51086060bebfd6f7507919ebea37c5c8'] = 'nie podjęto próby (limit zapytań)';
+$_MODULE['<{ifirma}prestashop>ifirmabulkrunner_b84255145c31d3c3793504c7bf41b041'] = 'Uruchom ponownie jutro.';
+$_MODULE['<{ifirma}prestashop>ifirmabulkrunner_1819257f59157cc26c8d6c63d96cb790'] = 'Uruchom ponownie za minutę.';
 $_MODULE['<{ifirma}prestashop>ifirmaadminactions_8c3ed5d27c935cbcaad0c4280274948f'] = 'Nieprawidłowe zamówienie.';
 $_MODULE['<{ifirma}prestashop>ifirmaadminactions_cd7f11c5947dfd51d846b19dedc8d766'] = 'Rejestracja kontrahenta jest wyłączona w ustawieniach modułu.';
 $_MODULE['<{ifirma}prestashop>ifirmaadminactions_a3b91e9c8ee4c922e233b0622e84e982'] = 'Nie udało się zarejestrować kontrahenta %s: %s';
@@ -356,6 +358,7 @@ $_MODULE['<{ifirma}prestashop>ifirmaadminactions_91a4f450a6ebb80ca9edadef616f1d4
 $_MODULE['<{ifirma}prestashop>ifirmaadminactions_8279a8362f6c5762152cadc5a639bc3e'] = 'Odświeżenie z iFirma nie powiodło się: %s';
 $_MODULE['<{ifirma}prestashop>ifirmaadminactions_1732e8155156fef2ec9974f9b4d86d26'] = 'Status odświeżony z iFirma.';
 $_MODULE['<{ifirma}prestashop>ifirmareceiptservice_b8c91a014b189e33bc6e825754a3acd8'] = 'Dla tego zamówienia wystawiono już dokument (%s).';
+$_MODULE['<{ifirma}prestashop>ifirmareceiptservice_79344e68e30c44832765d484528c4a74'] = 'iFirma nie odpowiedziała jeszcze na żądanie utworzenia dokumentu.';
 $_MODULE['<{ifirma}prestashop>ifirmareceiptservice_c6f7fdbb1ac50ea83799b7cd244c415a'] = 'Nie można połączyć się z iFirma: %s';
 $_MODULE['<{ifirma}prestashop>ifirmareceiptservice_a9024bc5c2e464af267cd2ad9b150123'] = 'Nieznany błąd iFirma.';
 $_MODULE['<{ifirma}prestashop>ifirmareceiptservice_efef8db37d81032507da92c08b168cf7'] = 'iFirma odrzuciła dokument: %s';

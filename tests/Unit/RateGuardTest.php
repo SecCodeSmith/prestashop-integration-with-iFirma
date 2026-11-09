@@ -218,4 +218,41 @@ class RateGuardTest extends TestCase
         $this->assertFalse($client->isRateLimited());
         $this->assertSame('', $client->rateLimitWindow());
     }
+    public function testNothingBlocksAnIdleGuard()
+    {
+        $this->assertSame(IfirmaRateDecision::WINDOW_NONE, $this->guard->blockedBy());
+        $this->assertSame(array(), Db::getInstance()->rateQueries, 'asking counts nothing');
+    }
+
+    public function testAFullMinuteIsTheBlockingWindow()
+    {
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->minute() . ':80');
+
+        $this->assertSame(IfirmaRateDecision::WINDOW_MINUTE, $this->guard->blockedBy());
+    }
+
+    public function testAFullDayIsTheBlockingWindowWhenTheMinuteHasRoom()
+    {
+        Configuration::updateValue('IFIRMA_RATE_MAX_PER_DAY', 500);
+        Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', $this->day() . ':500');
+
+        $this->assertSame(IfirmaRateDecision::WINDOW_DAY, $this->guard->blockedBy());
+    }
+
+    public function testARunningBackOffBlocksBeforeAnyWindow()
+    {
+        Configuration::updateValue('IFIRMA_RATE_BACKOFF_UNTIL', (string) ($this->now + 30));
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->minute() . ':80');
+
+        $this->assertSame(IfirmaRateDecision::WINDOW_BACKOFF, $this->guard->blockedBy());
+    }
+
+    public function testACounterOfAnEarlierBucketBlocksNothing()
+    {
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi', $this->now - 60) . ':80');
+        Configuration::updateValue('IFIRMA_RATE_MAX_PER_DAY', 500);
+        Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', date('Ymd', $this->now - 86400) . ':500');
+
+        $this->assertSame(IfirmaRateDecision::WINDOW_NONE, $this->guard->blockedBy());
+    }
 }

@@ -14,6 +14,7 @@ if (!defined('_PS_VERSION_')) {
 }
 
 require_once dirname(__FILE__) . '/IfirmaApiClient.php';
+require_once dirname(__FILE__) . '/IfirmaRateGuard.php';
 require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaPipelineResult.php';
 require_once dirname(__FILE__) . '/IfirmaIssuancePipeline.php';
@@ -507,9 +508,24 @@ class IfirmaBulkRunner
     {
         $message = $reason === self::STOP_AUTH_BLOCKED
             ? $this->module->l('not attempted (credentials rejected)', 'ifirmabulkrunner')
-            : $this->module->l('not attempted (rate limited)', 'ifirmabulkrunner');
+            : $this->module->l('not attempted (rate limited)', 'ifirmabulkrunner') . '. ' . $this->whenToRunAgain();
 
         return $this->result($id, $idOrder, self::OUTCOME_NOT_ATTEMPTED, $message, null);
+    }
+
+    /**
+     * @return string the hint that names the window that refused: tomorrow for the day cap, else in a minute
+     */
+    private function whenToRunAgain()
+    {
+        $runner = $this;
+        $guard = new IfirmaRateGuard(function () use ($runner) {
+            return $runner->now();
+        });
+
+        return $guard->blockedBy() === IfirmaRateDecision::WINDOW_DAY
+            ? $this->module->l('Run it again tomorrow.', 'ifirmabulkrunner')
+            : $this->module->l('Run it again in a minute.', 'ifirmabulkrunner');
     }
 
     /**

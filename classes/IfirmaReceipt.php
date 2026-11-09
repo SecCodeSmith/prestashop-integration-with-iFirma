@@ -125,6 +125,8 @@ class IfirmaReceipt extends ObjectModel
     const STATUS_DUPLICATE_SUSPECTED = 'duplicate_suspected';
     /** A non-issued record whose last pipeline run stopped at the hold step. */
     const STATUS_HELD = 'held';
+    /** The order waits for its document: recorded before the first iFirma request, or refused by the rate limit. */
+    const STATUS_QUEUED = 'queued';
 
     const SOURCE_MODULE = 'module';
     const SOURCE_EXTERNAL = 'external';
@@ -435,6 +437,22 @@ class IfirmaReceipt extends ObjectModel
     {
         $this->status = self::STATUS_HELD;
         $this->last_error = $reason;
+    }
+
+    /**
+     * Marks a non-issued record as queued: the order waits for its document, either because it just reached the
+     * trigger status or because the run was refused by the rate limit. Sets the fields only; the caller saves.
+     *
+     * @param string $message the refusal message, '' for a fresh queue entry
+     * @throws LogicException when the document is already issued
+     */
+    public function markQueued($message)
+    {
+        if ($this->isIssued()) {
+            throw new LogicException('A document that is already issued cannot be queued.');
+        }
+        $this->status = self::STATUS_QUEUED;
+        $this->last_error = $message;
     }
 
     /**

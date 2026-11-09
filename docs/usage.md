@@ -44,6 +44,35 @@ The panel's **Register contractor in iFirma** button creates or refreshes the or
 A failure never breaks the PrestaShop status change: exceptions are logged
 (Advanced Parameters > Logs) and stored as the record's last error.
 
+### Queued issuance
+
+Every order that reaches the trigger status gets a record in the state `queued` **before** the module sends anything to
+iFirma, so no exit path can lose it: a refusal by the rate limit, a request that ends early, a busy lock. The same status
+change then tries to issue the order at once, under the order's lock, which it does not wait for. In the normal case
+the record goes `queued` -> issued within the same request and nobody sees the state.
+
+- **Refused by the rate limit.** When the local minute or day cap, a back-off after an iFirma limit answer
+  ([Rate limited by iFirma](troubleshooting.md#rate-limited-by-ifirma)) or iFirma itself refuses a request before the
+  document exists, the order stays `queued` with the refusal message. It is not an error and nothing is created. This holds on
+  every path: the status change, **Create Receipt**, the bulk **Retry issuance** and the bulk issue of the Orders list (the
+  employee still sees the refusal message at once). **Issue anyway** is not offered for a queued order, because bypassing the
+  duplicate guard would not get past the limit.
+- **What drains the queue.** The [cron endpoint](configuration.md#rate-limits) issues queued orders, oldest first, through the full
+  pipeline (duplicate guard included), at most `IFIRMA_CRON_MAX_ITEMS` per run, and stops at the first refusal. Without a
+  cron job, **Create Receipt** or the bulk **Retry issuance** issues them. Call the endpoint every 1 to 5 minutes.
+- **The create request in flight.** Right before the create request is sent, the record becomes `unknown` with the message
+  "iFirma has not answered the create request yet". The answer is stored over it. A request that dies in between therefore
+  leaves `unknown`, which no automatic run retries blindly: a later attempt always runs the duplicate guard first, so it
+  adopts a document iFirma did create. A request refused locally never writes the marker.
+- **Other failures.** A queued order that fails for another reason (network error, rejected data) leaves the queue in the
+  state that failure records for a new order (`error` or `unknown`), so the cron does not retry it blindly.
+- **Orders that keep their state.** An order with an issued document, a held order (pending data-change request), an
+  unknown outcome and a suspected duplicate are never turned into a queue entry.
+- **Alert.** A record that has been `queued` for more than 30 minutes needs attention (notification tab and documents-list
+  preset): a shop without a cron job notices it that way.
+- **Nothing is queued** while the trigger status is 0 or the credentials are missing, and no order is queued
+  retroactively when a shop starts issuing.
+
 Each button needs a [permission level](configuration.md#permissions). Without View the panel is not shown
 at all. With View the employee sees the state, the candidates, the request details and the **Download PDF**
 link only. **Create Receipt**, **Issue anyway**, **Link this document** and **Register contractor in iFirma**
@@ -57,6 +86,7 @@ button cannot be replaced by a hand-made request.
 |---|---|---|
 | `unknown` | The create request got no usable answer (timeout, transport error), so the document may or may not exist in iFirma. The module never repeats the create blindly. | Click **Create Receipt** again: the duplicate guard first looks for the document; if it exists it is adopted, if nothing is found a new one is created. |
 | `duplicate_suspected` | The guard found a document of the same buyer with the same total, sale date and products that it could not confirm by the order reference (stopped at the **guard** step). Nothing was created. | Open the candidates in the panel and **Link** the right one, or choose **Issue anyway** after checking iFirma. Orders blocked by an earlier module version, which matched on the amount alone, can simply be re-run with **Create Receipt**: the guard runs again with the current rules. |
+| `queued` | The order waits for its document: it just reached the trigger status, or a run was refused by the rate limit (the message says by which window). Nothing was created. | Nothing, as a rule: the status change or the cron endpoint issues it. **Create Receipt** issues it at once when the limits allow. A queue entry older than 30 minutes is listed as needing attention (no cron job?). |
 | `held` | A customer data-change request is pending (stopped at the **hold** step). | Approve or reject the request under the order; the pipeline then runs automatically when the trigger status was already reached, or click **Create Receipt**. |
 | `error` | iFirma rejected the document or could not be reached before anything was sent; the reason is in the last error. | Fix the cause (data, credentials, limits) and click **Create Receipt**. |
 

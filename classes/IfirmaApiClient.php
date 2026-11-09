@@ -58,6 +58,9 @@ class IfirmaApiClient
     /** @var IfirmaRateGuard */
     private $rateGuard;
 
+    /** @var callable|null runs once, right before the next request that passes the guards is sent */
+    private $beforeSend = null;
+
     /** @var bool */
     private $authBlocked = false;
 
@@ -441,6 +444,21 @@ class IfirmaApiClient
     }
 
     /**
+     * Registers what runs right before the next request is sent: after every local check passed (credentials, pause
+     * after a rejected key, rate guard), so it does not run for a request that is refused locally. It runs once,
+     * for that request only. An exception it throws stops the request from being sent. Pass null to withdraw it.
+     *
+     * @param callable|null $callback
+     * @return $this
+     */
+    public function beforeNextRequest($callback)
+    {
+        $this->beforeSend = $callback;
+
+        return $this;
+    }
+
+    /**
      * @return bool true when the last call was refused by the local rate guard
      */
     public function isRateLimited()
@@ -748,6 +766,12 @@ class IfirmaApiClient
             'Content-Type: application/json; charset=UTF-8',
             'Authentication: ' . $authHeader,
         );
+
+        if ($this->beforeSend !== null) {
+            $before = $this->beforeSend;
+            $this->beforeSend = null;
+            call_user_func($before);
+        }
 
         $this->requestCount++;
         $this->requestSent = true;
