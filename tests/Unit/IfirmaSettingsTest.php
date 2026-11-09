@@ -53,6 +53,7 @@ class IfirmaSettingsTest extends TestCase
             'IFIRMA_SYNC_INTERVAL_MIN' => '15',
             'IFIRMA_CRON_MAX_CALLS' => '10',
             'IFIRMA_RATE_MAX_PER_MIN' => '60',
+            'IFIRMA_RATE_MAX_PER_DAY' => '12000',
         );
     }
 
@@ -93,6 +94,7 @@ class IfirmaSettingsTest extends TestCase
             'IFIRMA_DUPLICATE_WINDOW_DAYS', 'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE', 'IFIRMA_DOC_TEMPLATE',
             'IFIRMA_ORDER_STAMP_PREFIX', 'IFIRMA_SHOP_URL', 'IFIRMA_ALLOW_DATA_REQUEST',
             'IFIRMA_DATA_REQUEST_AUTO_ACCEPT', 'IFIRMA_NOTIFY_EMAIL', 'IFIRMA_SYNC_INTERVAL_MIN', 'IFIRMA_CRON_MAX_CALLS', 'IFIRMA_RATE_MAX_PER_MIN',
+            'IFIRMA_RATE_MAX_PER_DAY',
         ), array_keys(IfirmaSettings::fields()));
     }
 
@@ -160,6 +162,7 @@ class IfirmaSettingsTest extends TestCase
             'IFIRMA_SYNC_INTERVAL_MIN' => null,
             'IFIRMA_CRON_MAX_CALLS' => null,
             'IFIRMA_RATE_MAX_PER_MIN' => null,
+            'IFIRMA_RATE_MAX_PER_DAY' => null,
         ), $result['values']);
         $this->assertSame(array(
             'IFIRMA_USER' => '',
@@ -170,6 +173,7 @@ class IfirmaSettingsTest extends TestCase
             'IFIRMA_SYNC_INTERVAL_MIN' => '',
             'IFIRMA_CRON_MAX_CALLS' => '',
             'IFIRMA_RATE_MAX_PER_MIN' => '',
+            'IFIRMA_RATE_MAX_PER_DAY' => '',
         ), $result['errors']);
     }
 
@@ -188,6 +192,7 @@ class IfirmaSettingsTest extends TestCase
             'IFIRMA_SYNC_INTERVAL_MIN' => '30',
             'IFIRMA_CRON_MAX_CALLS' => '20',
             'IFIRMA_RATE_MAX_PER_MIN' => '60',
+            'IFIRMA_RATE_MAX_PER_DAY' => '12000',
         ));
 
         $this->assertSame(array(), $result['errors']);
@@ -197,11 +202,12 @@ class IfirmaSettingsTest extends TestCase
         $this->assertSame('KAR', $result['values']['IFIRMA_PAYMENT_METHOD']);
         $this->assertSame("ps_wirepayment=PRZ\nmygateway*=ELE", $result['values']['IFIRMA_PAYMENT_METHOD_MAP']);
         $this->assertSame('0.05', $result['values']['IFIRMA_DUPLICATE_AMOUNT_TOLERANCE']);
-        $this->assertSame(array(45, 30, 20, 60), array(
+        $this->assertSame(array(45, 30, 20, 60, 12000), array(
             $result['values']['IFIRMA_DUPLICATE_WINDOW_DAYS'],
             $result['values']['IFIRMA_SYNC_INTERVAL_MIN'],
             $result['values']['IFIRMA_CRON_MAX_CALLS'],
             $result['values']['IFIRMA_RATE_MAX_PER_MIN'],
+            $result['values']['IFIRMA_RATE_MAX_PER_DAY'],
         ));
     }
 
@@ -217,6 +223,7 @@ class IfirmaSettingsTest extends TestCase
             'IFIRMA_SYNC_INTERVAL_MIN' => '15',
             'IFIRMA_CRON_MAX_CALLS' => '10',
             'IFIRMA_RATE_MAX_PER_MIN' => '60',
+            'IFIRMA_RATE_MAX_PER_DAY' => '12000',
         ));
 
         $this->assertSame(array('IFIRMA_KEY_FAKTURA' => '', 'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE' => ''), $result['errors'], 'the errors are keyed by setting, in table order');
@@ -476,6 +483,7 @@ class IfirmaSettingsTest extends TestCase
             'the sync interval' => array('IFIRMA_SYNC_INTERVAL_MIN', 1, 1440),
             'the cron call budget' => array('IFIRMA_CRON_MAX_CALLS', 1, 90),
             'the API rate limit' => array('IFIRMA_RATE_MAX_PER_MIN', 1, 100),
+            'the API day limit' => array('IFIRMA_RATE_MAX_PER_DAY', 1, 15000),
         );
     }
 
@@ -792,6 +800,7 @@ class IfirmaSettingsTest extends TestCase
             'IFIRMA_USER' => '', 'IFIRMA_KEY_FAKTURA' => 'zz', 'IFIRMA_PAYMENT_METHOD' => 'XYZ', 'IFIRMA_PAYMENT_METHOD_MODE' => 'never',
             'IFIRMA_DUPLICATE_WINDOW_DAYS' => '0', 'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE' => '-1', 'IFIRMA_NOTIFY_EMAIL' => 'no',
             'IFIRMA_SYNC_INTERVAL_MIN' => '0', 'IFIRMA_CRON_MAX_CALLS' => '0', 'IFIRMA_RATE_MAX_PER_MIN' => '0',
+            'IFIRMA_RATE_MAX_PER_DAY' => '0',
             'IFIRMA_PAYMENT_METHOD_MAP' => 'ps_checkpayment=XYZ',
         ));
 
@@ -807,6 +816,7 @@ class IfirmaSettingsTest extends TestCase
             'IFIRMA_SYNC_INTERVAL_MIN' => '',
             'IFIRMA_CRON_MAX_CALLS' => '',
             'IFIRMA_RATE_MAX_PER_MIN' => '',
+            'IFIRMA_RATE_MAX_PER_DAY' => '',
         ), $result['errors'], 'every rule that can fail, in table order');
     }
 

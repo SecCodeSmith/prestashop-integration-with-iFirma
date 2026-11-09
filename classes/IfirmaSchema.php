@@ -480,7 +480,9 @@ class IfirmaSchema
             'IFIRMA_CRON_TOKEN' => null,
             'IFIRMA_CRON_MAX_CALLS' => 40,
             'IFIRMA_RATE_MAX_PER_MIN' => 80,
+            'IFIRMA_RATE_MAX_PER_DAY' => 14000,
             'IFIRMA_RATE_WINDOW' => '',
+            'IFIRMA_RATE_DAY_WINDOW' => '',
             'IFIRMA_AUTH_FAILURE' => '',
         );
     }

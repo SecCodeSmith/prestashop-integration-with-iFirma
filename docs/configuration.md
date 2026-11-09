@@ -102,8 +102,10 @@ Open the module configuration and fill in:
 | `IFIRMA_SYNC_INTERVAL_MIN` (new) | `15` |
 | `IFIRMA_CRON_TOKEN` (new) | random 32 hex characters, generated on install/upgrade from the system's secure random generator (if that is unavailable, the install or upgrade fails with a message rather than using a weaker token) |
 | `IFIRMA_CRON_MAX_CALLS` (new) | `40` |
-| `IFIRMA_RATE_MAX_PER_MIN` (new) | `80` |
-| `IFIRMA_RATE_WINDOW` (new) | empty (internal rate-limit state: `<minute>:<count>`, incremented by one atomic database statement, so two requests at the same time cannot both pass the cap) |
+| `IFIRMA_RATE_MAX_PER_MIN` (new) | `80` (1 to 100) |
+| `IFIRMA_RATE_MAX_PER_DAY` (new) | `14000` (1 to 15000) |
+| `IFIRMA_RATE_WINDOW` (new) | empty (internal rate-limit state of the minute: `<minute>:<count>`, incremented by one atomic database statement, so two requests at the same time cannot both pass the cap) |
+| `IFIRMA_RATE_DAY_WINDOW` (new) | empty (the same for the calendar day: `<day>:<count>`) |
 | `IFIRMA_AUTH_FAILURE` (new) | empty (internal mark of the pause after a rejected key: `<unix time>|<message>`; set by a failed call, cleared by a successful save of the settings; after 15 minutes the mark no longer pauses calls) |
 | `IFIRMA_SEEN_<id_employee>` (new) | not set (internal: the time an employee last opened the iFirma tab of the notification bell) |
 
@@ -157,14 +159,23 @@ Link, Unlink and Register on the customer page need, on top of View, the Edit pe
 
 ## Rate limits
 
-iFirma allows 100 requests per minute and 15,000 per day. The module keeps its own per-minute
-counter (`IFIRMA_RATE_WINDOW`) and refuses to start a request once the local cap is reached
-(default 80, configurable through `IFIRMA_RATE_MAX_PER_MIN`); such a refusal is a transient
-"rate limited" error and is never stored as a document error. Timeouts: 30 s by default, 5 s for
+iFirma allows 100 requests per minute and 15,000 per day. The module keeps its own counters for both
+windows (`IFIRMA_RATE_WINDOW` for the calendar minute, `IFIRMA_RATE_DAY_WINDOW` for the calendar day) and refuses to
+start a request once either local cap is reached. The caps are `IFIRMA_RATE_MAX_PER_MIN` (default 80, 1 to 100)
+and `IFIRMA_RATE_MAX_PER_DAY` (default 14,000, 1 to 15,000), both on the settings page; they stay below
+iFirma's own limits on purpose. The minute is checked first. The day is the calendar day of the shop's time
+zone; iFirma's own day is presumably Polish time, and the 1,000-request margin below 15,000 absorbs a mismatch
+around midnight. A refusal names the window that refused ("... requests in the current minute (cap 80)" or
+"... requests today (cap 14000)") and is a transient "rate limited" error, never stored as a document error.
+A request refused by the day window has already used a minute slot; that only makes the guard more conservative.
+Timeouts: 30 s by default, 5 s for
 the customer-page sync. A shop-mail delivery may add up to 10 s of waiting when the PDF is not ready yet. With the optional `abonent` key the used/granted daily limit can be read.
 
 A bulk run of the documents list stops at the first refusal and reports the rest as "not attempted" (see
 [iFirma documents list](usage.md#ifirma-documents-list)). The cURL transport accepts only the HTTP and HTTPS protocols,
 does not follow redirects, and cuts off an answer larger than 20 MB with an error.
 
-The limits are shared by ALL API clients of your account (other integrations, accounting tools). The module retries rate-limited receipts on a later run, but it cannot see requests made by other clients.
+The limits are shared by ALL API clients of your account (other integrations, accounting tools). The module counts
+only its own requests, so a busy account can reach iFirma's limit before the module reaches its cap; lower the caps when
+other programs use the same account. The module retries rate-limited receipts on a later run, but it cannot see
+requests made by other clients.

@@ -465,6 +465,7 @@ class Ifirma extends Module
             'IFIRMA_SYNC_INTERVAL_MIN' => $this->l('The sync interval must be a whole number of minutes between 1 and 1440.'),
             'IFIRMA_CRON_MAX_CALLS' => $this->l('The cron call budget must be a whole number between 1 and 90.'),
             'IFIRMA_RATE_MAX_PER_MIN' => $this->l('The API rate limit must be a whole number between 1 and 100 calls per minute.'),
+            'IFIRMA_RATE_MAX_PER_DAY' => $this->l('The API daily limit must be a whole number between 1 and 15000 calls per day.'),
             'IFIRMA_PAYMENT_METHOD_MODE' => $this->l('The payment method mode must be "order" or "fixed".'),
             'IFIRMA_PAYMENT_METHOD' => $this->l('The fallback payment method must be one of the listed codes.'),
             'IFIRMA_PAYMENT_METHOD_MAP' => $this->l('Payment method map'),
@@ -990,6 +991,13 @@ class Ifirma extends Module
                 'desc' => $this->l('Local safety limit for iFirma API calls per minute (1-100).'),
             ),
             array(
+                'type' => 'text',
+                'label' => $this->l('API calls per day'),
+                'name' => 'IFIRMA_RATE_MAX_PER_DAY',
+                'class' => 'fixed-width-sm',
+                'desc' => $this->l('Local safety limit for iFirma API calls per day (1-15000). The account limit is shared with every other program that uses the iFirma API.'),
+            ),
+            array(
                 'type' => 'html',
                 'label' => $this->l('Cron endpoint'),
                 'name' => 'IFIRMA_CRON_INFO',
@@ -1057,6 +1065,7 @@ class Ifirma extends Module
             'IFIRMA_SYNC_INTERVAL_MIN' => (int) Configuration::get('IFIRMA_SYNC_INTERVAL_MIN'),
             'IFIRMA_CRON_MAX_CALLS' => (int) Configuration::get('IFIRMA_CRON_MAX_CALLS'),
             'IFIRMA_RATE_MAX_PER_MIN' => (int) Configuration::get('IFIRMA_RATE_MAX_PER_MIN'),
+            'IFIRMA_RATE_MAX_PER_DAY' => (int) Configuration::get('IFIRMA_RATE_MAX_PER_DAY'),
         );
 
         return $helper->generateForm(array($fields_form));

@@ -280,7 +280,7 @@ Configuration keys (defaults in `IfirmaSchema`; the settings walk-through is in 
 | KSeF | `IFIRMA_KSEF_MODE` |
 | Duplicate guard | `IFIRMA_DUPLICATE_CHECK`, `IFIRMA_DUPLICATE_WINDOW_DAYS`, `IFIRMA_DUPLICATE_AMOUNT_TOLERANCE` |
 | Status and cron | `IFIRMA_SYNC_INTERVAL_MIN`, `IFIRMA_CRON_TOKEN`, `IFIRMA_CRON_MAX_CALLS`, `IFIRMA_NOTIFY_EMAIL` |
-| Rate limiting | `IFIRMA_RATE_MAX_PER_MIN`, `IFIRMA_RATE_WINDOW` (incremented by one atomic statement) |
+| Rate limiting | `IFIRMA_RATE_MAX_PER_MIN`, `IFIRMA_RATE_MAX_PER_DAY`, `IFIRMA_RATE_WINDOW`, `IFIRMA_RATE_DAY_WINDOW` (each counter is incremented by one atomic statement; `IfirmaRateGuard` checks the minute, then the day) |
 | Internal state | `IFIRMA_AUTH_FAILURE` (the pause mark after a rejected key, `<unix time>|<message>`), `IFIRMA_SEEN_<id_employee>` (the notification seen mark) |
 
 ## API surface

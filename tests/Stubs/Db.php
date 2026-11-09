@@ -27,6 +27,8 @@ class Db
     protected $scripts = [];
     /** @var string[] statements on the IFIRMA_RATE_WINDOW row; kept apart from $queries so tests that assert the queries of a flow are not told about the guard */
     public $rateQueries = [];
+    /** @var string[] statements on the IFIRMA_RATE_DAY_WINDOW row, kept apart for the same reason */
+    public $rateDayQueries = [];
     /** @var int rows the last execute() affected */
     protected $affected = 1;
 
@@ -89,6 +91,11 @@ class Db
     {
         if (strpos($sql, 'IFIRMA_RATE_WINDOW') !== false) {
             $this->rateQueries[] = $sql;
+
+            return;
+        }
+        if (strpos($sql, 'IFIRMA_RATE_DAY_WINDOW') !== false) {
+            $this->rateDayQueries[] = $sql;
 
             return;
         }
@@ -212,29 +219,33 @@ class Db
     }
 
     /**
-     * Runs the atomic IFIRMA_RATE_WINDOW counter statement of IfirmaApiClient against the Configuration stub,
-     * the way MySQL would; any other statement affects one row.
+     * Runs the atomic counter statement of IfirmaRateGuard (the minute row IFIRMA_RATE_WINDOW or the day row
+     * IFIRMA_RATE_DAY_WINDOW) against the Configuration stub, the way MySQL would; any other statement affects
+     * one row.
      *
      * @return int affected rows
      */
     protected function emulateRateWindow($sql)
     {
-        if (!preg_match("/SET `value` = IF\(.*CONCAT\('(\d{12}):'.*name` = 'IFIRMA_RATE_WINDOW'.*< (\d+)\)/s", $sql, $m)) {
+        if (!preg_match("/SET `value` = IF\(.*CONCAT\('(\d{8,12}):'.*name` = '(IFIRMA_RATE_(?:DAY_)?WINDOW)'.*< (\d+)\)/s", $sql, $m)) {
             return 1;
         }
-        if (!Configuration::hasKey('IFIRMA_RATE_WINDOW')) {
+        $bucket = $m[1];
+        $key = $m[2];
+        $cap = (int) $m[3];
+        if (!Configuration::hasKey($key)) {
             return 0;
         }
-        $parts = explode(':', (string) Configuration::get('IFIRMA_RATE_WINDOW'), 2);
+        $parts = explode(':', (string) Configuration::get($key), 2);
         $head = $parts[0];
         $tail = count($parts) === 2 ? $parts[1] : $parts[0];
-        if ($head === $m[1]) {
-            if ((int) $tail >= (int) $m[2]) {
+        if ($head === $bucket) {
+            if ((int) $tail >= $cap) {
                 return 0;
             }
-            Configuration::$values['IFIRMA_RATE_WINDOW'] = $m[1] . ':' . ((int) $tail + 1);
+            Configuration::$values[$key] = $bucket . ':' . ((int) $tail + 1);
         } else {
-            Configuration::$values['IFIRMA_RATE_WINDOW'] = $m[1] . ':1';
+            Configuration::$values[$key] = $bucket . ':1';
         }
 
         return 1;
