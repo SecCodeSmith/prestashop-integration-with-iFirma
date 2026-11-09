@@ -235,7 +235,7 @@ class RemoteLimitTest extends TestCase
 
     public function testAMangledSnapshotIsIgnored()
     {
-        foreach (array('', 'garbage', $this->day() . ':a:b:c', $this->day() . ':1:2') as $stored) {
+        foreach (array('', 'garbage', $this->day() . ':a:b:c', $this->day() . ':1:2', $this->day() . ':1:0:5') as $stored) {
             Configuration::updateValue('IFIRMA_REMOTE_LIMIT', $stored);
 
             $this->assertSame(0, IfirmaRemoteLimit::grantedOn($this->day()), var_export($stored, true));
