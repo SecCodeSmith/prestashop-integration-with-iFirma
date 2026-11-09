@@ -584,7 +584,7 @@ $_MODULE['<{ifirma}prestashop>admin_order_panel_b6907cbf4c117ef645808cc578eeedb5
 $_MODULE['<{ifirma}prestashop>customer_account_eb2b084ca72dc5f0a88a016eb530660c'] = 'Moje dokumenty iFirma';
 $_MODULE['<{ifirma}prestashop>customer_account_4f44165a866dc1abb0ac38e6f03c541d'] = 'Wystawiony poza sklepem (zaimportowany z iFirma)';
 $_MODULE['<{ifirma}prestashop>customer_account_2be37eab0f06ccfc6f73199354169bed'] = 'Zamówienia z oczekującą prośbą o zmianę danych do dokumentu:';
-$_MODULE['<{ifirma}prestashop>order_detail_61739089ac3775fb66a9cd79024fdae0'] = 'Dokument księgowy (iFirma)';
+$_MODULE['<{ifirma}prestashop>order_detail_61739089ac3775fb66a9cd79024fdae0'] = 'Faktura (iFirma)';
 $_MODULE['<{ifirma}prestashop>order_detail_e0010a0a1a3259ab5c06a19bad532851'] = 'Opłacony';
 $_MODULE['<{ifirma}prestashop>order_detail_c1df6f50cd5fb3ea81af7a16054a64a2'] = 'Nieopłacony';
 $_MODULE['<{ifirma}prestashop>order_detail_4f44165a866dc1abb0ac38e6f03c541d'] = 'Wystawiony poza sklepem (zaimportowany z iFirma)';
@@ -594,7 +594,7 @@ $_MODULE['<{ifirma}prestashop>order_detail_abce3ef910cfc047f0721654cb71f2db'] = 
 $_MODULE['<{ifirma}prestashop>order_detail_8c9427aefdfb9dab510a4d4ef9a4925c'] = 'Jeszcze nie wysłano';
 $_MODULE['<{ifirma}prestashop>order_detail_b93b3d6eb17f61031605cd1a1387742e'] = 'Pobierz dokument (PDF)';
 $_MODULE['<{ifirma}prestashop>order_detail_7e812716e840f1ea8bd136efda3c7655'] = 'Ten dokument nie jest już dostępny. Skontaktuj się ze sklepem.';
-$_MODULE['<{ifirma}prestashop>order_detail_96030bb31c4e96a8ae185b0c82579d0b'] = 'Sklep weryfikuje dokument księgowy dla tego zamówienia.';
+$_MODULE['<{ifirma}prestashop>order_detail_96030bb31c4e96a8ae185b0c82579d0b'] = 'Sklep weryfikuje fakure dla tego zamówienia.';
 $_MODULE['<{ifirma}prestashop>order_detail_9a700ce56383b9aada11ab9bc3bb0622'] = 'Dokument jest wstrzymany do czasu rozpatrzenia Twojej prośby o zmianę danych do dokumentu.';
 $_MODULE['<{ifirma}prestashop>order_detail_d993f9087b72721464a9680e09acc1dc'] = 'Prośbę złożono dnia';
 $_MODULE['<{ifirma}prestashop>order_detail_e00a4c61591faf9e898451321b1e61ac'] = 'Anuluj prośbę';

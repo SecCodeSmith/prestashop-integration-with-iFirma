@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wsl.exe -d Debian -- bash -lc \"cd /mnt/c/Users/Kuba/Desktop/RORO/ifirma && docker compose -f test-stack/docker-compose.yml ps --format '{{.Service}}\\\\t{{.State}}' 2>&1 | head -40\")"
+    ]
+  }
+}

@@ -2,7 +2,7 @@
 
 Witaj {firstname} {lastname},
 
-Dokument księgowy {document_number} do zamówienia {order_reference} przesyłamy w załączniku jako plik PDF.
+Faktura {document_number} do zamówienia {order_reference} przesyłamy w załączniku jako plik PDF.
 
 Data wystawienia: {issue_date}
 
