@@ -1,0 +1,77 @@
+name: Bug report
+description: Report a reproducible problem with the iFirma module
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for the report. Security vulnerabilities must NOT be reported here:
+        follow the policy at https://github.com/SecCodeSmith/prestashop-integration-with-iFirma/security/policy
+
+        **Never paste API keys, tokens, passwords, webhook secrets or customer data**
+        (names, addresses, e-mails, NIP numbers, invoices) into this form.
+  - type: input
+    id: module_version
+    attributes:
+      label: Module version
+      description: The version shown in the module list, for example 1.8.0
+    validations:
+      required: true
+  - type: input
+    id: prestashop_version
+    attributes:
+      label: PrestaShop version
+      description: For example 8.1.7 or 9.1.4
+    validations:
+      required: true
+  - type: input
+    id: php_version
+    attributes:
+      label: PHP version
+      description: Output of `php -v` on the web server, for example 8.1.2
+    validations:
+      required: true
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened
+      description: Describe the problem in a few sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps, starting from a clean state if possible. Use placeholder data.
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Relevant lines from the PrestaShop logger (Advanced Parameters > Logs) or the web server error log.
+        Remove or replace API keys, tokens, passwords and customer data before pasting.
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: no_secrets
+    attributes:
+      label: Confirmations
+      options:
+        - label: I have removed API keys, tokens, passwords and customer data from this report.
+          required: true
+        - label: I have searched existing issues and found no duplicate.
+          required: true

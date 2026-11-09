@@ -73,26 +73,83 @@ IFIRMA_BUILD_CHANNEL=test IFIRMA_BUILD_NUMBER=7 npm run build:zip    # dist/ifir
 only after lint, PHPUnit and the mock tests pass. Download it from the run's *Artifacts* section
 (`ifirma-<version>+build.<n>`, kept 90 days).
 
-**Releases.** Actions -> *Release* -> *Run workflow* with `patch`, `minor` or `major`. The workflow runs PHPUnit, lint
-and the licence check, bumps and syncs the version (`package.json`, `package-lock.json`, `ifirma.php`, `config.xml`)
-into a local commit + tag `v<version>`, builds and verifies `ifirma-<version>.zip` (channel `release`), keeps the
-verified zip and tarball as the run's `release-files` artifact, and only then pushes and publishes the GitHub Release.
-A failure before the push leaves the remote untouched, and the push is atomic: if the remote refuses the commit or the
-tag, neither lands. If only the publish step fails, the tag already exists: download and unpack the run's
-`release-files` artifact and publish those files by hand from that folder,
+**Releases.** Actions -> *Release* -> *Run workflow* with `patch`, `minor` or `major`, from `master` or a `release/*`
+branch (any other branch or a tag is refused). The workflow has two jobs. `verify` holds a read-only token and is the
+only place where dependency code runs (`npm ci --ignore-scripts`, `composer install --no-scripts`, `pip install`);
+`release` holds the write token and installs nothing, because the build and release scripts use only Node and Python
+built-ins. Neither job leaves credentials in `.git/config`; the push step receives the token explicitly. The workflow runs PHPUnit, lint, the licence-header check, the tool tests and the dependency and licence audits
+(`composer audit`, `npm audit`, `tools/check_dependency_licenses.py`), then asks `scripts/release-plan.mjs` where the
+release lands, bumps and syncs the version (`package.json`, `package-lock.json`, `ifirma.php`, `config.xml`) into a
+local commit + tag `v<version>`, builds `ifirma-<version>.zip` (channel `release`), verifies it
+(`verify:package`, `tools/check_marketplace_readiness.py`), writes the release notes summary, keeps the verified zip,
+tarball and summary as the run's `release-files` artifact, and only then pushes and publishes the GitHub Release. A
+failure before the push leaves the remote untouched, and the push is atomic: if the remote refuses a ref, none lands.
+
+*Where a release lands.*
+
+| bump | from | result |
+|---|---|---|
+| `minor`, `major` | `master` or `release/*` | new branch `release/<major>.<minor>` holds the release commit and the tag; the dispatched branch does not move; a pull request `release/X.Y` -> `master` carries the bump |
+| `patch` | `master` | commit and tag on `master`, no pull request |
+| `patch` | `release/*` | commit and tag on that branch, plus a pull request into `master` |
+
+The run refuses, before bumping, when the target `release/X.Y` branch or the tag already exists on the remote (for
+example while the previous release pull request is still open): merge or remove it first. The pull request step runs
+after publishing and never fails the release; if the repository forbids Actions from creating pull requests
+(*Settings -> Actions -> General -> Allow GitHub Actions to create and approve pull requests*) the log prints the
+`gh pr create` command to run by hand. Protect `master` and `release/*` with branch protection so the bump is
+reviewed.
+
+*Release notes.* `scripts/release-summary.mjs` sends only the commit subjects since the previous tag (newest 100,
+control characters stripped) to GitHub Models with the workflow's `GITHUB_TOKEN` (`models: read`) and publishes a
+short summary above GitHub's generated notes. The answer and the subjects are treated as untrusted: HTML is escaped,
+mentions, markdown links and bare URLs are defused and the summary is cut to 120 words. If the call fails, times out or no token is available, the release carries the
+plain list of subjects and the log names the reason; the release is never blocked. The model comes from the
+repository variable `RELEASE_SUMMARY_MODEL` (default `openai/gpt-4.1-mini`).
+
+If only the publish step fails, the tag already exists: download and unpack the run's `release-files` artifact and
+publish those files by hand from that folder,
 
 ```bash
 gh release create v<version> --title v<version> --generate-notes dist/ifirma-<version>.zip scm-ifirma-<version>.tgz
 ```
 
 To rebuild the files instead, check out the tag and run `npm ci`, `IFIRMA_BUILD_CHANNEL=release npm run build` and
-`npm run verify:package -- --channel release`; they land at the same paths. Deleting the tag and running the workflow
-again does not redo that version: its release commit is already on `master`, so the next run releases the version
-after it.
+`npm run verify:package -- --channel release`; they land at the same paths.
 
 After publishing, the workflow starts CI on the new tag, so the release commit gets its own CI run and test build
 (`ifirma-<version>+build.<n>`). Pushes made with the workflow's built-in token do not trigger CI on their own. If only
 that last step fails, start CI by hand: Actions -> *CI* -> *Run workflow* on tag `v<version>`.
+
+Tool tests (no PHP needed): `python -m unittest discover -s tests/tools -p "test_*.py"` and
+`node --test tests/tools/*.test.mjs`. The zip is written by `scripts/zip-writer.mjs`, not by a dependency: every
+`archiver` release carries an unfixable `minimatch` advisory, so it was replaced on 2026-11-09.
+
+### Security scanning
+
+`.github/workflows/security.yml` runs on every pull request, every push to `master` and weekly (Monday 04:17 UTC):
+`composer audit`, `npm audit --audit-level=moderate`, `pip-audit` on the mock requirements, dependency review (pull
+requests), a gitleaks scan of the tree and history, Semgrep (PHP and secrets rules, ERROR severity), the licence
+audit, and Trivy on the repository (vulnerabilities, secrets, configuration; HIGH and CRITICAL). The container images
+of the test stack are scanned report-only because they never ship; `tools/check_pinned_images.py` fails on an image
+without a pinned tag. The build refuses a symbolic link inside the package tree, so a link cannot pull a file
+from outside the module into the published zip. Dependabot (`.github/dependabot.yml`) proposes updates for Composer, npm, pip, Docker and the
+workflow actions. A high or critical finding fails the run and is fixed in its own `fix-vuln:` commit.
+
+There is no silent ignore list. Accepted risks are recorded with a reason and a review date: the two gitleaks
+false-positive paths in `.gitleaks.toml` (graphify cache hashes, fake `IFIRMA_KEY_*` test values; accepted
+2026-11-09, review by 2027-05-09) and the licence exception in `docs/third-party-licenses.md`. Known report-only
+finding: the mock image runs as root (Trivy AVD-DS-0002, `test-stack/ifirma-mock/Dockerfile`); it is a local test
+service that never ships, to be fixed in the test-stack repository, review by 2027-05-09.
+
+Licences: [third-party-licenses.md](third-party-licenses.md). PrestaShop Addons: [marketplace-readiness.md](marketplace-readiness.md).
+
+### Testing every supported PrestaShop version
+
+The test stack image is pinned (`PS_IMAGE_TAG`, default `9.1.4-apache`). `.github/workflows/smoke.yml` (weekly and on
+demand) boots the stack for PrestaShop 8.0.5, 8.1.7, 8.2.2, 9.0.3 and 9.1.4 and runs the smoke scenarios against the
+mock, except scenario R, which takes 8 to 10 minutes and is run alone with `SMOKE_ONLY=R`. Locally:
+`PS_IMAGE_TAG=8.2.2-apache docker compose -f test-stack/docker-compose.yml up -d --build`.
 
 ### Dev dependencies and PrestaShop
 

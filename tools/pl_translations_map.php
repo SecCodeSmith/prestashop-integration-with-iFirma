@@ -146,6 +146,8 @@ return array(
     'Local safety limit for iFirma API calls per day (1-15000). The account limit is shared with every other program that uses the iFirma API.' => 'Lokalny limit bezpieczeństwa wywołań API iFirma na dobę (1-15000). Limit konta jest wspólny dla każdego programu, który korzysta z API iFirma.',
     'Cron endpoint' => 'Endpoint crona',
     'Regenerate cron token' => 'Wygeneruj nowy token crona',
+    'Documentation' => 'Dokumentacja',
+    'Support' => 'Wsparcie',
     'On hold (data change request pending)' => 'Wstrzymany (oczekuje prośba o zmianę danych)',
     'Suspected duplicate' => 'Podejrzenie duplikatu',
     'Outcome unknown - verify in iFirma' => 'Wynik nieznany - sprawdź w iFirma',

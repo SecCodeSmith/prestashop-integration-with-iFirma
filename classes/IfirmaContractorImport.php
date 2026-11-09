@@ -107,18 +107,49 @@ class IfirmaContractorImport
      * and a byte table for the Polish letters otherwise.
      *
      * @param string $content
+     * @param callable|null $converter callable(string): string|false, iconv by default (test seam)
      * @return string
      */
-    public static function convertWindows1250($content)
+    public static function convertWindows1250($content, $converter = null)
     {
-        if (function_exists('iconv')) {
-            $converted = @iconv('Windows-1250', 'UTF-8//IGNORE', $content);
+        if ($converter === null && function_exists('iconv')) {
+            $converter = function ($bytes) {
+                return iconv('Windows-1250', 'UTF-8//IGNORE', $bytes);
+            };
+        }
+        if ($converter !== null) {
+            $converted = self::convertReportingNotices($converter, $content);
             if ($converted !== false) {
                 return $converted;
             }
         }
 
         return self::convertWindows1250Fallback($content);
+    }
+
+    /**
+     * iconv reports an illegal character as a notice on some libc builds; the notice turns the result
+     * into false so the byte table takes over. Only notices are caught, no other error is silenced.
+     *
+     * @param callable $converter callable(string): string|false
+     * @param string $content
+     * @return string|false
+     */
+    private static function convertReportingNotices($converter, $content)
+    {
+        $noticeRaised = false;
+        set_error_handler(function () use (&$noticeRaised) {
+            $noticeRaised = true;
+
+            return true;
+        }, E_NOTICE | E_USER_NOTICE);
+        try {
+            $converted = $converter($content);
+        } finally {
+            restore_error_handler();
+        }
+
+        return $noticeRaised ? false : $converted;
     }
 
     /**

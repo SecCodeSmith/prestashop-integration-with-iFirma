@@ -9,6 +9,9 @@
  * See the LICENCE file distributed with this module for the full terms.
  */
 
+if (!defined('_PS_VERSION_')) {
+    exit;
+}
 
 /**
  * Limits the customer's document downloads: one document at most every DOCUMENT_WINDOW seconds, and

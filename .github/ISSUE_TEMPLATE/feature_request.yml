@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest a change in behaviour or a new capability
+title: "feature: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the behaviour you need in terms of what happens to an order, receipt, invoice,
+        contractor or data request. Do not include API keys, tokens or customer data.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What do you need to do that you cannot do today?
+    validations:
+      required: true
+  - type: textarea
+    id: behaviour
+    attributes:
+      label: Desired behaviour
+      description: Given / When / Then scenarios are welcome.
+      placeholder: |
+        Given a paid order of a customer with ...
+        When ...
+        Then ...
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+    validations:
+      required: false
+  - type: input
+    id: module_version
+    attributes:
+      label: Module version
+      description: The version you run today, if relevant
+    validations:
+      required: false

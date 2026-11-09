@@ -117,6 +117,56 @@ class ContractorImportTest extends TestCase
         $this->assertSame("Za\xC5\xBC\xC3\xB3\xC5\x82\xC4\x87 G\xC4\x99\xC5\x9Bl\xC4\x85", $parsed['rows'][0]['name']);
     }
 
+    public function testANoticeFromTheConverterMakesTheByteTableTakeOver()
+    {
+        $converter = function () {
+            trigger_error('Detected an illegal character in input string', E_USER_NOTICE);
+
+            return 'half converted';
+        };
+
+        $this->assertSame(
+            IfirmaContractorImport::convertWindows1250Fallback("Za\xB3"),
+            IfirmaContractorImport::convertWindows1250("Za\xB3", $converter)
+        );
+    }
+
+    public function testAConverterThatFailsMakesTheByteTableTakeOver()
+    {
+        $converter = function () {
+            return false;
+        };
+
+        $this->assertSame(
+            IfirmaContractorImport::convertWindows1250Fallback("Za\xB3"),
+            IfirmaContractorImport::convertWindows1250("Za\xB3", $converter)
+        );
+    }
+
+    public function testAConverterThatSucceedsIsTrusted()
+    {
+        $converter = function ($bytes) {
+            return strtoupper($bytes);
+        };
+
+        $this->assertSame('ABC', IfirmaContractorImport::convertWindows1250('abc', $converter));
+    }
+
+    public function testConversionLeavesTheCallersErrorHandlerInstalled()
+    {
+        $callersHandler = function () {
+            return false;
+        };
+        set_error_handler($callersHandler);
+
+        IfirmaContractorImport::convertWindows1250("Za³");
+        $handlerAfterwards = set_error_handler(null);
+        restore_error_handler();
+        restore_error_handler();
+
+        $this->assertSame($callersHandler, $handlerAfterwards);
+    }
+
     public function testWindows1250FallbackTableCoversThePolishLetters()
     {
         $bytes = pack('C*', 0xB9, 0xE6, 0xEA, 0xB3, 0xF1, 0xF3, 0x9C, 0x9F, 0xBF, 0xA5, 0xC6, 0xCA, 0xA3, 0xD1, 0xD3, 0x8C, 0x8F, 0xAF, 0x20, 0x41, 0x80);

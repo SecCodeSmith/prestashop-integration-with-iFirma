@@ -1,54 +1,74 @@
 name: Release
 
-# Manual release, atomic up to the publish step:
-#   1. verify  - PHPUnit, PHP lint and licence headers on the commit being released
-#   2. bump    - `npm version` syncs package.json, ifirma.php and config.xml and
-#                creates the release commit + tag LOCALLY (nothing pushed yet)
-#   3. build   - release zip (BUILD channel "release") + npm tarball, verified, then
-#                kept as the run's "release-files" artifact
-#   4. push    - commit and tag reach the remote only after 1-3 succeeded, in one
-#                atomic push: if the remote refuses either ref, neither lands
-#   5. publish - GitHub Release with the zip and tarball attached
-#   6. CI      - start ci.yml on the new tag: pushes made with GITHUB_TOKEN do not
-#                trigger workflows, but workflow_dispatch does, so the release
-#                commit still gets its own CI run and test build
-# If step 5 fails the tag exists without a release: unpack the run's "release-files"
-# artifact and, in that folder, run `gh release create v<version> --title v<version>
-# --generate-notes dist/ifirma-<version>.zip scm-ifirma-<version>.tgz` (see README).
-# If only step 6 fails, start CI by hand: Actions -> CI -> Run workflow on tag v<version>.
+# Manual release in two jobs, atomic up to the publish step.
+#
+# Job "verify" (read-only token, no credentials on disk) is the only place where third-party code
+# runs (npm ci, composer install, pip install):
+#   1. verify  - PHPUnit, PHP lint, licence headers, tool tests, the dependency audits and the
+#                licence audit on the commit being released
+#
+# Job "release" (write token) installs nothing: the build and the release scripts use only Node and
+# Python built-ins, so no dependency code ever runs next to the write token.
+#   2. plan    - scripts/release-plan.mjs decides where the release lands and refuses when it is
+#                started from a branch other than the default branch or release/*, or when the
+#                target branch or tag already exists:
+#                  minor / major -> new branch release/<major>.<minor> (commit + tag on it)
+#                  patch         -> stays on the dispatched branch
+#   3. bump    - `npm version` syncs package.json, ifirma.php and config.xml and creates the
+#                release commit + tag LOCALLY (nothing pushed yet)
+#   4. build   - release zip (BUILD channel "release") + npm tarball, verified, checked against
+#                the PrestaShop Addons rules (tools/check_marketplace_readiness.py), then kept
+#                as the run's "release-files" artifact
+#   5. notes   - scripts/release-summary.mjs: short AI summary of the commits since the previous
+#                tag (GitHub Models, GITHUB_TOKEN); the plain commit list when it is unavailable
+#   6. push    - branch (if any), commit and tag reach the remote only after 1-5 succeeded, in
+#                one atomic push: if the remote refuses a ref, none lands
+#   7. publish - GitHub Release with the zip and tarball attached and summary + generated notes
+#   8. PR      - a release made off the default branch opens a pull request into it that carries
+#                the version bump (also for a patch run on a release/* branch). Needs the setting
+#                "Allow GitHub Actions to create and approve pull requests"; when it is off the
+#                log prints the command to run by hand and the release stays published.
+#   9. CI      - start ci.yml on the new tag: pushes made with GITHUB_TOKEN do not trigger
+#                workflows, but workflow_dispatch does, so the release commit still gets its own
+#                CI run and test build
+# If step 7 fails the tag exists without a release: unpack the run's "release-files" artifact and,
+# in that folder, run `gh release create v<version> --title v<version> --generate-notes
+# dist/ifirma-<version>.zip scm-ifirma-<version>.tgz` (see docs/development.md).
+# If only step 9 fails, start CI by hand: Actions -> CI -> Run workflow on tag v<version>.
 on:
   workflow_dispatch:
     inputs:
       bump:
-        description: "Version bump level"
+        description: "Version bump level (minor and major get their own release/X.Y branch)"
         type: choice
         default: patch
         options: [patch, minor, major]
 
-permissions:
-  contents: write
-  actions: write # step 6 dispatches ci.yml
+# Nothing by default; each job states what it needs.
+permissions: {}
 
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
-  release:
+  verify:
+    name: Verify the commit (read-only)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     # The test bootstrap resolves _PS_MODULE_DIR_ from the folder name, so the
     # module is checked out into "ifirma" exactly as in the CI phpunit job.
     defaults:
       run:
         working-directory: ifirma
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: ifirma
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: actions/setup-node@v4
+          submodules: true
+          persist-credentials: false
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: npm
@@ -57,64 +77,140 @@ jobs:
         with:
           php-version: "8.2"
           coverage: none
-
       - name: Install dependencies
         run: |
-          npm ci
-          composer install --no-interaction --prefer-dist
-
-      - name: Verify before releasing (PHPUnit, lint, licence headers)
+          npm ci --ignore-scripts
+          composer install --no-interaction --prefer-dist --no-scripts
+      - name: PHPUnit, lint, licence headers, tool tests
         run: |
           tests/vendor/bin/phpunit
           git ls-files '*.php' | while read -r f; do php -l "$f"; done
           python3 tools/check_license_headers.py
+          python3 -m unittest discover -s tests/tools -p "test_*.py"
+          node --test tests/tools/*.test.mjs
+      - name: Audit dependencies and licences
+        run: |
+          composer audit --locked
+          npm audit --audit-level=moderate
+          pip install -r test-stack/ifirma-mock/requirements-dev.txt
+          python3 tools/check_dependency_licenses.py
+
+  release:
+    name: Bump, build, push and publish
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write # step 9 dispatches ci.yml
+      pull-requests: write # step 8 opens the pull request
+      models: read # step 5 calls GitHub Models
+    env:
+      BUMP: ${{ inputs.bump }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      # No credentials are left in .git/config; the push step gets the token explicitly.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      - name: Plan where the release lands
+        id: plan
+        run: node scripts/release-plan.mjs "$BUMP"
 
       - name: Configure git identity
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+      - name: Cut the release branch (minor and major only)
+        if: steps.plan.outputs.release_branch != ''
+        env:
+          RELEASE_BRANCH: ${{ steps.plan.outputs.release_branch }}
+        run: git switch -c "$RELEASE_BRANCH"
+
       - name: Bump version, sync files, commit & tag (local only)
-        run: |
-          npm version ${{ inputs.bump }} -m "release: v%s"
+        run: 'npm version "$BUMP" -m "release: v%s"'
 
       - name: Build and verify release artifacts (zip + tgz)
         env:
           IFIRMA_BUILD_CHANNEL: release
+          VERSION: ${{ steps.plan.outputs.version }}
         run: |
           npm run build
           npm run verify:package -- --channel release
+          python3 tools/check_marketplace_readiness.py "dist/ifirma-$VERSION.zip"
+
+      - name: Write the release notes summary
+        # Never fails the release: the script writes the plain commit list when the model
+        # cannot be reached, and exits 0 in every case.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SUMMARY_MODEL: ${{ vars.RELEASE_SUMMARY_MODEL }}
+        run: |
+          PREVIOUS="$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || true)"
+          node scripts/release-summary.mjs --from "$PREVIOUS" --to HEAD^ --out release-summary.md
 
       - name: Keep the verified release files
         # The exact files the release publishes, so a failed publish step can be
         # finished by hand with the same bytes.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-files
           path: |
-            ifirma/dist/*.zip
-            ifirma/*.tgz
+            dist/ifirma-${{ steps.plan.outputs.version }}.zip
+            scm-ifirma-${{ steps.plan.outputs.version }}.tgz
+            release-summary.md
           retention-days: 90
           if-no-files-found: error
 
-      - name: Push commit and tag
-        # --atomic: the branch and the tag land together or not at all.
-        run: git push --atomic --follow-tags
+      - name: Push branch, commit and tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_BRANCH: ${{ steps.plan.outputs.release_branch }}
+          DISPATCHED_BRANCH: ${{ github.ref_name }}
+          TAG: ${{ steps.plan.outputs.tag }}
+        # --atomic: branch, commit and tag land together or not at all.
+        run: |
+          gh auth setup-git
+          TARGET="${RELEASE_BRANCH:-$DISPATCHED_BRANCH}"
+          git push --atomic origin "HEAD:refs/heads/$TARGET" "refs/tags/$TAG"
 
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          VERSION: ${{ steps.plan.outputs.version }}
         run: |
-          VERSION="v$(node -p "require('./package.json').version")"
-          gh release create "$VERSION" \
-            --title "$VERSION" \
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file release-summary.md \
             --generate-notes \
-            ./dist/*.zip ./*.tgz
+            "dist/ifirma-$VERSION.zip" "scm-ifirma-$VERSION.tgz"
+
+      - name: Open the pull request that carries the version bump
+        if: steps.plan.outputs.open_pr == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          BASE: ${{ steps.plan.outputs.base_branch }}
+          RELEASE_BRANCH: ${{ steps.plan.outputs.release_branch }}
+          DISPATCHED_BRANCH: ${{ github.ref_name }}
+        run: |
+          HEAD_BRANCH="${RELEASE_BRANCH:-$DISPATCHED_BRANCH}"
+          if ! gh pr create --base "$BASE" --head "$HEAD_BRANCH" \
+              --title "release: $TAG" \
+              --body "Carries the version bump of $TAG into $BASE. The release is already published; merge this so $BASE reports the new version."; then
+            echo "::warning::The pull request could not be created (is 'Allow GitHub Actions to create pull requests' enabled?). Open it by hand: gh pr create --base $BASE --head $HEAD_BRANCH --title 'release: $TAG'"
+          fi
 
       - name: Start CI for the release commit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.plan.outputs.tag }}
         run: |
-          VERSION="v$(node -p "require('./package.json').version")"
-          gh workflow run ci.yml --ref "$VERSION"
-          echo "Started CI on $VERSION"
+          gh workflow run ci.yml --ref "$TAG"
+          echo "Started CI on $TAG"

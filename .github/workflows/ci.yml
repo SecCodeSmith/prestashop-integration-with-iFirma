@@ -20,7 +20,7 @@ jobs:
     name: PHP lint & license headers
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.IFIRMA_BUILD_COMMIT }}
       - uses: shivammathur/setup-php@v2
@@ -38,7 +38,7 @@ jobs:
     # PHPUnit 9, so PHP 7.3+.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.IFIRMA_BUILD_COMMIT }}
       - uses: shivammathur/setup-php@v2
@@ -57,7 +57,7 @@ jobs:
       run:
         working-directory: ifirma
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.IFIRMA_BUILD_COMMIT }}
           path: ifirma
@@ -79,7 +79,7 @@ jobs:
       run:
         working-directory: ifirma
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.IFIRMA_BUILD_COMMIT }}
           path: ifirma
@@ -88,7 +88,7 @@ jobs:
         with:
           php-version: "8.2"
           coverage: pcov
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install dependencies
@@ -107,10 +107,33 @@ jobs:
           diff-cover build/coverage.xml --compare-branch="$BASE" --fail-under=100 \
             --exclude controllers/front/cron.php
 
+  tools:
+    name: Release and check tools (Python + Node tests, licence audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.IFIRMA_BUILD_COMMIT }}
+          submodules: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Licence audit (copyleft block, allow-list, document in sync)
+        run: |
+          pip install -r test-stack/ifirma-mock/requirements-dev.txt
+          python3 tools/check_dependency_licenses.py
+      - name: Python tool tests (marketplace readiness, licence audit)
+        run: python3 -m unittest discover -s tests/tools -p "test_*.py"
+      - name: Node tool tests (release summary, release plan)
+        run: node --test tests/tools/*.test.mjs
+
   build:
     name: Test build (zip + tgz)
     # A test build is only produced from a tree that passed every check.
-    needs: [lint, lint-php72, phpunit, coverage, mock]
+    needs: [lint, lint-php72, phpunit, coverage, mock, tools]
     runs-on: ubuntu-latest
     env:
       # Build identity lives only in the zip name and ifirma/BUILD; the module
@@ -118,10 +141,10 @@ jobs:
       IFIRMA_BUILD_CHANNEL: test
       IFIRMA_BUILD_NUMBER: ${{ github.run_number }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.IFIRMA_BUILD_COMMIT }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: npm
@@ -130,11 +153,13 @@ jobs:
         run: npm run build
       - name: Verify package layout and BUILD manifest
         run: npm run verify:package -- --channel test
+      - name: Check the package against the PrestaShop Addons rules
+        run: python3 tools/check_marketplace_readiness.py dist/*.zip
       - name: Resolve artifact name
         id: meta
         run: echo "name=ifirma-$(node -p "require('./package.json').version")+build.${IFIRMA_BUILD_NUMBER}" >> "$GITHUB_OUTPUT"
       - name: Upload test build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.meta.outputs.name }}
           path: |
@@ -147,12 +172,12 @@ jobs:
     name: Mock tests (test-stack)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.IFIRMA_BUILD_COMMIT }}
           # test-stack is a public git submodule (github.com/SecCodeSmith/test-stack).
           submodules: true
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Require the test-stack submodule

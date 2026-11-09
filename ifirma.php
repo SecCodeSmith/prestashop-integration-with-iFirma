@@ -36,6 +36,7 @@ require_once __DIR__ . '/classes/IfirmaOrderGridIndicator.php';
 require_once __DIR__ . '/classes/IfirmaPermission.php';
 require_once __DIR__ . '/classes/IfirmaIssueFeed.php';
 require_once __DIR__ . '/classes/IfirmaBulkRunner.php';
+require_once __DIR__ . '/classes/IfirmaHelpLinks.php';
 
 class Ifirma extends Module
 {
@@ -216,7 +217,15 @@ class Ifirma extends Module
             $output .= $this->resetContractorMap();
         }
 
-        return $this->authBlockBanner() . $this->storedBaseUrlWarning() . $output . $this->renderConfigForm() . $this->renderContractorsPanel($report, $errors);
+        return $this->authBlockBanner() . $this->storedBaseUrlWarning() . $output . $this->renderConfigForm() . $this->renderContractorsPanel($report, $errors) . $this->helpLinks();
+    }
+
+    /**
+     * @return string HTML, the documentation and support links
+     */
+    private function helpLinks()
+    {
+        return (new IfirmaHelpLinks())->render($this->l('Documentation'), $this->l('Support'));
     }
 
     /**
