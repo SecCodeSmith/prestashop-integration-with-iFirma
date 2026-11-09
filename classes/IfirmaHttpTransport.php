@@ -13,7 +13,9 @@ if (!defined('_PS_VERSION_')) {
  *
  * Contract: request($method, $url, array $headers, $body, $timeout) returns
  * array('status' => int, 'body' => string, 'error' => string); status 0 plus a
- * non-empty error means a transport failure.
+ * non-empty error means a transport failure. An answer may also carry 'headers' =>
+ * array(lower-cased name => value), the response headers of the last HTTP response
+ * (the last value wins for a repeated header); a transport that has none leaves the key out.
  */
 class IfirmaHttpTransport
 {
@@ -25,6 +27,9 @@ class IfirmaHttpTransport
 
     /** @var bool true when the request in progress was aborted for exceeding MAX_RESPONSE_BYTES */
     private $overflow = false;
+
+    /** @var array response headers of the request in progress, lower-cased name => value */
+    private $responseHeaders = array();
 
     /**
      * @param string $method
@@ -40,6 +45,7 @@ class IfirmaHttpTransport
         // @codeCoverageIgnoreStart
         $this->buffer = '';
         $this->overflow = false;
+        $this->responseHeaders = array();
 
         $ch = curl_init();
         curl_setopt_array($ch, $this->options($method, $url, $headers, $body, $timeout));
@@ -59,12 +65,14 @@ class IfirmaHttpTransport
      * @param string|bool $response curl_exec() result; false on failure
      * @param int         $status   HTTP status code
      * @param string      $error    curl_error() text of a failed transfer
-     * @return array status, body, error
+     * @return array status, body, error and, for a finished transfer, headers
      */
     public function outcome($response, $status, $error)
     {
         $answer = $this->buffer;
         $this->buffer = '';
+        $headers = $this->responseHeaders;
+        $this->responseHeaders = array();
 
         if ($response === false) {
             if ($this->overflow) {
@@ -74,7 +82,7 @@ class IfirmaHttpTransport
             return array('status' => 0, 'body' => '', 'error' => $error !== '' ? $error : 'unknown transport error');
         }
 
-        return array('status' => (int) $status, 'body' => $answer, 'error' => '');
+        return array('status' => (int) $status, 'body' => $answer, 'error' => '', 'headers' => $headers);
     }
 
     /**
@@ -106,6 +114,7 @@ class IfirmaHttpTransport
             CURLOPT_REDIR_PROTOCOLS => $protocols,
             CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_WRITEFUNCTION => array($this, 'writeChunk'),
+            CURLOPT_HEADERFUNCTION => array($this, 'collectHeader'),
         );
 
         $method = strtoupper((string) $method);
@@ -143,6 +152,30 @@ class IfirmaHttpTransport
         $this->buffer .= $chunk;
 
         return strlen($chunk);
+    }
+
+    /**
+     * CURLOPT_HEADERFUNCTION callback: keeps one response header per line. A status line ("HTTP/1.1 200 OK")
+     * starts a new header block, so after a redirect or a 100 Continue only the last response counts.
+     *
+     * @param resource|null $ch
+     * @param string        $line
+     * @return int the length of the line, as cURL requires
+     */
+    public function collectHeader($ch, $line)
+    {
+        $line = (string) $line;
+        if (stripos($line, 'HTTP/') === 0) {
+            $this->responseHeaders = array();
+
+            return strlen($line);
+        }
+        $colon = strpos($line, ':');
+        if ($colon !== false && $colon > 0) {
+            $this->responseHeaders[strtolower(trim(substr($line, 0, $colon)))] = trim(substr($line, $colon + 1));
+        }
+
+        return strlen($line);
     }
 
     /**

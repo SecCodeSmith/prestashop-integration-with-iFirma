@@ -651,6 +651,48 @@ class IfirmaApiClient
     }
 
     /**
+     * iFirma's own refusal for exceeding the request limit: HTTP 429, or an answer whose message says the limit of
+     * requests was exceeded ("limit zapytań"), whatever its Kod. Any other message, including one that merely
+     * mentions a limit of something else, is not.
+     *
+     * @param int    $status
+     * @param string $body
+     * @return bool
+     */
+    private function isServerLimitAnswer($status, $body)
+    {
+        if ($status === 429) {
+            return true;
+        }
+        $decoded = json_decode($body, true);
+        if (!is_array($decoded)) {
+            return false;
+        }
+        $node = $this->node($decoded);
+
+        return isset($node['Informacja']) && preg_match('/limit\s+zapyta/iu', (string) $node['Informacja']) === 1;
+    }
+
+    /**
+     * Records that iFirma refused the request for exceeding its limit and stops all requests until the time it asked for.
+     * The request was sent and refused before processing, so the document does not exist; it is neither an
+     * authentication failure nor an unknown outcome.
+     *
+     * @param array $responseHeaders lower-cased name => value
+     */
+    private function beginBackoff(array $responseHeaders)
+    {
+        $until = $this->rateGuard->startBackoff(isset($responseHeaders['retry-after']) ? $responseHeaders['retry-after'] : '');
+        $this->rateLimited = true;
+        $this->rateLimitWindow = IfirmaRateDecision::WINDOW_SERVER;
+        $this->lastError = sprintf(
+            'iFirma refused the request: the request limit was exceeded (HTTP %d). No requests until %s.',
+            $this->lastHttpCode,
+            date('Y-m-d H:i:s', $until)
+        );
+    }
+
+    /**
      * Asks the rate guard whether the request may start; a refusal is remembered for isRateLimited().
      *
      * @return bool false when the request must not be sent
@@ -720,6 +762,12 @@ class IfirmaApiClient
         $status = isset($result['status']) ? (int) $result['status'] : 0;
         $error = isset($result['error']) ? (string) $result['error'] : '';
         $this->lastHttpCode = $status;
+
+        if ($error === '' && $status !== 0 && $this->isServerLimitAnswer($status, isset($result['body']) ? (string) $result['body'] : '')) {
+            $this->beginBackoff(isset($result['headers']) && is_array($result['headers']) ? $result['headers'] : array());
+
+            return false;
+        }
 
         if ($status === 401 || $status === 403) {
             // Any body: a later Kod in it overwrites the mark with the richer message.

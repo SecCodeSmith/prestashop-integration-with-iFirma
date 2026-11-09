@@ -483,6 +483,7 @@ class IfirmaSchema
             'IFIRMA_RATE_MAX_PER_DAY' => 14000,
             'IFIRMA_RATE_WINDOW' => '',
             'IFIRMA_RATE_DAY_WINDOW' => '',
+            'IFIRMA_RATE_BACKOFF_UNTIL' => '',
             'IFIRMA_AUTH_FAILURE' => '',
         );
     }

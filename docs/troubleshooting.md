@@ -90,6 +90,25 @@ previous state and are not errors. The records already handled keep their outcom
 and run the action again. The cap is shared with every other client of the same iFirma account, so a busy account may need
 the bulk runs at quiet times.
 
+### Rate limited by iFirma
+
+**Meaning:** iFirma itself refused a request because the account exceeded its limit (100 requests a minute, 15,000 a day,
+shared by every program that uses the account's API). The module recognises an HTTP 429 answer, and an answer whose message
+says the request limit was exceeded ("limit zapytań"). It is a transient "rate limited" state, not an error of the document
+and not a rejected key. The shop log and the admin pages show a message such as "iFirma refused the request: the request
+limit was exceeded (HTTP 429). No requests until 2026-11-01 10:16:00."
+
+**What the module does:** it starts a back-off and sends nothing until the time iFirma asked for (its `Retry-After` header,
+at most 24 hours), or until the start of the next minute when the header is missing or unusable. The end of the back-off
+is stored in `IFIRMA_RATE_BACKOFF_UNTIL` (unix time). A request started during the back-off is refused locally, without any
+network call, and its message names the end time. A document whose create request was refused is not created: iFirma
+refused it before processing.
+
+**What to do:** nothing in most cases, the next request after the end time goes through. If it keeps happening, other
+programs use the same account: lower `API calls per minute` and `API calls per day` on the settings page
+([Rate limits](configuration.md#rate-limits)). The exact answer of iFirma's limit is not documented; if a limit answer is not
+recognised (it shows up as a technical problem, `Kod` 100), please report its HTTP status and text.
+
 ### Permission messages (HTTP 403)
 
 **Messages:** "You do not have permission to issue iFirma documents.", "You do not have permission to manage iFirma

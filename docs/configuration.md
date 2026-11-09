@@ -106,6 +106,7 @@ Open the module configuration and fill in:
 | `IFIRMA_RATE_MAX_PER_DAY` (new) | `14000` (1 to 15000) |
 | `IFIRMA_RATE_WINDOW` (new) | empty (internal rate-limit state of the minute: `<minute>:<count>`, incremented by one atomic database statement, so two requests at the same time cannot both pass the cap) |
 | `IFIRMA_RATE_DAY_WINDOW` (new) | empty (the same for the calendar day: `<day>:<count>`) |
+| `IFIRMA_RATE_BACKOFF_UNTIL` (new) | empty (internal: the unix time until which iFirma asked the module to wait after it refused a request for exceeding its limit; no request is sent before it, see [Rate limits](#rate-limits)) |
 | `IFIRMA_AUTH_FAILURE` (new) | empty (internal mark of the pause after a rejected key: `<unix time>|<message>`; set by a failed call, cleared by a successful save of the settings; after 15 minutes the mark no longer pauses calls) |
 | `IFIRMA_SEEN_<id_employee>` (new) | not set (internal: the time an employee last opened the iFirma tab of the notification bell) |
 
@@ -174,6 +175,13 @@ the customer-page sync. A shop-mail delivery may add up to 10 s of waiting when 
 A bulk run of the documents list stops at the first refusal and reports the rest as "not attempted" (see
 [iFirma documents list](usage.md#ifirma-documents-list)). The cURL transport accepts only the HTTP and HTTPS protocols,
 does not follow redirects, and cuts off an answer larger than 20 MB with an error.
+
+**When iFirma refuses a request.** An HTTP 429 answer, or an answer whose message says the request limit was exceeded
+("limit zapytań"), is treated as "rate limited", not as an error, an unknown outcome or a rejected key. The module then sends
+nothing until the time given by the `Retry-After` header (whole seconds, at most 24 hours), or until the start of the next
+minute when the header is missing or unusable (`IFIRMA_RATE_BACKOFF_UNTIL`). A request started during the back-off is refused
+before any network call, with a message that names the end time. See
+[Rate limited by iFirma](troubleshooting.md#rate-limited-by-ifirma).
 
 The limits are shared by ALL API clients of your account (other integrations, accounting tools). The module counts
 only its own requests, so a busy account can reach iFirma's limit before the module reaches its cap; lower the caps when
