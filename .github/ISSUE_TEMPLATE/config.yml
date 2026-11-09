@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/SecCodeSmith/prestashop-integration-with-iFirma/security/policy
+    about: Vulnerabilities must be reported privately. Do not open a public issue for them.
+  - name: Questions and support
+    url: https://github.com/SecCodeSmith/prestashop-integration-with-iFirma/blob/master/SUPPORT.md
+    about: Read SUPPORT.md and the docs/ folder before asking a question.

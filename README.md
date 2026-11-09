@@ -115,7 +115,7 @@ itself in [test-stack/README.md](test-stack/README.md).
 When something goes wrong, start with [docs/troubleshooting.md](docs/troubleshooting.md): it lists the iFirma
 error codes and the fixes for the common problems. To report a problem, copy the diagnostics block of the
 order's iFirma panel (request, response, contractor step, last error) and the relevant lines from
-Advanced Parameters > Logs (messages start with "iFirma"); neither contains API keys.
+Advanced Parameters > Logs (messages start with "iFirma"); neither contains API keys. Questions and support: [SUPPORT.md](SUPPORT.md); security problems: [SECURITY.md](SECURITY.md), never a public issue.
 
 ## Documentation
 
@@ -127,59 +127,37 @@ Advanced Parameters > Logs (messages start with "iFirma"); neither contains API 
 | [docs/contractors.md](docs/contractors.md) | Linking existing iFirma contractors: CSV import, matching while issuing, manual links |
 | [docs/upgrading.md](docs/upgrading.md) | What to do when upgrading from 1.0.x, to 1.2.0, 1.4.0, 1.4.1, 1.5.0 and 1.6.0 |
 | [docs/development.md](docs/development.md) | Unit tests, package builds, the test‑stack submodule, releases, dev dependencies |
+| [docs/marketplace-readiness.md](docs/marketplace-readiness.md) | The module against the PrestaShop Addons technical validation: what is met, fixed and still open |
+| [docs/third-party-licenses.md](docs/third-party-licenses.md) | Licence audit of every dependency, tool and asset; roles and exceptions |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | iFirma error codes and fixes for the common problems, the pause after a rejected key, rate-limited bulk runs, permission messages, download limits |
 | [test-stack/README.md](test-stack/README.md) | The mock iFirma API and the Docker test stack |
 | [tests/smoke/README.md](tests/smoke/README.md) | The Docker smoke suite on PrestaShop 8.1 and 9.1 |
 | [tests/Stubs/README.md](tests/Stubs/README.md) | The PrestaShop stubs used by the unit tests |
 
-## Changelog
+## License
 
-### 1.6.0
+The source is available, but this is **not open-source software in the OSI sense**. The module is distributed under
+the [SecCodeSmith Commercial License](LICENCE):
 
-- **Guest data-change requests**: visitors who ordered without an account change the invoice data after a six-digit code sent to the order e-mail (valid 15 minutes, single use, limited resends). See [Guest orders](docs/usage.md#guest-orders).
-- **Auto-accept** of data-change requests (`none` by default, `safe` or `all`); see [Customer data-change requests](docs/usage.md#customer-data-change-requests).
-- **iFirma print template**, **order stamp prefix** and **shop webpage** settings ([configuration](docs/configuration.md#settings-walk-through)); the webpage and the shop logo also brand the module's e-mails.
-- **PDF file names** are now `<shop-domain>-<number>.pdf`. See [Upgrading to 1.6.0](docs/upgrading.md#upgrading-to-160).
+- **Free** for small and medium-sized businesses (fewer than 250 employees, annual revenue below EUR 50 million, not
+  majority-owned by a larger entity) and for non-commercial use (personal, education, research, non-profit, testing
+  on non-production installations).
+- **Paid licence required** for Enterprises that use it commercially.
+- A modified copy is a "Modified Version" with its own conditions; read the [LICENCE](LICENCE) before redistributing.
 
-### 1.5.0
+The licences of every library and tool the project uses are listed in
+[docs/third-party-licenses.md](docs/third-party-licenses.md); none of them is GPL, and nothing from them ships in the
+module.
 
-- **iFirma documents list** (*Orders > iFirma documents*): the module's records with filters, a *Needs attention*
-  preset and row actions (retry issuance, send again, refresh, download PDF). Bulk retry issuance, send again and
-  refresh from iFirma run in batches under the rate guard, show a summary with each outcome and write one log entry.
-- **Issue from the Orders list**: an Issue action in the iFirma cell of an order without a document, and the bulk
-  action *Issue iFirma documents*.
-- **Notification tab**: an iFirma tab in the back-office notification bell lists the newest 20 records that need
-  attention; each employee has an unseen counter.
-- **Permissions**: the tab has three levels (view, issue, manage) that are read from the Permissions page, and the
-  server checks them for every action. Behaviour change: profiles without the View level on the tab no longer see the
-  iFirma panels, the Orders-list column or the customer-page panel until they are granted it.
-- **Upgrade**: the tab moves under Orders, the `actionAdminControllerSetMedia` hook is registered, `ifirma_receipt`
-  gets `last_download_at` and the index `idx_date_upd`, and `IFIRMA_AUTH_FAILURE` is created. Release as a minor
-  version. See [Upgrading to 1.5.0](docs/upgrading.md#upgrading-to-150).
-- **Hardening** (security audit of 2026-11-07, by finding id):
-  - S1: state-changing AJAX actions check the employee's level on the server, on PrestaShop 8 and 9 alike.
-  - S2: the customer PDF download is limited to one fetch per document per 30 seconds and ten per customer per minute.
-  - S3: payment amounts must be positive, have at most two decimals and not exceed the order total.
-  - S4: the base URL must be `https` (`http` only in developer mode or for local hosts); the cURL transport allows
-    HTTP and HTTPS only, follows no redirects and stops at 20 MB.
-  - S5: after iFirma rejects the credentials, calls are paused for 15 minutes or until the settings are saved.
-  - S6: internal error text no longer reaches the browser; the details go to the PrestaShop log.
-  - S7: the PDF file name is built from safe characters only.
-  - S9: the API key fields are password inputs; the cron token can be sent in the `X-Ifirma-Token` header.
-  - S10: tokens come only from `random_bytes()`, with no weaker fallback.
-  - S11: the per-minute rate counter is incremented by one atomic statement.
-  - S12: the text of a data-change request is validated and length-limited.
-  - S13: data-change requests are limited to one per order every 10 minutes and ten per customer per day.
-  - S14: array input is refused instead of raising an error, and the optional keys are checked as hexadecimal.
-  - S15: the delivery e-mail variables are HTML-escaped.
-  - S16: PDF responses send `X-Content-Type-Options: nosniff`.
-  - S17: token values are read as scalars before they reach a query.
-  - S8 (the synchronous PDF retries inside the order-status hook) is deferred to its own change.
+## Community
+
+[Code of conduct](CODE_OF_CONDUCT.md) · [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md) ·
+[Support](SUPPORT.md) · [Changelog](CHANGELOG.md)
 
 ## Legal Disclaimer & Trademarks
 
 iFirma is a registered trademark of IFIRMA SA.
 
-This module is an independent third-party open-source integration and is not officially affiliated with, endorsed by, or sponsored by IFIRMA SA.
+This module is an independent third-party, source-available integration and is not officially affiliated with, endorsed by, or sponsored by IFIRMA SA.
 
 The name "iFirma" and associated references are used strictly for identification, nominative reference, and descriptive compatibility purposes (interoperability / prawo cytatu) to inform users about the third-party accounting system with which this PrestaShop module integrates.
