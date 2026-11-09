@@ -1,0 +1,51 @@
+name: Smoke (all supported PrestaShop versions)
+
+# Boots the test-stack for every supported PrestaShop version (the module declares 8.0 - 9.x) and
+# runs the end-to-end smoke scenarios against the iFirma mock. Slow (each shop installs itself
+# first), so it runs weekly and on demand, not on every push. Scenario R (burst issuance, 8-10
+# minutes) is left out; run it alone with SMOKE_ONLY=R.
+on:
+  schedule:
+    - cron: "43 3 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: PrestaShop ${{ matrix.tag }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: [8.0.5-apache, 8.1.7-apache, 8.2.2-apache, 9.0.3-apache, 9.1.4-apache]
+    env:
+      PS_IMAGE_TAG: ${{ matrix.tag }}
+      COMPOSE: docker compose -f test-stack/docker-compose.yml
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - name: Start the shop and the mock
+        run: $COMPOSE up -d --build
+      - name: Wait for the first-boot install
+        run: |
+          for i in $(seq 1 120); do
+            if curl -fsS -o /dev/null http://localhost:8080/; then echo "shop is up"; exit 0; fi
+            sleep 10
+          done
+          $COMPOSE logs --tail 80 prestashop
+          echo "::error::the shop did not come up within 20 minutes"
+          exit 1
+      - name: Smoke scenarios
+        run: |
+          $COMPOSE exec -T -u www-data -e SMOKE_ONLY=ABCDEFGHIJKLMNOPQS prestashop \
+            php modules/ifirma/tests/smoke/run.php
+      - name: Logs on failure
+        if: failure()
+        run: $COMPOSE logs --tail 200
+      - name: Stop
+        if: always()
+        run: $COMPOSE down -v
