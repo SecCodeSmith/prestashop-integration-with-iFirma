@@ -26,7 +26,8 @@ export const MAX_WORDS = 120;
 export const DEFAULT_MODEL = "openai/gpt-4.1-mini";
 export const DEFAULT_TIMEOUT_MS = 20000;
 const ENDPOINT = "https://models.github.ai/inference/chat/completions";
-const SAFE_REF = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
+// A branch, tag or HEAD, optionally followed by parent/ancestor suffixes (HEAD^, HEAD~2).
+const SAFE_REF = /^[A-Za-z0-9][A-Za-z0-9._/-]*(?:\^|~\d*)*$/;
 
 const SYSTEM_PROMPT =
   "You write release notes for a PrestaShop module that issues receipts and invoices through iFirma. " +
@@ -37,7 +38,8 @@ const SYSTEM_PROMPT =
 /** @returns {{subjects: string[], truncated: boolean}} cleaned subjects, newest first, capped */
 export function sanitizeSubjects(subjects) {
   const cleaned = subjects
-    .map((s) => s.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, MAX_SUBJECT_LENGTH))
+    // Control characters go, and so does the tag that fences the subjects in the prompt.
+    .map((s) => s.replace(/[\u0000-\u001f\u007f]/g, "").replace(/<\/?commits>/gi, "").trim().slice(0, MAX_SUBJECT_LENGTH))
     .filter(Boolean);
   return { subjects: cleaned.slice(0, MAX_SUBJECTS), truncated: cleaned.length > MAX_SUBJECTS };
 }
@@ -56,6 +58,9 @@ function neutralise(text) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/^\s*::/gm, "")
+    // No clickable content from untrusted text: break markdown links, images and bare URLs.
+    .replace(/[\[\]]/g, (bracket) => `\\${bracket}`)
+    .replace(/:\/\//g, ":​//")
     .replace(/@/g, "@​");
 }
 
