@@ -12,10 +12,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { crc32, createZip } from "../../scripts/zip-writer.mjs";
+import { join, sep } from "node:path";
+import { crc32, createZip, listFiles } from "../../scripts/zip-writer.mjs";
 
 function readBack(buffer) {
   const dir = mkdtempSync(join(tmpdir(), "zipw-"));
@@ -73,4 +73,30 @@ test("A name with a parent-folder segment or a leading slash is refused", () => 
   assert.throws(() => createZip([{ name: "../x", data: Buffer.alloc(0) }], at), /unsafe/);
   assert.throws(() => createZip([{ name: "/x", data: Buffer.alloc(0) }], at), /unsafe/);
   assert.throws(() => createZip([{ name: "a\\b", data: Buffer.alloc(0) }], at), /unsafe/);
+});
+
+test("listFiles returns the files below a folder in a stable order and applies the filter", () => {
+  const dir = mkdtempSync(join(tmpdir(), "zipl-"));
+  mkdirSync(join(dir, "b"));
+  writeFileSync(join(dir, "b", "z.txt"), "z");
+  writeFileSync(join(dir, "a.txt"), "a");
+  writeFileSync(join(dir, "skip.me"), "s");
+
+  const files = listFiles(dir.split(sep).join("/"), (path) => !path.endsWith("skip.me"));
+
+  assert.deepEqual(files.map((f) => f.slice(dir.length + 1)), ["a.txt", "b/z.txt"]);
+});
+
+test("listFiles refuses a symbolic link instead of following it out of the module", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "zipl-"));
+  const outside = mkdtempSync(join(tmpdir(), "zipo-"));
+  writeFileSync(join(outside, "secret.txt"), "token");
+  try {
+    symlinkSync(outside, join(dir, "ext"), "junction");
+  } catch {
+    t.skip("symbolic links cannot be created on this machine");
+    return;
+  }
+
+  assert.throws(() => listFiles(dir.split(sep).join("/"), () => true), /symbolic link/);
 });

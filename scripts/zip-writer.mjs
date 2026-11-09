@@ -10,6 +10,7 @@
 // for the module package. It replaces the `archiver` dependency, whose every release carries an
 // unfixable minimatch advisory, and it is deterministic: the same entries and time give the same
 // bytes.
+import { lstatSync, readdirSync } from "node:fs";
 import { deflateRawSync } from "node:zlib";
 
 const TABLE = Uint32Array.from({ length: 256 }, (_, n) => {
@@ -96,4 +97,21 @@ export function createZip(entries, modified) {
   end.writeUInt32LE(centralSize, 12);
   end.writeUInt32LE(offset, 16);
   return Buffer.concat([...parts, ...central, end]);
+}
+
+/**
+ * Every file below `dir` that `shipped(path)` accepts, as "/"-separated paths in a stable order.
+ * A symbolic link is refused: following one could pull files from outside the module (a secret,
+ * the checkout's .git/config) into the published package.
+ */
+export function listFiles(dir, shipped) {
+  return readdirSync(dir)
+    .sort()
+    .flatMap((name) => {
+      const path = `${dir}/${name}`;
+      if (!shipped(path)) return [];
+      const stat = lstatSync(path);
+      if (stat.isSymbolicLink()) throw new Error(`zip-writer: symbolic link in the package tree: ${path}`);
+      return stat.isDirectory() ? listFiles(path, shipped) : [path];
+    });
 }

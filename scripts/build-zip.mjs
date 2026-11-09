@@ -17,8 +17,8 @@
 //   IFIRMA_BUILD_NUMBER   required for test: monotonically increasing integer (CI run number)
 //   IFIRMA_BUILD_COMMIT   commit hash (cut to 7 chars); falls back to `git rev-parse HEAD`
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { createZip } from "./zip-writer.mjs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createZip, listFiles } from "./zip-writer.mjs";
 
 const MODULE = "ifirma";
 const CHANNELS = ["local", "test", "release"];
@@ -37,17 +37,6 @@ function shipped(path) {
   const segments = path.split("/");
   if (segments.some((s) => NESTED_DEV_DIRS.includes(s))) return false;
   return !JUNK_FILE.test(segments[segments.length - 1]);
-}
-
-/** Every shippable file below `dir`, as "/"-separated paths in a stable order. */
-function listFiles(dir) {
-  return readdirSync(dir)
-    .sort()
-    .flatMap((name) => {
-      const path = `${dir}/${name}`;
-      if (!shipped(path)) return [];
-      return statSync(path).isDirectory() ? listFiles(path) : [path];
-    });
 }
 
 function gitCommit() {
@@ -84,7 +73,11 @@ if (missing.length) {
 
 mkdirSync("dist", { recursive: true });
 const outPath = `dist/${MODULE}-${version}${suffix}.zip`;
-const paths = [...FILES, ...DIRS.flatMap(listFiles)];
+const linked = [...FILES, ...DIRS].filter((path) => lstatSync(path).isSymbolicLink());
+if (linked.length) {
+  throw new Error(`build-zip: allow-listed path(s) are symbolic links: ${linked.join(", ")}`);
+}
+const paths = [...FILES, ...DIRS.flatMap((dir) => listFiles(dir, shipped))];
 const entries = paths.map((path) => ({ name: `${MODULE}/${path}`, data: readFileSync(path) }));
 entries.push({ name: `${MODULE}/BUILD`, data: Buffer.from(JSON.stringify(info, null, 2) + "\n") });
 
