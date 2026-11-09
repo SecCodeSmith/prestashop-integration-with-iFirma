@@ -258,6 +258,22 @@ finding of severity high or critical.
   notes list the `fix-vuln` commits without exploit details beyond what the
   advisory already discloses.
 
+## Versioning
+
+- **Never bump the version by hand.** The version is changed only by the Release
+  workflow (`.github/workflows/release.yml`, Actions -> Release -> Run workflow with
+  the bump level), which runs `npm version` and syncs `package.json`, `ifirma.php`,
+  `config.xml` and the source headers, then commits, tags and opens the pull request
+  that carries the bump.
+- Do not edit a version string in any of those files, do not run `npm version`
+  locally, and do not create or move `v*` tags or `release/X.Y` branches yourself.
+  This applies to people and to agents alike.
+- A change that needs a new version (a new upgrade script, a changelog entry, docs)
+  is written against the version the workflow will produce and is released by
+  running the workflow, not by a manual bump commit.
+- If the workflow fails midway, fix the workflow or follow the recovery steps in
+  `docs/development.md`; do not finish the bump manually.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
