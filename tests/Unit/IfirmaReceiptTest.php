@@ -421,7 +421,8 @@ class IfirmaReceiptTest extends TestCase
             'SELECT id_ifirma_receipt FROM `ps_ifirma_receipt`',
             "             WHERE ifirma_id != '' AND status != 'error'",
             "             AND (status != 'paid' OR remote_sent = 0 OR last_sync_at IS NULL",
-            "                  OR last_sync_at < '" . $staleBefore . "')",
+            // deliberate change (task 5.3): a document that waits for KSeF is always due, so the cron sees its acceptance
+            "                  OR last_sync_at < '" . $staleBefore . "' OR delivery_status = 'awaiting_ksef')",
             '             ORDER BY last_sync_at ASC, id_ifirma_receipt ASC',
             '             LIMIT ' . $limit,
         ));
@@ -527,5 +528,96 @@ class IfirmaReceiptTest extends TestCase
     public function testFindDueForSyncReturnsAnEmptyListWhenNoRowIsDue()
     {
         $this->assertSame(array(), IfirmaReceipt::findDueForSync('2026-10-31 12:00:00', 500));
+    }
+    public function testMarkQueuedSetsStatusAndMessageOnly()
+    {
+        $receipt = $this->receipt();
+        $receipt->ifirma_id = '';
+        $before = get_object_vars($receipt);
+
+        $receipt->markQueued('iFirma rate limit guard: 80 requests in the current minute (cap 80). Retry shortly.');
+
+        $this->assertOnlySet(
+            array('status' => 'queued', 'last_error' => 'iFirma rate limit guard: 80 requests in the current minute (cap 80). Retry shortly.'),
+            $before,
+            $receipt
+        );
+    }
+
+    public function testAnIssuedRecordCannotBeQueued()
+    {
+        $receipt = $this->receipt();
+        $before = get_object_vars($receipt);
+
+        try {
+            $receipt->markQueued('refused');
+            $this->fail('expected LogicException');
+        } catch (LogicException $e) {
+            $this->assertSame('A document that is already issued cannot be queued.', $e->getMessage());
+        }
+
+        $this->assertOnlySet(array(), $before, $receipt);
+    }
+
+    public function testAQueuedRecordCanStillBeCreatedAndIsNotOfferedIssueAnyway()
+    {
+        $receipt = $this->receipt();
+        $receipt->ifirma_id = '';
+        $receipt->markQueued('');
+
+        $this->assertTrue($receipt->canCreate());
+        $this->assertFalse($receipt->canIssueAnyway());
+        $this->assertFalse($receipt->isIssued());
+    }
+
+    public function testFindQueuedAsksForTheQueuedRecordsOldestFirstUpToTheLimit()
+    {
+        IfirmaReceipt::findQueued(25);
+
+        $this->assertSame(array(implode("\n", array(
+            "SELECT id_ifirma_receipt FROM `ps_ifirma_receipt` WHERE status = 'queued'",
+            '             ORDER BY date_upd ASC, id_ifirma_receipt ASC',
+            '             LIMIT 25',
+        ))), $this->sentQueries());
+    }
+
+    public function testFindQueuedRaisesALimitBelowOneToOne()
+    {
+        IfirmaReceipt::findQueued(0);
+
+        $this->assertStringContainsString('LIMIT 1', $this->sentQueries()[0]);
+    }
+
+    public function testFindQueuedReturnsTheStoredRecordsInTheOrderOfTheRows()
+    {
+        $first = $this->storedReceipt(41);
+        $second = $this->storedReceipt(42);
+        $this->dueRowsAre(array($second->id, $first->id));
+
+        $records = IfirmaReceipt::findQueued(10);
+
+        $this->assertSame(array(42, 41), array_map(function ($record) {
+            return $record->id_order;
+        }, $records));
+    }
+
+    public function testCountQueuedCountsOnlyTheQueuedRecords()
+    {
+        Db::getInstance()->whenGetValue('/SELECT COUNT\(\*\) FROM `ps_ifirma_receipt` WHERE status = \'queued\'/', '4');
+
+        $this->assertSame(4, IfirmaReceipt::countQueued());
+    }
+    public function testMarkAwaitingKsefSetsTheDeliveryStateAndClearsTheTimeAndTheErrorOnly()
+    {
+        $receipt = $this->receipt();
+        $before = get_object_vars($receipt);
+
+        $receipt->markAwaitingKsef();
+
+        $this->assertOnlySet(
+            array('delivery_status' => 'awaiting_ksef', 'delivered_at' => null, 'delivery_error' => ''),
+            $before,
+            $receipt
+        );
     }
 }

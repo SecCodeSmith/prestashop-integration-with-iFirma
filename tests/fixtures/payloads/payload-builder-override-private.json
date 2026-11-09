@@ -88,6 +88,50 @@
                 "matched_by": "",
                 "identifier": ""
             }
+        },
+        {
+            "Zaplacono": 0,
+            "ZaplaconoNaDokumencie": 0,
+            "LiczOd": "BRT",
+            "DataWystawienia": "{today}",
+            "DataSprzedazy": "2026-03-04",
+            "FormatDatySprzedazy": "DZN",
+            "SposobZaplaty": "PRZ",
+            "RodzajPodpisuOdbiorcy": "BPO",
+            "WidocznyNumerBdo": false,
+            "Numer": null,
+            "Uwagi": "PS-ORDER-15-ABCDEFGHI",
+            "Kontrahent": {
+                "Nazwa": "Anna Nowak",
+                "NIP": "",
+                "Ulica": "Polna 3",
+                "KodPocztowy": "11-111",
+                "Kraj": "PL",
+                "KodKraju": "PL",
+                "Miejscowosc": "Kraków",
+                "Email": "jan@example.test",
+                "OsobaFizyczna": true
+            },
+            "Pozycje": [
+                {
+                    "StawkaVat": 0.23,
+                    "Ilosc": 2,
+                    "CenaJednostkowa": 123,
+                    "NazwaPelna": "Widget",
+                    "Jednostka": "szt.",
+                    "TypStawkiVat": "PRC"
+                }
+            ],
+            "DodatkoweUwagi": {
+                "Typ": "NUMER_ZAMOWIENIA",
+                "Info": "PS-ORDER-15-ABCDEFGHI"
+            },
+            "_contractor": {
+                "action": "disabled",
+                "message": "",
+                "matched_by": "",
+                "identifier": ""
+            }
         }
     ],
     "threw": null

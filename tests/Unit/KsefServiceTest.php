@@ -21,10 +21,19 @@ class KsefServiceTest extends TestCase
     /** @var IfirmaKsefService */
     private $svc;
 
+    /** @var array what the document detail answers (the KSeF state iFirma reports) */
+    public $detailAnswer;
+
     protected function setUp(): void
     {
         IfirmaTestState::resetAll();
         $this->t = new ScriptedTransport();
+        // every submission reads the document's KSeF state first (design D5); by default iFirma reports none
+        $this->detailAnswer = array('body' => '{"response":{"Kod":0,"KsefStatus":"","KsefNumer":""}}');
+        $self = $this;
+        $this->t->queue('GET', '#fakturakraj/77\.json#', function () use ($self) {
+            return $self->detailAnswer;
+        });
         $client = new IfirmaApiClient('u@example.com', array('faktura' => str_repeat('1', 64)), 'http://ifirma-mock:8001/iapi/', 30, $this->t);
         $this->svc = new IfirmaKsefService($client, new Module());
 
@@ -81,6 +90,39 @@ class KsefServiceTest extends TestCase
     public function testModeDefaultsToB2b()
     {
         $this->assertSame('b2b', $this->svc->mode());
+    }
+
+    public function testTheSubmitterIsTheModuleByDefault()
+    {
+        $this->assertSame('module', $this->svc->submitter());
+        Configuration::updateValue('IFIRMA_KSEF_SUBMITTER', '');
+        $this->assertSame('module', $this->svc->submitter());
+    }
+
+    /**
+     * @return array[]
+     */
+    public function submitterValues()
+    {
+        return array(
+            'module' => array('module', 'module'),
+            'ifirma' => array('ifirma', 'ifirma'),
+            'upper case and padded' => array(' IFIRMA ', 'ifirma'),
+            'both is not a submitter' => array('both', 'module'),
+            'null' => array(null, 'module'),
+            'false' => array(false, 'module'),
+            'an array' => array(array('ifirma'), 'module'),
+        );
+    }
+
+    /**
+     * @dataProvider submitterValues
+     */
+    public function testAnUnknownSubmitterIsNormalisedToTheModule($stored, $expected)
+    {
+        $this->assertSame($expected, IfirmaKsefService::normalizeSubmitter($stored));
+        Configuration::updateValue('IFIRMA_KSEF_SUBMITTER', $stored);
+        $this->assertSame($expected, $this->svc->submitter());
     }
 
     public function testModeNormalisation()
@@ -174,8 +216,8 @@ class KsefServiceTest extends TestCase
 
         $this->assertTrue($res['ok']);
         $this->assertSame('Faktura zostala wyslana do KSeF.', $res['message']);
-        $this->assertCount(1, $this->t->calls);
-        $call = $this->t->calls[0];
+        $this->assertCount(2, $this->t->calls, 'the state read, then the send');
+        $call = $this->t->calls[1];
         $this->assertSame('POST', $call['method']);
         $this->assertStringEndsWith('/fakturakraj/ksef/send/77.json', $call['url']);
         $this->assertSame('{"DataWysylki":null}', $call['body']);
@@ -211,8 +253,8 @@ class KsefServiceTest extends TestCase
 
         $res = $this->svc->submit($r, $this->order());
 
-        $this->assertSame(array('ok' => false, 'message' => $failure->getMessage()), $res);
-        $this->assertCount(1, $this->t->calls);
+        $this->assertSame(array('ok' => false, 'message' => $failure->getMessage()), array_intersect_key($res, array('ok' => 1, 'message' => 1)));
+        $this->assertCount(2, $this->t->calls, 'the state read, then the send');
         $row = $this->row();
         $this->assertSame('BLAD', $row['ksef_status']);
         $this->assertSame($failure->getMessage(), $row['ksef_error']);
@@ -242,8 +284,8 @@ class KsefServiceTest extends TestCase
 
         $res = $this->svc->submit($r, $this->order());
 
-        $this->assertSame(array('ok' => false, 'message' => 'iFirma did not confirm the KSeF submission'), $res);
-        $this->assertCount(1, $this->t->calls);
+        $this->assertSame(array('ok' => false, 'message' => 'iFirma did not confirm the KSeF submission'), array_intersect_key($res, array('ok' => 1, 'message' => 1)));
+        $this->assertCount(2, $this->t->calls, 'the state read, then the send');
         $row = $this->row();
         $this->assertSame('BLAD', $row['ksef_status']);
         $this->assertSame('iFirma did not confirm the KSeF submission', $row['ksef_error']);
@@ -273,7 +315,7 @@ class KsefServiceTest extends TestCase
 
         $res = $this->svc->submit($r, $this->order());
 
-        $this->assertSame(array('ok' => false, 'message' => 'connection reset'), $res);
+        $this->assertSame(array('ok' => false, 'message' => 'connection reset'), array_intersect_key($res, array('ok' => 1, 'message' => 1)));
         $row = $this->row();
         $this->assertSame('BLAD', $row['ksef_status']);
         $this->assertSame('connection reset', $row['ksef_error']);
@@ -287,7 +329,7 @@ class KsefServiceTest extends TestCase
 
         $res = $this->svc->submit($notIssued, $this->order(), true);
 
-        $this->assertSame(array('ok' => false, 'message' => 'The document has not been issued yet.'), $res);
+        $this->assertSame(array('ok' => false, 'message' => 'The document has not been issued yet.'), array_intersect_key($res, array('ok' => 1, 'message' => 1)));
         $this->assertCount(0, $this->t->calls);
         $this->assertSame(array(), IfirmaTestState::writes('ifirma_receipt'));
     }
@@ -314,7 +356,7 @@ class KsefServiceTest extends TestCase
 
         $res = $this->svc->submit($r, $this->order());
 
-        $this->assertSame(array('ok' => true, 'message' => $message), $res);
+        $this->assertSame(array('ok' => true, 'message' => $message), array_intersect_key($res, array('ok' => 1, 'message' => 1)));
         $row = $this->row();
         $this->assertSame('WYSLANA', $row['ksef_status']);
         $this->assertSame('', $row['ksef_error']);
@@ -358,8 +400,8 @@ class KsefServiceTest extends TestCase
 
         $res = $this->svc->submit($r, $this->order());
 
-        $this->assertSame(array('ok' => false, 'message' => $error), $res);
-        $this->assertCount(1, $this->t->calls);
+        $this->assertSame(array('ok' => false, 'message' => $error), array_intersect_key($res, array('ok' => 1, 'message' => 1)));
+        $this->assertCount(2, $this->t->calls, 'the state read, then the send');
         $row = $this->row();
         $this->assertSame('BLAD', $row['ksef_status']);
         $this->assertSame($error, $row['ksef_error']);
@@ -384,13 +426,13 @@ class KsefServiceTest extends TestCase
 
         $res = $this->svc->submit($this->receipt(''), $this->order(), true);
         $this->assertTrue($res['ok']);
-        $this->assertCount(1, $this->t->calls);
+        $this->assertCount(2, $this->t->calls, 'the state read, then the send');
 
         $accepted = $this->receipt('1');
         $accepted->ksef_number = '1111112228-20260702-6505FF400000-26';
         $res = $this->svc->submit($accepted, $this->order(), true);
         $this->assertFalse($res['ok']);
-        $this->assertCount(1, $this->t->calls);
+        $this->assertCount(2, $this->t->calls, 'the state read, then the send');
     }
 
     public function testDescribe()
@@ -410,5 +452,266 @@ class KsefServiceTest extends TestCase
         $r->ksef_status = 'PRZYJETA';
         $r->ksef_number = 'N-1';
         $this->assertSame('accepted: N-1', $this->svc->describe($r));
+    }
+    // ---- who submits, and the state read before every submission (design D5) --------------------------------
+
+    /** Scripts what iFirma reports about document 77: the KSeF status and number ('' for none). */
+    private function remoteState($status, $number = '')
+    {
+        $this->detailAnswer = array('body' => json_encode(array('response' => array(
+            'Kod' => 0, 'KsefStatus' => $status, 'KsefNumer' => $number,
+        ))));
+    }
+
+    private function posts()
+    {
+        $posts = array();
+        foreach ($this->t->calls as $call) {
+            if ($call['method'] === 'POST') {
+                $posts[] = $call;
+            }
+        }
+
+        return $posts;
+    }
+
+    public function testTheStateIsReadBeforeTheInvoiceIsSent()
+    {
+        $this->t->queue('POST', '#fakturakraj/ksef/send/77\.json#', $this->kod(0, 'ok'));
+
+        $res = $this->svc->submit($this->receipt('1234567890'), $this->order());
+
+        $this->assertTrue($res['ok']);
+        $this->assertSame('sent', $res['outcome']);
+        $this->assertSame(array('GET', 'POST'), array_column($this->t->calls, 'method'));
+        $this->assertStringEndsWith('/fakturakraj/77.json', $this->t->calls[0]['url']);
+    }
+
+    /**
+     * @return array[] label => array(status, number)
+     */
+    public function stateIfirmaAlreadyReports()
+    {
+        return array(
+            'sent' => array('WYSLANA', ''),
+            'scheduled' => array('ZAPLANOWANA', ''),
+            'an unknown status' => array('PRZETWARZANIE', ''),
+            'accepted' => array('PRZYJETA', 'NIP-20261101-ABC'),
+        );
+    }
+
+    /**
+     * @dataProvider stateIfirmaAlreadyReports
+     */
+    public function testNothingIsSentWhenIfirmaAlreadyHoldsTheDocumentInKsef($status, $number)
+    {
+        $this->remoteState($status, $number);
+        $r = $this->receipt('1234567890');
+
+        $res = $this->svc->submit($r, $this->order());
+
+        $this->assertFalse($res['ok']);
+        $this->assertSame('already', $res['outcome']);
+        $this->assertSame(array(), $this->posts());
+        $row = $this->row();
+        $this->assertSame($status, $row['ksef_status'], 'the reported state is stored');
+        $this->assertSame($number, (string) $row['ksef_number']);
+    }
+
+    public function testTheMessageForADocumentSentByIfirmaSaysSo()
+    {
+        $this->remoteState('WYSLANA');
+
+        $res = $this->svc->submit($this->receipt('1234567890'), $this->order());
+
+        $this->assertSame('already sent by iFirma', $res['message']);
+    }
+
+    public function testARejectedDocumentIsNotSubmittedAgainAutomatically()
+    {
+        $this->remoteState('ODRZUCONA');
+
+        $res = $this->svc->submit($this->receipt('1234567890'), $this->order());
+
+        $this->assertFalse($res['ok']);
+        $this->assertSame('refused', $res['outcome']);
+        $this->assertSame(array(), $this->posts());
+    }
+
+    public function testARejectedDocumentCanBeSubmittedAgainByTheEmployee()
+    {
+        $this->remoteState('ODRZUCONA');
+        $this->t->queue('POST', '#ksef/send#', $this->kod(0, 'ok'));
+
+        $res = $this->svc->submit($this->receipt('1234567890'), $this->order(), true);
+
+        $this->assertTrue($res['ok']);
+        $this->assertCount(1, $this->posts());
+        $this->assertSame('WYSLANA', $this->row()['ksef_status']);
+    }
+
+    public function testTheEmployeeIsToldWhenIfirmaHasAlreadySentOrScheduledTheDocument()
+    {
+        $this->remoteState('ZAPLANOWANA');
+
+        $res = $this->svc->submit($this->receipt('1234567890'), $this->order(), true);
+
+        $this->assertFalse($res['ok']);
+        $this->assertSame('iFirma has already sent or scheduled this document (status ZAPLANOWANA).', $res['message']);
+        $this->assertSame(array(), $this->posts());
+        $this->assertSame('ZAPLANOWANA', $this->row()['ksef_status']);
+    }
+
+    public function testAnUnreadableStateDefersTheSubmissionAndChangesNothing()
+    {
+        $this->detailAnswer = array('status' => 0, 'error' => 'timeout');
+        $r = $this->receipt('1234567890');
+
+        $res = $this->svc->submit($r, $this->order());
+
+        $this->assertFalse($res['ok']);
+        $this->assertSame('deferred', $res['outcome']);
+        $this->assertFalse($res['rate_limited']);
+        $this->assertStringContainsString('timeout', $res['message']);
+        $this->assertSame(array(), $this->posts());
+        $this->assertSame('', (string) $r->ksef_status);
+    }
+
+    public function testAStateRefusedByTheRateLimitDefersTheSubmissionAndSaysSo()
+    {
+        $fixed = mktime(10, 15, 20, 11, 1, 2026);
+        $client = new IfirmaApiClient('u@example.com', array('faktura' => str_repeat('1', 64)), 'http://ifirma-mock:8001/iapi/', 30, $this->t);
+        $client->setClock(function () use ($fixed) {
+            return $fixed;
+        });
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi', $fixed) . ':80');
+        $svc = new IfirmaKsefService($client, new Module());
+
+        $res = $svc->submit($this->receipt('1234567890'), $this->order());
+
+        $this->assertSame('deferred', $res['outcome']);
+        $this->assertTrue($res['rate_limited']);
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testTheSubmitterIfirmaMakesNoCallAtAll()
+    {
+        Configuration::updateValue('IFIRMA_KSEF_SUBMITTER', 'ifirma');
+        $r = $this->receipt('1234567890');
+
+        $this->assertSame('sent by iFirma', $this->svc->skipReason($r, $this->order()));
+        $res = $this->svc->submit($r, $this->order());
+
+        $this->assertFalse($res['ok']);
+        $this->assertSame('refused', $res['outcome']);
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testTheEmployeeCanStillSendWhenTheSubmitterIsIfirma()
+    {
+        Configuration::updateValue('IFIRMA_KSEF_SUBMITTER', 'ifirma');
+        $this->t->queue('POST', '#ksef/send#', $this->kod(0, 'ok'));
+
+        $res = $this->svc->submit($this->receipt('1234567890'), $this->order(), true);
+
+        $this->assertTrue($res['ok']);
+        $this->assertSame(array('GET', 'POST'), array_column($this->t->calls, 'method'), 'the state is read first whatever the submitter');
+    }
+
+    public function testTheModeOffIgnoresTheSubmitter()
+    {
+        Configuration::updateValue('IFIRMA_KSEF_MODE', 'off');
+        Configuration::updateValue('IFIRMA_KSEF_SUBMITTER', 'ifirma');
+        $r = $this->receipt('1234567890');
+
+        $this->assertFalse($this->svc->goesToKsef($r, $this->order()));
+        $this->assertSame('KSeF disabled', $this->svc->skipReason($r, $this->order()));
+    }
+
+    /**
+     * @return array[] label => array(mode, nip, type, issued, expected)
+     */
+    public function scopeCases()
+    {
+        return array(
+            'a business invoice in b2b mode' => array('b2b', '1234567890', 'fakturakraj', true, true),
+            'a private buyer in b2b mode' => array('b2b', null, 'fakturakraj', true, false),
+            'a private buyer in all mode' => array('all', null, 'fakturakraj', true, true),
+            'an unsupported type' => array('all', '1234567890', 'fakturaproformakraj', true, false),
+            'mode off' => array('off', '1234567890', 'fakturakraj', true, false),
+            'a document that is not issued' => array('all', '1234567890', 'fakturakraj', false, false),
+        );
+    }
+
+    /**
+     * @dataProvider scopeCases
+     */
+    public function testWhichDocumentsGoToKsef($mode, $nip, $type, $issued, $expected)
+    {
+        Configuration::updateValue('IFIRMA_KSEF_MODE', $mode);
+        $r = $this->receipt($nip, $type);
+        if (!$issued) {
+            $r->ifirma_id = '';
+        }
+
+        $this->assertSame($expected, $this->svc->goesToKsef($r, $this->order()));
+    }
+
+    public function testGoesToKsefIgnoresTheSubmitterAndTheCurrentState()
+    {
+        Configuration::updateValue('IFIRMA_KSEF_SUBMITTER', 'ifirma');
+        $r = $this->receipt('1234567890');
+        $r->ksef_status = 'PRZYJETA';
+        $r->ksef_number = 'N-1';
+
+        $this->assertTrue($this->svc->goesToKsef($r, $this->order()));
+    }
+    // ---- the five readable KSeF states of the panel (spec ksef-submission "Status visibility") ---------------
+
+    public function testNotSentCarriesTheReason()
+    {
+        Configuration::updateValue('IFIRMA_KSEF_MODE', 'off');
+
+        $this->assertSame('not sent (KSeF disabled)', $this->svc->describe($this->receipt('1234567890'), $this->order()));
+    }
+
+    public function testWaitingForIfirmaWhenTheSubmitterIsIfirmaAndNoStateIsReported()
+    {
+        Configuration::updateValue('IFIRMA_KSEF_SUBMITTER', 'ifirma');
+
+        $this->assertSame('waiting for iFirma to send the document', $this->svc->describe($this->receipt('1234567890'), $this->order()));
+    }
+
+    public function testSentAndAwaitingAcceptanceShowsTheTimeOfTheModule()
+    {
+        $r = $this->receipt('1234567890');
+        $r->ksef_status = 'WYSLANA';
+        $r->ksef_sent_at = '2026-11-01 10:15:00';
+
+        $this->assertSame('sent 2026-11-01 10:15, awaiting KSeF', $this->svc->describe($r, $this->order()));
+    }
+
+    public function testSentOrScheduledByIfirmaShowsTheStatusAsReported()
+    {
+        $r = $this->receipt('1234567890');
+        $r->ksef_status = 'ZAPLANOWANA';
+
+        $this->assertSame('sent or scheduled by iFirma: ZAPLANOWANA', $this->svc->describe($r, $this->order()));
+    }
+
+    public function testRejectedByKsefIsAnErrorThatSaysSo()
+    {
+        $r = $this->receipt('1234567890');
+        $r->ksef_status = 'ODRZUCONA';
+
+        $this->assertSame('error: rejected by KSeF', $this->svc->describe($r, $this->order()));
+    }
+
+    public function testASentStatusWithoutOurTimestampIsSentByIfirma()
+    {
+        $r = $this->receipt('1234567890');
+        $r->ksef_status = 'WYSLANA';
+
+        $this->assertSame('sent or scheduled by iFirma: WYSLANA', $this->svc->describe($r, $this->order()));
     }
 }

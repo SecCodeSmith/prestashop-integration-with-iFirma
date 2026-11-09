@@ -62,7 +62,7 @@ anyway** in the order's iFirma panel; it bypasses the duplicate guard once for t
 
 **`Niepoprawna zawartość żądania - nie można utworzyć obiektu na podstawie zawartości żądania` (Kod 200).** iFirma could not map the JSON sent to it onto a document object. The message never names the offending field; the usual cause is an undocumented enumeration value. Older builds sent `RodzajPodpisuOdbiorcy: BRK`, a value that does not exist in the iFirma API. Fix: install the current module zip (the *Recipient signature* setting defaults to `BPO`, and any other stored value is normalised to `BPO`), then clear the PrestaShop cache. To check a request yourself, expand **Diagnostics: last iFirma request and response** in the order's iFirma panel and compare every enumerated field with the documented lists: `LiczOd`, `FormatDatySprzedazy`, `SposobZaplaty`, `RodzajPodpisuOdbiorcy` (`OUP`, `UPO`, `BPO`, `BWO`) and `TypStawkiVat`. Kod 200 never names the field, so when the request contained `DodatkoweUwagi` (the only optional object the module sends) the module retries once without it; if the retry is also rejected, or the request had no `DodatkoweUwagi`, the error is recorded.
 
-**`KSeF: <error>` (after issuing a document).** The document was issued and delivery ran, but the KSeF submission failed. The receipt shows state error (`BLAD`) with the same message. Check: (1) the iFirma account is authorised to send invoices to KSeF (the KSeF authorisation is configured in iFirma, not in the module); (2) the buyer data on the invoice is complete, since a B2B invoice needs a valid NIP; (3) retry with **Send to KSeF** in the order panel; if the same error returns, copy the diagnostics block and the message. Then refresh the status in the order panel: once iFirma reports `PRZYJETA`, the number appears on the receipt and the customer page.
+**`KSeF: <error>` (after issuing a document).** The document was issued, but the KSeF submission failed (the delivery to the customer waits for KSeF acceptance, see below). The receipt shows state error (`BLAD`) with the same message. Check: (1) the iFirma account is authorised to send invoices to KSeF (the KSeF authorisation is configured in iFirma, not in the module); (2) the buyer data on the invoice is complete, since a B2B invoice needs a valid NIP; (3) retry with **Send to KSeF** in the order panel; if the same error returns, copy the diagnostics block and the message. Then refresh the status in the order panel: once iFirma reports `PRZYJETA`, the number appears on the receipt and the customer page.
 
 ### Calls paused after a rejected key
 
@@ -89,6 +89,31 @@ previous state and are not errors. The records already handled keep their outcom
 **What to do:** wait a minute, select the records that were not attempted in the [documents list](usage.md#ifirma-documents-list)
 and run the action again. The cap is shared with every other client of the same iFirma account, so a busy account may need
 the bulk runs at quiet times.
+
+### Rate limited by iFirma
+
+**Meaning:** iFirma itself refused a request because the account exceeded its limit (100 requests a minute, 15,000 a day,
+shared by every program that uses the account's API). The module recognises an HTTP 429 answer, and an answer whose message
+says the request limit was exceeded ("limit zapytań"). It is a transient "rate limited" state, not an error of the document
+and not a rejected key. The shop log and the admin pages show a message such as "iFirma refused the request: the request
+limit was exceeded (HTTP 429). No requests until 2026-11-01 10:16:00."
+
+**What the module does:** it starts a back-off and sends nothing until the time iFirma asked for (its `Retry-After` header,
+at most 24 hours), or until the start of the next minute when the header is missing or unusable. The end of the back-off
+is stored in `IFIRMA_RATE_BACKOFF_UNTIL` (unix time). A request started during the back-off is refused locally, without any
+network call, and its message names the end time. A document whose create request was refused is not created: iFirma
+refused it before processing.
+
+**What to do:** nothing in most cases, the next request after the end time goes through. If it keeps happening, other
+programs use the same account: lower `API calls per minute` and `API calls per day` on the settings page
+([Rate limits](configuration.md#rate-limits)). The exact answer of iFirma's limit is not documented; if a limit answer is not
+recognised (it shows up as a technical problem, `Kod` 100), please report its HTTP status and text.
+
+### A KSeF invoice was not e-mailed to the customer
+
+**Meaning:** an invoice that goes to KSeF (mode `b2b` for a buyer with a NIP, or `all`) is delivered only after KSeF has accepted it. Its delivery state is `awaiting_ksef` and the order panel says "waiting for KSeF acceptance"; the customer's page shows "not yet sent" and no download link.
+
+**What to do:** check the KSeF row of the order panel. *Sent, awaiting acceptance* or *scheduled* only needs time (iFirma may send at the hour set in its account settings, so it can take until the next day): the cron endpoint delivers the document after the sync reads the KSeF number. *Waiting for iFirma* means the submitter is `iFirma` and iFirma has not reported a state yet. *Error* or *rejected by KSeF* needs a decision: fix the cause in iFirma, then **Send to KSeF** again, or deliver by hand with **Send again** (the panel warns that the document is not yet accepted). A wait longer than 48 hours is listed on the notification tab. Without a cron job nothing is delivered after acceptance: call the [cron endpoint](configuration.md#cron-jobs) every 1 to 5 minutes. If your iFirma account submits invoices to KSeF by itself, set **KSeF submitter** to *iFirma*; otherwise the module may submit the same invoice a second time when the detail answer carries no KSeF fields.
 
 ### Permission messages (HTTP 403)
 

@@ -324,6 +324,7 @@ class AdminActionsAnswersTest extends TestCase
     public function testSendToKsefAddsTheMessageOfIFirmaToTheSuccessAndDescribesTheDocument()
     {
         $this->makeReceipt();
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Kod":0,"KsefStatus":"","KsefNumer":""}}'));
         $this->t->queue('POST', '#fakturakraj/ksef/send/77\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"Wyslano"}}'));
 
         $r = $this->actions->sendToKsef(15);
@@ -346,6 +347,7 @@ class AdminActionsAnswersTest extends TestCase
     public function testSendToKsefAnswersAPlainSuccessWhenIFirmaSaysNothing()
     {
         $this->makeReceipt();
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Kod":0,"KsefStatus":"","KsefNumer":""}}'));
         $this->t->queue('POST', '#fakturakraj/ksef/send/77\.json#', array('body' => '{"response":{"Kod":0}}'));
 
         $r = $this->actions->sendToKsef(15);
@@ -357,6 +359,7 @@ class AdminActionsAnswersTest extends TestCase
     public function testSendToKsefAnswersTheReasonOfAFailureAndDescribesTheDocument()
     {
         $this->makeReceipt();
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Kod":0,"KsefStatus":"","KsefNumer":""}}'));
         $this->t->queue('POST', '#ksef/send#', array('body' => '{"response":{"Kod":200,"Informacja":"Odmowa"}}'));
 
         $r = $this->actions->sendToKsef(15);

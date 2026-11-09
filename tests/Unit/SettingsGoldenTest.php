@@ -154,8 +154,9 @@ class SettingsGoldenTest extends TestCase
     /**
      * After a successful save the page is built again from the stored values. With an abonent key it
      * shows the API limit box, which calls iFirma, and the API rate guard stamps the current minute and
-     * the number of calls in it into IFIRMA_RATE_WINDOW. That one write belongs to the page and not to
-     * the settings, and its value is the clock, so it is expected after the settings as "<minute>:1".
+     * the number of calls in it into IFIRMA_RATE_WINDOW, and the current day into IFIRMA_RATE_DAY_WINDOW.
+     * Those writes belong to the page and not to the settings, and their value is the clock, so they are
+     * expected after the settings as "<minute>:1" and "<day>:1".
      * That holds for an even-length hex abonent key only: IfirmaApiClient::buildAuthHeader() returns false
      * for any other key before the guard runs, so that save makes no stamp. A scenario with such a key
      * sets 'page_writes' in golden.json instead.
@@ -167,7 +168,7 @@ class SettingsGoldenTest extends TestCase
     {
         foreach ($settingWrites as $write) {
             if ($write[0] === 'IFIRMA_KEY_ABONENT' && trim((string) $write[1]) !== '') {
-                return array(array('IFIRMA_RATE_WINDOW', '<minute>:1'));
+                return array(array('IFIRMA_RATE_WINDOW', '<minute>:1'), array('IFIRMA_RATE_DAY_WINDOW', '<day>:1'));
             }
         }
 
@@ -176,13 +177,16 @@ class SettingsGoldenTest extends TestCase
 
     /**
      * @param array[] $writes the [key, value] calls Configuration recorded
-     * @return array[] the same calls with the minute of IFIRMA_RATE_WINDOW replaced by "<minute>"
+     * @return array[] the same calls with the bucket of the rate rows replaced by "<minute>" and "<day>"
      */
     private static function withoutTheClock(array $writes)
     {
         foreach ($writes as $position => $write) {
             if ($write[0] === 'IFIRMA_RATE_WINDOW' && preg_match('/^\d{12}:(\d+)$/', (string) $write[1], $parts)) {
                 $writes[$position][1] = '<minute>:' . $parts[1];
+            }
+            if ($write[0] === 'IFIRMA_RATE_DAY_WINDOW' && preg_match('/^\d{8}:(\d+)$/', (string) $write[1], $parts)) {
+                $writes[$position][1] = '<day>:' . $parts[1];
             }
         }
 
@@ -219,7 +223,9 @@ class SettingsGoldenTest extends TestCase
             'The notification e-mail address is not valid.',
             'The sync interval must be a whole number of minutes between 1 and 1440.',
             'The cron call budget must be a whole number between 1 and 90.',
+            'The cron item limit must be a whole number between 1 and 50.',
             'The API rate limit must be a whole number between 1 and 100 calls per minute.',
+            'The API daily limit must be a whole number between 1 and 15000 calls per day.',
             'The payment method mode must be "order" or "fixed".',
             'The fallback payment method must be one of the listed codes.',
             'Payment method map: line 1: ps_checkpayment=XYZ',

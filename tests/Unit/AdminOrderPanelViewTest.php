@@ -119,6 +119,7 @@ class AdminOrderPanelViewTest extends TestCase
             'ifirma_resolution',
             'ifirma_delivery_text',
             'ifirma_ksef_text',
+            'ifirma_ksef_waiting',
             'ifirma_gross',
             'ifirma_pending_request',
             'ifirma_request_diff',

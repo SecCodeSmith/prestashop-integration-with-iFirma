@@ -936,6 +936,11 @@ function scenarioD($module, $actions)
         'cron URL returns the JSON summary',
         substr((string) $good['raw'], 0, 120)
     );
+    assertTrue(
+        is_array($good['data']) && isset($good['data']['queue'], $good['data']['ksef'], $good['data']['delivery'], $good['data']['rate_limited']),
+        'cron URL also carries the queue, ksef and delivery blocks and rate_limited',
+        substr((string) $good['raw'], 0, 160)
+    );
 }
 
 function scenarioE($module)
@@ -2113,6 +2118,503 @@ function smokeCustomerDownloadCheck(Order $order, $receipt, $expectedName)
         'the customer download answers the name ' . $expectedName, $disposition);
 }
 
+// ---------------------------------------------------------------- scenarios R and S: the queue, the limits and KSeF-confirmed delivery
+
+/** Sets the mock's limits at runtime ('per_minute' and/or 'per_day'). */
+function mockRateLimit(array $limits)
+{
+    return mockRequest('POST', '/__mock/rate-limit', $limits);
+}
+
+/** Clears the count of one window of the mock ('minute' or 'day'). */
+function mockNextWindow($window)
+{
+    return mockRequest('POST', '/__mock/rate-limit/next-window', array('window' => $window));
+}
+
+/** Sets the mock's KSeF auto-send mode: off, send or accept. */
+function mockKsefAuto($mode)
+{
+    return mockRequest('POST', '/__mock/ksef-auto', array('mode' => $mode));
+}
+
+/** @return array the mock's status.json */
+function mockStatus()
+{
+    $r = mockRequest('GET', '/__mock/status.json');
+
+    return is_array($r['data']) ? $r['data'] : array();
+}
+
+/** @return array the rate_limit block of the mock's status.json */
+function mockRateStatus()
+{
+    $status = mockStatus();
+
+    return isset($status['rate_limit']) ? $status['rate_limit'] : array();
+}
+
+/** One cron run in this process, through the runner the endpoint uses. @return array its summary */
+function runCron($module)
+{
+    require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaCronRunner.php';
+
+    return IfirmaCronRunner::build($module)->run();
+}
+
+/**
+ * The sink also holds PrestaShop's own order mails, so the delivery mails are told apart by the document number in the
+ * subject.
+ *
+ * @param string[] $numbers document numbers
+ * @return int captured messages whose subject names one of the numbers
+ */
+function deliveryMailCount(array $numbers)
+{
+    $count = 0;
+    foreach (mailbox() as $row) {
+        foreach ($numbers as $number) {
+            if ($number !== '' && strpos((string) $row['subject'], (string) $number) !== false) {
+                $count++;
+                break;
+            }
+        }
+    }
+
+    return $count;
+}
+
+/** @return string[] the numbers of the documents of these orders */
+function numbersOf(array $orders)
+{
+    $numbers = array();
+    foreach ($orders as $order) {
+        $receipt = IfirmaReceipt::getByOrder((int) $order->id);
+        if ($receipt && $receipt->isIssued()) {
+            $numbers[] = (string) $receipt->ifirma_number;
+        }
+    }
+
+    return $numbers;
+}
+
+/** One cron run through the shop's own front controller, over HTTP. @return array array('code', 'data', 'raw') */
+function cronOverHttp()
+{
+    // through 127.0.0.1 with the shop domain as Host (SmokeWeb), as the guest and download scenarios do: the shop redirects
+    // any other Host to its own domain
+    $web = new SmokeWeb();
+    $answer = $web->request('GET', '/index.php?fc=module&module=ifirma&controller=cron&token=' . rawurlencode((string) Configuration::get('IFIRMA_CRON_TOKEN')));
+    $data = json_decode((string) $answer['body'], true);
+
+    return array('code' => $answer['code'], 'data' => is_array($data) ? $data : null, 'raw' => $answer['body']);
+}
+
+/** Sleeps until one second into the next calendar minute, so every window of the guard starts fresh. */
+function sleepToNextMinute()
+{
+    $wait = 61 - (time() % 60);
+    smokeOut('INFO', 'waiting ' . $wait . ' s for the next minute');
+    sleep($wait);
+}
+
+/**
+ * Takes the leftovers of earlier runs out of the cron's work: documents that still wait for KSeF are marked not sent and
+ * queued records are closed as errors, so the cron of this scenario only handles what the scenario made.
+ */
+function smokeClearCronWork()
+{
+    $table = '`' . _DB_PREFIX_ . 'ifirma_receipt`';
+    Db::getInstance()->execute("UPDATE {$table} SET delivery_status = 'none' WHERE delivery_status = 'awaiting_ksef'");
+    Db::getInstance()->execute("UPDATE {$table} SET status = 'error' WHERE status = 'queued'");
+}
+
+/** @return int the id of the newest module record, so a scenario can remove the records it created */
+function smokeReceiptWatermark()
+{
+    return (int) Db::getInstance()->getValue('SELECT MAX(id_ifirma_receipt) FROM `' . _DB_PREFIX_ . 'ifirma_receipt`');
+}
+
+/**
+ * Removes the records created after the watermark. A burst scenario leaves hundreds of records whose documents the mock
+ * reset has dropped, and the status sync reads only a bounded number of records per run, so they would push the later
+ * scenarios' own records out of the sync.
+ *
+ * @param int $watermark from smokeReceiptWatermark()
+ */
+function smokeForgetReceiptsAfter($watermark)
+{
+    Db::getInstance()->execute('DELETE FROM `' . _DB_PREFIX_ . 'ifirma_receipt` WHERE id_ifirma_receipt > ' . (int) $watermark);
+}
+
+/** @return int how many module records are queued */
+function queuedCount()
+{
+    return (int) Db::getInstance()->getValue('SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'ifirma_receipt` WHERE status = \'queued\'');
+}
+
+/**
+ * Runs the cron once a minute until nothing is queued or the deadline passes.
+ *
+ * @param int $deadline unix time
+ * @return int cron runs it took
+ */
+function drainQueue($module, $deadline)
+{
+    $runs = 0;
+    while (queuedCount() > 0 && time() < $deadline) {
+        sleepToNextMinute();
+        $summary = runCron($module);
+        $runs++;
+        smokeOut('INFO', 'cron run ' . $runs . ': ' . json_encode(isset($summary['queue']) ? $summary['queue'] : $summary));
+    }
+
+    return $runs;
+}
+
+/**
+ * @param Order[] $orders
+ * @return array status => how many of the orders' newest records are in that status ('none' for no record)
+ */
+function statusCounts(array $orders)
+{
+    $counts = array();
+    foreach ($orders as $order) {
+        $receipt = IfirmaReceipt::getByOrder((int) $order->id);
+        $key = $receipt ? (string) $receipt->status : 'none';
+        $counts[$key] = (isset($counts[$key]) ? $counts[$key] : 0) + 1;
+    }
+
+    return $counts;
+}
+
+/** Creates $count orders and moves each to the trigger status in a tight loop (the status hook issues or queues it). @return Order[] */
+function burstOfOrders($count, $triggerState)
+{
+    $orders = array();
+    for ($i = 0; $i < $count; $i++) {
+        $order = createOrder();
+        if ($order instanceof Order && Validate::isLoadedObject($order)) {
+            $orders[] = $order;
+        }
+    }
+    assertSame($count, count($orders), $count . ' orders created');
+    foreach ($orders as $order) {
+        changeState($order, $triggerState);
+    }
+
+    return $orders;
+}
+
+/** @return int the module's own count of requests today (the day counter row) */
+function moduleDayCount()
+{
+    $stored = (string) Configuration::get('IFIRMA_RATE_DAY_WINDOW');
+    $parts = explode(':', $stored, 2);
+
+    return (count($parts) === 2 && $parts[0] === date('Ymd')) ? (int) $parts[1] : 0;
+}
+
+/** Asserts that each order ended with exactly one document in the mock and that nothing is in an error state. */
+function assertEveryOrderHasOneDocument(array $orders, $label)
+{
+    $counts = statusCounts($orders);
+    assertSame(count($orders), (int) (isset($counts['created']) ? $counts['created'] : 0) + (int) (isset($counts['paid']) ? $counts['paid'] : 0), $label . ': every order is issued');
+    assertSame(0, (int) (isset($counts['error']) ? $counts['error'] : 0) + (int) (isset($counts['unknown']) ? $counts['unknown'] : 0), $label . ': no order is an error or unknown');
+    $ids = array();
+    foreach ($orders as $order) {
+        $receipt = IfirmaReceipt::getByOrder((int) $order->id);
+        if ($receipt) {
+            $ids[(string) $receipt->ifirma_id] = true;
+        }
+    }
+    assertSame(count($orders), count($ids), $label . ': every order has its own document');
+}
+
+function scenarioR($module, $triggerState)
+{
+    section('R. Burst issuance under the limits');
+    smokeClearCronWork();
+    mockReset();
+    mailClear();
+    $saved = array();
+    foreach (array('IFIRMA_RATE_WINDOW', 'IFIRMA_RATE_DAY_WINDOW', 'IFIRMA_RATE_BACKOFF_UNTIL', 'IFIRMA_CRON_MAX_ITEMS', 'IFIRMA_KSEF_MODE',
+        'IFIRMA_RATE_MAX_PER_DAY', 'IFIRMA_RATE_MAX_PER_MIN', 'IFIRMA_AUTO_CREATE_STATE', 'IFIRMA_SEND_COPY_MODE', 'IFIRMA_DUPLICATE_CHECK') as $key) {
+        $saved[$key] = Configuration::get($key);
+    }
+    $deadline = time() + 8 * 60;
+    $watermark = smokeReceiptWatermark();
+    try {
+        smokeSetting('IFIRMA_CRON_MAX_ITEMS', 50);
+        smokeSetting('IFIRMA_SEND_COPY_MODE', 'none');
+        // Every order of the burst is the same buyer with the same lines and total, so the duplicate guard would (rightly)
+        // take each document for the earlier order's. The guard is not what R tests, and the in-flight marker still
+        // protects a mid-create crash; scenarios A, A2 and B cover the guard.
+        smokeSetting('IFIRMA_DUPLICATE_CHECK', 0);
+        smokeSetting('IFIRMA_KSEF_MODE', 'off');
+        smokeSetting('IFIRMA_AUTO_CREATE_STATE', $triggerState);
+        smokeSetting('IFIRMA_RATE_WINDOW', '');
+        smokeSetting('IFIRMA_RATE_DAY_WINDOW', '');
+        smokeSetting('IFIRMA_RATE_BACKOFF_UNTIL', '');
+
+        // R1: 50 orders in a row; the module's own cap queues the ones it cannot send, the mock never refuses
+        $started = time();
+        $orders = burstOfOrders(50, $triggerState);
+        $counts = statusCounts($orders);
+        assertSame(50, array_sum($counts), 'R1: every order has a record at once');
+        assertTrue(isset($counts['queued']) && $counts['queued'] >= 1, 'R1: at least one order is queued by the cap', json_encode($counts));
+        assertSame(0, (int) (isset($counts['error']) ? $counts['error'] : 0) + (int) (isset($counts['unknown']) ? $counts['unknown'] : 0), 'R1: none is an error or unknown', json_encode($counts));
+        $runs = drainQueue($module, $deadline);
+        assertSame(0, queuedCount(), 'R1: the queue is drained', $runs . ' cron runs');
+        assertEveryOrderHasOneDocument($orders, 'R1');
+        $rate = mockRateStatus();
+        assertSame(0, (int) (isset($rate['rejected_total']) ? $rate['rejected_total'] : -1), 'R1: the mock refused no call');
+        assertTrue(isset($rate['peak_minute']) && (int) $rate['peak_minute'] <= 80, 'R1: no minute above the cap of 80', json_encode($rate));
+        assertSame(50, deliveryMailCount(numbersOf($orders)), 'R1: 50 delivery mails');
+        smokeOut('INFO', 'R1 took ' . (time() - $started) . ' s, peak minute ' . (isset($rate['peak_minute']) ? $rate['peak_minute'] : '?'));
+
+        // R2: the mock's per-minute limit is below the module's cap: one refusal, then the back-off holds the rest
+        mockReset();
+        mailClear();
+        smokeSetting('IFIRMA_RATE_WINDOW', '');
+        smokeSetting('IFIRMA_RATE_BACKOFF_UNTIL', '');
+        mockRateLimit(array('per_minute' => 30));
+        $orders = burstOfOrders(20, $triggerState);
+        $rate = mockRateStatus();
+        assertTrue((int) $rate['rejected_total'] <= 1, 'R2: the mock refused at most one call', json_encode($rate));
+        $counts = statusCounts($orders);
+        assertTrue(isset($counts['queued']) && $counts['queued'] >= 1, 'R2: the refused orders are queued', json_encode($counts));
+        assertSame(0, (int) (isset($counts['error']) ? $counts['error'] : 0) + (int) (isset($counts['unknown']) ? $counts['unknown'] : 0), 'R2: nothing is an error or unknown', json_encode($counts));
+        mockRateLimit(array('per_minute' => 100));
+        mockNextWindow('minute');
+        smokeSetting('IFIRMA_RATE_BACKOFF_UNTIL', '');
+        drainQueue($module, $deadline);
+        assertEveryOrderHasOneDocument($orders, 'R2');
+
+        // R3: the mock's day limit: one refusal, the orders are queued and the next cron run sends nothing
+        mockReset();
+        mailClear();
+        smokeSetting('IFIRMA_RATE_WINDOW', '');
+        smokeSetting('IFIRMA_RATE_BACKOFF_UNTIL', '');
+        $today = (int) mockRateStatus()['calls_today'];
+        mockRateLimit(array('per_day' => $today + 15));
+        $orders = burstOfOrders(10, $triggerState);
+        assertTrue((int) mockRateStatus()['rejected_total'] <= 1, 'R3: the mock refused at most one call');
+        assertTrue(queuedCount() >= 1, 'R3: the refused orders are queued');
+        $before = (int) mockRateStatus()['calls_total'];
+        runCron($module);
+        assertSame($before, (int) mockRateStatus()['calls_total'], 'R3: a cron run during the back-off makes no call');
+        mockNextWindow('day');
+        mockRateLimit(array('per_day' => 15000));
+        smokeSetting('IFIRMA_RATE_BACKOFF_UNTIL', '');
+        drainQueue($module, $deadline);
+        assertEveryOrderHasOneDocument($orders, 'R3');
+
+        // R4: the module's own day cap: no refusal from the mock at all
+        mockReset();
+        mailClear();
+        smokeSetting('IFIRMA_RATE_WINDOW', '');
+        smokeSetting('IFIRMA_RATE_BACKOFF_UNTIL', '');
+        smokeSetting('IFIRMA_RATE_MAX_PER_DAY', moduleDayCount() + 10);
+        $orders = burstOfOrders(10, $triggerState);
+        assertSame(0, (int) mockRateStatus()['rejected_total'], 'R4: the mock refused nothing');
+        assertTrue(queuedCount() >= 1, 'R4: the orders over the module cap are queued');
+        smokeSetting('IFIRMA_RATE_DAY_WINDOW', '');
+        smokeSetting('IFIRMA_RATE_MAX_PER_DAY', 14000);
+        drainQueue($module, $deadline);
+        assertEveryOrderHasOneDocument($orders, 'R4');
+
+        // the same endpoint over HTTP, so the controller wiring is covered
+        $http = cronOverHttp();
+        if (in_array($http['code'], array(200), true)) {
+            assertTrue(is_array($http['data']) && isset($http['data']['queue']) && isset($http['data']['rate_limited']), 'R: the cron URL answers the queue block', substr((string) $http['raw'], 0, 160));
+        } else {
+            skip('R: cron over HTTP', 'localhost answered HTTP ' . $http['code'] . ' (set PS_LOCAL_URL)');
+        }
+    } finally {
+        smokeClearCronWork();
+        smokeForgetReceiptsAfter($watermark);
+        foreach ($saved as $key => $value) {
+            smokeRestoreSetting($key, $value);
+        }
+        mockReset();
+    }
+}
+
+/** Creates a fresh order whose invoice address carries a NIP (or none) and returns array(order, address backup). */
+function smokeBusinessOrder($nip)
+{
+    $order = createOrder();
+    $address = new Address((int) $order->id_address_invoice);
+    $backup = array('vat_number' => $address->vat_number, 'dni' => $address->dni);
+    $address->vat_number = $nip;
+    $address->update();
+
+    return array($order, $address, $backup);
+}
+
+/** @return int the HTTP code of the customer's download of the document, logged in as the owner */
+function smokeDownloadCode(Order $order, $receipt)
+{
+    $customer = new Customer((int) $order->id_customer);
+    $context = Context::getContext();
+    $web = new SmokeWeb();
+    $web->request('GET', $context->link->getPageLink('authentication'));
+    $web->request('POST', $context->link->getPageLink('authentication'), array(
+        'email' => $customer->email, 'password' => '123456789', 'submitLogin' => '1', 'back' => 'my-account',
+    ));
+    $pdf = $web->request('GET', $context->link->getModuleLink('ifirma', 'receipt', array('token' => $receipt->security_token)));
+
+    return (int) $pdf['code'];
+}
+
+function scenarioS($module)
+{
+    section('S. KSeF-confirmed delivery');
+    smokeClearCronWork();
+    mockReset();
+    mailClear();
+    $saved = array();
+    foreach (array('IFIRMA_KSEF_MODE', 'IFIRMA_KSEF_SUBMITTER', 'IFIRMA_SEND_CHANNEL', 'IFIRMA_SEND_COPY_MODE', 'IFIRMA_RATE_WINDOW', 'IFIRMA_RATE_BACKOFF_UNTIL') as $key) {
+        $saved[$key] = Configuration::get($key);
+    }
+    $backups = array();
+    try {
+        smokeSetting('IFIRMA_KSEF_MODE', 'b2b');
+        smokeSetting('IFIRMA_KSEF_SUBMITTER', 'module');
+        smokeSetting('IFIRMA_SEND_CHANNEL', 'shop_mail');
+        smokeSetting('IFIRMA_SEND_COPY_MODE', 'none');
+        smokeSetting('IFIRMA_RATE_WINDOW', '');
+        smokeSetting('IFIRMA_RATE_BACKOFF_UNTIL', '');
+        $sendCalls = function ($receipt) {
+            foreach (mockStatus()['documents'] as $doc) {
+                if ((string) $doc['FakturaId'] === (string) $receipt->ifirma_id) {
+                    return (int) $doc['ksef_send_calls'];
+                }
+            }
+
+            return -1;
+        };
+
+        // S1: the module submits, KSeF accepts, the cron delivers once
+        list($order, $address, $backup) = smokeBusinessOrder('5260001122');
+        $backups[] = array($address, $backup);
+        $result = IfirmaIssuancePipeline::build($module)->run($order, array('trigger' => 'manual'));
+        $receipt = receiptOf($order);
+        assertTrue($result->ok && $receipt && $receipt->isIssued(), 'S1: the invoice is issued', $result->message);
+        assertSame('awaiting_ksef', $receipt ? (string) $receipt->delivery_status : null, 'S1: delivery waits for KSeF');
+        assertSame(0, deliveryMailCount(array((string) $receipt->ifirma_number)), 'S1: no e-mail before acceptance');
+        assertSame(1, $sendCalls($receipt), 'S1: the module sent the invoice to KSeF once');
+        assertSame(404, smokeDownloadCode($order, $receipt), 'S1: the customer cannot download a waiting document');
+        $accepted = mockRequest('POST', '/__mock/ksef/accept/' . rawurlencode((string) $receipt->ifirma_id));
+        assertSame(200, $accepted['code'], 'S1: the mock accepts the invoice');
+        runCron($module);
+        $receipt = receiptOf($order);
+        assertSame('sent', $receipt ? (string) $receipt->delivery_status : null, 'S1: one cron run stores the number and delivers');
+        assertSame(1, deliveryMailCount(array((string) $receipt->ifirma_number)), 'S1: exactly one e-mail after acceptance');
+        assertSame(1, $sendCalls($receipt), 'S1: still one KSeF send call');
+        assertSame(200, smokeDownloadCode($order, $receipt), 'S1: the customer can download after acceptance');
+
+        // S2: iFirma sent it on its own: the module makes no send call
+        mockReset();
+        mailClear();
+        smokeSetting('IFIRMA_RATE_WINDOW', '');
+        mockKsefAuto('send');
+        list($order, $address, $backup) = smokeBusinessOrder('5260001122');
+        $backups[] = array($address, $backup);
+        $result = IfirmaIssuancePipeline::build($module)->run($order, array('trigger' => 'manual'));
+        $receipt = receiptOf($order);
+        $ksefStep = null;
+        foreach ($result->steps as $step) {
+            if ($step['step'] === 'ksef') {
+                $ksefStep = $step;
+            }
+        }
+        assertSame('skipped', $ksefStep ? $ksefStep['status'] : null, 'S2: the ksef step is skipped');
+        assertSame('already sent by iFirma', $ksefStep ? $ksefStep['message'] : null, 'S2: the reason names iFirma');
+        assertSame(0, $sendCalls($receipt), 'S2: no KSeF send call by the module');
+        assertSame('awaiting_ksef', $receipt ? (string) $receipt->delivery_status : null, 'S2: delivery waits');
+        mockRequest('POST', '/__mock/ksef/accept/' . rawurlencode((string) $receipt->ifirma_id));
+        runCron($module);
+        assertSame('sent', (string) receiptOf($order)->delivery_status, 'S2: delivered after acceptance');
+        assertSame(0, $sendCalls($receipt), 'S2: still no send call');
+
+        // S3: the submitter is iFirma: no send call, no state read needed
+        mockReset();
+        mailClear();
+        smokeSetting('IFIRMA_RATE_WINDOW', '');
+        smokeSetting('IFIRMA_KSEF_SUBMITTER', 'ifirma');
+        mockKsefAuto('send');
+        list($order, $address, $backup) = smokeBusinessOrder('5260001122');
+        $backups[] = array($address, $backup);
+        $result = IfirmaIssuancePipeline::build($module)->run($order, array('trigger' => 'manual'));
+        $receipt = receiptOf($order);
+        $ksefStep = null;
+        foreach ($result->steps as $step) {
+            if ($step['step'] === 'ksef') {
+                $ksefStep = $step;
+            }
+        }
+        assertSame('sent by iFirma', $ksefStep ? $ksefStep['message'] : null, 'S3: the ksef step says iFirma sends');
+        assertSame(0, $sendCalls($receipt), 'S3: no KSeF send call');
+        assertSame('awaiting_ksef', $receipt ? (string) $receipt->delivery_status : null, 'S3: delivery waits');
+        smokeSetting('IFIRMA_KSEF_SUBMITTER', 'module');
+
+        // S4: KSeF rejects: no e-mail, the delivery keeps waiting, the feed lists it
+        mockReset();
+        mailClear();
+        smokeSetting('IFIRMA_RATE_WINDOW', '');
+        list($order, $address, $backup) = smokeBusinessOrder('5260001122');
+        $backups[] = array($address, $backup);
+        IfirmaIssuancePipeline::build($module)->run($order, array('trigger' => 'manual'));
+        $receipt = receiptOf($order);
+        mockRequest('POST', '/__mock/ksef/reject/' . rawurlencode((string) $receipt->ifirma_id));
+        runCron($module);
+        $receipt = receiptOf($order);
+        assertSame('ODRZUCONA', $receipt ? (string) $receipt->ksef_status : null, 'S4: the rejection is stored');
+        assertSame('awaiting_ksef', $receipt ? (string) $receipt->delivery_status : null, 'S4: the delivery keeps waiting');
+        assertSame(0, deliveryMailCount(array((string) $receipt->ifirma_number)), 'S4: no e-mail for a rejected invoice');
+        $kinds = array();
+        foreach ((new IfirmaIssueFeed())->latest(1000) as $item) {
+            if ((int) $item['id_order'] === (int) $order->id) {
+                $kinds[] = $item['kind'];
+            }
+        }
+        assertTrue(in_array('ksef_rejected', $kinds, true), 'S4: the issue feed lists the rejection', json_encode(array($kinds, $receipt->status, (int) $receipt->remote_missing, $receipt->delivery_status)));
+
+        // S5: a document that does not go to KSeF is delivered at issuance
+        mockReset();
+        mailClear();
+        smokeSetting('IFIRMA_RATE_WINDOW', '');
+        list($order, $address, $backup) = smokeBusinessOrder('');
+        $backups[] = array($address, $backup);
+        $result = IfirmaIssuancePipeline::build($module)->run($order, array('trigger' => 'manual'));
+        $receipt = receiptOf($order);
+        assertSame('sent', $receipt ? (string) $receipt->delivery_status : null, 'S5: a private buyer is delivered at issuance');
+        assertSame(1, deliveryMailCount(array((string) $receipt->ifirma_number)), 'S5: one e-mail for the private buyer');
+        mockReset();
+        mailClear();
+        smokeSetting('IFIRMA_RATE_WINDOW', '');
+        smokeSetting('IFIRMA_KSEF_MODE', 'off');
+        list($order, $address, $backup) = smokeBusinessOrder('5260001122');
+        $backups[] = array($address, $backup);
+        IfirmaIssuancePipeline::build($module)->run($order, array('trigger' => 'manual'));
+        assertSame('sent', (string) receiptOf($order)->delivery_status, 'S5: mode off delivers at issuance');
+        assertSame(1, deliveryMailCount(array((string) receiptOf($order)->ifirma_number)), 'S5: one e-mail in mode off');
+    } finally {
+        smokeClearCronWork();
+        foreach (array_reverse($backups) as $pair) {
+            $pair[0]->vat_number = $pair[1]['vat_number'];
+            $pair[0]->dni = $pair[1]['dni'];
+            $pair[0]->update();
+        }
+        foreach ($saved as $key => $value) {
+            smokeRestoreSetting($key, $value);
+        }
+        mockReset();
+    }
+}
+
 $scenarios = array(
     'J' => function () use ($module) {
         scenarioJ($module);
@@ -2136,7 +2638,14 @@ $scenarios = array(
         scenarioB($module);
     },
     'C' => function () use ($module, $actions, $triggerState) {
-        scenarioC($module, $actions, $triggerState);
+        // The company request carries a NIP, so in KSeF mode b2b the invoice would wait for KSeF acceptance instead of being
+        // delivered at once (scenario S covers that). C is about the data request, so KSeF is off while it runs.
+        $ksefMode = smokeSetting('IFIRMA_KSEF_MODE', 'off');
+        try {
+            scenarioC($module, $actions, $triggerState);
+        } finally {
+            smokeRestoreSetting('IFIRMA_KSEF_MODE', $ksefMode);
+        }
     },
     'D' => function () use ($module, $actions) {
         scenarioD($module, $actions);
@@ -2167,6 +2676,12 @@ $scenarios = array(
     },
     'Q' => function () use ($module, $actions) {
         scenarioQ($module, $actions);
+    },
+    'R' => function () use ($module, $triggerState) {
+        scenarioR($module, $triggerState);
+    },
+    'S' => function () use ($module) {
+        scenarioS($module);
     },
 );
 

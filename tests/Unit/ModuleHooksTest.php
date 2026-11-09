@@ -486,7 +486,7 @@ class ModuleHooksTest extends TestCase
         $this->assertInstanceOf('PrestaShop\PrestaShop\Core\Grid\Column\Type\Common\HtmlColumn', $column);
         $this->assertSame('ifirma_document', $column->id);
         $this->assertSame('iFirma', $column->name);
-        $this->assertSame(array('field' => 'ifirma_document', 'sortable' => false, 'clickable' => true), $column->options);
+        $this->assertSame(array('field' => 'ifirma_document', 'sortable' => true, 'clickable' => true), $column->options);
     }
 
     public function testQueryBuilderHookAddsTheTwoSelectsToTheSearchQueryOnly()
@@ -538,10 +538,10 @@ class ModuleHooksTest extends TestCase
 
         $records = $grid['data']['records'];
         $this->assertStringContainsString('receipt_long', $records[0]['ifirma_document']);
-        $this->assertStringContainsString('title="iFirma: FP 7/2026 (Issued)"', $records[0]['ifirma_document']);
+        $this->assertStringContainsString('title="Invoice issued: FP 7/2026', $records[0]['ifirma_document']);
         $this->assertStringContainsString('text-info', $records[0]['ifirma_document']);
         $this->assertSame('', $records[1]['ifirma_document']);
-        $this->assertStringContainsString('(Paid)', $records[2]['ifirma_document']);
+        $this->assertStringContainsString('Invoice paid: FP 8/2026', $records[2]['ifirma_document']);
         $this->assertStringContainsString('text-success', $records[2]['ifirma_document']);
     }
 
@@ -592,7 +592,7 @@ class ModuleHooksTest extends TestCase
         $this->assertInstanceOf(get_class($collection), $grid['data']['records']);
         $this->assertNotSame($collection, $grid['data']['records'], 'a new collection carries the filled rows');
         $rows = $grid['data']['records']->all();
-        $this->assertStringContainsString('title="iFirma: FP 7/2026 (Issued)"', $rows[0]['ifirma_document']);
+        $this->assertStringContainsString('title="Invoice issued: FP 7/2026', $rows[0]['ifirma_document']);
         $this->assertSame('', $rows[1]['ifirma_document']);
         $this->assertSame(42, $rows[0]['id_order'], 'the other keys of a row are untouched');
     }
@@ -862,7 +862,9 @@ class ModuleHooksTest extends TestCase
             'IFIRMA_NOTIFY_EMAIL' => 'office@example.test',
             'IFIRMA_SYNC_INTERVAL_MIN' => '30',
             'IFIRMA_CRON_MAX_CALLS' => '20',
+            'IFIRMA_CRON_MAX_ITEMS' => '15',
             'IFIRMA_RATE_MAX_PER_MIN' => '60',
+            'IFIRMA_RATE_MAX_PER_DAY' => '12000',
         ), $over);
     }
 
@@ -876,7 +878,7 @@ class ModuleHooksTest extends TestCase
             'IFIRMA_SEND_CHANNEL', 'IFIRMA_SEND_TEXT', 'IFIRMA_SEND_COPY_MODE', 'IFIRMA_SEND_COPY_EMPLOYEE',
             'IFIRMA_DUPLICATE_CHECK', 'IFIRMA_DUPLICATE_WINDOW_DAYS',
             'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE', 'IFIRMA_ALLOW_DATA_REQUEST', 'IFIRMA_NOTIFY_EMAIL',
-            'IFIRMA_SYNC_INTERVAL_MIN', 'IFIRMA_CRON_MAX_CALLS', 'IFIRMA_RATE_MAX_PER_MIN', 'IFIRMA_CRON_INFO',
+            'IFIRMA_SYNC_INTERVAL_MIN', 'IFIRMA_CRON_MAX_CALLS', 'IFIRMA_CRON_MAX_ITEMS', 'IFIRMA_RATE_MAX_PER_MIN', 'IFIRMA_RATE_MAX_PER_DAY', 'IFIRMA_CRON_INFO',
         ) as $name) {
             $this->assertArrayHasKey($name, $inputs, $name);
         }
@@ -910,6 +912,10 @@ class ModuleHooksTest extends TestCase
         }
         $this->assertSame(array('b2b', 'all', 'off'), $modes);
         $this->assertSame('b2b', HelperForm::$lastHelper->fields_value['IFIRMA_KSEF_MODE']);
+        $this->assertArrayHasKey('IFIRMA_KSEF_SUBMITTER', $inputs);
+        $this->assertSame('select', $inputs['IFIRMA_KSEF_SUBMITTER']['type']);
+        $this->assertSame(array('module', 'ifirma'), array_column($inputs['IFIRMA_KSEF_SUBMITTER']['options']['query'], 'id'));
+        $this->assertSame('module', HelperForm::$lastHelper->fields_value['IFIRMA_KSEF_SUBMITTER']);
     }
 
     public function testKsefModeIsSavedNormalised()
@@ -992,7 +998,9 @@ class ModuleHooksTest extends TestCase
         $this->assertSame('office@example.test', Configuration::get('IFIRMA_NOTIFY_EMAIL'));
         $this->assertSame(30, Configuration::get('IFIRMA_SYNC_INTERVAL_MIN'));
         $this->assertSame(20, Configuration::get('IFIRMA_CRON_MAX_CALLS'));
+        $this->assertSame(15, Configuration::get('IFIRMA_CRON_MAX_ITEMS'));
         $this->assertSame(60, Configuration::get('IFIRMA_RATE_MAX_PER_MIN'));
+        $this->assertSame(12000, Configuration::get('IFIRMA_RATE_MAX_PER_DAY'));
         $this->assertSame('fakturakraj', Configuration::get('IFIRMA_DOC_TYPE'));
         $this->assertSame(5, Configuration::get('IFIRMA_AUTO_CREATE_STATE'));
     }
@@ -1078,7 +1086,9 @@ class ModuleHooksTest extends TestCase
             'IFIRMA_DUPLICATE_WINDOW_DAYS' => '0',
             'IFIRMA_SYNC_INTERVAL_MIN' => '1441',
             'IFIRMA_CRON_MAX_CALLS' => '91',
+            'IFIRMA_CRON_MAX_ITEMS' => '51',
             'IFIRMA_RATE_MAX_PER_MIN' => '101',
+            'IFIRMA_RATE_MAX_PER_DAY' => '15001',
             'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE' => '-1',
         ) as $key => $bad) {
             Tools::$values = $this->validPost(array($key => $bad));
@@ -1814,8 +1824,8 @@ class ModuleHooksTest extends TestCase
         $this->module->hookActionOrderGridPresenterModifier($params);
         $rows = $grid['data']['records'];
         $this->assertStringContainsString('receipt_long', $rows[0]['ifirma_document']);
-        $this->assertStringContainsString('class="js-ifirma-issue" data-id-order="43" title="Issue iFirma document"', $rows[1]['ifirma_document']);
-        $this->assertStringContainsString('title="Issue iFirma document (unknown outcome)"', $rows[2]['ifirma_document']);
+        $this->assertStringContainsString('class="js-ifirma-issue" data-id-order="43" title="No document yet – click to issue"', $rows[1]['ifirma_document']);
+        $this->assertStringContainsString('title="Unknown outcome – click to issue"', $rows[2]['ifirma_document']);
 
         $this->employeeHolding(array(IfirmaPermission::ROLE_READ));
         $grid = array('data' => array('records' => $records));
@@ -1831,12 +1841,10 @@ class ModuleHooksTest extends TestCase
     {
         $labels = $this->module->gridCellLabels();
 
-        $this->assertSame(
-            array('paid', 'issued', 'issue', 'error', 'unknown', 'duplicate_suspected', 'held'),
-            array_keys($labels)
-        );
-        $this->assertSame('Issue iFirma document', $labels['issue']);
-        $this->assertSame('suspected duplicate', $labels['duplicate_suspected']);
+        // deliberate change (task 7.8): the words of the tooltip, one per kind where the language has genders
+        $this->assertSame(array_keys(IfirmaOrderGridTooltip::defaultWords()), array_keys($labels));
+        $this->assertSame('click to issue', $labels['click_to_issue']);
+        $this->assertSame('Suspected duplicate', $labels['state_duplicate_suspected']);
     }
 
     public function testTheScriptWordsAndTheKindLabelsAreDecodedBecauseTheScriptsRenderThemAsText()
@@ -2014,7 +2022,8 @@ class ModuleHooksTest extends TestCase
         );
         $this->assertSame('Suspected duplicate', $words['outcomes']['suspected']);
         $this->assertSame(
-            array('held', 'error', 'unknown', 'suspected', 'missing', 'ksef_failed', 'delivery_failed'),
+            // deliberate change (task 7.2): the queue and the KSeF wait are kinds of their own
+            array('held', 'error', 'unknown', 'suspected', 'queued_stale', 'missing', 'ksef_failed', 'ksef_rejected', 'ksef_overdue', 'delivery_failed'),
             array_keys($words['kinds'])
         );
         $this->assertSame('KSeF failed', $words['kinds']['ksef_failed']);
@@ -2076,5 +2085,179 @@ class ModuleHooksTest extends TestCase
 
         $this->assertIsString($html);
         $this->assertArrayNotHasKey('IFIRMA_CRON_TOKEN', Configuration::$values, 'nothing is stored when the generator fails');
+    }
+    // ---- sorting the Orders list by the iFirma column (spec "Sorting by document state") -----------------------
+
+    private function sortingBuilder()
+    {
+        return new class {
+            public $orderBys = array();
+            public $addOrderBys = array();
+            public $selects = array();
+
+            public function leftJoin($a, $b, $c, $d = null)
+            {
+                return $this;
+            }
+
+            public function addSelect($s)
+            {
+                $this->selects[] = $s;
+
+                return $this;
+            }
+
+            public function orderBy($sort, $order = null)
+            {
+                $this->orderBys[] = array($sort, $order);
+
+                return $this;
+            }
+
+            public function addOrderBy($sort, $order = null)
+            {
+                $this->addOrderBys[] = array($sort, $order);
+
+                return $this;
+            }
+        };
+    }
+
+    private function criteria($orderBy, $orderWay)
+    {
+        return new class($orderBy, $orderWay) {
+            private $by;
+            private $way;
+
+            public function __construct($by, $way)
+            {
+                $this->by = $by;
+                $this->way = $way;
+            }
+
+            public function getOrderBy()
+            {
+                return $this->by;
+            }
+
+            public function getOrderWay()
+            {
+                return $this->way;
+            }
+        };
+    }
+
+    public function testAscendingSortPutsWhatNeedsActionFirst()
+    {
+        $search = $this->sortingBuilder();
+
+        $this->module->hookActionOrderGridQueryBuilderModifier(array(
+            'search_query_builder' => $search, 'search_criteria' => $this->criteria('ifirma_document', 'asc'),
+        ));
+
+        $this->assertSame(array(array('ifirma_document_rank', 'ASC')), $search->orderBys);
+    }
+
+    public function testDescendingSortPutsPaidFirst()
+    {
+        $search = $this->sortingBuilder();
+
+        $this->module->hookActionOrderGridQueryBuilderModifier(array(
+            'search_query_builder' => $search, 'search_criteria' => $this->criteria('ifirma_document', 'DESC'),
+        ));
+
+        $this->assertSame(array(array('ifirma_document_rank', 'DESC')), $search->orderBys);
+    }
+
+    public function testOrdersInTheSameStateAreListedNewestFirstInBothDirections()
+    {
+        foreach (array('asc', 'desc') as $way) {
+            $search = $this->sortingBuilder();
+            $this->module->hookActionOrderGridQueryBuilderModifier(array(
+                'search_query_builder' => $search, 'search_criteria' => $this->criteria('ifirma_document', $way),
+            ));
+
+            $this->assertSame(array(array('o.id_order', 'DESC')), $search->addOrderBys, $way);
+        }
+    }
+
+    /**
+     * @return array[]
+     */
+    public function unexpectedDirections()
+    {
+        return array('garbage' => array('sideways'), 'injection' => array('ASC; DROP TABLE x'), 'empty' => array(''), 'null' => array(null));
+    }
+
+    /**
+     * @dataProvider unexpectedDirections
+     */
+    public function testAnUnexpectedDirectionSortsAscendingAndNeverReachesTheSql($way)
+    {
+        $search = $this->sortingBuilder();
+
+        $this->module->hookActionOrderGridQueryBuilderModifier(array(
+            'search_query_builder' => $search, 'search_criteria' => $this->criteria('ifirma_document', $way),
+        ));
+
+        $this->assertSame(array(array('ifirma_document_rank', 'ASC')), $search->orderBys);
+        $recorded = json_encode(array($search->orderBys, $search->addOrderBys, $search->selects));
+        $this->assertStringNotContainsString('DROP', $recorded);
+    }
+
+    public function testAnotherColumnOrNoCriteriaChangesNoOrderBy()
+    {
+        foreach (array($this->criteria('id_order', 'desc'), null, 'not an object') as $criteria) {
+            $search = $this->sortingBuilder();
+
+            $this->module->hookActionOrderGridQueryBuilderModifier(array(
+                'search_query_builder' => $search, 'search_criteria' => $criteria,
+            ));
+
+            $this->assertSame(array(), $search->orderBys);
+            $this->assertSame(array(), $search->addOrderBys);
+        }
+    }
+
+    public function testTheCountQueryIsNeverSortedSoPagingCannotChange()
+    {
+        $search = $this->sortingBuilder();
+        $count = $this->sortingBuilder();
+
+        $this->module->hookActionOrderGridQueryBuilderModifier(array(
+            'search_query_builder' => $search, 'count_query_builder' => $count,
+            'search_criteria' => $this->criteria('ifirma_document', 'asc'),
+        ));
+
+        $this->assertSame(array(), $count->orderBys);
+        $this->assertSame(array(), $count->selects);
+    }
+
+    public function testTheCellTooltipUsesTheModulesWords()
+    {
+        $grid = array('data' => array('records' => array(array(
+            'id_order' => 42, 'ifirma_document_number' => 'FV 12/2026', 'ifirma_document_status' => 'created',
+            'ifirma_document_type' => 'fakturakraj', 'ifirma_document_delivery' => 'none',
+        ))));
+        $params = array('presented_grid' => &$grid);
+
+        $this->module->hookActionOrderGridPresenterModifier($params);
+
+        $this->assertStringContainsString('Invoice issued: FV 12/2026', $grid['data']['records'][0]['ifirma_document']);
+    }
+
+    public function testMarkupInTheErrorOfAFailedRecordIsEscapedInTheTooltip()
+    {
+        $grid = array('data' => array('records' => array(array(
+            'id_order' => 42, 'ifirma_document_number' => '', 'ifirma_document_state' => 'error',
+            'ifirma_document_error' => '"><script>alert(1)</script>',
+        ))));
+        $params = array('presented_grid' => &$grid);
+
+        $this->module->hookActionOrderGridPresenterModifier($params);
+
+        $cell = $grid['data']['records'][0]['ifirma_document'];
+        $this->assertStringNotContainsString('<script>', $cell);
+        $this->assertStringContainsString('&lt;script&gt;', $cell);
     }
 }

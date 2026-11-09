@@ -619,7 +619,8 @@ class StatusSyncServiceTest extends TestCase
             'SELECT id_ifirma_receipt FROM `ps_ifirma_receipt`',
             "             WHERE ifirma_id != '' AND status != 'error'",
             "             AND (status != 'paid' OR remote_sent = 0 OR last_sync_at IS NULL",
-            "                  OR last_sync_at < '" . date('Y-m-d H:i:s', $this->now - 24 * 3600) . "')",
+            // deliberate change (task 5.3): a document that waits for KSeF is always due
+            "                  OR last_sync_at < '" . date('Y-m-d H:i:s', $this->now - 24 * 3600) . "' OR delivery_status = 'awaiting_ksef')",
             '             ORDER BY last_sync_at ASC, id_ifirma_receipt ASC',
             '             LIMIT ' . $limit,
         ));

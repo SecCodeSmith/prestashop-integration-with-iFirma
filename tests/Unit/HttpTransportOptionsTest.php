@@ -132,8 +132,65 @@ class HttpTransportOptionsTest extends TestCase
     {
         $this->transport->writeChunk(null, '{"a":1}');
 
-        $this->assertSame(array('status' => 200, 'body' => '{"a":1}', 'error' => ''), $this->transport->outcome(true, 200, ''));
+        $this->assertSame(array('status' => 200, 'body' => '{"a":1}', 'error' => '', 'headers' => array()), $this->transport->outcome(true, 200, ''));
         $this->assertSame('', $this->transport->receivedBody());
+    }
+
+    public function testTheHeaderCallbackIsTheTransportsOwn()
+    {
+        $options = $this->options();
+
+        $this->assertSame(array($this->transport, 'collectHeader'), $options[CURLOPT_HEADERFUNCTION]);
+    }
+
+    public function testHeadersAreCollectedWithLowerCasedNames()
+    {
+        $this->transport->collectHeader(null, "HTTP/1.1 429 Too Many Requests\r\n");
+        $this->transport->collectHeader(null, "Retry-After: 20\r\n");
+        $this->transport->collectHeader(null, "Content-Type:  application/json \r\n");
+        $this->transport->collectHeader(null, "\r\n");
+
+        $answer = $this->transport->outcome(true, 429, '');
+
+        $this->assertSame(array('retry-after' => '20', 'content-type' => 'application/json'), $answer['headers']);
+    }
+
+    public function testARepeatedHeaderKeepsTheLastValue()
+    {
+        $this->transport->collectHeader(null, "Retry-After: 5\r\n");
+        $this->transport->collectHeader(null, "retry-after: 9\r\n");
+
+        $this->assertSame(array('retry-after' => '9'), $this->transport->outcome(true, 429, '')['headers']);
+    }
+
+    public function testAnAnswerWithoutHeadersHasAnEmptyArray()
+    {
+        $this->assertSame(array(), $this->transport->outcome(true, 200, '')['headers']);
+    }
+
+    public function testANewStatusLineStartsTheHeadersOver()
+    {
+        // a redirect or a 100 Continue is followed by the real answer; only the last block counts
+        $this->transport->collectHeader(null, "HTTP/1.1 100 Continue\r\n");
+        $this->transport->collectHeader(null, "X-First: yes\r\n");
+        $this->transport->collectHeader(null, "HTTP/1.1 200 OK\r\n");
+        $this->transport->collectHeader(null, "Retry-After: 3\r\n");
+
+        $this->assertSame(array('retry-after' => '3'), $this->transport->outcome(true, 200, '')['headers']);
+    }
+
+    public function testALineWithoutAColonIsIgnoredAndTheLengthIsReturned()
+    {
+        $this->assertSame(7, $this->transport->collectHeader(null, "garbage"));
+        $this->assertSame(array(), $this->transport->outcome(true, 200, '')['headers']);
+    }
+
+    public function testTheHeadersOfOneTransferDoNotLeakIntoTheNext()
+    {
+        $this->transport->collectHeader(null, "Retry-After: 5\r\n");
+        $this->transport->outcome(true, 429, '');
+
+        $this->assertSame(array(), $this->transport->outcome(true, 200, '')['headers']);
     }
 
     public function testAFailedTransferGivesStatusZeroAndTheCurlError()

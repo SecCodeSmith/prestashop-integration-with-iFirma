@@ -44,6 +44,35 @@ The panel's **Register contractor in iFirma** button creates or refreshes the or
 A failure never breaks the PrestaShop status change: exceptions are logged
 (Advanced Parameters > Logs) and stored as the record's last error.
 
+### Queued issuance
+
+Every order that reaches the trigger status gets a record in the state `queued` **before** the module sends anything to
+iFirma, so no exit path can lose it: a refusal by the rate limit, a request that ends early, a busy lock. The same status
+change then tries to issue the order at once, under the order's lock, which it does not wait for. In the normal case
+the record goes `queued` -> issued within the same request and nobody sees the state.
+
+- **Refused by the rate limit.** When the local minute or day cap, a back-off after an iFirma limit answer
+  ([Rate limited by iFirma](troubleshooting.md#rate-limited-by-ifirma)) or iFirma itself refuses a request before the
+  document exists, the order stays `queued` with the refusal message. It is not an error and nothing is created. This holds on
+  every path: the status change, **Create Receipt**, the bulk **Retry issuance** and the bulk issue of the Orders list (the
+  employee still sees the refusal message at once). **Issue anyway** is not offered for a queued order, because bypassing the
+  duplicate guard would not get past the limit.
+- **What drains the queue.** The [cron endpoint](configuration.md#rate-limits) issues queued orders, oldest first, through the full
+  pipeline (duplicate guard included), at most `IFIRMA_CRON_MAX_ITEMS` per run, and stops at the first refusal. Without a
+  cron job, **Create Receipt** or the bulk **Retry issuance** issues them. Call the endpoint every 1 to 5 minutes.
+- **The create request in flight.** Right before the create request is sent, the record becomes `unknown` with the message
+  "iFirma has not answered the create request yet". The answer is stored over it. A request that dies in between therefore
+  leaves `unknown`, which no automatic run retries blindly: a later attempt always runs the duplicate guard first, so it
+  adopts a document iFirma did create. A request refused locally never writes the marker.
+- **Other failures.** A queued order that fails for another reason (network error, rejected data) leaves the queue in the
+  state that failure records for a new order (`error` or `unknown`), so the cron does not retry it blindly.
+- **Orders that keep their state.** An order with an issued document, a held order (pending data-change request), an
+  unknown outcome and a suspected duplicate are never turned into a queue entry.
+- **Alert.** A record that has been `queued` for more than 30 minutes needs attention (notification tab and documents-list
+  preset): a shop without a cron job notices it that way.
+- **Nothing is queued** while the trigger status is 0 or the credentials are missing, and no order is queued
+  retroactively when a shop starts issuing.
+
 Each button needs a [permission level](configuration.md#permissions). Without View the panel is not shown
 at all. With View the employee sees the state, the candidates, the request details and the **Download PDF**
 link only. **Create Receipt**, **Issue anyway**, **Link this document** and **Register contractor in iFirma**
@@ -57,12 +86,15 @@ button cannot be replaced by a hand-made request.
 |---|---|---|
 | `unknown` | The create request got no usable answer (timeout, transport error), so the document may or may not exist in iFirma. The module never repeats the create blindly. | Click **Create Receipt** again: the duplicate guard first looks for the document; if it exists it is adopted, if nothing is found a new one is created. |
 | `duplicate_suspected` | The guard found a document of the same buyer with the same total, sale date and products that it could not confirm by the order reference (stopped at the **guard** step). Nothing was created. | Open the candidates in the panel and **Link** the right one, or choose **Issue anyway** after checking iFirma. Orders blocked by an earlier module version, which matched on the amount alone, can simply be re-run with **Create Receipt**: the guard runs again with the current rules. |
+| `queued` | The order waits for its document: it just reached the trigger status, or a run was refused by the rate limit (the message says by which window). Nothing was created. | Nothing, as a rule: the status change or the cron endpoint issues it. **Create Receipt** issues it at once when the limits allow. A queue entry older than 30 minutes is listed as needing attention (no cron job?). |
 | `held` | A customer data-change request is pending (stopped at the **hold** step). | Approve or reject the request under the order; the pipeline then runs automatically when the trigger status was already reached, or click **Create Receipt**. |
 | `error` | iFirma rejected the document or could not be reached before anything was sent; the reason is in the last error. | Fix the cause (data, credentials, limits) and click **Create Receipt**. |
 
 ### Orders list
 
-The back-office Orders list has an **iFirma** column, placed before the Actions column. An order whose newest module record is an issued document (it has an iFirma identifier and is not in `error`) shows a receipt icon: green when the document is paid, blue otherwise. The tooltip reads `iFirma: <number> (<state>)`, where the number falls back to the iFirma identifier until a number is stored, and the state is "Paid" or "Issued". Orders without an issued document have an empty cell, or the **Issue** action when the employee has the issue level (see below). The column is not sortable or filterable and does not change paging or totals; a click on the cell opens the order like the rest of the row. The column reads the module's own `ifirma_receipt` table and makes no iFirma API call while it is shown.
+The back-office Orders list has an **iFirma** column, placed before the Actions column. An order whose newest module record is an issued document (it has an iFirma identifier and is not in `error`) shows a receipt icon: green when the document is paid, blue otherwise. Hover the icon for a multi-line tooltip in the employee's language. The first line names the kind and the state: "Faktura wystawiona", "Faktura wysłana", "Faktura opłacona", "Faktura czeka na KSeF" or the "Paragon ..." forms, then the number (the iFirma identifier until a number is stored). Then come the delivery line (sent to the customer on a date, not sent yet, or delivery failed), "unpaid" when the document is not paid, and a KSeF line when the document has a KSeF state (accepted with the KSeF number, sent and awaiting confirmation, error, rejected). An order without an issued document shows its state in words and the hint to click ("No document yet - click to issue", "Issuance failed: <the first 100 characters of the error> - click to issue", "Queued (iFirma limit)", "Unknown outcome", "Suspected duplicate", "Held (data change request)"), and the **Issue** action when the employee has the issue level (see below); an employee without it sees an empty cell. All values are escaped.
+
+**Sorting.** The column is sortable, not filterable. Ascending order is: issuance failed, unknown outcome, suspected duplicate, held, queued, no record, issued and not sent (a failed delivery included), waiting for KSeF, sent, paid; descending reverses it, and orders in the same state are listed newest first. The sort reads the local record only and makes no iFirma call, and it does not change paging or totals. A click on the cell opens the order like the rest of the row.
 
 **Issue from the list.** An employee with the issue level sees an **Issue** icon (a plus sign) in the iFirma cell of every order without an issued document. A click asks for confirmation, runs the same pipeline as **Create Receipt** for that order, duplicate guard included, and replaces the cell with the new state. The tooltip of the icon names the last state of the order's record when there is one: failed, unknown outcome, suspected duplicate or held. This is the only action of the column that calls iFirma, and only when clicked.
 
@@ -328,27 +360,44 @@ With `shop_mail`, a copy of each delivery e-mail (with the PDF) can be sent as a
 
 ## KSeF (e-invoicing)
 
-From 2026, B2B invoices must be submitted to the National e-Invoicing System (KSeF). The module can submit issued invoices through iFirma (`POST {type}/ksef/send/{id}.json`, body `{"DataWysylki": null}`, meaning send now). The setting is `IFIRMA_KSEF_MODE`:
+From 2026, B2B invoices must be submitted to the National e-Invoicing System (KSeF). iFirma can submit them for you, and since April 2026 it can also submit API-issued invoices on its own, at a time set in its account settings, and it refuses to e-mail an invoice that belongs in KSeF. Two settings decide what the module does, and they are independent:
 
-- `b2b` (default): submit invoices whose buyer has a NIP. The buyer NIP is read from the stored request payload (`Kontrahent.NIP`), and when the payload has none, from the order's invoice address. Invoices to private buyers are skipped.
-- `all`: submit every issued invoice, including invoices to private buyers. Private invoices are not required to be sent to KSeF, so use this only deliberately.
-- `off`: never submit automatically. The manual button stays available.
+- **Which documents go to KSeF** - `IFIRMA_KSEF_MODE`:
+  - `b2b` (default): invoices whose buyer has a NIP. The buyer NIP is read from the stored request payload (`Kontrahent.NIP`), and when the payload has none, from the order's invoice address. Invoices to private buyers do not go.
+  - `all`: every issued invoice, including invoices to private buyers. Private invoices are not required to be sent to KSeF, so use this only deliberately.
+  - `off`: no document goes to KSeF automatically. The manual button stays available.
+  - Any other stored value is treated as `b2b`.
+- **Who submits them** - `IFIRMA_KSEF_SUBMITTER` (**KSeF submitter** on the settings page): `module` (default) or `ifirma`. With `ifirma`, choose it when your iFirma account sends API invoices to KSeF by itself: the module never calls the KSeF send endpoint and only waits for the KSeF state iFirma reports. Any other stored value is treated as `module`. The mode still decides which documents wait for acceptance, so it must not be `off` for the module to wait. With the mode `off`, no document is treated as going to KSeF whatever the submitter is.
 
-Any other stored value is treated as `b2b`.
+**No double submission.** With the submitter `module`, the module reads the document's current KSeF state from iFirma (`GET {type}/{id}.json`, the fields `KsefStatus` and `KsefNumer`) before every submission and submits only when that state is empty. When iFirma already reports the invoice as sent (`WYSLANA`), scheduled (`ZAPLANOWANA`), accepted (`PRZYJETA`, or a number) or in any status the module does not know, nothing is sent and the reported state is stored on the receipt. When the state cannot be read (a timeout, an error answer, the rate limit), nothing is sent either: the step is skipped with the reason "KSeF state unavailable, retried by the cron" and the [cron endpoint](configuration.md#cron-jobs) reads the state again and submits. A rejected invoice (`ODRZUCONA`, `BLAD`) is never submitted again automatically.
 
-**Pipeline step `ksef`.** The issuing pipeline runs the `ksef` step between `number` and `deliver`. The step is skipped with a recorded reason when submission is disabled (`off`), the buyer is private in `b2b` mode, the document is already in KSeF, or the document type does not support KSeF submission. When iFirma accepts the submission (`Kod` 0), the receipt records `ksef_status` = `WYSLANA` and `ksef_sent_at`. When the submission fails, the step is non-blocking: delivery still runs, the document stays issued, the result message carries `KSeF: <error>`, and the receipt records `ksef_status` = `BLAD` and `ksef_error`.
+**Pipeline step `ksef`.** The issuing pipeline runs the `ksef` step between `number` and `deliver`. The step is skipped with a recorded reason when submission is disabled (`off`), the buyer is private in `b2b` mode, the submitter is iFirma ("sent by iFirma"), the document is already in KSeF, iFirma already sent it ("already sent by iFirma"), its state could not be read, or the document type does not support KSeF submission. When iFirma accepts the submission (`Kod` 0), the receipt records `ksef_status` = `WYSLANA` and `ksef_sent_at`. When the submission fails, the step is non-blocking: the document stays issued, the result message carries `KSeF: <error>`, and the receipt records `ksef_status` = `BLAD` and `ksef_error`.
 
-**Order panel.** The KSeF row shows one state: not sent (with the reason), sent at (awaiting iFirma), accepted (with the KSeF number), or error (with the message). **Send to KSeF** submits the document regardless of the mode. It is never offered for a document that is already accepted.
+**Delivery after KSeF acceptance.** An invoice that goes to KSeF is **not** e-mailed at issuance, because an invoice given outside KSeF should carry its KSeF number. The `deliver` step is skipped with the reason "waiting for KSeF acceptance" and the receipt's delivery state becomes `awaiting_ksef`. The cron delivers it once status sync reports it accepted (a KSeF number, or `PRZYJETA`); an acceptance read by the sync is delivered in the same run. Until then:
+
+- the customer's order page shows no download link and the download answers "not found";
+- a rejected submission (`BLAD`, `ODRZUCONA`) keeps the delivery waiting and is not delivered automatically, and a wait longer than 48 hours needs attention (notification tab and documents-list preset);
+- an e-mail that fails after acceptance is recorded as failed and the cron does not retry it; use **Send again**;
+- **Send again** delivers at once on the employee's decision and ends the wait (the panel warns that the document is not yet accepted in KSeF); the cron then sends no second e-mail.
+
+Receipts, invoices to private buyers in `b2b` mode, every document in mode `off`, and every document when the delivery channel is `none` are delivered (or recorded as skipped) at issuance as before and never wait.
+
+The hold follows the delivery channel on purpose: with the channel `none` the module e-mails nothing, so an invoice does not wait and the customer can download it as soon as it is issued. Choose a delivering channel if a KSeF invoice must not be available before KSeF accepted it.
+
+**Order panel.** The KSeF row shows exactly one of five states: not sent (with the reason), waiting for iFirma (submitter `ifirma`, no state reported yet), sent and awaiting acceptance (sent at `ksef_sent_at`, or reported by iFirma with its status, for example scheduled), accepted (with the KSeF number), or error (`BLAD` with the message, or `ODRZUCONA`, rejected by KSeF). **Send to KSeF** submits the document regardless of the mode and the submitter, after reading its state: it refuses when iFirma reports the document as sent, scheduled or accepted, and allows a new submission after a rejection. It is never offered for a document that is already accepted.
 
 **Customer order page.** The KSeF number is shown when one is present. KSeF errors are not shown to the customer.
 
 **Status values.**
 
-- `WYSLANA`: the module submitted the invoice and iFirma has not yet reported a KSeF status. The marker is kept until status sync receives a non-empty `KsefStatus`.
+- `WYSLANA`: sent and awaiting acceptance. The module submitted the invoice, or iFirma did, and no KSeF number has been reported yet.
+- `ZAPLANOWANA`: iFirma scheduled the submission for a later time (set in its account settings).
 - `PRZYJETA`: iFirma reports that KSeF accepted the invoice; `KsefNumer` is stored with it.
 - `BLAD`: the last submission failed. The message is in `ksef_error` and in the order panel.
+- `ODRZUCONA`: KSeF rejected the invoice.
+- Any other value iFirma reports is shown as it is and counts as in progress: it causes neither a resubmission nor a delivery.
 
-> Warning: a KSeF submission cannot be withdrawn through the API or the module. Before enabling `all`, decide whether private-buyer invoices should go to KSeF, and check whether the iFirma account already submits invoices to KSeF on its own; the module does not detect that setting, so a second submission is possible.
+> Warning: a KSeF submission cannot be withdrawn through the API or the module. Before enabling `all`, decide whether private-buyer invoices should go to KSeF. If your iFirma account submits invoices to KSeF on its own, set the submitter to `iFirma`: the module reads the state before it submits, but a real iFirma answer that lacks the KSeF fields reads as "no state", and then only the submitter setting keeps the module from submitting too.
 
 ## Customer page
 

@@ -18,8 +18,15 @@
  *    Kontrahent.NIP, else the order's invoice address vat_number / dni).
  *  - skipReason(receipt, order) -> '' when the document should be submitted, otherwise the reason.
  *  - shouldSubmit(receipt, order) -> bool (skipReason() === '').
- *  - submit(receipt, order, force) -> array(ok, message); records ksef_status / ksef_sent_at / ksef_error
- *    on the receipt. Never throws. force bypasses the mode and eligibility but never "already accepted".
+ *  - goesToKsef(receipt, order) -> bool; whether the document belongs in KSeF under the mode (issued, supported
+ *    type, business buyer unless the mode is all). It ignores the submitter and the current state.
+ *  - submitter() -> module|ifirma from IFIRMA_KSEF_SUBMITTER (default module).
+ *  - submit(receipt, order, force) -> array(ok, message, outcome, rate_limited); outcome is sent, failed, refused
+ *    (no call was made, the receipt is unchanged), already (iFirma already holds the document in KSeF: its state
+ *    is stored, no call) or deferred (the state could not be read: no call, nothing changes, the cron retries).
+ *    Before any call it reads the document's KSeF state from iFirma and submits only when that state is empty (a
+ *    rejected document only when force is set). It records ksef_status / ksef_sent_at / ksef_error on the
+ *    receipt. Never throws. force bypasses the mode, the submitter and eligibility but never "already accepted".
  *    A submission is recorded as sent (WYSLANA) only when iFirma answers Kod 0. Every other outcome, an
  *    error raised during the call included, is BLAD with a non-empty ksef_error, which is "iFirma did not
  *    confirm the KSeF submission" when the failure carries no text of its own.
@@ -33,12 +40,18 @@ if (!defined('_PS_VERSION_')) {
 require_once dirname(__FILE__) . '/IfirmaApiClient.php';
 require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaSchema.php';
+require_once dirname(__FILE__) . '/IfirmaKsefStatus.php';
+require_once dirname(__FILE__) . '/IfirmaKsefStateReader.php';
 
 class IfirmaKsefService
 {
     const MODE_OFF = 'off';
     const MODE_B2B = 'b2b';
     const MODE_ALL = 'all';
+
+    /** Who submits the documents that go to KSeF. */
+    const SUBMITTER_MODULE = 'module';
+    const SUBMITTER_IFIRMA = 'ifirma';
 
     /** Module-side marker: sent, iFirma has not reported a KSeF status yet. */
     const STATUS_SENT = 'WYSLANA';
@@ -58,14 +71,19 @@ class IfirmaKsefService
     /** @var Module */
     private $module;
 
+    /** @var IfirmaKsefStateReader */
+    private $reader;
+
     /**
-     * @param IfirmaApiClient $client
-     * @param Module          $module
+     * @param IfirmaApiClient            $client
+     * @param Module                     $module
+     * @param IfirmaKsefStateReader|null $reader
      */
-    public function __construct(IfirmaApiClient $client, Module $module)
+    public function __construct(IfirmaApiClient $client, Module $module, ?IfirmaKsefStateReader $reader = null)
     {
         $this->client = $client;
         $this->module = $module;
+        $this->reader = $reader !== null ? $reader : new IfirmaKsefStateReader($client);
     }
 
     /**
@@ -97,6 +115,25 @@ class IfirmaKsefService
     public function mode()
     {
         return self::normalizeMode(Configuration::get('IFIRMA_KSEF_MODE'));
+    }
+
+    /**
+     * @param mixed $value
+     * @return string module|ifirma; anything else is module
+     */
+    public static function normalizeSubmitter($value)
+    {
+        $value = is_scalar($value) ? strtolower(trim((string) $value)) : '';
+
+        return $value === self::SUBMITTER_IFIRMA ? self::SUBMITTER_IFIRMA : self::SUBMITTER_MODULE;
+    }
+
+    /**
+     * @return string who submits the documents that go to KSeF: module (default) or ifirma
+     */
+    public function submitter()
+    {
+        return self::normalizeSubmitter(Configuration::get('IFIRMA_KSEF_SUBMITTER'));
     }
 
     /**
@@ -136,6 +173,24 @@ class IfirmaKsefService
     }
 
     /**
+     * Whether the document belongs in KSeF under the configured mode. It does not look at who submits or at the state
+     * of the document, so the pipeline, the delivery gate and the cron jobs share this one definition.
+     *
+     * @param IfirmaReceipt $receipt
+     * @param Order|null    $order
+     * @return bool
+     */
+    public function goesToKsef(IfirmaReceipt $receipt, ?Order $order = null)
+    {
+        $mode = $this->mode();
+
+        return $mode !== self::MODE_OFF
+            && $receipt->isIssued()
+            && in_array((string) $receipt->document_type, self::SUPPORTED_TYPES, true)
+            && ($mode === self::MODE_ALL || $this->isBusinessBuyer($receipt, $order));
+    }
+
+    /**
      * @param IfirmaReceipt $receipt
      * @param Order|null    $order
      * @return string '' when the document should be submitted, otherwise the reason it should not
@@ -158,6 +213,9 @@ class IfirmaKsefService
         if ($mode === self::MODE_B2B && !$this->isBusinessBuyer($receipt, $order)) {
             return $this->module->l('private buyer (B2B mode)', 'ifirmaksefservice');
         }
+        if ($this->submitter() === self::SUBMITTER_IFIRMA) {
+            return $this->module->l('sent by iFirma', 'ifirmaksefservice');
+        }
 
         return '';
     }
@@ -176,21 +234,35 @@ class IfirmaKsefService
      * @param IfirmaReceipt $receipt
      * @param Order|null    $order
      * @param bool          $force bypass the mode and eligibility (never "already accepted")
-     * @return array array('ok' => bool, 'message' => string)
+     * @return array array('ok' => bool, 'message' => string, 'outcome' => string, 'rate_limited' => bool)
      */
     public function submit(IfirmaReceipt $receipt, ?Order $order = null, $force = false)
     {
         if (!$receipt->isIssued()) {
-            return array('ok' => false, 'message' => $this->module->l('The document has not been issued yet.', 'ifirmaksefservice'));
+            return $this->answer(false, 'refused', $this->module->l('The document has not been issued yet.', 'ifirmaksefservice'));
         }
         if ($this->isAccepted($receipt)) {
-            return array('ok' => false, 'message' => $this->module->l('already in KSeF', 'ifirmaksefservice'));
+            return $this->answer(false, 'refused', $this->module->l('already in KSeF', 'ifirmaksefservice'));
         }
         if (!$force) {
             $reason = $this->skipReason($receipt, $order);
             if ($reason !== '') {
-                return array('ok' => false, 'message' => $reason);
+                return $this->answer(false, 'refused', $reason);
             }
+        }
+
+        $remote = $this->reader->read((string) $receipt->document_type, (string) $receipt->ifirma_id);
+        if (!$remote->isReadable()) {
+            return $this->answer(
+                false,
+                'deferred',
+                sprintf($this->module->l('KSeF state unavailable: %s', 'ifirmaksefservice'), $remote->getError()),
+                $remote->isRateLimited()
+            );
+        }
+        $heldAlready = $this->refuseWhenIfirmaHoldsIt($receipt, $remote, $force);
+        if ($heldAlready !== null) {
+            return $heldAlready;
         }
 
         $failed = false;
@@ -221,7 +293,7 @@ class IfirmaKsefService
             $receipt->ksef_error = '';
             $this->persist($receipt);
 
-            return array('ok' => true, 'message' => $info);
+            return $this->answer(true, 'sent', $info);
         }
 
         if ($error === '') {
@@ -231,7 +303,70 @@ class IfirmaKsefService
         $receipt->ksef_error = $error;
         $this->persist($receipt);
 
-        return array('ok' => false, 'message' => $error);
+        return $this->answer(false, 'failed', $error);
+    }
+
+    /**
+     * What iFirma reports decides whether a call may go out: nothing is sent while iFirma holds the document in KSeF
+     * (sent, scheduled, accepted, or any status the module does not know), and a rejected document is only sent again
+     * on the employee's decision. The reported state is stored on the receipt.
+     *
+     * @param IfirmaReceipt         $receipt
+     * @param IfirmaKsefRemoteState $remote
+     * @param bool                  $force
+     * @return array|null the answer when no call may go out, null to go on
+     */
+    private function refuseWhenIfirmaHoldsIt(IfirmaReceipt $receipt, IfirmaKsefRemoteState $remote, $force)
+    {
+        $class = IfirmaKsefStatus::classify($remote->getStatus(), $remote->getNumber());
+        if ($class === IfirmaKsefStatus::NONE) {
+            return null;
+        }
+        if ($class === IfirmaKsefStatus::REJECTED && $force) {
+            return null;
+        }
+
+        $this->storeReportedState($receipt, $remote);
+        if ($class === IfirmaKsefStatus::REJECTED) {
+            return $this->answer(false, 'refused', $this->module->l('rejected by KSeF, send it again by hand', 'ifirmaksefservice'));
+        }
+        if ($force) {
+            return $this->answer(false, 'already', sprintf(
+                $this->module->l('iFirma has already sent or scheduled this document (status %s).', 'ifirmaksefservice'),
+                $remote->getStatus() !== '' ? $remote->getStatus() : $remote->getNumber()
+            ));
+        }
+
+        return $this->answer(false, 'already', $class === IfirmaKsefStatus::ACCEPTED
+            ? $this->module->l('already in KSeF', 'ifirmaksefservice')
+            : $this->module->l('already sent by iFirma', 'ifirmaksefservice'));
+    }
+
+    /**
+     * @param IfirmaReceipt         $receipt
+     * @param IfirmaKsefRemoteState $remote
+     */
+    private function storeReportedState(IfirmaReceipt $receipt, IfirmaKsefRemoteState $remote)
+    {
+        if ($remote->getStatus() !== '') {
+            $receipt->ksef_status = $remote->getStatus();
+        }
+        if ($remote->getNumber() !== '') {
+            $receipt->ksef_number = $remote->getNumber();
+        }
+        $this->persist($receipt);
+    }
+
+    /**
+     * @param bool   $ok
+     * @param string $outcome     sent | failed | refused | already | deferred
+     * @param string $message
+     * @param bool   $rateLimited whether the rate limit is why nothing was sent
+     * @return array
+     */
+    private function answer($ok, $outcome, $message, $rateLimited = false)
+    {
+        return array('ok' => (bool) $ok, 'message' => (string) $message, 'outcome' => $outcome, 'rate_limited' => (bool) $rateLimited);
     }
 
     /**
@@ -255,14 +390,21 @@ class IfirmaKsefService
         if ($status === self::STATUS_ERROR) {
             return $this->module->l('error', 'ifirmaksefservice') . ': ' . (string) $receipt->ksef_error;
         }
-        if ($status === self::STATUS_SENT) {
+        if (IfirmaKsefStatus::isRejected($status)) {
+            return $this->module->l('error', 'ifirmaksefservice') . ': ' . $this->module->l('rejected by KSeF', 'ifirmaksefservice');
+        }
+        if ($status === self::STATUS_SENT && trim((string) $receipt->ksef_sent_at) !== '') {
             return sprintf(
                 $this->module->l('sent %s, awaiting KSeF', 'ifirmaksefservice'),
                 substr((string) $receipt->ksef_sent_at, 0, 16)
             );
         }
         if ($status !== '') {
-            return $status;
+            // reported by iFirma: it sent the document, or scheduled it, itself
+            return $this->module->l('sent or scheduled by iFirma', 'ifirmaksefservice') . ': ' . $status;
+        }
+        if ($receipt->isIssued() && $this->submitter() === self::SUBMITTER_IFIRMA && $this->goesToKsef($receipt, $order)) {
+            return $this->module->l('waiting for iFirma to send the document', 'ifirmaksefservice');
         }
 
         $text = $this->module->l('not sent', 'ifirmaksefservice');

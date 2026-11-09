@@ -541,6 +541,7 @@ class IssuancePipelineStepsTest extends TestCase
         $this->queueGuardNone();
         $this->queueCreateOk();
         $this->queueNumber();
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Kod":0,"KsefStatus":"","KsefNumer":""}}'));
         $this->t->queue('POST', '#ksef/send/77\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"Faktura wyslana"}}'));
         $this->queuePdf();
 
@@ -558,14 +559,15 @@ class IssuancePipelineStepsTest extends TestCase
                 'create:ok:',
                 'number:ok:',
                 'ksef:ok:Faktura wyslana',
-                'deliver:ok:sent',
+                'deliver:skipped:waiting for KSeF acceptance',
             ),
             'receipt' => '#1 created module 7/2026',
             'guard' => 'proceed',
-            'delivery' => 'ok|sent|shop_mail|',
+            'delivery' => null,
         ), $this->snapshot($r));
+        // deliberate change (task 6.5): the invoice goes to KSeF and is delivered after acceptance, so no PDF is fetched now
         $this->assertSame(
-            array('GET /iapi/faktury.json', 'POST /iapi/fakturakraj.json', 'GET /iapi/faktury.json', 'POST /iapi/fakturakraj/ksef/send/77.json', 'GET /iapi/fakturakraj/77.pdf'),
+            array('GET /iapi/faktury.json', 'POST /iapi/fakturakraj.json', 'GET /iapi/faktury.json', 'GET /iapi/fakturakraj/77.json', 'POST /iapi/fakturakraj/ksef/send/77.json'),
             $this->requests()
         );
     }
@@ -576,6 +578,7 @@ class IssuancePipelineStepsTest extends TestCase
         $this->queueGuardNone();
         $this->queueCreateOk();
         $this->queueNumber();
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Kod":0,"KsefStatus":"","KsefNumer":""}}'));
         $this->t->queue('POST', '#ksef/send#', array('body' => '{"response":{"Kod":200,"Informacja":"KSeF niedostepny"}}'));
         $this->queuePdf();
 
@@ -596,11 +599,11 @@ class IssuancePipelineStepsTest extends TestCase
                 'create:ok:',
                 'number:ok:',
                 'ksef:failed:' . $error,
-                'deliver:ok:sent',
+                'deliver:skipped:waiting for KSeF acceptance',
             ),
             'receipt' => '#1 created module 7/2026',
             'guard' => 'proceed',
-            'delivery' => 'ok|sent|shop_mail|',
+            'delivery' => null,
         ), $this->snapshot($r));
     }
 
@@ -734,7 +737,7 @@ class IssuancePipelineStepsTest extends TestCase
         $this->assertSame(array('add'), $this->receiptWriteOps());
     }
 
-    public function testARateLimitedRunStopsAtTheGuardStepWithoutAReceipt()
+    public function testARateLimitedRunStopsAtTheGuardStepAndQueuesTheOrder()
     {
         $fixed = 1700000000;
         Configuration::updateValue('IFIRMA_RATE_MAX_PER_MIN', 1);
@@ -754,11 +757,12 @@ class IssuancePipelineStepsTest extends TestCase
             'message' => $error,
             'trigger' => 'manual',
             'steps' => array('hold:ok:', 'guard:stopped:' . $error),
-            'receipt' => null,
+            'receipt' => '#1 queued module ',
             'guard' => 'inconclusive',
             'delivery' => null,
         ), $this->snapshot($r));
-        $this->assertSame(array(), IfirmaTestState::writes('ifirma_receipt'));
+        // deliberate change (task 4.4): the refusal queues the order, one write
+        $this->assertSame(array('add'), array_column(IfirmaTestState::writes('ifirma_receipt'), 'op'));
     }
 
     public function testAnUnknownRunStopsAtTheCreateStepWithTheUnknownRow()
@@ -842,6 +846,7 @@ class IssuancePipelineStepsTest extends TestCase
         $this->queueGuardNone();
         $this->queueCreateOk();
         $this->queueNumber();
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Kod":0,"KsefStatus":"","KsefNumer":""}}'));
         $this->t->queue('POST', '#ksef/send#', array('body' => '{"response":{"Kod":200,"Informacja":"KSeF niedostepny"}}'));
 
         $r = $this->pipeline->run($this->order(), array('skip_delivery' => true));
@@ -1269,7 +1274,7 @@ class IssuancePipelineStepsTest extends TestCase
         ), $this->snapshot($r));
     }
 
-    public function testARateLimitedGuardAnswerEndsTheRunWithTheGuardErrorAndNoReceipt()
+    public function testARateLimitedGuardAnswerEndsTheRunWithTheGuardErrorAndQueuesTheOrder()
     {
         $pipeline = $this->scripted(array('guard' => $this->guardAnswer(
             IfirmaGuardResult::OUTCOME_INCONCLUSIVE,
@@ -1285,12 +1290,13 @@ class IssuancePipelineStepsTest extends TestCase
             'message' => 'rate limit guard: 80 requests in the current minute',
             'trigger' => 'manual',
             'steps' => array('hold:ok:', 'guard:stopped:rate limit guard: 80 requests in the current minute'),
-            'receipt' => null,
+            'receipt' => '#1 queued module ',
             'guard' => 'inconclusive',
             'delivery' => null,
         ), $this->snapshot($r));
         $this->assertSame(array('requests.hasPending', 'guard.check'), $this->traced());
-        $this->assertSame(array(), IfirmaTestState::writes('ifirma_receipt'));
+        // deliberate change (task 4.4): the refusal queues the order, one write
+        $this->assertSame(array('add'), array_column(IfirmaTestState::writes('ifirma_receipt'), 'op'));
     }
 
     public function testARateLimitedGuardAnswerWithoutAnErrorStopsWithAnEmptyMessage()

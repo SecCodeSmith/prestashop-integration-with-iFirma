@@ -636,4 +636,75 @@ class CustomerViewTest extends TestCase
         $this->assertSame('missing', $v['state']);
         $this->assertArrayNotHasKey('download_url', $v['document']);
     }
+    // ---- the queue and the KSeF wait (spec customer-receipt-visibility) ---------------------------------------------
+
+    public function testAQueuedOrderRendersTheNotIssuedStateAndNoRateLimitMessage()
+    {
+        $queued = $this->receipt(array(
+            'status' => 'queued', 'ifirma_id' => '', 'ifirma_number' => '',
+            'last_error' => 'iFirma rate limit guard: 80 requests in the current minute (cap 80). Retry shortly.',
+        ));
+
+        $v = $this->view->forOrder($this->order(), $queued, null, array('auto_issue_enabled' => true, 'trigger_state_name' => 'Payment accepted'));
+
+        $this->assertSame('not_issued', $v['state']);
+        $this->assertSame('Payment accepted', $v['trigger_state_name']);
+        $this->assertArrayNotHasKey('document', $v);
+        $this->assertStringNotContainsString('rate limit', json_encode($v));
+        $this->assertStringNotContainsString('cap 80', json_encode($v));
+    }
+
+    public function testAnInvoiceAwaitingKsefAcceptanceIsIssuedButNotSentAndHasNoLink()
+    {
+        $waiting = $this->receipt(array(
+            'delivery_status' => 'awaiting_ksef', 'ksef_status' => 'WYSLANA', 'ksef_error' => 'KSeF niedostepny',
+            'remote_sent' => 1, 'delivered_at' => null,
+        ));
+
+        $v = $this->view->forOrder($this->order(), $waiting, null);
+
+        $this->assertSame('issued', $v['state']);
+        $this->assertSame('12/2026', $v['document']['number']);
+        $this->assertSame('2026-11-01', $v['document']['issue_date']);
+        $this->assertFalse($v['document']['sent']);
+        $this->assertNull($v['document']['download_url']);
+        $this->assertStringNotContainsString('niedostepny', json_encode($v), 'no KSeF error text for the customer');
+    }
+
+    public function testTheLinkComesBackOnceKsefHasAcceptedTheInvoice()
+    {
+        $accepted = $this->receipt(array(
+            'delivery_status' => 'sent', 'delivered_at' => '2026-11-02 08:00:00', 'ksef_number' => '5260001122-20261101-ABC-01',
+        ));
+
+        $v = $this->view->forOrder($this->order(), $accepted, null);
+
+        $this->assertTrue($v['document']['sent']);
+        $this->assertStringContainsString('token=tok123', $v['document']['download_url']);
+    }
+
+    public function testAnAcceptedInvoiceWhoseDeliveryStillAwaitsIsNoLongerHeldBack()
+    {
+        // acceptance is read from the receipt's own fields: the number alone ends the hold on the customer page
+        $accepted = $this->receipt(array('delivery_status' => 'awaiting_ksef', 'ksef_number' => 'N-1'));
+
+        $v = $this->view->forOrder($this->order(), $accepted, null);
+
+        $this->assertNotNull($v['document']['download_url']);
+    }
+
+    public function testTheAccountListOffersNoLinkForADocumentThatWaitsForKsef()
+    {
+        $rows = array(
+            array('ifirma_id' => '1', 'ifirma_number' => '1/2026', 'status' => 'created', 'security_token' => 'a', 'issue_date' => '2026-11-01',
+                'delivery_status' => 'awaiting_ksef', 'ksef_status' => 'WYSLANA', 'ksef_number' => ''),
+            array('ifirma_id' => '2', 'ifirma_number' => '2/2026', 'status' => 'created', 'security_token' => 'b', 'issue_date' => '2026-11-01',
+                'delivery_status' => 'sent', 'ksef_status' => '', 'ksef_number' => ''),
+        );
+
+        $account = $this->view->forAccount($rows, 0);
+
+        $this->assertNull($account['receipts'][0]['download_url']);
+        $this->assertNotNull($account['receipts'][1]['download_url']);
+    }
 }

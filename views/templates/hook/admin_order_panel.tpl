@@ -17,7 +17,7 @@
 {if $ifirma_state == 'issued'}{assign var='ifirma_badge' value='info'}{/if}
 {if $ifirma_state == 'paid'}{assign var='ifirma_badge' value='success'}{/if}
 {if $ifirma_state == 'error' || $ifirma_state == 'missing'}{assign var='ifirma_badge' value='danger'}{/if}
-{if $ifirma_state == 'unknown' || $ifirma_state == 'suspected' || $ifirma_state == 'held'}{assign var='ifirma_badge' value='warning'}{/if}
+{if $ifirma_state == 'unknown' || $ifirma_state == 'suspected' || $ifirma_state == 'held' || $ifirma_state == 'queued'}{assign var='ifirma_badge' value='warning'}{/if}
 
 <div class="card mt-2" id="ifirma-panel">
     <div class="card-header">
@@ -169,6 +169,13 @@
                     </details>
                 {/if}
 
+                {if $ifirma_state == 'queued'}
+                    <div class="alert alert-warning" id="ifirma-queued-notice">
+                        {l s='This order is queued for issuance. The cron endpoint issues it, or use Create below.' mod='ifirma'}
+                        {if $ifirma_receipt && $ifirma_receipt->last_error}<br>{$ifirma_receipt->last_error|escape:'html':'UTF-8'}{/if}
+                    </div>
+                {/if}
+
                 {if $ifirma_state == 'held'}
                     <div class="alert alert-warning" id="ifirma-held-notice">
                         {l s='Issuing is on hold until the customer billing data change request below is resolved.' mod='ifirma'}
@@ -267,6 +274,9 @@
                     </button>
                     {/if}
 
+                    {if $ifirma_can_manage && $ifirma_ksef_waiting}
+                    <span class="text-warning" id="ifirma-resend-warning">{l s='Not yet accepted in KSeF.' mod='ifirma'}</span>
+                    {/if}
                     {if $ifirma_can_manage}
                     <button type="button" class="btn btn-default"
                             id="ifirma-resend"

@@ -54,6 +54,38 @@ class CronTokenSourceTest extends TestCase
         return $controller->answer;
     }
 
+    public function testAWrongTokenRunsNoJobAndMakesNoRequest()
+    {
+        Tools::$values = array('token' => 'not-the-token');
+        $transport = new ScriptedTransport();
+        IfirmaApiClient::setDefaultTransport($transport);
+
+        list($status, $payload) = $this->call();
+
+        $this->assertSame(403, $status);
+        $this->assertSame(array('error' => 'Forbidden'), $payload);
+        $this->assertSame(array(), $transport->calls);
+        $locked = array_filter(Db::getInstance()->queries, function ($sql) {
+            return strpos($sql, 'GET_LOCK') !== false;
+        });
+        $this->assertSame(array(), array_values($locked), 'not even the run lock was taken');
+    }
+
+    public function testTheRightTokenAnswersWithTheSyncKeysAtTheTopAndTheQueueBlock()
+    {
+        Tools::$values = array('token' => 'cron-token-1');
+
+        list($status, $payload) = $this->call();
+
+        $this->assertSame(200, $status);
+        foreach (array('receipts_checked', 'updated', 'marked_paid', 'marked_missing', 'errors', 'rate_limited', 'calls',
+            'dates_total', 'dates_processed', 'held_orders', 'started_at', 'finished_at', 'auth_blocked', 'message') as $key) {
+            $this->assertArrayHasKey($key, $payload, $key);
+        }
+        $this->assertSame(array('handled' => 0, 'succeeded' => 0, 'failed' => 0, 'left' => 0), $payload['queue']);
+        $this->assertSame('', $payload['rate_limited_window']);
+    }
+
     public function testTokenInTheHeader()
     {
         Tools::$values = array();

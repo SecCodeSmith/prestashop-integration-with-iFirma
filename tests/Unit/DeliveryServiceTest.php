@@ -989,4 +989,23 @@ class DeliveryServiceTest extends TestCase
         $this->assertSame('7/2026', $vars['{document_number}']);
         $this->assertSame('<script>alert(1)</script> O\'Neil & "Sons"', Mail::$sent[0]['toName'], 'the recipient name is a header, not a template value');
     }
+    public function testAFailedManualSendOfADocumentThatWaitsForKsefKeepsItHeldBack()
+    {
+        // red-team note (task 7.4 review): a failed resend must not open the download of an unaccepted document
+        $r = $this->seeded(array('delivery_status' => 'awaiting_ksef', 'ksef_status' => 'WYSLANA'), 'fakturakraj');
+        $this->t->queue('GET', '#\.pdf#', array('status' => 0, 'error' => 'timeout'));
+
+        $result = $this->svc->resend($r);
+
+        $this->assertFalse($result->isSent());
+        $row = $this->row();
+        $this->assertSame('awaiting_ksef', $row['delivery_status']);
+        $this->assertNotSame('', $row['delivery_error']);
+    }
+    public function testDescribeDeliveryNamesTheKsefWait()
+    {
+        $r = $this->seeded(array('delivery_status' => 'awaiting_ksef'), 'fakturakraj');
+
+        $this->assertSame('Waiting for KSeF acceptance', $this->svc->describeDelivery($r));
+    }
 }

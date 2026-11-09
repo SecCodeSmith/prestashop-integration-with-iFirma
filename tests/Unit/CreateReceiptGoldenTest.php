@@ -331,6 +331,12 @@ class CreateReceiptGoldenTest extends TestCase
         $this->assertEverySourceTestIsAccountedFor(__DIR__ . '/CreateReceiptTest.php', array(
             'testExistingIssuedRecordBlocksWithoutTransportCall' => 'throws before any payload is built',
             'testContractorHintsCarryNipEmailPostcodeAndName' => 'asserts the hints for the contractor lookup, which are not sent',
+            'testACreateRefusedByTheLocalRateLimitIsQueuedAndNotAnError' => 'refused before the request is sent, nothing is posted',
+            'testACreateRefusedByIfirmaWith429IsQueuedAndNotUnknown' => 'asserts the stored state of a refused create, not the payload',
+            'testTheRecordIsUnknownWhileTheCreateRequestIsInFlight' => 'asserts the in-flight marker, not the payload',
+            'testARequestThatDiesLeavesTheMarkerWithTheRealError' => 'asserts the stored state of a request that died, not the payload',
+            'testNoMarkerIsWrittenWhenTheRequestIsRefusedBeforeItIsSent' => 'refused before the request is sent, nothing is posted',
+            'testTheMarkerIsWrittenOnceWhenTheCreateIsRetried' => 'asserts how often the marker is written, not the payload',
         ));
     }
 }

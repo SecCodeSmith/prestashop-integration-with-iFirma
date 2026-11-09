@@ -17,6 +17,7 @@ require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaDataRequest.php';
 require_once dirname(__FILE__) . '/IfirmaContractorMap.php';
 require_once dirname(__FILE__) . '/IfirmaAdminPanelPresenter.php';
+require_once dirname(__FILE__) . '/IfirmaKsefDeliveryGate.php';
 
 /**
  * The variables of views/templates/hook/admin_order_panel.tpl for one order: the record and its state, what the
@@ -98,6 +99,7 @@ class IfirmaAdminOrderPanelView
             'ifirma_resolution' => $duplicates['resolution'],
             'ifirma_delivery_text' => $receipt ? $this->delivery->describeDelivery($receipt) : '',
             'ifirma_ksef_text' => $receipt && $receipt->isIssued() ? $this->ksef->describe($receipt, $order) : '',
+            'ifirma_ksef_waiting' => (bool) ($receipt && IfirmaKsefDeliveryGate::isWaitingState($receipt->delivery_status, $receipt->ksef_status, $receipt->ksef_number)),
             'ifirma_gross' => Validate::isLoadedObject($order) ? (float) $order->total_paid_tax_incl : 0.0,
             'ifirma_pending_request' => $changes['summary'],
             'ifirma_request_diff' => $changes['diff'],

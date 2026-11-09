@@ -28,6 +28,7 @@ class IfirmaAdminPanelPresenter
 {
     const STATE_NOT_ISSUED = 'not_issued';
     const STATE_HELD = 'held';
+    const STATE_QUEUED = 'queued';
     const STATE_SUSPECTED = 'suspected';
     const STATE_UNKNOWN = 'unknown';
     const STATE_ERROR = 'error';
@@ -67,6 +68,9 @@ class IfirmaAdminPanelPresenter
         }
         if ($receipt->status === IfirmaReceipt::STATUS_HELD) {
             return self::STATE_HELD;
+        }
+        if ($receipt->status === IfirmaReceipt::STATUS_QUEUED) {
+            return self::STATE_QUEUED;
         }
         if ($receipt->status === IfirmaReceipt::STATUS_DUPLICATE_SUSPECTED) {
             return self::STATE_SUSPECTED;

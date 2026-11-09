@@ -9,11 +9,12 @@ if (!defined('_PS_VERSION_')) {
 }
 
 require_once dirname(__FILE__) . '/IfirmaHttpTransport.php';
+require_once dirname(__FILE__) . '/IfirmaRateGuard.php';
 
 class IfirmaApiClient
 {
     const BASE_URL = 'https://www.ifirma.pl/iapi/';
-    const DEFAULT_RATE_CAP = 80;
+    const DEFAULT_RATE_CAP = IfirmaRateGuard::DEFAULT_MINUTE_CAP;
 
     /** Seconds all calls are refused after iFirma rejected the credentials. */
     const AUTH_COOLDOWN = 900;
@@ -51,6 +52,15 @@ class IfirmaApiClient
     /** @var bool */
     private $rateLimited = false;
 
+    /** @var string IfirmaRateDecision::WINDOW_* of the last refusal, '' when the last call was not refused */
+    private $rateLimitWindow = IfirmaRateDecision::WINDOW_NONE;
+
+    /** @var IfirmaRateGuard */
+    private $rateGuard;
+
+    /** @var callable|null runs once, right before the next request that passes the guards is sent */
+    private $beforeSend = null;
+
     /** @var bool */
     private $authBlocked = false;
 
@@ -66,8 +76,9 @@ class IfirmaApiClient
      * @param string      $baseUrl
      * @param int         $timeout
      * @param object|null $transport object with request($method, $url, array $headers, $body, $timeout)
+     * @param IfirmaRateGuard|null $rateGuard admission control; by default one on this client's clock
      */
-    public function __construct($user, array $keys, $baseUrl = self::BASE_URL, $timeout = 30, $transport = null)
+    public function __construct($user, array $keys, $baseUrl = self::BASE_URL, $timeout = 30, $transport = null, $rateGuard = null)
     {
         $this->user = trim((string) $user);
         $this->keys = $keys;
@@ -75,6 +86,7 @@ class IfirmaApiClient
         $this->baseUrl = rtrim($baseUrl !== '' ? $baseUrl : self::BASE_URL, '/') . '/';
         $this->timeout = (int) $timeout;
         $this->transport = $transport !== null ? $transport : self::$defaultTransport;
+        $this->rateGuard = $rateGuard !== null ? $rateGuard : $this->guardOnOwnClock();
     }
 
     /**
@@ -432,11 +444,35 @@ class IfirmaApiClient
     }
 
     /**
+     * Registers what runs right before the next request is sent: after every local check passed (credentials, pause
+     * after a rejected key, rate guard), so it does not run for a request that is refused locally. It runs once,
+     * for that request only. An exception it throws stops the request from being sent. Pass null to withdraw it.
+     *
+     * @param callable|null $callback
+     * @return $this
+     */
+    public function beforeNextRequest($callback)
+    {
+        $this->beforeSend = $callback;
+
+        return $this;
+    }
+
+    /**
      * @return bool true when the last call was refused by the local rate guard
      */
     public function isRateLimited()
     {
         return $this->rateLimited;
+    }
+
+    /**
+     * @return string which window refused the last call: IfirmaRateDecision::WINDOW_MINUTE, WINDOW_DAY, WINDOW_BACKOFF
+     *                or WINDOW_SERVER; '' when it was not refused
+     */
+    public function rateLimitWindow()
+    {
+        return $this->rateLimitWindow;
     }
 
     /**
@@ -511,8 +547,21 @@ class IfirmaApiClient
         $this->lastHttpCode = 0;
         $this->lastKod = null;
         $this->rateLimited = false;
+        $this->rateLimitWindow = IfirmaRateDecision::WINDOW_NONE;
         $this->authBlocked = false;
         $this->requestSent = false;
+    }
+
+    /**
+     * @return IfirmaRateGuard a guard that reads this client's clock at every request, so setClock() reaches it
+     */
+    private function guardOnOwnClock()
+    {
+        $client = $this;
+
+        return new IfirmaRateGuard(function () use ($client) {
+            return $client->now();
+        });
     }
 
     /**
@@ -620,48 +669,62 @@ class IfirmaApiClient
     }
 
     /**
-     * Local per-minute request guard. Returns false when the request must not be sent.
+     * iFirma's own refusal for exceeding the request limit: HTTP 429, or an answer whose message says the limit of
+     * requests was exceeded ("limit zapytań"), whatever its Kod. Any other message, including one that merely
+     * mentions a limit of something else, is not.
      *
+     * @param int    $status
+     * @param string $body
      * @return bool
+     */
+    private function isServerLimitAnswer($status, $body)
+    {
+        if ($status === 429) {
+            return true;
+        }
+        $decoded = json_decode($body, true);
+        if (!is_array($decoded)) {
+            return false;
+        }
+        $node = $this->node($decoded);
+
+        return isset($node['Informacja']) && preg_match('/limit\s+zapyta/iu', (string) $node['Informacja']) === 1;
+    }
+
+    /**
+     * Records that iFirma refused the request for exceeding its limit and stops all requests until the time it asked for.
+     * The request was sent and refused before processing, so the document does not exist; it is neither an
+     * authentication failure nor an unknown outcome.
+     *
+     * @param array $responseHeaders lower-cased name => value
+     */
+    private function beginBackoff(array $responseHeaders)
+    {
+        $until = $this->rateGuard->startBackoff(isset($responseHeaders['retry-after']) ? $responseHeaders['retry-after'] : '');
+        $this->rateLimited = true;
+        $this->rateLimitWindow = IfirmaRateDecision::WINDOW_SERVER;
+        $this->lastError = sprintf(
+            'iFirma refused the request: the request limit was exceeded (HTTP %d). No requests until %s.',
+            $this->lastHttpCode,
+            date('Y-m-d H:i:s', $until)
+        );
+    }
+
+    /**
+     * Asks the rate guard whether the request may start; a refusal is remembered for isRateLimited().
+     *
+     * @return bool false when the request must not be sent
      */
     private function passRateGuard()
     {
-        $minute = date('YmdHi', $this->now());
-        $cap = (int) Configuration::get('IFIRMA_RATE_MAX_PER_MIN');
-        if ($cap <= 0) {
-            $cap = self::DEFAULT_RATE_CAP;
-        }
-
-        $db = Db::getInstance();
-        $table = _DB_PREFIX_ . 'configuration';
-        $m = pSQL($minute);
-        // One atomic statement: reset or increment the counter, but only while the cap is not reached.
-        $db->execute(
-            "UPDATE `" . $table . "` SET `value` = IF(SUBSTRING_INDEX(`value`, ':', 1) = '" . $m . "', "
-            . "CONCAT('" . $m . ":', SUBSTRING_INDEX(`value`, ':', -1) + 1), '" . $m . ":1') "
-            . "WHERE `name` = 'IFIRMA_RATE_WINDOW' AND (SUBSTRING_INDEX(`value`, ':', 1) <> '" . $m . "' "
-            . "OR SUBSTRING_INDEX(`value`, ':', -1) < " . (int) $cap . ")"
-        );
-        if ((int) $db->Affected_Rows() >= 1) {
+        $decision = $this->rateGuard->admit();
+        if ($decision->isAllowed()) {
             return true;
         }
 
-        $stored = $db->getValue("SELECT `value` FROM `" . $table . "` WHERE `name` = 'IFIRMA_RATE_WINDOW'", false);
-        if ($stored === false || $stored === null) {
-            // No row yet (the module was never installed with the default): start the window.
-            Configuration::updateValue('IFIRMA_RATE_WINDOW', $minute . ':1');
-
-            return true;
-        }
-
-        $parts = explode(':', (string) $stored, 2);
-        $count = (count($parts) === 2 && $parts[0] === $minute) ? (int) $parts[1] : $cap;
         $this->rateLimited = true;
-        $this->lastError = sprintf(
-            'iFirma rate limit guard: %d requests in the current minute (cap %d). Retry shortly.',
-            $count,
-            $cap
-        );
+        $this->rateLimitWindow = $decision->getWindow();
+        $this->lastError = $decision->getMessage();
 
         return false;
     }
@@ -704,6 +767,12 @@ class IfirmaApiClient
             'Authentication: ' . $authHeader,
         );
 
+        if ($this->beforeSend !== null) {
+            $before = $this->beforeSend;
+            $this->beforeSend = null;
+            call_user_func($before);
+        }
+
         $this->requestCount++;
         $this->requestSent = true;
         $result = $this->getTransport()->request(
@@ -717,6 +786,12 @@ class IfirmaApiClient
         $status = isset($result['status']) ? (int) $result['status'] : 0;
         $error = isset($result['error']) ? (string) $result['error'] : '';
         $this->lastHttpCode = $status;
+
+        if ($error === '' && $status !== 0 && $this->isServerLimitAnswer($status, isset($result['body']) ? (string) $result['body'] : '')) {
+            $this->beginBackoff(isset($result['headers']) && is_array($result['headers']) ? $result['headers'] : array());
+
+            return false;
+        }
 
         if ($status === 401 || $status === 403) {
             // Any body: a later Kod in it overwrites the mark with the richer message.

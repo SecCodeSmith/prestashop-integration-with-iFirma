@@ -22,9 +22,11 @@
  *   - $headers list of "Name: value" strings (e.g. "Authentication: IAPIS user=..., hmac-sha1=...")
  *   - $body    raw request body ('' for GET)
  *   - $timeout total timeout in seconds
- *   returns array('status' => int, 'body' => string, 'error' => string)
+ *   returns array('status' => int, 'body' => string, 'error' => string) and optionally
+ *   'headers' => array(lower-cased name => value), left out by a transport that has none
  *   - status: HTTP status code, 0 on transport failure
  *   - error:  '' on success, non-empty on transport failure (e.g. "cURL error: ...")
+ *   - headers: scripted with ['headers' => ['Retry-After' => '20']]; the names are lower-cased
  *
  * (Scalar type declarations are omitted so the double stays PHP 7.2/7.0 friendly; the
  * documented types are what callers must pass.)
@@ -125,10 +127,15 @@ class ScriptedTransport
     {
         $r = is_array($r) ? $r : [];
 
-        return [
+        $answer = [
             'status' => isset($r['status']) ? (int) $r['status'] : 200,
             'body' => isset($r['body']) ? (string) $r['body'] : '',
             'error' => isset($r['error']) ? (string) $r['error'] : '',
         ];
+        if (isset($r['headers']) && is_array($r['headers'])) {
+            $answer['headers'] = array_change_key_case(array_map('strval', $r['headers']), CASE_LOWER);
+        }
+
+        return $answer;
     }
 }

@@ -597,6 +597,7 @@ class IssuancePipelineTest extends TestCase
         $this->queueGuardNone();
         $this->queueCreateOk();
         $this->queueNumber();
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Kod":0,"KsefStatus":"","KsefNumer":""}}'));
         $this->t->queue('POST', '#ksef/send/77\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"Faktura wyslana"}}'));
         $this->queuePdf();
 
@@ -605,9 +606,10 @@ class IssuancePipelineTest extends TestCase
         $this->assertTrue($r->ok);
         $this->assertSame('issued', $r->outcome);
         $this->assertSame(
-            array('hold:ok', 'guard:ok', 'create:ok', 'number:ok', 'ksef:ok', 'deliver:ok'),
+            array('hold:ok', 'guard:ok', 'create:ok', 'number:ok', 'ksef:ok', 'deliver:skipped'),
             $this->stepNames($r)
         );
+        $this->assertSame('awaiting_ksef', $this->dbRow()['delivery_status']);
         $this->assertSame('Faktura wyslana', $r->steps[4]['message']);
         $this->assertSame('WYSLANA', $this->dbRow()['ksef_status']);
     }
@@ -643,12 +645,13 @@ class IssuancePipelineTest extends TestCase
         $this->assertSame('', $this->dbRow()['ksef_status']);
     }
 
-    public function testKsefFailureDoesNotStopDelivery()
+    public function testKsefFailureDoesNotStopTheRunAndTheDeliveryWaitsForKsef()
     {
         $this->businessAddress();
         $this->queueGuardNone();
         $this->queueCreateOk();
         $this->queueNumber();
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Kod":0,"KsefStatus":"","KsefNumer":""}}'));
         $this->t->queue('POST', '#ksef/send#', array('body' => '{"response":{"Kod":200,"Informacja":"KSeF niedostepny"}}'));
         $this->queuePdf();
 
@@ -658,12 +661,13 @@ class IssuancePipelineTest extends TestCase
         $this->assertSame('issued', $r->outcome);
         $this->assertNull($r->stoppedAt);
         $this->assertSame(
-            array('hold:ok', 'guard:ok', 'create:ok', 'number:ok', 'ksef:failed', 'deliver:ok'),
+            array('hold:ok', 'guard:ok', 'create:ok', 'number:ok', 'ksef:failed', 'deliver:skipped'),
             $this->stepNames($r)
         );
         $this->assertStringContainsString('KSeF', $r->message);
         $this->assertStringContainsString('KSeF: ', $r->message);
-        $this->assertSame('sent', $this->dbRow()['delivery_status']);
+        // a failed submission does not stop the run, and the document, which still goes to KSeF, waits for acceptance
+        $this->assertSame('awaiting_ksef', $this->dbRow()['delivery_status']);
         $this->assertSame('BLAD', $this->dbRow()['ksef_status']);
         $this->assertStringContainsString('KSeF submission failed', $this->pipeline->describe($r));
     }
@@ -687,6 +691,7 @@ class IssuancePipelineTest extends TestCase
         $this->queueCreateOk();
         $this->queueNumber();
         // only the KSeF send request raises; the real IfirmaKsefService turns that into the step's outcome
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Kod":0,"KsefStatus":"","KsefNumer":""}}'));
         $this->t->queue('POST', '#ksef/send#', function () use ($failure) {
             throw $failure;
         });
@@ -698,7 +703,7 @@ class IssuancePipelineTest extends TestCase
         $this->assertSame(IfirmaPipelineResult::OUTCOME_ISSUED, $r->outcome);
         $this->assertNull($r->stoppedAt);
         $this->assertSame(
-            array('hold:ok', 'guard:ok', 'create:ok', 'number:ok', 'ksef:failed', 'deliver:ok'),
+            array('hold:ok', 'guard:ok', 'create:ok', 'number:ok', 'ksef:failed', 'deliver:skipped'),
             $this->stepNames($r)
         );
         $this->assertSame('iFirma did not confirm the KSeF submission', $r->steps[4]['message']);
@@ -708,7 +713,7 @@ class IssuancePipelineTest extends TestCase
             $this->pipeline->describe($r)
         );
         $row = $this->dbRow();
-        $this->assertSame('sent', $row['delivery_status']);
+        $this->assertSame('awaiting_ksef', $row['delivery_status']);
         $this->assertSame('BLAD', $row['ksef_status']);
         $this->assertSame('iFirma did not confirm the KSeF submission', $row['ksef_error']);
         $this->assertEmpty($row['ksef_sent_at']);
@@ -1348,9 +1353,9 @@ class IssuancePipelineTest extends TestCase
             $this->deliveryFields($r)
         );
         $this->assertStringContainsString('Delivery step failed: mail server down', $pipeline->describe($r));
-        // the delivery never ran, so it recorded nothing
+        // the delivery never ran, so it recorded nothing; the receipt was written twice: the in-flight marker and the document
         $this->assertSame('none', $this->dbRow()['delivery_status']);
-        $this->assertSame(array('add'), $this->receiptWriteOps());
+        $this->assertSame(array('add', 'update'), $this->receiptWriteOps());
     }
 
     public function testAnErrorFromTheDeliveryFailsTheWholeRunAsAnError()
@@ -1386,8 +1391,10 @@ class IssuancePipelineTest extends TestCase
         $this->assertSame('deliver', $r->stoppedAt);
     }
 
-    public function testRateLimitedGuardCreatesNoRow()
+    public function testRateLimitedGuardQueuesTheOrderAndCreatesNoDocument()
     {
+        // Deliberate change (task 4.4): a guard check refused by the rate limit used to leave no record. The
+        // order is now queued with the refusal message ("Transient error not persisted", "Inconclusive guard").
         $fixed = 1700000000;
         Configuration::updateValue('IFIRMA_RATE_MAX_PER_MIN', 1);
         Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi', $fixed) . ':1');
@@ -1398,7 +1405,8 @@ class IssuancePipelineTest extends TestCase
         $r = $this->pipeline->run($this->order());
         $this->assertSame('rate_limited', $r->outcome);
         $this->assertSame('guard', $r->stoppedAt);
-        $this->assertSame(array(), IfirmaTestState::objects('ifirma_receipt'));
+        $this->assertSame('queued', $this->dbRow()['status']);
+        $this->assertStringContainsString('(cap 1)', $this->dbRow()['last_error']);
         $this->assertCount(0, $this->t->calls);
     }
 
@@ -1529,5 +1537,381 @@ class IssuancePipelineTest extends TestCase
         $r->save();
         $this->expectException(Exception::class);
         $this->service->updateStatusPaid($r, 10);
+    }
+    // ---- queue first: the record exists before any request (design D3) -----------------------------------
+
+    private function clientAtTheMinuteCap()
+    {
+        $fixed = mktime(10, 15, 20, 11, 1, 2026);
+        $this->client->setClock(function () use ($fixed) {
+            return $fixed;
+        });
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi', $fixed) . ':80');
+    }
+
+    private function seedQueuedRow()
+    {
+        $row = new IfirmaReceipt();
+        $row->id_order = 15;
+        $row->id_customer = 5;
+        $row->id_shop = 1;
+        $row->markQueued('earlier refusal');
+        $row->save();
+        IfirmaTestState::clearWrites();
+
+        return $row;
+    }
+
+    public function testTheOrderIsQueuedBeforeTheFirstRequestOfTheRun()
+    {
+        $seen = array();
+        $self = $this;
+        $this->t->queue('GET', '#faktury\.json#', function () use (&$seen, $self) {
+            $rows = IfirmaTestState::objects('ifirma_receipt');
+            $first = $rows ? reset($rows) : null;
+            $seen[] = $first ? $first['status'] : null;
+
+            return array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array()))));
+        });
+        $this->queueCreateOk();
+        $this->queueNumber();
+        $this->queuePdf();
+
+        $this->pipeline->onOrderStatusChange(15, 5);
+
+        $this->assertSame('queued', $seen[0], 'the record is queued when the first iFirma request goes out');
+    }
+
+    public function testTheStatusChangeIssuesAtOnceWhenTheLimitsAllow()
+    {
+        $this->queueFullSuccess();
+
+        $r = $this->pipeline->onOrderStatusChange(15, 5);
+
+        $this->assertSame('issued', $r->outcome);
+        $this->assertSame('created', $this->dbRow()['status']);
+        $this->assertSame('', $this->dbRow()['last_error']);
+    }
+
+    public function testABusyOrderLockLeavesTheOrderQueuedWithoutAnyRequest()
+    {
+        Db::getInstance()->whenGetValue('/^SELECT GET_LOCK\(/', 0);
+
+        $this->assertNull($this->pipeline->onOrderStatusChange(15, 5));
+
+        $this->assertSame(array(), $this->t->calls);
+        $this->assertSame('queued', $this->dbRow()['status']);
+    }
+
+    public function testTheStatusChangeDoesNotWaitForTheOrderLock()
+    {
+        $asked = null;
+        Db::getInstance()->whenGetValue('/^SELECT GET_LOCK\(/', function ($sql) use (&$asked) {
+            $asked = $sql;
+
+            return 1;
+        });
+        $this->queueFullSuccess();
+
+        $this->pipeline->onOrderStatusChange(15, 5);
+
+        $this->assertSame("SELECT GET_LOCK('ifirma_order_15', 0)", $asked);
+    }
+
+    public function testTheOrderLockIsReleasedAfterTheRun()
+    {
+        $this->queueFullSuccess();
+
+        $this->pipeline->onOrderStatusChange(15, 5);
+
+        $released = array_filter(Db::getInstance()->queries, function ($sql) {
+            return strpos($sql, "RELEASE_LOCK('ifirma_order_15')") !== false;
+        });
+        $this->assertCount(1, $released);
+    }
+
+    public function testAHeldOrderIsHeldAndNotQueued()
+    {
+        $this->pendingRequest();
+
+        $r = $this->pipeline->onOrderStatusChange(15, 5);
+
+        $this->assertSame('held', $r->outcome);
+        $this->assertSame('held', $this->dbRow()['status']);
+        $this->assertSame(array(), $this->posts());
+    }
+
+    public function testNothingIsRecordedWhenIssuanceIsNotConfigured()
+    {
+        Configuration::updateValue('IFIRMA_AUTO_CREATE_STATE', 0);
+        $this->assertNull($this->pipeline->onOrderStatusChange(15, 5));
+        Configuration::updateValue('IFIRMA_AUTO_CREATE_STATE', 5);
+        Configuration::updateValue('IFIRMA_USER', '');
+        $this->assertNull($this->pipeline->onOrderStatusChange(15, 5));
+
+        $this->assertSame(array(), IfirmaTestState::objects('ifirma_receipt'));
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testAnOrderThatAlreadyHasADocumentIsNeverQueued()
+    {
+        $this->queueFullSuccess();
+        $this->pipeline->onOrderStatusChange(15, 5);
+
+        $again = $this->pipeline->onOrderStatusChange(15, 5);
+
+        $this->assertSame('already_issued', $again->outcome);
+        $this->assertSame('created', $this->dbRow()['status']);
+        $this->assertCount(1, $this->posts(), 'the order never ends with two documents');
+    }
+
+    public function testAnUnknownOutcomeIsNotTurnedIntoAQueueEntry()
+    {
+        $this->leaveUnknownRow();
+        $this->queueGuardNone();
+        $this->t->queue('POST', '#fakturakraj\.json#', array('status' => 0, 'error' => 'timeout'));
+
+        $this->pipeline->onOrderStatusChange(15, 5);
+
+        $this->assertSame('unknown', $this->dbRow()['status']);
+    }
+
+    // ---- refusals queue (design D3) ------------------------------------------------------------------------
+
+    public function testAGuardCheckRefusedByTheLocalCapQueuesTheOrderAtTheStatusChange()
+    {
+        $this->clientAtTheMinuteCap();
+
+        $r = $this->pipeline->onOrderStatusChange(15, 5);
+
+        $this->assertSame('rate_limited', $r->outcome);
+        $this->assertSame('guard', $r->stoppedAt);
+        $this->assertSame('queued', $this->dbRow()['status']);
+        $this->assertStringContainsString('(cap 80)', $this->dbRow()['last_error']);
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testACreateRefusedByIfirmaQueuesTheOrder()
+    {
+        $this->queueGuardNone();
+        $this->t->queue('POST', '#fakturakraj\.json#', array(
+            'status' => 429,
+            'body' => '{"response":{"Kod":100,"Informacja":"Przekroczono limit zapytań"}}',
+        ));
+
+        $r = $this->pipeline->onOrderStatusChange(15, 5);
+
+        $this->assertSame('rate_limited', $r->outcome);
+        $this->assertSame('create', $r->stoppedAt);
+        $this->assertSame('queued', $this->dbRow()['status']);
+        $this->assertSame('queued', $r->receipt->status);
+    }
+
+    public function testAnEmployeeCreateRefusedByTheCapQueuesTheOrderAndShowsTheRefusal()
+    {
+        $this->clientAtTheMinuteCap();
+
+        $r = $this->pipeline->run($this->order(), array('trigger' => 'manual'));
+
+        $this->assertFalse($r->ok);
+        $this->assertSame('rate_limited', $r->outcome);
+        $this->assertStringContainsString('(cap 80)', $this->pipeline->describe($r));
+        $this->assertSame('queued', $this->dbRow()['status']);
+        $this->assertFalse($r->receipt->canIssueAnyway());
+    }
+
+    public function testARefusalOnARecordThatIsAlreadyQueuedWritesNothing()
+    {
+        $this->seedQueuedRow();
+        $this->clientAtTheMinuteCap();
+
+        $r = $this->pipeline->run($this->order(), array('trigger' => 'queue'));
+
+        $this->assertSame('rate_limited', $r->outcome);
+        $this->assertSame(array(), IfirmaTestState::writes('ifirma_receipt'), 'the record keeps its place in the queue');
+    }
+
+    public function testAQueuedOrderThatFailsForAnotherReasonLeavesTheQueueAsAnError()
+    {
+        $this->seedQueuedRow();
+        $this->t->queue('GET', '#faktury\.json#', array('status' => 0, 'error' => 'connection refused'));
+
+        $r = $this->pipeline->run($this->order(), array('trigger' => 'queue'));
+
+        $this->assertSame('inconclusive', $r->outcome);
+        $this->assertSame('error', $this->dbRow()['status']);
+    }
+
+    public function testAQueuedOrderRejectedByIfirmaLeavesTheQueueAsAnError()
+    {
+        $this->seedQueuedRow();
+        $this->queueGuardNone();
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":201,"Informacja":"bad data"}}'));
+
+        $r = $this->pipeline->run($this->order(), array('trigger' => 'queue'));
+
+        $this->assertSame('error', $r->outcome);
+        $this->assertSame('error', $this->dbRow()['status']);
+        $this->assertStringContainsString('bad data', $this->dbRow()['last_error']);
+    }
+
+    public function testADocumentCreatedByAnEarlierRefusedRequestIsAdoptedFromTheQueue()
+    {
+        $this->seedQueuedRow();
+        // the guard finds the matching document in iFirma and confirms it by the order stamp
+        $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row())));
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Uwagi":"PS-ORDER-15-ABCDEFGHI"}}'));
+
+        $r = $this->pipeline->run($this->order(), array('trigger' => 'queue'));
+
+        $this->assertSame('adopted', $r->outcome);
+        $this->assertSame(array(), $this->posts(), 'no second document is created');
+    }
+
+    public function testAnExceptionRunningAQueuedOrderRecordsItAsAnError()
+    {
+        $this->seedQueuedRow();
+        $pipeline = $this->pipelineWhoseHoldCheckRaises(new RuntimeException('db exploded'));
+
+        $pipeline->run($this->order(), array('trigger' => 'queue'));
+
+        $this->assertSame('error', $this->dbRow()['status']);
+        $this->assertSame('db exploded', $this->dbRow()['last_error']);
+    }
+    // ---- a document that goes to KSeF is delivered after KSeF accepted it (design D6) ----------------------
+
+    private function businessOrderIssuanceScript($detailState = '')
+    {
+        $this->queueGuardNone();
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"ok","Identyfikator":"77"}}'));
+        $this->queueNumber();
+        $this->t->queue('GET', '#fakturakraj/77\.json#', $detailState === null
+            ? array('status' => 0, 'error' => 'timeout')
+            : array('body' => json_encode(array('response' => array(
+                'Kod' => 0, 'KsefStatus' => $detailState, 'KsefNumer' => $detailState === 'PRZYJETA' ? '5260001122-20261101-ABC-01' : '',
+            )))));
+        $this->t->queue('POST', '#ksef/send/77\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"Faktura wyslana"}}'));
+        $this->queuePdf();
+        // the buyer has a NIP: the contractor block of the stored payload carries it
+        Address::register($this->addressWithNip());
+    }
+
+    private function addressWithNip()
+    {
+        $a = new Address();
+        $a->id = 7;
+        $a->id_customer = 5;
+        $a->firstname = 'Jan';
+        $a->lastname = 'K';
+        $a->company = 'ACME';
+        $a->vat_number = '5260001122';
+        $a->id_country = 14;
+
+        return $a;
+    }
+
+    public function testABusinessInvoiceIsHeldBackFromTheCustomerUntilKsefAcceptsIt()
+    {
+        Configuration::updateValue('IFIRMA_KSEF_MODE', 'b2b');
+        $this->businessOrderIssuanceScript();
+
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertSame('issued', $r->outcome);
+        $this->assertSame('ksef:ok', $this->stepNames($r)[4]);
+        $this->assertSame('deliver:skipped', $this->stepNames($r)[5]);
+        $this->assertSame('waiting for KSeF acceptance', $r->steps[5]['message']);
+        $this->assertSame('awaiting_ksef', $this->dbRow()['delivery_status']);
+        $this->assertCount(0, Mail::$sent);
+        $this->assertNull($r->delivery);
+    }
+
+    public function testAnInvoiceThatKsefAlreadyAcceptedIsDeliveredInTheSameRun()
+    {
+        Configuration::updateValue('IFIRMA_KSEF_MODE', 'b2b');
+        $this->businessOrderIssuanceScript('PRZYJETA');
+
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertSame('ksef:skipped', $this->stepNames($r)[4]);
+        $this->assertSame('deliver:ok', $this->stepNames($r)[5]);
+        $this->assertSame('sent', $this->dbRow()['delivery_status']);
+        $this->assertSame('5260001122-20261101-ABC-01', $this->dbRow()['ksef_number']);
+        $this->assertCount(1, Mail::$sent);
+    }
+
+    public function testADocumentThatDoesNotGoToKsefIsDeliveredAtIssuance()
+    {
+        Configuration::updateValue('IFIRMA_KSEF_MODE', 'off');
+        $this->queueFullSuccess();
+
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertSame('deliver:ok', $this->stepNames($r)[5]);
+        $this->assertSame('sent', $this->dbRow()['delivery_status']);
+        $this->assertCount(1, Mail::$sent);
+    }
+
+    public function testTheChannelNoneIsRecordedAsSkippedAndTheDocumentNeverWaits()
+    {
+        Configuration::updateValue('IFIRMA_KSEF_MODE', 'b2b');
+        Configuration::updateValue('IFIRMA_SEND_CHANNEL', 'none');
+        $this->businessOrderIssuanceScript();
+
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertSame('skipped', $this->dbRow()['delivery_status']);
+        $this->assertNotSame('waiting for KSeF acceptance', $r->steps[5]['message']);
+    }
+
+    public function testAManualResendOfAWaitingDocumentEndsTheWait()
+    {
+        Configuration::updateValue('IFIRMA_KSEF_MODE', 'b2b');
+        $this->businessOrderIssuanceScript();
+        $this->pipeline->run($this->order());
+        $this->assertSame('awaiting_ksef', $this->dbRow()['delivery_status']);
+
+        $module = new Module();
+        $delivery = new IfirmaDeliveryService($this->client, $this->service, $module, null, function () {
+        });
+        $this->queuePdf();
+        $receipt = IfirmaReceipt::getByOrder(15);
+        $result = $delivery->resend($receipt, $this->order());
+
+        $this->assertTrue($result->isSent());
+        $this->assertSame('sent', $this->dbRow()['delivery_status']);
+        $this->assertFalse((new IfirmaKsefDeliveryGate(new IfirmaKsefService($this->client, $module)))->isWaiting(IfirmaReceipt::getByOrder(15)));
+    }
+    public function testTheDocumentIsHeldBackBeforeTheKsefCallSoNoWindowIsLeftOpen()
+    {
+        // red-team note (task 7.4 review): between the create and the deliver step the document must not be downloadable
+        Configuration::updateValue('IFIRMA_KSEF_MODE', 'b2b');
+        $seen = array();
+        $this->t->queue('POST', '#ksef/send/77\\.json#', function () use (&$seen) {
+            $rows = IfirmaTestState::objects('ifirma_receipt');
+            $seen = reset($rows);
+
+            return array('body' => '{"response":{"Kod":0,"Informacja":"ok"}}');
+        });
+        $this->businessOrderIssuanceScript();
+
+        $this->pipeline->run($this->order());
+
+        $this->assertSame('awaiting_ksef', $seen['delivery_status'], 'already held when the KSeF request goes out');
+    }
+    public function testAnUnreadableKsefStateSkipsTheStepAndTheDeliveryWaitsForTheCron()
+    {
+        Configuration::updateValue('IFIRMA_KSEF_MODE', 'b2b');
+        $this->businessOrderIssuanceScript(null);
+
+        $r = $this->pipeline->run($this->order());
+
+        $this->assertTrue($r->ok);
+        $this->assertSame('ksef:skipped', $this->stepNames($r)[4]);
+        $this->assertSame('KSeF state unavailable, retried by the cron', $r->steps[4]['message']);
+        $this->assertSame('awaiting_ksef', $this->dbRow()['delivery_status']);
+        $this->assertSame(array(), array_filter($this->posts(), function ($p) {
+            return strpos($p['url'], 'ksef') !== false;
+        }), 'nothing was sent to KSeF');
     }
 }

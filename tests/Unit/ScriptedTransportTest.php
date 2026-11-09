@@ -50,4 +50,17 @@ class ScriptedTransportTest extends TestCase
         $this->assertSame('POST:xyz', $t->request('POST', 'https://x.test/echo', [], 'xyz', 5)['body']);
         $this->assertSame('GET:', $t->request('GET', 'https://x.test/echo', [], '', 5)['body']);
     }
+
+    public function testAScriptedAnswerCanCarryHeadersWithLowerCasedNames()
+    {
+        $t = new ScriptedTransport();
+        $t->queue('GET', '#/limited#', ['status' => 429, 'headers' => ['Retry-After' => 20]]);
+        $t->queue('GET', '#/plain#', ['status' => 200]);
+
+        $limited = $t->request('GET', 'https://x.test/limited', [], '', 5);
+        $plain = $t->request('GET', 'https://x.test/plain', [], '', 5);
+
+        $this->assertSame(['retry-after' => '20'], $limited['headers']);
+        $this->assertArrayNotHasKey('headers', $plain);
+    }
 }

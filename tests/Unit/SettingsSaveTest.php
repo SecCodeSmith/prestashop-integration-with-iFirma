@@ -56,7 +56,9 @@ class SettingsSaveTest extends TestCase
             'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE' => '0',
             'IFIRMA_SYNC_INTERVAL_MIN' => '15',
             'IFIRMA_CRON_MAX_CALLS' => '10',
+            'IFIRMA_CRON_MAX_ITEMS' => '10',
             'IFIRMA_RATE_MAX_PER_MIN' => '60',
+            'IFIRMA_RATE_MAX_PER_DAY' => '12000',
         );
         foreach ($changes as $field => $value) {
             if ($value === null) {
@@ -294,7 +296,9 @@ class SettingsSaveTest extends TestCase
             'IFIRMA_DUPLICATE_WINDOW_DAYS' => 'The duplicate-check window must be a whole number of days between 1 and 365.',
             'IFIRMA_SYNC_INTERVAL_MIN' => 'The sync interval must be a whole number of minutes between 1 and 1440.',
             'IFIRMA_CRON_MAX_CALLS' => 'The cron call budget must be a whole number between 1 and 90.',
+            'IFIRMA_CRON_MAX_ITEMS' => 'The cron item limit must be a whole number between 1 and 50.',
             'IFIRMA_RATE_MAX_PER_MIN' => 'The API rate limit must be a whole number between 1 and 100 calls per minute.',
+            'IFIRMA_RATE_MAX_PER_DAY' => 'The API daily limit must be a whole number between 1 and 15000 calls per day.',
         ) as $field => $message) {
             foreach (array('-1', '+5', '1 0', '1.0', '1,0', '99999999999999999999', 'ten', '0x10', ' ') as $posted) {
                 $cases[$field . ' = "' . $posted . '"'] = array($field, $posted, $message);

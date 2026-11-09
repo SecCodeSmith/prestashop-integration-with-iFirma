@@ -21,6 +21,7 @@ flowchart LR
     subgraph MOD["Module classes"]
         ACT["IfirmaAdminActions"]
         PIPE["IfirmaIssuancePipeline"]
+        RUN["IfirmaCronRunner and its jobs"]
         SYNC["IfirmaStatusSyncService"]
         API["IfirmaApiClient and IfirmaHttpTransport"]
     end
@@ -30,7 +31,7 @@ flowchart LR
     ACT --> PIPE
     HOOK --> PIPE
     CUS --> DB
-    CRON --> SYNC
+    CRON --> RUN
     SET --> DB
     PNL --> DB
     PIPE --> API
@@ -88,7 +89,7 @@ Two plain JavaScript files in [`views/js/admin/`](../views/js/admin/) hold no te
 |------|---------|
 | [`controllers/front/receipt.php`](../controllers/front/receipt.php) | Customer PDF download (authenticated customer, matching token, owner check). |
 | [`controllers/front/datarequest.php`](../controllers/front/datarequest.php) | Customer form to request a change of the invoice data of an order; all rules live in [`IfirmaDataRequestService`](../classes/IfirmaDataRequestService.php). |
-| [`controllers/front/cron.php`](../controllers/front/cron.php) | Status synchronisation at `/module/ifirma/cron?token=IFIRMA_CRON_TOKEN`; a wrong token answers 403, a right one runs `IfirmaStatusSyncService::runCron()`. |
+| [`controllers/front/cron.php`](../controllers/front/cron.php) | The cron endpoint at `/module/ifirma/cron?token=IFIRMA_CRON_TOKEN`; a wrong token answers 403 (no job runs), a right one runs `IfirmaCronRunner`. |
 
 **Upgrades:** [`upgrade/upgrade-1.1.0.php`](../upgrade/upgrade-1.1.0.php) (columns, two tables, defaults), [`upgrade/upgrade-1.2.0.php`](../upgrade/upgrade-1.2.0.php) (hook swap, drops PrestaShop 1.7), [`upgrade/upgrade-1.4.0.php`](../upgrade/upgrade-1.4.0.php) (the three Orders-list hooks), [`upgrade/upgrade-1.5.0.php`](../upgrade/upgrade-1.5.0.php) (the tab moves under Orders, the script hook, the download column and the date index, the default of the pause mark).
 
@@ -195,11 +196,19 @@ Two plain JavaScript files in [`views/js/admin/`](../views/js/admin/) hold no te
 | [`IfirmaInput`](../classes/IfirmaInput.php) | Reads one request value safely: `scalar()` gives `''` for an array or an object, `decimal()` parses an amount (or null). |
 | [`IfirmaDownloadThrottle`](../classes/IfirmaDownloadThrottle.php) | The customer PDF limits: one fetch per document every 30 seconds, ten per customer per 60 seconds (HTTP 429). |
 
-**Status sync**
+**Status sync and the cron jobs**
 
 | Class | Role |
 |-------|------|
 | [`IfirmaStatusSyncService`](../classes/IfirmaStatusSyncService.php) | Mirrors the remote state of issued documents (cron, opportunistic on the customer's order page). |
+| [`IfirmaCronRunner`](../classes/IfirmaCronRunner.php) | Runs the `IfirmaCronJob`s in order under the run lock `ifirma_cron` (no wait), builds the JSON summary (the sync keys at the top level, a block per other job, `rate_limited`, `rate_limited_window`), and has the later jobs only report after a rate-limited one. |
+| [`IfirmaCronJob`](../classes/IfirmaCronJob.php), [`IfirmaCronContext`](../classes/IfirmaCronContext.php), [`IfirmaCronJobReport`](../classes/IfirmaCronJobReport.php) | The job interface (`name()`, `run()`, `skip()`), what a run shares (the item cap, the clock) and what a job reports (handled, succeeded, failed, left, rate limited). |
+| [`IfirmaIssueQueueJob`](../classes/IfirmaIssueQueueJob.php) | Job 1: issues queued orders, oldest first, under the order lock, through `IfirmaIssuancePipeline::run()` with trigger `queue`. |
+| [`IfirmaStatusSyncJob`](../classes/IfirmaStatusSyncJob.php) | Job 3: an adapter around `IfirmaStatusSyncService::runCron()`. |
+
+The cron request flow: `cron.php` checks the token, `IfirmaCronRunner::build()` creates the jobs, `run()` takes the run lock, calls the
+jobs in order (queue, KSeF retry, sync, delivery) and releases the lock. A job asks the shared rate guard before every iFirma request, so the minute and the
+day cap and a back-off apply to the whole run.
 
 ## Issuance pipeline
 
@@ -209,23 +218,29 @@ Three triggers:
 
 | Trigger | Entry point | Started by |
 |---------|-------------|------------|
-| `status` | `onOrderStatusChange()` | the `actionOrderStatusPostUpdate` hook; does nothing when `IFIRMA_AUTO_CREATE_STATE` is 0, differs from the new state, or credentials are missing |
+| `status` | `onOrderStatusChange()` | the `actionOrderStatusPostUpdate` hook; does nothing when `IFIRMA_AUTO_CREATE_STATE` is 0, differs from the new state, or credentials are missing. Otherwise `IfirmaIssueQueue::enqueue()` records the order as `queued` first, then the run takes the order lock (`ifirma_order_<id>`, no wait; busy: the order stays queued) |
+| `queue` | `run()` | the cron queue job: queued orders, oldest first, under the same order lock |
 | `manual` / `issue_anyway` | `run()` | the "Create" and "Issue anyway" buttons of the order panel |
 | `resume` | `resumeAfterRequest()` | approving or rejecting a data-change request, when the order is in (or went through) the trigger state and has no issued document |
 
 ```mermaid
 flowchart TD
+    HOOK["status hook: trigger status reached"] --> ENQ["IfirmaIssueQueue::enqueue: record queued, no request yet"]
+    ENQ --> LOCK{"order lock free? (no wait)"}
+    LOCK -- "busy" --> QUEUED["stays queued: the cron issues it"]
+    LOCK -- "granted" --> START
     START["run order"] --> HOLD{"hold: pending data request?"}
     HOLD -- "already issued" --> GUARD
     HOLD -- "yes" --> HELD["stop: held, row marked held"]
     HOLD -- "no" --> GUARD{"guard: duplicate check"}
     GUARD -- "local record already issued" --> DONE1["stop: already_issued, later steps skipped"]
     GUARD -- "unconfirmed candidates" --> SUSP["stop: suspected, status duplicate_suspected"]
-    GUARD -- "list call failed" --> INC["stop: inconclusive or rate_limited"]
+    GUARD -- "list call failed" --> INC["stop: inconclusive (error) or rate_limited (record queued)"]
     GUARD -- "confirmed match" --> ADOPT["adopted"]
     GUARD -- "disabled, bypassed or nothing found" --> CREATE
     ADOPT --> NUMBER
-    CREATE{"create: POST to iFirma"} -- "rejected or unreachable" --> ERR["stop: error or unknown"]
+    CREATE{"create: POST to iFirma, record unknown just before it is sent"} -- "rejected or unreachable" --> ERR["stop: error or unknown"]
+    CREATE -- "refused by the rate limit" --> RL["stop: rate_limited, record queued"]
     CREATE -- "accepted" --> NUMBER["number: issued"]
     NUMBER --> KSEF{"ksef: mode and buyer allow submission?"}
     KSEF -- "no, or skip_ksef" --> DELIVER
@@ -240,7 +255,7 @@ What each step reads and writes (verified in the step methods):
 
 - **hold**: reads the data-request table. A pending request for the order stops the run with outcome `held` and marks the row held. An order with an issued record skips the step.
 - **guard**: [`IfirmaDuplicateGuard::check()`](../classes/IfirmaDuplicateGuard.php), outcomes `LOCAL_ISSUED`, `DISABLED`, `BYPASSED`, `PROCEED`, `ADOPT`, `SUSPECTED`, `INCONCLUSIVE`. `LOCAL_ISSUED` skips all later steps; `SUSPECTED` and `INCONCLUSIVE` stop; `ADOPT` marks the run adopted so `create` and `number` are skipped.
-- **create**: [`IfirmaReceiptService::createReceipt()`](../classes/IfirmaReceiptService.php) (applies an approved data-request override). An exception stops the run with `unknown` when the row status is `unknown`, otherwise `error`. After a bypassed guard the resolution `issue_anyway` is recorded.
+- **create**: [`IfirmaReceiptService::createReceipt()`](../classes/IfirmaReceiptService.php) (applies an approved data-request override). Right before the create request is sent (`IfirmaApiClient::beforeNextRequest()`, so never for a request refused locally) the row is saved as `unknown` with the message "iFirma has not answered the create request yet"; the answer overwrites it. A refusal by the rate limit throws `IfirmaRateLimitedException`: the row is queued and the run ends with outcome `rate_limited`. Any other exception stops the run with `unknown` when the row status is `unknown`, otherwise `error`. After a bypassed guard the resolution `issue_anyway` is recorded.
 - **number**: records whether the number is available yet and marks the run issued.
 - **ksef**: skipped when the caller passes `skip_ksef`, there is no document, or [`IfirmaKsefService::skipReason()`](../classes/IfirmaKsefService.php) is not empty. A failed submission does not stop the run: the step is `failed`, delivery still runs and the message ends with `KSeF: <error>`.
 - **deliver**: [`IfirmaDeliveryService::deliver()`](../classes/IfirmaDeliveryService.php), skipped on `skip_delivery`. A failed delivery sets `stoppedAt = deliver` but never changes `ok` or the outcome.
@@ -263,7 +278,7 @@ The "Create" button on the order panel, from the browser to the HTTP transport:
 
 The schema is defined once in [`classes/IfirmaSchema.php`](../classes/IfirmaSchema.php) and used by [`sql/install.php`](../sql/install.php) and the upgrade scripts.
 
-`ps_ifirma_receipt` - one row per iFirma document (issued by the module or discovered in iFirma). Core columns: order/customer/shop link, `document_type`, `ifirma_id` and `ifirma_number`, `status` (`created` / `paid` / `error` / `unknown` / `duplicate_suspected`), `paid_amount`, a download `security_token` and the full request/response payloads for auditing. Since 1.1.0 the table also holds: `source` (`module` or `external`) and `order_reference`, which tell where a document came from; `delivery_status`, `delivery_channel`, `delivered_at` and `delivery_error`, which track sending the document to the customer; `remote_paid_amount`, `remote_sent`, `remote_draft`, `remote_missing`, `ksef_status`, `ksef_number`, `linked_document`, `last_sync_at` and `sync_error`, which mirror the state last read from iFirma by the synchronisation job; `duplicate_candidates` (JSON list of possible existing documents found before issuing); and `id_data_request`, the link to the buyer-data request that produced the document. Indexes: `idx_order`, `idx_customer`, `idx_token`, and since 1.5.0 `idx_date_upd` (on `date_upd`, for the documents list, the notification feed and its unseen count). Since 1.5.0 the table also holds `last_download_at` (`DATETIME NULL`), the time of the last customer PDF download, which the download throttle reads. Fresh installs get both from the schema; on upgraded shops the 1.5.0 upgrade adds them, and the customer download also adds the column on first use (`IfirmaSchema::ensureReceiptDownloadColumn()`).
+`ps_ifirma_receipt` - one row per iFirma document (issued by the module or discovered in iFirma). Core columns: order/customer/shop link, `document_type`, `ifirma_id` and `ifirma_number`, `status` (`created` / `paid` / `error` / `unknown` / `duplicate_suspected` / `held` / `queued`), `paid_amount`, a download `security_token` and the full request/response payloads for auditing. Since 1.1.0 the table also holds: `source` (`module` or `external`) and `order_reference`, which tell where a document came from; `delivery_status`, `delivery_channel`, `delivered_at` and `delivery_error`, which track sending the document to the customer; `remote_paid_amount`, `remote_sent`, `remote_draft`, `remote_missing`, `ksef_status`, `ksef_number`, `linked_document`, `last_sync_at` and `sync_error`, which mirror the state last read from iFirma by the synchronisation job; `duplicate_candidates` (JSON list of possible existing documents found before issuing); and `id_data_request`, the link to the buyer-data request that produced the document. Indexes: `idx_order`, `idx_customer`, `idx_token`, and since 1.5.0 `idx_date_upd` (on `date_upd`, for the documents list, the notification feed and its unseen count). Since 1.5.0 the table also holds `last_download_at` (`DATETIME NULL`), the time of the last customer PDF download, which the download throttle reads. Fresh installs get both from the schema; on upgraded shops the 1.5.0 upgrade adds them, and the customer download also adds the column on first use (`IfirmaSchema::ensureReceiptDownloadColumn()`).
 
 `ps_ifirma_contractor_map` (new in 1.1.0) - one row per customer linking it to an iFirma contractor: `id_customer` (unique), `ifirma_identifier`, `matched_by` (`module`, `nip`, `name`, `email`, `import-nip`, `import-email`, `import-name`, `manual`), `ifirma_name`. Created on install, on upgrade and, when missing, on first use. See [Linking existing contractors](contractors.md).
 
@@ -279,8 +294,8 @@ Configuration keys (defaults in `IfirmaSchema`; the settings walk-through is in 
 | Delivery | `IFIRMA_SEND_CHANNEL`, `IFIRMA_SEND_TEXT`, `IFIRMA_SEND_COPY_MODE`, `IFIRMA_SEND_COPY_EMPLOYEE` |
 | KSeF | `IFIRMA_KSEF_MODE` |
 | Duplicate guard | `IFIRMA_DUPLICATE_CHECK`, `IFIRMA_DUPLICATE_WINDOW_DAYS`, `IFIRMA_DUPLICATE_AMOUNT_TOLERANCE` |
-| Status and cron | `IFIRMA_SYNC_INTERVAL_MIN`, `IFIRMA_CRON_TOKEN`, `IFIRMA_CRON_MAX_CALLS`, `IFIRMA_NOTIFY_EMAIL` |
-| Rate limiting | `IFIRMA_RATE_MAX_PER_MIN`, `IFIRMA_RATE_WINDOW` (incremented by one atomic statement) |
+| Status and cron | `IFIRMA_SYNC_INTERVAL_MIN`, `IFIRMA_CRON_TOKEN`, `IFIRMA_CRON_MAX_CALLS`, `IFIRMA_CRON_MAX_ITEMS`, `IFIRMA_NOTIFY_EMAIL` |
+| Rate limiting | `IFIRMA_RATE_MAX_PER_MIN`, `IFIRMA_RATE_MAX_PER_DAY`, `IFIRMA_RATE_WINDOW`, `IFIRMA_RATE_DAY_WINDOW` (each counter is incremented by one atomic statement; `IfirmaRateGuard` checks the minute, then the day) |
 | Internal state | `IFIRMA_AUTH_FAILURE` (the pause mark after a rejected key, `<unix time>|<message>`), `IFIRMA_SEEN_<id_employee>` (the notification seen mark) |
 
 ## API surface

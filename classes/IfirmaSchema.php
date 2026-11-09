@@ -467,6 +467,7 @@ class IfirmaSchema
             'IFIRMA_SEND_COPY_MODE' => 'none',
             'IFIRMA_SEND_COPY_EMPLOYEE' => 0,
             'IFIRMA_KSEF_MODE' => 'b2b',
+            'IFIRMA_KSEF_SUBMITTER' => 'module',
             'IFIRMA_DUPLICATE_CHECK' => 1,
             'IFIRMA_DUPLICATE_WINDOW_DAYS' => 60,
             'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE' => '0.01',
@@ -479,8 +480,13 @@ class IfirmaSchema
             'IFIRMA_SYNC_INTERVAL_MIN' => 15,
             'IFIRMA_CRON_TOKEN' => null,
             'IFIRMA_CRON_MAX_CALLS' => 40,
+            'IFIRMA_CRON_MAX_ITEMS' => 10,
             'IFIRMA_RATE_MAX_PER_MIN' => 80,
+            'IFIRMA_RATE_MAX_PER_DAY' => 14000,
             'IFIRMA_RATE_WINDOW' => '',
+            'IFIRMA_RATE_DAY_WINDOW' => '',
+            'IFIRMA_RATE_BACKOFF_UNTIL' => '',
+            'IFIRMA_REMOTE_LIMIT' => '',
             'IFIRMA_AUTH_FAILURE' => '',
         );
     }

@@ -138,6 +138,7 @@ class IfirmaSettings
             'IFIRMA_SEND_COPY_MODE' => array('type' => self::TYPE_CHOICE, 'options' => IfirmaDeliveryService::copyModes(), 'default' => IfirmaDeliveryService::COPY_NONE, 'trim' => false),
             'IFIRMA_SEND_COPY_EMPLOYEE' => array('type' => self::TYPE_INT),
             'IFIRMA_KSEF_MODE' => array('type' => self::TYPE_NORMALISED, 'with' => array(IfirmaKsefService::class, 'normalizeMode')),
+            'IFIRMA_KSEF_SUBMITTER' => array('type' => self::TYPE_NORMALISED, 'with' => array(IfirmaKsefService::class, 'normalizeSubmitter')),
             'IFIRMA_DUPLICATE_CHECK' => array('type' => self::TYPE_SWITCH),
             'IFIRMA_DUPLICATE_WINDOW_DAYS' => array('type' => self::TYPE_RANGE, 'min' => 1, 'max' => 365),
             'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE' => array('type' => self::TYPE_DECIMAL, 'min' => 0),
@@ -149,7 +150,9 @@ class IfirmaSettings
             'IFIRMA_NOTIFY_EMAIL' => array('type' => self::TYPE_EMAIL, 'default' => ''),
             'IFIRMA_SYNC_INTERVAL_MIN' => array('type' => self::TYPE_RANGE, 'min' => 1, 'max' => 1440),
             'IFIRMA_CRON_MAX_CALLS' => array('type' => self::TYPE_RANGE, 'min' => 1, 'max' => 90),
+            'IFIRMA_CRON_MAX_ITEMS' => array('type' => self::TYPE_RANGE, 'min' => 1, 'max' => 50),
             'IFIRMA_RATE_MAX_PER_MIN' => array('type' => self::TYPE_RANGE, 'min' => 1, 'max' => 100),
+            'IFIRMA_RATE_MAX_PER_DAY' => array('type' => self::TYPE_RANGE, 'min' => 1, 'max' => 15000),
         );
     }
 

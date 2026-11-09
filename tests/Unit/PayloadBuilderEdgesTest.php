@@ -465,7 +465,10 @@ class PayloadBuilderEdgesTest extends TestCase
 
         $service->createReceipt($o, array('skip_contractor_sync' => true));
 
-        $this->assertSame(array(array('Shipping', 'ifirmareceiptservice')), $module->asked);
+        $this->assertSame(array(
+            array('Shipping', 'ifirmareceiptservice'),
+            array('iFirma has not answered the create request yet.', 'ifirmareceiptservice'),
+        ), $module->asked);
         $sent = json_decode($t->calls[0]['body'], true);
         $this->assertCount(2, $sent['Pozycje']);
         $this->assertSame('[pl] Shipping', $sent['Pozycje'][1]['NazwaPelna']);

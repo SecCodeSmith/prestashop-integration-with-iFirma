@@ -183,10 +183,11 @@ if ($issuedOrder > 0) {
     check(isset($records[$issuedOrder]), 'issued order is among the presented records', (string) count($records) . ' records');
     check($cell !== null, 'issued order record carries the ifirma_document key', $cell === null ? 'key absent: the presenter hook did not fill it' : '');
     check(isset($records[$issuedOrder]['ifirma_document_number']) && $records[$issuedOrder]['ifirma_document_number'] === $issuedNumber, 'query builder hook selected the number and status of the issued order', json_encode(array_intersect_key($records[$issuedOrder], array('ifirma_document_number' => 1, 'ifirma_document_status' => 1))));
-    $word = $issuedStatus === 'paid' ? '(Paid)' : '(Issued)';
+    // the tooltip's first line names the kind and the state in words and ends with the number
+    $headline = ': ' . htmlspecialchars($issuedNumber, ENT_QUOTES, 'UTF-8');
     check($cell !== null && strpos($cell, 'receipt_long') !== false && strpos($cell, 'material-icons') !== false
-        && strpos($cell, htmlspecialchars($issuedNumber, ENT_QUOTES, 'UTF-8')) !== false && strpos($cell, $word) !== false,
-        'issued order cell has the icon, the number and ' . $word, (string) $cell);
+        && strpos($cell, $headline) !== false && preg_match('/title="[^"]*(Invoice|Receipt|Faktura|Paragon)/u', $cell) === 1,
+        'issued order cell has the icon and a tooltip headline ending with the number', (string) $cell);
 }
 if ($emptyOrder > 0) {
     check(isset($records[$emptyOrder]['ifirma_document']) && strpos($records[$emptyOrder]['ifirma_document'], 'receipt_long') === false, 'order without a record has no issued icon in its cell', $emptyOrder . ': ' . var_export(isset($records[$emptyOrder]['ifirma_document']) ? $records[$emptyOrder]['ifirma_document'] : 'key absent', true));
@@ -204,6 +205,40 @@ if ($total !== $all) {
 }
 check($total === $all, 'records total equals the order count', "grid $total, $cmp = $all");
 check(count($presentedRecords) === $total, 'every order is presented (limit lifted)', count($presentedRecords) . ' of ' . $total);
+
+// 4c2. sorting by the column: both directions, the rank non-decreasing (or non-increasing), newest order first inside a state
+$sortedIds = array();
+foreach (array('asc', 'desc') as $way) {
+    $sortedFilters = new \PrestaShop\PrestaShop\Core\Search\Filters\OrderFilters(array_merge(
+        \PrestaShop\PrestaShop\Core\Search\Filters\OrderFilters::getDefaults(),
+        array('limit' => 100000, 'offset' => 0, 'orderBy' => 'ifirma_document', 'sortOrder' => $way)
+    ));
+    $sortedGrid = $factory->getGrid($sortedFilters);
+    $sortedPresented = $presenter->present($sortedGrid);
+    $sortedRecords = $sortedPresented['data']['records'];
+    if (is_object($sortedRecords) && method_exists($sortedRecords, 'all')) {
+        $sortedRecords = $sortedRecords->all();
+    }
+    $ranks = array();
+    $tieOk = true;
+    $previous = null;
+    foreach ($sortedRecords as $rec) {
+        $rank = (int) $rec[IfirmaOrderGridIndicator::FIELD_RANK];
+        if ($previous !== null && $previous['rank'] === $rank && (int) $rec['id_order'] > $previous['id']) {
+            $tieOk = false;
+        }
+        $previous = array('rank' => $rank, 'id' => (int) $rec['id_order']);
+        $ranks[] = $rank;
+    }
+    $expected = $ranks;
+    $way === 'asc' ? sort($expected) : rsort($expected);
+    check($ranks === $expected && count($ranks) === $total, 'sorted ' . $way . ' by the iFirma column: the ranks run ' . ($way === 'asc' ? 'up' : 'down'), implode(',', array_slice($ranks, 0, 20)));
+    check($tieOk, 'sorted ' . $way . ': orders in the same state are listed newest first');
+    $sortedIds[$way] = array_map(function ($rec) {
+        return (int) $rec['id_order'];
+    }, $sortedRecords);
+}
+check(count($sortedIds['asc']) === $total && count($sortedIds['desc']) === $total, 'sorting changes neither the total nor the paging');
 
 // 4d. no iFirma HTTP request while building the grid
 $after = $mockCount();

@@ -265,4 +265,93 @@ class FrontControllerEndingsTest extends TestCase
             $this->assertStringContainsString('id_order%3D15', $e->url);
         }
     }
+    // ---- a document that waits for KSeF acceptance cannot be downloaded (spec customer-receipt-visibility) ----
+
+    private function waitingReceipt(array $over = array())
+    {
+        $receipt = $this->makeReceipt(array_merge(array(
+            'security_token' => 'tok123', 'delivery_status' => 'awaiting_ksef', 'ksef_status' => 'WYSLANA', 'ksef_number' => '',
+        ), $over));
+        Db::getInstance()->whenGetValue('/WHERE security_token = "tok123"/', (int) $receipt->id);
+
+        return $receipt;
+    }
+
+    public function testADocumentAwaitingKsefAcceptanceAnswersNotFoundWithoutAnyIfirmaRequest()
+    {
+        $this->waitingReceipt();
+        Tools::$values = array('token' => 'tok123');
+
+        $this->assertSame('404', $this->answer(new IfirmaTestEndingReceiptController()));
+        $this->assertSame(array(), $this->t->calls, 'no iFirma request is made');
+    }
+
+    public function testTheRefusedRequestDoesNotUseUpTheDownloadThrottle()
+    {
+        $this->waitingReceipt();
+        Db::getInstance()->whenExecute('/UPDATE `\w*ifirma_receipt`\s+SET last_download_at/', 1);
+        Tools::$values = array('token' => 'tok123');
+
+        $this->answer(new IfirmaTestEndingReceiptController());
+
+        $claims = array_filter(Db::getInstance()->executed, function ($sql) {
+            return strpos($sql, 'last_download_at') !== false;
+        });
+        $this->assertSame(array(), array_values($claims), 'the throttle was not claimed');
+    }
+
+    public function testTheWaitingDocumentAnswersTheSameAsAWrongTokenSoAProbeLearnsNothing()
+    {
+        $this->waitingReceipt();
+        Tools::$values = array('token' => 'tok123');
+        $waiting = $this->answer(new IfirmaTestEndingReceiptController());
+        Tools::$values = array('token' => 'wrong');
+        $wrong = $this->answer(new IfirmaTestEndingReceiptController());
+
+        $this->assertSame($wrong, $waiting);
+    }
+
+    public function testAnotherCustomersWaitingDocumentIsStillNotFound()
+    {
+        $this->waitingReceipt(array('id_customer' => 99));
+        Tools::$values = array('token' => 'tok123');
+
+        $this->assertSame('404', $this->answer(new IfirmaTestEndingReceiptController()));
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testNotLoggedInVisitorStillGoesToTheLoginBeforeTheWaitIsLookedAt()
+    {
+        $this->waitingReceipt();
+        Context::getContext()->customer->logged = false;
+        Tools::$values = array('token' => 'tok123');
+
+        try {
+            (new IfirmaTestEndingReceiptController())->initContent();
+            $this->fail('expected a redirect');
+        } catch (IfirmaTestRedirect $e) {
+            $this->assertStringContainsString('authentication', $e->url);
+        }
+    }
+
+    public function testAfterAcceptanceTheDocumentIsFetchedAndTheThrottleIsClaimed()
+    {
+        $this->waitingReceipt(array('ksef_number' => '5260001122-20261101-ABC-01'));
+        Db::getInstance()->whenExecute('/UPDATE `\w*ifirma_receipt`\s+SET last_download_at/', 1);
+        $this->t->queue('GET', '#\.pdf#', array('status' => 404, 'body' => '{"response":{"Kod":404,"Informacja":"x"}}'));
+        Tools::$values = array('token' => 'tok123');
+
+        $this->assertSame('502', $this->answer(new IfirmaTestEndingReceiptController()), 'the fetch is attempted, so the wait no longer blocks');
+        $this->assertCount(1, $this->t->calls);
+    }
+
+    public function testADeliveredDocumentIsNeverMistakenForAWaitingOne()
+    {
+        $this->waitingReceipt(array('delivery_status' => 'sent', 'ksef_status' => 'WYSLANA'));
+        Db::getInstance()->whenExecute('/UPDATE `\w*ifirma_receipt`\s+SET last_download_at/', 1);
+        $this->t->queue('GET', '#\.pdf#', array('status' => 404, 'body' => '{"response":{"Kod":404,"Informacja":"x"}}'));
+        Tools::$values = array('token' => 'tok123');
+
+        $this->assertSame('502', $this->answer(new IfirmaTestEndingReceiptController()));
+    }
 }

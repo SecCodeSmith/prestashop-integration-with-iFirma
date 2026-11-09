@@ -63,10 +63,12 @@ The module's HTTP layer (`IfirmaApiClient`, task 4.1; production class `classes/
 request(string $method, string $url, array $headers, string $body, int $timeout)
   $headers : list of "Name: value" strings (e.g. "Authentication: IAPIS user=..., hmac-sha1=...")
   $url     : absolute URL incl. query string
-  returns array('status' => int, 'body' => string, 'error' => string)
+  returns array('status' => int, 'body' => string, 'error' => string) and optionally
+           'headers' => array(lower-cased name => value), the response headers of the last HTTP response
+           (the last value wins for a repeated header); a transport without headers leaves the key out
            status 0 + non-empty error = transport failure (e.g. cURL error)
 ```
 
 (Implement without scalar type hints if PHP 7.0 support is needed; semantics are fixed.)
 
-`ScriptedTransport` (tests/Support): `queue($method,$pathRegex,$response)` - `$method` verb or `*`; regex matched against URL path, then full URL; `$response` = `['status'=>200,'body'=>'','error'=>'']` (missing keys default; FIFO per method+regex) or a callable `($method,$url,$headers,$body,$timeout)` returning that array (permanent rule). Records `->calls[]` (`method,url,headers,body,timeout`); `lastCall()`, `lastAuthHeader()` (value after `Authentication:` or null). Unmatched call -> `status 0`, error `ScriptedTransport: no scripted response for METHOD url`.
+`ScriptedTransport` (tests/Support): `queue($method,$pathRegex,$response)` - `$method` verb or `*`; regex matched against URL path, then full URL; `$response` = `['status'=>200,'body'=>'','error'=>'']` plus an optional `'headers'=>['Retry-After'=>'20']` (names are lower-cased; missing keys default; FIFO per method+regex) or a callable `($method,$url,$headers,$body,$timeout)` returning that array (permanent rule). Records `->calls[]` (`method,url,headers,body,timeout`); `lastCall()`, `lastAuthHeader()` (value after `Authentication:` or null). Unmatched call -> `status 0`, error `ScriptedTransport: no scripted response for METHOD url`.

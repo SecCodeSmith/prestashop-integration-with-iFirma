@@ -12,6 +12,7 @@ require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaApiClient.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDownloadThrottle.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaHttpOutput.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaInput.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaKsefDeliveryGate.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaReceipt.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaReceiptService.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaSchema.php';
@@ -40,6 +41,13 @@ class IfirmaReceiptModuleFrontController extends ModuleFrontController
         }
 
         if ((int) $receipt->id_customer !== (int) $this->context->customer->id) {
+            $this->notFound();
+        }
+
+        // A document that waits for KSeF acceptance is not the customer's yet. The answer is the one a wrong token
+        // gets, so a probe cannot tell a held document from a foreign one, and it comes before the throttle claim
+        // and any iFirma request: the refused request costs nothing.
+        if (IfirmaKsefDeliveryGate::isWaitingState($receipt->delivery_status, $receipt->ksef_status, $receipt->ksef_number)) {
             $this->notFound();
         }
 

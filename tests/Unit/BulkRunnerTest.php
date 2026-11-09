@@ -411,7 +411,8 @@ class BulkRunnerTest extends TestCase
         $this->assertSame(array('sent', 'not_attempted', 'not_attempted', 'not_attempted'), $this->outcomes($data));
         $this->assertSame('rate_limited', $data['stopped']);
         $this->assertSame(array(), $data['remaining']);
-        $this->assertSame('not attempted (rate limited)', $data['results'][1]['message']);
+        // deliberate change (task 4.5): the message names the window that refused
+        $this->assertSame('not attempted (rate limited). Run it again in a minute.', $data['results'][1]['message']);
         $this->assertSame(2, $delivery->calls);
         $this->assertSame(1, $data['processed']);
     }
@@ -558,7 +559,7 @@ class BulkRunnerTest extends TestCase
         $this->assertSame(array(), $data['remaining']);
         $this->assertSame(11, $data['processed']);
         $this->assertCount(12, $sync->dates);
-        $this->assertSame('not attempted (rate limited)', $data['results'][11]['message']);
+        $this->assertSame('not attempted (rate limited). Run it again in a minute.', $data['results'][11]['message']);
     }
 
     public function testTheGuardRefusingAnIssueStopsTheBatch()
@@ -830,5 +831,64 @@ class BulkRunnerTest extends TestCase
         $this->runner()->setPipeline($pipeline)->run('issue', array(80), 5, array('final' => true, 'previous_totals' => 'oops'));
 
         $this->assertSame('iFirma bulk issue by employee 5: issued=1', PrestaShopLogger::$logs[0]['message']);
+    }
+    public function testTheRemainingRecordsAreToldToRunAgainInAMinuteWhenTheMinuteRefused()
+    {
+        $ids = $this->fourReceiptsWhoseSecondResendIsRefused();
+
+        $data = $this->runner()->setDeliveryService($this->refusingDelivery())->run('resend', $ids, 9);
+
+        $this->assertSame('not attempted (rate limited). Run it again in a minute.', $data['results'][2]['message']);
+    }
+
+    public function testTheRemainingRecordsAreToldToRunAgainTomorrowWhenTheDayCapRefused()
+    {
+        $ids = $this->fourReceiptsWhoseSecondResendIsRefused();
+        Configuration::updateValue('IFIRMA_RATE_MAX_PER_DAY', 500);
+        Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', date('Ymd', $this->now) . ':500');
+
+        $data = $this->runner()->setDeliveryService($this->refusingDelivery())->run('resend', $ids, 9);
+
+        $this->assertSame('not attempted (rate limited). Run it again tomorrow.', $data['results'][1]['message']);
+        $this->assertSame('not attempted (rate limited). Run it again tomorrow.', $data['results'][3]['message']);
+    }
+
+    public function testTheHintIsNotAddedWhenTheCredentialsWereRejected()
+    {
+        $ids = $this->fourReceiptsWhoseSecondResendIsRefused();
+        $delivery = new BulkRunnerFakeDelivery(function ($receipt, $n) {
+            if ($n === 2) {
+                return new IfirmaDeliveryResult(false, 'failed', 'ifirma_mail', 'paused', 'auth_blocked');
+            }
+
+            return new IfirmaDeliveryResult(true, 'sent', 'shop_mail', '');
+        });
+
+        $data = $this->runner()->setDeliveryService($delivery)->run('resend', $ids, 9);
+
+        $this->assertSame('not attempted (credentials rejected)', $data['results'][1]['message']);
+    }
+
+    /** @return int[] receipt ids */
+    private function fourReceiptsWhoseSecondResendIsRefused()
+    {
+        $ids = array();
+        for ($i = 0; $i < 4; $i++) {
+            $this->order(60 + $i);
+            $ids[] = (int) $this->makeReceipt(array('id_order' => 60 + $i))->id;
+        }
+
+        return $ids;
+    }
+
+    private function refusingDelivery()
+    {
+        return new BulkRunnerFakeDelivery(function ($receipt, $n) {
+            if ($n === 2) {
+                return new IfirmaDeliveryResult(false, 'failed', 'ifirma_mail', 'refused', 'rate_limited');
+            }
+
+            return new IfirmaDeliveryResult(true, 'sent', 'shop_mail', '');
+        });
     }
 }

@@ -49,7 +49,7 @@ class Ifirma extends Module
     {
         $this->name = 'ifirma';
         $this->tab = 'billing_invoicing';
-        $this->version = '1.7.0';
+        $this->version = '1.8.0';
         $this->author = 'SCM Jakub Berechowski';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = array('min' => '8.0.0', 'max' => '9.99.99');
@@ -464,7 +464,9 @@ class Ifirma extends Module
             'IFIRMA_NOTIFY_EMAIL' => $this->l('The notification e-mail address is not valid.'),
             'IFIRMA_SYNC_INTERVAL_MIN' => $this->l('The sync interval must be a whole number of minutes between 1 and 1440.'),
             'IFIRMA_CRON_MAX_CALLS' => $this->l('The cron call budget must be a whole number between 1 and 90.'),
+            'IFIRMA_CRON_MAX_ITEMS' => $this->l('The cron item limit must be a whole number between 1 and 50.'),
             'IFIRMA_RATE_MAX_PER_MIN' => $this->l('The API rate limit must be a whole number between 1 and 100 calls per minute.'),
+            'IFIRMA_RATE_MAX_PER_DAY' => $this->l('The API daily limit must be a whole number between 1 and 15000 calls per day.'),
             'IFIRMA_PAYMENT_METHOD_MODE' => $this->l('The payment method mode must be "order" or "fixed".'),
             'IFIRMA_PAYMENT_METHOD' => $this->l('The fallback payment method must be one of the listed codes.'),
             'IFIRMA_PAYMENT_METHOD_MAP' => $this->l('Payment method map'),
@@ -918,6 +920,20 @@ class Ifirma extends Module
                 ),
             ),
             array(
+                'type' => 'select',
+                'label' => $this->l('KSeF submitter'),
+                'name' => 'IFIRMA_KSEF_SUBMITTER',
+                'desc' => $this->l('Who sends the invoices to KSeF. Choose iFirma when your iFirma account submits API invoices to KSeF on its own: the module then never calls the KSeF send endpoint and only waits for the state iFirma reports.'),
+                'options' => array(
+                    'query' => array(
+                        array('id' => 'module', 'name' => $this->l('The module sends them')),
+                        array('id' => 'ifirma', 'name' => $this->l('iFirma sends them (the module waits)')),
+                    ),
+                    'id' => 'id',
+                    'name' => 'name',
+                ),
+            ),
+            array(
                 'type' => 'switch',
                 'label' => $this->l('Duplicate check'),
                 'name' => 'IFIRMA_DUPLICATE_CHECK',
@@ -984,10 +1000,24 @@ class Ifirma extends Module
             ),
             array(
                 'type' => 'text',
+                'label' => $this->l('Cron items per job'),
+                'name' => 'IFIRMA_CRON_MAX_ITEMS',
+                'class' => 'fixed-width-sm',
+                'desc' => $this->l('Most queued orders, KSeF submissions and deliveries one cron run handles per job (1-50).'),
+            ),
+            array(
+                'type' => 'text',
                 'label' => $this->l('API calls per minute'),
                 'name' => 'IFIRMA_RATE_MAX_PER_MIN',
                 'class' => 'fixed-width-sm',
                 'desc' => $this->l('Local safety limit for iFirma API calls per minute (1-100).'),
+            ),
+            array(
+                'type' => 'text',
+                'label' => $this->l('API calls per day'),
+                'name' => 'IFIRMA_RATE_MAX_PER_DAY',
+                'class' => 'fixed-width-sm',
+                'desc' => $this->l('Local safety limit for iFirma API calls per day (1-15000). The account limit is shared with every other program that uses the iFirma API.'),
             ),
             array(
                 'type' => 'html',
@@ -1048,6 +1078,7 @@ class Ifirma extends Module
             'IFIRMA_SEND_COPY_MODE' => Configuration::get('IFIRMA_SEND_COPY_MODE') ?: 'none',
             'IFIRMA_SEND_COPY_EMPLOYEE' => (int) Configuration::get('IFIRMA_SEND_COPY_EMPLOYEE'),
             'IFIRMA_KSEF_MODE' => IfirmaKsefService::normalizeMode(Configuration::get('IFIRMA_KSEF_MODE')),
+            'IFIRMA_KSEF_SUBMITTER' => IfirmaKsefService::normalizeSubmitter(Configuration::get('IFIRMA_KSEF_SUBMITTER')),
             'IFIRMA_DUPLICATE_CHECK' => (int) Configuration::get('IFIRMA_DUPLICATE_CHECK'),
             'IFIRMA_DUPLICATE_WINDOW_DAYS' => (int) Configuration::get('IFIRMA_DUPLICATE_WINDOW_DAYS'),
             'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE' => Configuration::get('IFIRMA_DUPLICATE_AMOUNT_TOLERANCE'),
@@ -1056,7 +1087,9 @@ class Ifirma extends Module
             'IFIRMA_NOTIFY_EMAIL' => Configuration::get('IFIRMA_NOTIFY_EMAIL'),
             'IFIRMA_SYNC_INTERVAL_MIN' => (int) Configuration::get('IFIRMA_SYNC_INTERVAL_MIN'),
             'IFIRMA_CRON_MAX_CALLS' => (int) Configuration::get('IFIRMA_CRON_MAX_CALLS'),
+            'IFIRMA_CRON_MAX_ITEMS' => (int) Configuration::get('IFIRMA_CRON_MAX_ITEMS'),
             'IFIRMA_RATE_MAX_PER_MIN' => (int) Configuration::get('IFIRMA_RATE_MAX_PER_MIN'),
+            'IFIRMA_RATE_MAX_PER_DAY' => (int) Configuration::get('IFIRMA_RATE_MAX_PER_DAY'),
         );
 
         return $helper->generateForm(array($fields_form));
@@ -1168,6 +1201,7 @@ class Ifirma extends Module
     {
         return array(
             IfirmaAdminPanelPresenter::STATE_HELD => $this->l('On hold (data change request pending)'),
+            IfirmaAdminPanelPresenter::STATE_QUEUED => $this->l('Queued for issuance'),
             IfirmaAdminPanelPresenter::STATE_SUSPECTED => $this->l('Suspected duplicate'),
             IfirmaAdminPanelPresenter::STATE_UNKNOWN => $this->l('Outcome unknown - verify in iFirma'),
             IfirmaAdminPanelPresenter::STATE_ERROR => $this->l('Error'),
@@ -1310,7 +1344,7 @@ class Ifirma extends Module
         $column = new $columnClass(IfirmaOrderGridIndicator::FIELD);
         $column->setName($this->l('iFirma'))->setOptions(array(
             'field' => IfirmaOrderGridIndicator::FIELD,
-            'sortable' => false,
+            'sortable' => true,
             'clickable' => true,
         ));
         $params['definition']->getColumns()->addBefore('actions', $column);
@@ -1343,6 +1377,26 @@ class Ifirma extends Module
         foreach (IfirmaOrderGridIndicator::selectSql() as $select) {
             $params['search_query_builder']->addSelect($select);
         }
+        $this->sortByTheColumn($params['search_query_builder'], isset($params['search_criteria']) ? $params['search_criteria'] : null);
+    }
+
+    /**
+     * The core sorts the Orders list only by its own whitelist and adds no ORDER BY for any other field, so the sort of the
+     * iFirma column is this hook's alone. The direction goes through a whitelist, never into the SQL as given; orders in the
+     * same state are listed newest first. The count query is not touched, so the paging cannot change.
+     *
+     * @param object      $searchQuery
+     * @param object|null $criteria    the grid's search criteria
+     */
+    private function sortByTheColumn($searchQuery, $criteria)
+    {
+        if (!is_object($criteria) || !method_exists($criteria, 'getOrderBy')
+            || $criteria->getOrderBy() !== IfirmaOrderGridIndicator::FIELD) {
+            return;
+        }
+        $way = strtolower((string) $criteria->getOrderWay()) === 'desc' ? 'DESC' : 'ASC';
+        $searchQuery->orderBy(IfirmaOrderGridIndicator::SORT_ALIAS, $way);
+        $searchQuery->addOrderBy('o.id_order', 'DESC');
     }
 
     /**
@@ -1383,15 +1437,35 @@ class Ifirma extends Module
      */
     public function gridCellLabels()
     {
-        return array(
-            'paid' => $this->l('Paid'),
-            'issued' => $this->l('Issued'),
-            'issue' => $this->l('Issue iFirma document'),
-            'error' => $this->l('failed'),
-            'unknown' => $this->l('unknown outcome'),
-            'duplicate_suspected' => $this->l('suspected duplicate'),
-            'held' => $this->l('held'),
-        );
+        return self::decodeWords(array(
+            'invoice_issued' => $this->l('Invoice issued'),
+            'invoice_sent' => $this->l('Invoice sent'),
+            'invoice_paid' => $this->l('Invoice paid'),
+            'invoice_ksef' => $this->l('Invoice waiting for KSeF'),
+            'receipt_issued' => $this->l('Receipt issued'),
+            'receipt_sent' => $this->l('Receipt sent'),
+            'receipt_paid' => $this->l('Receipt paid'),
+            'receipt_ksef' => $this->l('Receipt waiting for KSeF'),
+            'delivery_sent_invoice' => $this->l('Sent to the customer: %s'),
+            'delivery_sent_receipt' => $this->l('Receipt sent to the customer: %s'),
+            'delivery_none_invoice' => $this->l('Not sent yet'),
+            'delivery_none_receipt' => $this->l('Receipt not sent yet'),
+            'delivery_failed' => $this->l('Delivery failed'),
+            'unpaid_invoice' => $this->l('Unpaid'),
+            'unpaid_receipt' => $this->l('Receipt unpaid'),
+            'ksef_accepted' => $this->l('KSeF: accepted (%s)'),
+            'ksef_progress' => $this->l('KSeF: sent, awaiting confirmation'),
+            'ksef_waiting' => $this->l('KSeF: waiting to be sent'),
+            'ksef_error' => $this->l('KSeF: error'),
+            'ksef_rejected' => $this->l('KSeF: rejected by KSeF'),
+            'state_none' => $this->l('No document yet'),
+            'state_error' => $this->l('Issuance failed'),
+            'state_unknown' => $this->l('Unknown outcome'),
+            'state_duplicate_suspected' => $this->l('Suspected duplicate'),
+            'state_held' => $this->l('Held (data change request)'),
+            'state_queued' => $this->l('Queued (iFirma limit)'),
+            'click_to_issue' => $this->l('click to issue'),
+        ));
     }
 
     /**
@@ -1404,8 +1478,11 @@ class Ifirma extends Module
             IfirmaIssueFeed::KIND_ERROR => $this->l('Issuance failed'),
             IfirmaIssueFeed::KIND_UNKNOWN => $this->l('Unknown outcome'),
             IfirmaIssueFeed::KIND_SUSPECTED => $this->l('Suspected duplicate'),
+            IfirmaIssueFeed::KIND_QUEUED_STALE => $this->l('Queued for issuance'),
             IfirmaIssueFeed::KIND_MISSING => $this->l('Missing in iFirma'),
             IfirmaIssueFeed::KIND_KSEF_FAILED => $this->l('KSeF failed'),
+            IfirmaIssueFeed::KIND_KSEF_REJECTED => $this->l('Rejected by KSeF'),
+            IfirmaIssueFeed::KIND_KSEF_OVERDUE => $this->l('KSeF confirmation overdue'),
             IfirmaIssueFeed::KIND_DELIVERY_FAILED => $this->l('Delivery failed'),
         ));
     }

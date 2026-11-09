@@ -393,7 +393,7 @@ class AdminControllerBulkTest extends TestCase
         $word = 'duplicate_suspected';
         if (method_exists($this->module, 'gridCellLabels')) {
             $labels = $this->module->gridCellLabels();
-            $word = isset($labels['duplicate_suspected']) ? $labels['duplicate_suspected'] : $word;
+            $word = isset($labels['state_duplicate_suspected']) ? $labels['state_duplicate_suspected'] : $word;
         }
         $this->assertStringContainsString(htmlspecialchars($word, ENT_QUOTES, 'UTF-8'), $payload['data']['cell']);
     }

@@ -22,18 +22,24 @@ require_once dirname(__FILE__) . '/IfirmaDeliveryService.php';
 require_once dirname(__FILE__) . '/IfirmaKsefService.php';
 require_once dirname(__FILE__) . '/IfirmaDataRequestService.php';
 require_once dirname(__FILE__) . '/IfirmaNamedLock.php';
+require_once dirname(__FILE__) . '/IfirmaIssueQueue.php';
+require_once dirname(__FILE__) . '/IfirmaKsefDeliveryGate.php';
+require_once dirname(__FILE__) . '/IfirmaRateLimitedException.php';
 
 require_once dirname(__FILE__) . '/IfirmaPipelineResult.php';
 
 /**
  * Issuance pipeline: hold check -> duplicate guard -> create -> number -> KSeF -> delivery.
  *
- * Contract (used by the status hook, the admin Create action and the data-request resume):
+ * Contract (used by the status hook, the admin Create action, the cron queue job and the data-request resume):
  *  - run(Order, options) -> IfirmaPipelineResult; never throws. Options: trigger (status|manual|resume|
- *    issue_anyway, default manual), bypass_guard (bool), id_employee (int|null), skip_delivery (bool),
+ *    issue_anyway|queue, default manual), bypass_guard (bool), id_employee (int|null), skip_delivery (bool),
  *    skip_ksef (bool).
  *  - onOrderStatusChange(idOrder, idNewState) -> IfirmaPipelineResult|null; null (nothing done) when the
- *    trigger status is 0, differs from the new state, or credentials are missing. Never throws.
+ *    trigger status is 0, differs from the new state, credentials are missing, or another run holds the
+ *    order's lock (the order then stays queued for the cron). Otherwise the order is recorded as queued
+ *    first, before any iFirma request, and the run takes the order's lock without waiting. Never throws.
+ *  - A run refused by the rate limit (outcome rate_limited) leaves the order queued, never an error.
  *  - shouldResume(Order) -> bool; resumeAfterRequest(IfirmaDataRequest) -> IfirmaPipelineResult|null.
  *  - describe(IfirmaPipelineResult) -> one-line admin message naming the step that stopped the run.
  *  - build(Module) shares ONE IfirmaApiClient (and so one rate counter) across all collaborators.
@@ -57,6 +63,7 @@ class IfirmaIssuancePipeline
     const TRIGGER_MANUAL = 'manual';
     const TRIGGER_RESUME = 'resume';
     const TRIGGER_BYPASS = 'issue_anyway';
+    const TRIGGER_QUEUE = 'queue';
 
     /** @var IfirmaReceiptService */
     private $service;
@@ -79,6 +86,9 @@ class IfirmaIssuancePipeline
     /** @var callable|null */
     private $clock;
 
+    /** @var IfirmaIssueQueue|null built on first use */
+    private $queue;
+
     /**
      * @param IfirmaReceiptService     $service
      * @param IfirmaDuplicateGuard     $guard
@@ -87,6 +97,7 @@ class IfirmaIssuancePipeline
      * @param Module                   $module
      * @param callable|null            $clock
      * @param IfirmaKsefService|null   $ksef
+     * @param IfirmaIssueQueue|null    $queue
      */
     public function __construct(
         IfirmaReceiptService $service,
@@ -95,7 +106,8 @@ class IfirmaIssuancePipeline
         IfirmaDataRequestService $requests,
         Module $module,
         $clock = null,
-        ?IfirmaKsefService $ksef = null
+        ?IfirmaKsefService $ksef = null,
+        ?IfirmaIssueQueue $queue = null
     ) {
         $this->service = $service;
         $this->guard = $guard;
@@ -104,6 +116,7 @@ class IfirmaIssuancePipeline
         $this->module = $module;
         $this->clock = $clock;
         $this->ksef = $ksef !== null ? $ksef : IfirmaKsefService::build($module);
+        $this->queue = $queue;
     }
 
     /**
@@ -146,12 +159,48 @@ class IfirmaIssuancePipeline
                 return null;
             }
 
-            return $this->run(new Order((int) $idOrder), array('trigger' => self::TRIGGER_STATUS));
+            return $this->runQueued(new Order((int) $idOrder));
         } catch (Throwable $e) {
             $this->log('iFirma pipeline: ' . $e->getMessage());
         }
 
         return null;
+    }
+
+    /**
+     * The order reached the trigger status: it is recorded as queued before any request, so no exit path (a
+     * refusal, a busy lock, a timeout) can lose it, and it is then issued under its lock, which is not waited for
+     * so a status change never blocks on a cron run.
+     *
+     * @param Order $order
+     * @return IfirmaPipelineResult|null null when another run holds the order's lock
+     */
+    private function runQueued(Order $order)
+    {
+        if (Validate::isLoadedObject($order)) {
+            $this->queue()->enqueue($order);
+        }
+        $lock = 'ifirma_order_' . (int) $order->id;
+        if (!IfirmaNamedLock::acquire($lock, 0)) {
+            return null;
+        }
+        try {
+            return $this->run($order, array('trigger' => self::TRIGGER_STATUS));
+        } finally {
+            IfirmaNamedLock::release($lock);
+        }
+    }
+
+    /**
+     * @return IfirmaIssueQueue
+     */
+    private function queue()
+    {
+        if ($this->queue === null) {
+            $this->queue = new IfirmaIssueQueue();
+        }
+
+        return $this->queue;
     }
 
     /**
@@ -297,6 +346,7 @@ class IfirmaIssuancePipeline
             return $stop;
         }
         $this->stepNumber($result);
+        $this->holdForKsef($order, $result);
         $this->stepKsef($order, $options, $result);
         $this->stepDeliver($order, $options, $result);
 
@@ -407,8 +457,8 @@ class IfirmaIssuancePipeline
     }
 
     /**
-     * The guard could not tell whether the order has a document. A rate limited check leaves no record; any
-     * other failure is recorded on the order's receipt row.
+     * The guard could not tell whether the order has a document. A rate limited check queues the order; any
+     * other failure is recorded on the order's receipt row (a queued order fails like a new one).
      *
      * @param Order                $order
      * @param IfirmaPipelineResult $result
@@ -418,12 +468,13 @@ class IfirmaIssuancePipeline
     private function stopForInconclusive(Order $order, IfirmaPipelineResult $result, IfirmaGuardResult $g)
     {
         if ($g->rateLimited) {
+            $result->receipt = $this->queue()->enqueue($order, (string) $g->error);
             $result->stopAt(IfirmaPipelineResult::OUTCOME_RATE_LIMITED, self::STEP_GUARD, (string) $g->error);
 
             return $result;
         }
         $row = $this->ensureRow($order, $isNew);
-        if ($isNew) {
+        if ($this->failsLikeANewOrder($row, $isNew)) {
             $row->markError((string) $g->error);
         } else {
             $row->last_error = (string) $g->error;
@@ -455,6 +506,11 @@ class IfirmaIssuancePipeline
             $receipt = $this->service->createReceipt($order, array(
                 'override' => $this->requests->getOverrideForOrder($idOrder),
             ));
+        } catch (IfirmaRateLimitedException $e) {
+            $result->receipt = $this->queue()->enqueue($order, $e->getMessage());
+            $result->stopAt(IfirmaPipelineResult::OUTCOME_RATE_LIMITED, self::STEP_CREATE, $e->getMessage());
+
+            return $result;
         } catch (Exception $e) {
             $row = IfirmaReceipt::getByOrder($idOrder);
             $result->receipt = $row;
@@ -490,6 +546,24 @@ class IfirmaIssuancePipeline
         }
         $result->addStep(self::STEP_NUMBER, 'ok', $result->receipt->ifirma_number ? '' : 'number not yet available');
         $result->markIssued();
+    }
+
+    /**
+     * Holds a document that goes to KSeF back from the customer before the KSeF request is made, so there is no window
+     * between the create and the deliver step in which it could be downloaded (a fatal error in between would leave
+     * it open for good). The deliver step decides again: an invoice that KSeF already accepted is delivered.
+     *
+     * @param Order                $order
+     * @param IfirmaPipelineResult $result
+     */
+    private function holdForKsef(Order $order, IfirmaPipelineResult $result)
+    {
+        $receipt = $result->receipt;
+        if (!$receipt instanceof IfirmaReceipt || !(new IfirmaKsefDeliveryGate($this->ksef))->mustWait($receipt, $order)) {
+            return;
+        }
+        $receipt->markAwaitingKsef();
+        $receipt->save();
     }
 
     /**
@@ -530,6 +604,18 @@ class IfirmaIssuancePipeline
 
             return;
         }
+        $outcome = isset($k['outcome']) ? (string) $k['outcome'] : '';
+        if ($outcome === 'deferred') {
+            // nothing was sent and nothing changed: the cron reads the state again and submits
+            $result->addStep(self::STEP_KSEF, 'skipped', $this->module->l('KSeF state unavailable, retried by the cron', 'ifirmaissuancepipeline'));
+
+            return;
+        }
+        if ($outcome === 'already' || $outcome === 'refused') {
+            $result->addStep(self::STEP_KSEF, 'skipped', $message);
+
+            return;
+        }
         $result->addStep(self::STEP_KSEF, 'failed', $message);
         $result->message = rtrim((string) $result->message) . ' KSeF: ' . ($message !== '' ? $message : 'KSeF submission failed');
     }
@@ -546,6 +632,14 @@ class IfirmaIssuancePipeline
     {
         if (!empty($options['skip_delivery'])) {
             $result->addStep(self::STEP_DELIVER, 'skipped', 'delivery skipped by caller');
+
+            return;
+        }
+        if ((new IfirmaKsefDeliveryGate($this->ksef))->mustWait($result->receipt, $order)) {
+            // an invoice given outside KSeF should carry its KSeF number: the cron delivers it after acceptance
+            $result->receipt->markAwaitingKsef();
+            $result->receipt->save();
+            $result->addStep(self::STEP_DELIVER, 'skipped', 'waiting for KSeF acceptance');
 
             return;
         }
@@ -589,7 +683,7 @@ class IfirmaIssuancePipeline
 
         try {
             $row = $this->ensureRow($order, $isNew);
-            if ($isNew) {
+            if ($this->failsLikeANewOrder($row, $isNew)) {
                 $row->markError((string) $message);
             } else {
                 $row->last_error = (string) $message;
@@ -599,6 +693,19 @@ class IfirmaIssuancePipeline
         } catch (Throwable $e) {
             // recording is best effort
         }
+    }
+
+    /**
+     * A failure leaves a new order, and a queued one, in the error state: the cron must not retry it blindly. Any
+     * other record keeps its state and only takes the message.
+     *
+     * @param IfirmaReceipt $row
+     * @param bool          $isNew
+     * @return bool
+     */
+    private function failsLikeANewOrder(IfirmaReceipt $row, $isNew)
+    {
+        return $isNew || (string) $row->status === IfirmaReceipt::STATUS_QUEUED;
     }
 
     /**

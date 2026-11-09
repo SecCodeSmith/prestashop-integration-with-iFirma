@@ -457,4 +457,11 @@ class AdminPanelPresenterTest extends TestCase
         $this->assertSame('M:created', $p->contractorNote(array('action' => 'created', 'message' => '', 'note' => null, 'attached' => '')));
         $this->assertSame('M:fallback (raw) M:attached X-1', $p->contractorNote(array('action' => 'fallback', 'message' => 'raw', 'note' => null, 'attached' => 'X-1')));
     }
+    public function testAQueuedRecordIsItsOwnState()
+    {
+        $r = new IfirmaReceipt();
+        $r->status = 'queued';
+
+        $this->assertSame('queued', $this->presenter()->state($r));
+    }
 }

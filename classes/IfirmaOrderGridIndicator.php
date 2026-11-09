@@ -8,6 +8,8 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
+require_once dirname(__FILE__) . '/IfirmaOrderGridTooltip.php';
+
 /**
  * What the "iFirma" column of the back-office Orders list shows for each order: the SQL that reads the
  * newest module record of the order, and the icon cell built from it. Framework-free on purpose: the grid
@@ -19,7 +21,29 @@ class IfirmaOrderGridIndicator
     const FIELD_NUMBER = 'ifirma_document_number';
     const FIELD_STATUS = 'ifirma_document_status';
     const FIELD_STATE = 'ifirma_document_state';   // the raw status of the newest record, '' without a row
+    const FIELD_TYPE = 'ifirma_document_type';
+    const FIELD_DELIVERY = 'ifirma_document_delivery';
+    const FIELD_SENT_DATE = 'ifirma_document_sent_date';
+    const FIELD_KSEF_STATUS = 'ifirma_document_ksef_status';
+    const FIELD_KSEF_NUMBER = 'ifirma_document_ksef_number';
+    const FIELD_ERROR = 'ifirma_document_error';
+    const FIELD_RANK = 'ifirma_document_rank';
     const ICON = 'receipt_long';
+
+    /** The ORDER BY alias of the column's sort (the column id itself holds the HTML of the cell). */
+    const SORT_ALIAS = self::FIELD_RANK;
+
+    /** Position of each state in the sort, ascending: what needs action first. */
+    const RANK_ERROR = 1;
+    const RANK_UNKNOWN = 2;
+    const RANK_SUSPECTED = 3;
+    const RANK_HELD = 4;
+    const RANK_QUEUED = 5;
+    const RANK_NO_RECORD = 6;
+    const RANK_ISSUED = 7;
+    const RANK_AWAITING_KSEF = 8;
+    const RANK_SENT = 9;
+    const RANK_PAID = 10;
 
     /** @var string alias of the joined receipt row; none of PrestaShop's order-grid aliases (o, cu, cur, a, c, os, osl, s) */
     const JOIN_ALIAS = 'ifr';
@@ -45,9 +69,11 @@ class IfirmaOrderGridIndicator
     }
 
     /**
-     * @return string[] three select expressions on the joined row, each with an AS alias, for QueryBuilder::addSelect();
-     *                  the first two are '' for an order without an issued document (no row joined, or not issued);
-     *                  the third is the raw status of the newest record, '' without a row
+     * @return string[] the select expressions on the joined row, each with an AS alias, for QueryBuilder::addSelect():
+     *                  number and status ('' for an order without an issued document), the raw state of the newest
+     *                  record, its document type, delivery state, delivery date, KSeF status and number, the error
+     *                  (one character more than shown, so the builder knows when to add the ellipsis) and the rank of
+     *                  the sort. Every one reads the one joined row: no subquery, no iFirma call.
      */
     public static function selectSql()
     {
@@ -59,7 +85,40 @@ class IfirmaOrderGridIndicator
             "IF({$issued}, IF({$j}.ifirma_number <> '', {$j}.ifirma_number, {$j}.ifirma_id), '') AS " . self::FIELD_NUMBER,
             "IF({$issued}, {$j}.status, '') AS " . self::FIELD_STATUS,
             "IFNULL({$j}.status, '') AS " . self::FIELD_STATE,
+            "IFNULL({$j}.document_type, '') AS " . self::FIELD_TYPE,
+            "IFNULL({$j}.delivery_status, '') AS " . self::FIELD_DELIVERY,
+            "IFNULL(DATE({$j}.delivered_at), '') AS " . self::FIELD_SENT_DATE,
+            "IFNULL({$j}.ksef_status, '') AS " . self::FIELD_KSEF_STATUS,
+            "IFNULL({$j}.ksef_number, '') AS " . self::FIELD_KSEF_NUMBER,
+            "LEFT(IFNULL({$j}.last_error, ''), " . (IfirmaOrderGridTooltip::ERROR_LIMIT + 1) . ") AS " . self::FIELD_ERROR,
+            self::rankSql($j, $issued) . ' AS ' . self::FIELD_RANK,
         );
+    }
+
+    /**
+     * The state of the newest record as a number, for the sort: the states that need action first, then no record, then
+     * the issued ones from "not sent" to "paid". A paid document wins over its delivery state.
+     *
+     * @param string $j      alias of the joined row
+     * @param string $issued the SQL condition of "issued"
+     * @return string a CASE expression
+     */
+    private static function rankSql($j, $issued)
+    {
+        $rows = array(
+            "WHEN {$j}.id_ifirma_receipt IS NULL THEN " . self::RANK_NO_RECORD,
+            "WHEN {$issued} AND {$j}.status = 'paid' THEN " . self::RANK_PAID,
+            "WHEN {$issued} AND {$j}.delivery_status = 'awaiting_ksef' THEN " . self::RANK_AWAITING_KSEF,
+            "WHEN {$issued} AND {$j}.delivery_status = 'sent' THEN " . self::RANK_SENT,
+            "WHEN {$issued} THEN " . self::RANK_ISSUED,
+            "WHEN {$j}.status = 'error' THEN " . self::RANK_ERROR,
+            "WHEN {$j}.status = 'unknown' THEN " . self::RANK_UNKNOWN,
+            "WHEN {$j}.status = 'duplicate_suspected' THEN " . self::RANK_SUSPECTED,
+            "WHEN {$j}.status = 'held' THEN " . self::RANK_HELD,
+            "WHEN {$j}.status = 'queued' THEN " . self::RANK_QUEUED,
+        );
+
+        return 'CASE ' . implode(' ', $rows) . ' ELSE ' . self::RANK_NO_RECORD . ' END';
     }
 
     /**
@@ -91,8 +150,7 @@ class IfirmaOrderGridIndicator
         }
         $status = isset($record[self::FIELD_STATUS]) ? (string) $record[self::FIELD_STATUS] : '';
         $paid = ($status === IfirmaReceipt::STATUS_PAID);
-        $word = $paid ? (isset($labels['paid']) ? $labels['paid'] : 'Paid') : (isset($labels['issued']) ? $labels['issued'] : 'Issued');
-        $title = 'iFirma: ' . $number . ' (' . $word . ')';
+        $title = implode("\n", IfirmaOrderGridTooltip::lines($record, $labels));
 
         return '<i class="material-icons ifirma-grid-icon ' . ($paid ? 'text-success' : 'text-info') . '" title="' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '">' . self::ICON . '</i>';
     }
@@ -105,11 +163,7 @@ class IfirmaOrderGridIndicator
     private static function issueAnchor(array $record, array $labels)
     {
         $idOrder = isset($record['id_order']) ? (int) $record['id_order'] : 0;
-        $title = isset($labels['issue']) ? (string) $labels['issue'] : 'Issue iFirma document';
-        $state = isset($record[self::FIELD_STATE]) ? (string) $record[self::FIELD_STATE] : '';
-        if ($state !== '') {
-            $title .= ' (' . (isset($labels[$state]) ? $labels[$state] : $state) . ')';
-        }
+        $title = implode("\n", IfirmaOrderGridTooltip::lines($record, $labels));
 
         return '<a href="#" class="js-ifirma-issue" data-id-order="' . $idOrder . '" title="'
             . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '"><i class="material-icons">add_circle_outline</i></a>';

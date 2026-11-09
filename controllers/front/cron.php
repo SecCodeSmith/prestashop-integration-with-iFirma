@@ -10,7 +10,7 @@
  */
 
 /**
- * Cron endpoint: bulk status sync (spec: receipt-status-sync).
+ * Cron endpoint: issues queued orders, then syncs statuses (spec: receipt-issuance-queue, receipt-status-sync).
  * URL: /module/ifirma/cron?token=<IFIRMA_CRON_TOKEN>, or the token in the X-Ifirma-Token header
  */
 
@@ -22,6 +22,7 @@ require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaApiClient.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaHttpStatus.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaReceipt.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaStatusSyncService.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaCronRunner.php';
 
 class IfirmaCronModuleFrontController extends ModuleFrontController
 {
@@ -31,7 +32,7 @@ class IfirmaCronModuleFrontController extends ModuleFrontController
     public function initContent()
     {
         $this->ajax = true;
-        $service = IfirmaStatusSyncService::build($this->module);
+        $tokens = IfirmaStatusSyncService::build($this->module);
 
         // the query token wins; the X-Ifirma-Token header keeps the token out of the web server's access log
         $given = Tools::getValue('token');
@@ -39,10 +40,10 @@ class IfirmaCronModuleFrontController extends ModuleFrontController
             $given = isset($_SERVER['HTTP_X_IFIRMA_TOKEN']) ? (string) $_SERVER['HTTP_X_IFIRMA_TOKEN'] : '';
         }
 
-        if (!$service->isValidCronToken($given)) {
+        if (!$tokens->isValidCronToken($given)) {
             $this->respond(403, array('error' => 'Forbidden'));
         } else {
-            $this->respond(200, $service->runCron());
+            $this->respond(200, IfirmaCronRunner::build($this->module)->run());
         }
     }
 
