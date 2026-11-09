@@ -82,7 +82,7 @@ rules that match the old `ifirma-` name must be changed.
 
 ## Upgrading to 1.8.0
 
-This release must be published as a `minor` version bump: PrestaShop runs `upgrade/upgrade-1.8.0.php` only when the module's version is above the one installed. The script adds five settings when they are missing and changes no row of any table: nothing becomes queued or awaiting KSeF retroactively, and a document issued before the upgrade is delivered as it was.
+This release must be published as a `minor` version bump: PrestaShop runs `upgrade/upgrade-1.8.0.php` only when the module's version is above the one installed. The script adds six settings when they are missing and changes no row of any table: nothing becomes queued or awaiting KSeF retroactively, and a document issued before the upgrade is delivered as it was.
 
 New settings (all editable on the settings page except the two internal counters):
 
@@ -91,9 +91,9 @@ New settings (all editable on the settings page except the two internal counters
 | `IFIRMA_RATE_MAX_PER_DAY` | `14000` | The day cap of the local rate guard, 1 to 15,000 (iFirma's own limit); see [Rate limits](configuration.md#rate-limits). |
 | `IFIRMA_KSEF_SUBMITTER` | `module` | Who submits invoices to KSeF: `module` or `ifirma`. Choose `ifirma` when your iFirma account submits API invoices to KSeF on its own. |
 | `IFIRMA_CRON_MAX_ITEMS` | `10` | How many queued orders, KSeF submissions and deliveries each cron job handles per run, 1 to 50. |
-| `IFIRMA_RATE_DAY_WINDOW`, `IFIRMA_RATE_BACKOFF_UNTIL` | empty | Internal: the day counter and the end of a back-off after iFirma's limit answer. |
+| `IFIRMA_RATE_DAY_WINDOW`, `IFIRMA_RATE_BACKOFF_UNTIL`, `IFIRMA_REMOTE_LIMIT` | empty | Internal: the day counter, the end of a back-off after iFirma's limit answer, and the last reading of the day limit from iFirma. |
 
-**Behaviour change: the cron endpoint does more.** `/module/ifirma/cron` now issues queued orders, retries deferred KSeF submissions, synchronises statuses and delivers documents accepted by KSeF, in that order and under a run lock. Its JSON keeps its existing keys and gains `queue`, `ksef`, `delivery`, `rate_limited` and `rate_limited_window`. Call it every 1 to 5 minutes: queued orders and documents that wait for KSeF are processed there. See [Cron jobs](configuration.md#cron-jobs).
+**Behaviour change: the cron endpoint does more.** `/module/ifirma/cron` now issues queued orders, retries deferred KSeF submissions, synchronises statuses and delivers documents accepted by KSeF, in that order and under a run lock. Its JSON keeps its existing keys and gains `limit`, `queue`, `ksef`, `delivery`, `rate_limited` and `rate_limited_window`. Call it every 1 to 5 minutes: queued orders and documents that wait for KSeF are processed there. See [Cron jobs](configuration.md#cron-jobs).
 
 **Behaviour change: orders are queued first.** Every order that reaches the trigger status gets a record in the state `queued` before any request to iFirma, and an issuance refused by the rate limit stays queued instead of failing or leaving no trace. See [Queued issuance](usage.md#queued-issuance).
 

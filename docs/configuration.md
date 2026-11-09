@@ -111,6 +111,7 @@ Open the module configuration and fill in:
 | `IFIRMA_RATE_WINDOW` (new) | empty (internal rate-limit state of the minute: `<minute>:<count>`, incremented by one atomic database statement, so two requests at the same time cannot both pass the cap) |
 | `IFIRMA_RATE_DAY_WINDOW` (new) | empty (the same for the calendar day: `<day>:<count>`) |
 | `IFIRMA_RATE_BACKOFF_UNTIL` (new) | empty (internal: the unix time until which iFirma asked the module to wait after it refused a request for exceeding its limit; no request is sent before it, see [Rate limits](#rate-limits)) |
+| `IFIRMA_REMOTE_LIMIT` (new) | empty (internal: the last reading of the day limit from iFirma, `<day>:<used>:<granted>:<unix time>`; needs the `abonent` key, see [Rate limits](#rate-limits)) |
 | `IFIRMA_AUTH_FAILURE` (new) | empty (internal mark of the pause after a rejected key: `<unix time>|<message>`; set by a failed call, cleared by a successful save of the settings; after 15 minutes the mark no longer pauses calls) |
 | `IFIRMA_SEEN_<id_employee>` (new) | not set (internal: the time an employee last opened the iFirma tab of the notification bell) |
 
@@ -165,7 +166,8 @@ Link, Unlink and Register on the customer page need, on top of View, the Edit pe
 ## Cron jobs
 
 One request to the cron endpoint (`/module/ifirma/cron`, token in the query or in the `X-Ifirma-Token` header) runs four jobs in
-a fixed order, under a run lock, and answers with one JSON summary. The order is chosen so that work reaches the customer
+a fixed order, under a run lock, after reading the day limit from iFirma (see [Rate limits](#rate-limits)), and answers
+with one JSON summary. The order is chosen so that work reaches the customer
 as early as possible: customer-facing issuance first, a KSeF submission before the sync that reads its state, delivery last so
 that an acceptance read by the sync is delivered in the same run.
 
@@ -225,6 +227,13 @@ before any network call, with a message that names the end time. See
 [Rate limited by iFirma](troubleshooting.md#rate-limited-by-ifirma).
 
 The limits are shared by ALL API clients of your account (other integrations, accounting tools). The module counts
-only its own requests, so a busy account can reach iFirma's limit before the module reaches its cap; lower the caps when
-other programs use the same account. The module retries rate-limited receipts on a later run, but it cannot see
-requests made by other clients.
+its own requests, so without the `abonent` key a busy account can reach iFirma's limit before the module reaches its cap;
+lower the caps when other programs use the same account.
+
+**Reading the current limit from iFirma.** With the optional `abonent` key entered on the settings page, the first step of
+every cron run reads the day limit (`GET iapi/abonent/limit.json`: used and granted requests). The module raises its day
+counter to the number iFirma counts, so requests made by other clients count against the cap, and it never lets the day cap
+exceed the limit iFirma granted (a smaller grant lowers the cap for that day). A reading is reused for 10 minutes, so the
+extra request is made at most about six times an hour. The cron answer reports it in a `limit` block
+(`used`, `granted`, `remaining`; all `null` without the key or when iFirma does not answer). A failed read changes nothing:
+the module goes on with its local counters.

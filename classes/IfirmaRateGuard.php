@@ -15,6 +15,7 @@ if (!defined('_PS_VERSION_')) {
 
 require_once dirname(__FILE__) . '/IfirmaRateWindow.php';
 require_once dirname(__FILE__) . '/IfirmaRateDecision.php';
+require_once dirname(__FILE__) . '/IfirmaRemoteLimit.php';
 
 /**
  * Admission control for requests to iFirma: a per-minute and a per-day window, checked in that order
@@ -149,9 +150,22 @@ class IfirmaRateGuard
                 IfirmaRateDecision::WINDOW_DAY,
                 self::DAY_COUNTER_KEY,
                 'Ymd',
-                $this->capOf('IFIRMA_RATE_MAX_PER_DAY', self::DEFAULT_DAY_CAP)
+                $this->dayCap()
             ),
         );
+    }
+
+    /**
+     * The configured day cap, lowered to the limit iFirma granted when a reading of today says it is less.
+     *
+     * @return int
+     */
+    private function dayCap()
+    {
+        $cap = $this->capOf('IFIRMA_RATE_MAX_PER_DAY', self::DEFAULT_DAY_CAP);
+        $granted = IfirmaRemoteLimit::grantedOn(date('Ymd', $this->now()));
+
+        return $granted > 0 ? min($cap, $granted) : $cap;
     }
 
     /**

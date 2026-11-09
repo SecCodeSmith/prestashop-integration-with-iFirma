@@ -37,6 +37,9 @@ class IfirmaCronJobReport
     /** @var array|null the summary kept at the top level of the cron answer; null for a job with a block */
     private $topLevel = null;
 
+    /** @var array|null a block of its own shape instead of the counts; null for a counting job */
+    private $values = null;
+
     /**
      * @param string $name
      */
@@ -78,6 +81,19 @@ class IfirmaCronJobReport
 
     /**
      * @param string $name
+     * @param array  $values a block of the job's own shape (for a job that counts nothing)
+     * @return IfirmaCronJobReport
+     */
+    public static function values($name, array $values)
+    {
+        $report = new self($name);
+        $report->values = $values;
+
+        return $report;
+    }
+
+    /**
+     * @param string $name
      * @param array  $summary keys kept at the top level of the cron answer
      * @return IfirmaCronJobReport
      */
@@ -111,11 +127,11 @@ class IfirmaCronJobReport
     }
 
     /**
-     * @return array handled, succeeded, failed, left
+     * @return array handled, succeeded, failed, left; or the job's own values
      */
     public function block()
     {
-        return $this->counts;
+        return $this->values !== null ? $this->values : $this->counts;
     }
 
     /**

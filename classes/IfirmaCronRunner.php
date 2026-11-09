@@ -15,6 +15,7 @@ if (!defined('_PS_VERSION_')) {
 
 require_once dirname(__FILE__) . '/IfirmaCronJob.php';
 require_once dirname(__FILE__) . '/IfirmaNamedLock.php';
+require_once dirname(__FILE__) . '/IfirmaRemoteLimitJob.php';
 require_once dirname(__FILE__) . '/IfirmaIssueQueueJob.php';
 require_once dirname(__FILE__) . '/IfirmaStatusSyncJob.php';
 require_once dirname(__FILE__) . '/IfirmaKsefRetryJob.php';
@@ -46,7 +47,8 @@ class IfirmaCronRunner
     }
 
     /**
-     * The runner of the cron endpoint, with the jobs in the order they run.
+     * The runner of the cron endpoint, with the jobs in the order they run: the limit read, the queue, KSeF, the status
+     * sync and the delivery.
      *
      * @param Module $module
      * @return IfirmaCronRunner
@@ -56,6 +58,9 @@ class IfirmaCronRunner
         $client = IfirmaApiClient::fromConfiguration();
 
         return new self(array(
+            new IfirmaRemoteLimitJob(new IfirmaRemoteLimit(function () use ($client) {
+                return $client->getLimit();
+            })),
             new IfirmaIssueQueueJob(IfirmaIssuancePipeline::build($module), function () use ($client) {
                 return $client->isAuthBlocked();
             }),

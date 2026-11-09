@@ -628,6 +628,7 @@ class UpgradeTest extends TestCase
             'the day cap' => array('IFIRMA_RATE_MAX_PER_DAY', 14000),
             'the day counter' => array('IFIRMA_RATE_DAY_WINDOW', ''),
             'the back-off end' => array('IFIRMA_RATE_BACKOFF_UNTIL', ''),
+            'the remote limit reading' => array('IFIRMA_REMOTE_LIMIT', ''),
             'the KSeF submitter' => array('IFIRMA_KSEF_SUBMITTER', 'module'),
             'the cron item cap' => array('IFIRMA_CRON_MAX_ITEMS', 10),
         );

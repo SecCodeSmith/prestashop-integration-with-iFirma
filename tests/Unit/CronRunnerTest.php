@@ -232,7 +232,7 @@ class CronRunnerTest extends TestCase
         $runner = IfirmaCronRunner::build(new Module());
         $jobs = new ReflectionProperty(IfirmaCronRunner::class, 'jobs');
         $jobs->setAccessible(true);
-        $queueJob = $jobs->getValue($runner)[0];
+        $queueJob = $jobs->getValue($runner)[1];   // [0] is the limit read, which runs before the queue
         $probe = new ReflectionProperty(IfirmaIssueQueueJob::class, 'authBlocked');
         $probe->setAccessible(true);
 

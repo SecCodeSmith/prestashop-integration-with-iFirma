@@ -14,9 +14,9 @@ if (!defined('_PS_VERSION_')) {
 }
 
 /**
- * Upgrade 1.7.x -> 1.8.0: the five new settings get their defaults when missing: IFIRMA_RATE_MAX_PER_DAY (the
- * day cap), the internal IFIRMA_RATE_DAY_WINDOW and IFIRMA_RATE_BACKOFF_UNTIL, IFIRMA_KSEF_SUBMITTER and
- * IFIRMA_CRON_MAX_ITEMS. No row and no table is touched: nothing becomes queued or awaiting KSeF retroactively,
+ * Upgrade 1.7.x -> 1.8.0: the six new settings get their defaults when missing: IFIRMA_RATE_MAX_PER_DAY (the
+ * day cap), the internal IFIRMA_RATE_DAY_WINDOW, IFIRMA_RATE_BACKOFF_UNTIL and IFIRMA_REMOTE_LIMIT,
+ * IFIRMA_KSEF_SUBMITTER and IFIRMA_CRON_MAX_ITEMS. No row and no table is touched: nothing becomes queued or awaiting KSeF retroactively,
  * and a document issued before the upgrade is delivered as it was. Idempotent: running it again changes nothing.
  *
  * @param Module $module
@@ -28,6 +28,7 @@ function upgrade_module_1_8_0($module)
         'IFIRMA_RATE_MAX_PER_DAY' => 14000,
         'IFIRMA_RATE_DAY_WINDOW' => '',
         'IFIRMA_RATE_BACKOFF_UNTIL' => '',
+        'IFIRMA_REMOTE_LIMIT' => '',
         'IFIRMA_KSEF_SUBMITTER' => 'module',
         'IFIRMA_CRON_MAX_ITEMS' => 10,
     ) as $key => $default) {

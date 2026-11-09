@@ -486,6 +486,7 @@ class IfirmaSchema
             'IFIRMA_RATE_WINDOW' => '',
             'IFIRMA_RATE_DAY_WINDOW' => '',
             'IFIRMA_RATE_BACKOFF_UNTIL' => '',
+            'IFIRMA_REMOTE_LIMIT' => '',
             'IFIRMA_AUTH_FAILURE' => '',
         );
     }

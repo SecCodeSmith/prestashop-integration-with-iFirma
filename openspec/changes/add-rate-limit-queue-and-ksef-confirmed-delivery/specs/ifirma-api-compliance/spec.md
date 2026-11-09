@@ -41,6 +41,34 @@ The module SHALL count its own requests per calendar minute and per calendar day
 
 ## ADDED Requirements
 
+### Requirement: Reading the current limit from iFirma
+With the `abonent` key set, the module SHALL read the day limit from iFirma at the start of a cron run, keep the reading for ten minutes, raise its local day counter to the number of requests iFirma reports as used (never lower it), and use the granted limit as a ceiling for the day cap. Without the key, or when iFirma gives no usable answer, the module SHALL change nothing and SHALL NOT stop the other cron jobs.
+
+#### Scenario: Other clients used the account
+- **GIVEN** the local day counter reads 300 and iFirma reports 1,200 used of 15,000
+- **WHEN** the cron reads the limit
+- **THEN** the day counter reads 1,200 and the cron answer's `limit` block says 13,800 remaining
+
+#### Scenario: The module counted more than iFirma
+- **GIVEN** the local day counter reads 1,500 and iFirma reports 1,200 used
+- **WHEN** the cron reads the limit
+- **THEN** the day counter still reads 1,500
+
+#### Scenario: Granted limit below the configured cap
+- **GIVEN** the day cap is 14,000 and iFirma reports 5,000 granted and 5,000 used today
+- **WHEN** a request is about to start
+- **THEN** the guard refuses it with "5000 requests today (cap 5000)"
+
+#### Scenario: A fresh reading is reused
+- **GIVEN** the limit was read less than ten minutes ago, on the same day
+- **WHEN** the cron runs again
+- **THEN** iFirma is not asked and the earlier reading is reported
+
+#### Scenario: iFirma does not answer
+- **GIVEN** the limit cannot be read (no key, an error, or an unusable answer)
+- **WHEN** the cron runs
+- **THEN** the counters and the earlier reading are unchanged, the `limit` block holds nulls and the queue, KSeF, sync and delivery jobs still run
+
 ### Requirement: iFirma limit answer starts a back-off
 An answer with HTTP 429, or an answer whose `Informacja` says the request limit was exceeded ("limit zapytań"), SHALL be treated as a "rate limited" error, not as an unknown outcome or a document error. It SHALL start a back-off until the time given by a `Retry-After` header (seconds, at most 24 hours), or until the start of the next minute when the header is missing or invalid. During the back-off the module SHALL send no request.
 
