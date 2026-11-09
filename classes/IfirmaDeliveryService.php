@@ -35,6 +35,7 @@ require_once dirname(__FILE__) . '/IfirmaReceiptService.php';
 require_once dirname(__FILE__) . '/IfirmaPayloadBuilder.php';
 require_once dirname(__FILE__) . '/IfirmaDeliveryResult.php';
 require_once dirname(__FILE__) . '/IfirmaShopLink.php';
+require_once dirname(__FILE__) . '/IfirmaKsefDeliveryGate.php';
 
 class IfirmaDeliveryService
 {
@@ -211,7 +212,12 @@ class IfirmaDeliveryService
                 return new IfirmaDeliveryResult(false, 'failed', $effective, $message, $refusal);
             }
         }
-        $receipt->recordDelivery(IfirmaReceipt::DELIVERY_FAILED, $effective, $message);
+        if (IfirmaKsefDeliveryGate::isWaitingState($receipt->delivery_status, $receipt->ksef_status, $receipt->ksef_number)) {
+            // a failed resend must not open the download of a document KSeF has not accepted: it keeps waiting
+            $receipt->delivery_error = $message;
+        } else {
+            $receipt->recordDelivery(IfirmaReceipt::DELIVERY_FAILED, $effective, $message);
+        }
         $this->persist($receipt);
 
         return $this->result(false, 'failed', $effective, $message);

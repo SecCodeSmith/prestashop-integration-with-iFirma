@@ -49,7 +49,7 @@ class Ifirma extends Module
     {
         $this->name = 'ifirma';
         $this->tab = 'billing_invoicing';
-        $this->version = '1.7.0';
+        $this->version = '1.8.0';
         $this->author = 'SCM Jakub Berechowski';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = array('min' => '8.0.0', 'max' => '9.99.99');
@@ -1437,8 +1437,11 @@ class Ifirma extends Module
             IfirmaIssueFeed::KIND_ERROR => $this->l('Issuance failed'),
             IfirmaIssueFeed::KIND_UNKNOWN => $this->l('Unknown outcome'),
             IfirmaIssueFeed::KIND_SUSPECTED => $this->l('Suspected duplicate'),
+            IfirmaIssueFeed::KIND_QUEUED_STALE => $this->l('Queued for issuance'),
             IfirmaIssueFeed::KIND_MISSING => $this->l('Missing in iFirma'),
             IfirmaIssueFeed::KIND_KSEF_FAILED => $this->l('KSeF failed'),
+            IfirmaIssueFeed::KIND_KSEF_REJECTED => $this->l('Rejected by KSeF'),
+            IfirmaIssueFeed::KIND_KSEF_OVERDUE => $this->l('KSeF confirmation overdue'),
             IfirmaIssueFeed::KIND_DELIVERY_FAILED => $this->l('Delivery failed'),
         ));
     }

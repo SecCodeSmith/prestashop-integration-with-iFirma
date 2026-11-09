@@ -15,6 +15,7 @@ if (!defined('_PS_VERSION_')) {
 
 require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaDataRequest.php';
+require_once dirname(__FILE__) . '/IfirmaKsefDeliveryGate.php';
 
 /**
  * Customer-facing view-model for the accounting-document block.
@@ -201,7 +202,8 @@ class IfirmaCustomerView
                 'number' => $this->numberOf($row),
                 'status' => $status,
                 'status_label' => $this->statusLabel($status),
-                'download_url' => $this->downloadUrl(isset($row['security_token']) ? $row['security_token'] : ''),
+                'download_url' => $this->waitsForKsef($row['delivery_status'] ?? null, $row['ksef_status'] ?? null, $row['ksef_number'] ?? null)
+                    ? null : $this->downloadUrl(isset($row['security_token']) ? $row['security_token'] : ''),
                 'issue_date' => $this->issueDateOf($row),
                 'is_external' => isset($row['source']) && $row['source'] === 'external',
             );
@@ -290,7 +292,9 @@ class IfirmaCustomerView
         } else {
             $paid = $this->prop($receipt, 'status') === IfirmaReceipt::STATUS_PAID;
         }
-        $sent = $this->prop($receipt, 'delivery_status') === 'sent' || (bool) $this->prop($receipt, 'remote_sent');
+        // a document that waits for KSeF is not sent yet, whatever iFirma says, and cannot be downloaded
+        $waiting = $this->waitsForKsef($this->prop($receipt, 'delivery_status'), $this->prop($receipt, 'ksef_status'), $this->prop($receipt, 'ksef_number'));
+        $sent = !$waiting && ($this->prop($receipt, 'delivery_status') === 'sent' || (bool) $this->prop($receipt, 'remote_sent'));
 
         return array(
             'number' => $this->numberOf($row),
@@ -300,12 +304,23 @@ class IfirmaCustomerView
             'issue_date' => $this->issueDateOf($row),
             'paid' => (bool) $paid,
             'sent' => $sent,
-            'sent_at' => (string) $this->prop($receipt, 'delivered_at'),
-            'download_url' => $state === self::STATE_MISSING
+            'sent_at' => $waiting ? '' : (string) $this->prop($receipt, 'delivered_at'),
+            'download_url' => ($state === self::STATE_MISSING || $waiting)
                 ? null : $this->downloadUrl($this->prop($receipt, 'security_token')),
             'is_external' => $this->prop($receipt, 'source') === 'external',
             'ksef_number' => trim((string) $this->prop($receipt, 'ksef_number')),
         );
+    }
+
+    /**
+     * @param mixed $deliveryStatus
+     * @param mixed $ksefStatus
+     * @param mixed $ksefNumber
+     * @return bool whether the document is held back from the customer until KSeF accepts it
+     */
+    protected function waitsForKsef($deliveryStatus, $ksefStatus, $ksefNumber)
+    {
+        return IfirmaKsefDeliveryGate::isWaitingState($deliveryStatus, $ksefStatus, $ksefNumber);
     }
 
     /**

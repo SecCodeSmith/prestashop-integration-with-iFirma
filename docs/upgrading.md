@@ -79,3 +79,24 @@ webpage set in the module settings (lower case, without a leading `www.`), or th
 none is set; every character outside `0-9 A-Z a-z . _ -` becomes `_`. For example, document `FV 7/2026` of
 the shop `https://www.Hialumed.pl/` is `hialumed.pl-FV_7_2026.pdf`. Mail filters, scripts or archive
 rules that match the old `ifirma-` name must be changed.
+
+## Upgrading to 1.8.0
+
+This release must be published as a `minor` version bump: PrestaShop runs `upgrade/upgrade-1.8.0.php` only when the module's version is above the one installed. The script adds five settings when they are missing and changes no row of any table: nothing becomes queued or awaiting KSeF retroactively, and a document issued before the upgrade is delivered as it was.
+
+New settings (all editable on the settings page except the two internal counters):
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `IFIRMA_RATE_MAX_PER_DAY` | `14000` | The day cap of the local rate guard, 1 to 15,000 (iFirma's own limit); see [Rate limits](configuration.md#rate-limits). |
+| `IFIRMA_KSEF_SUBMITTER` | `module` | Who submits invoices to KSeF: `module` or `ifirma`. Choose `ifirma` when your iFirma account submits API invoices to KSeF on its own. |
+| `IFIRMA_CRON_MAX_ITEMS` | `10` | How many queued orders, KSeF submissions and deliveries each cron job handles per run, 1 to 50. |
+| `IFIRMA_RATE_DAY_WINDOW`, `IFIRMA_RATE_BACKOFF_UNTIL` | empty | Internal: the day counter and the end of a back-off after iFirma's limit answer. |
+
+**Behaviour change: the cron endpoint does more.** `/module/ifirma/cron` now issues queued orders, retries deferred KSeF submissions, synchronises statuses and delivers documents accepted by KSeF, in that order and under a run lock. Its JSON keeps its existing keys and gains `queue`, `ksef`, `delivery`, `rate_limited` and `rate_limited_window`. Call it every 1 to 5 minutes: queued orders and documents that wait for KSeF are processed there. See [Cron jobs](configuration.md#cron-jobs).
+
+**Behaviour change: orders are queued first.** Every order that reaches the trigger status gets a record in the state `queued` before any request to iFirma, and an issuance refused by the rate limit stays queued instead of failing or leaving no trace. See [Queued issuance](usage.md#queued-issuance).
+
+**Behaviour change in KSeF modes `b2b` and `all`: delivery after acceptance.** An invoice that goes to KSeF is no longer e-mailed to the customer at issuance. Its delivery state is `awaiting_ksef`, the customer's order page shows no download link, and the cron delivers it after KSeF accepted it (**Send again** delivers at once). Receipts, invoices to private buyers in `b2b` mode and every document in mode `off` are delivered at issuance as before. Check that the cron endpoint is called regularly before you upgrade, or B2B invoices are not delivered. See [KSeF](usage.md#ksef-e-invoicing).
+
+**Downgrading.** The extra configuration keys are harmless in 1.7.0. A record in the state `queued` or with the delivery state `awaiting_ksef` is unknown to the older version: before a downgrade, issue the queued orders (bulk **Retry issuance**) and deliver the waiting documents (**Send again**).

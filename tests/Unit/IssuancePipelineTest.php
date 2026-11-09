@@ -1880,4 +1880,21 @@ class IssuancePipelineTest extends TestCase
         $this->assertSame('sent', $this->dbRow()['delivery_status']);
         $this->assertFalse((new IfirmaKsefDeliveryGate(new IfirmaKsefService($this->client, $module)))->isWaiting(IfirmaReceipt::getByOrder(15)));
     }
+    public function testTheDocumentIsHeldBackBeforeTheKsefCallSoNoWindowIsLeftOpen()
+    {
+        // red-team note (task 7.4 review): between the create and the deliver step the document must not be downloadable
+        Configuration::updateValue('IFIRMA_KSEF_MODE', 'b2b');
+        $seen = array();
+        $this->t->queue('POST', '#ksef/send/77\\.json#', function () use (&$seen) {
+            $rows = IfirmaTestState::objects('ifirma_receipt');
+            $seen = reset($rows);
+
+            return array('body' => '{"response":{"Kod":0,"Informacja":"ok"}}');
+        });
+        $this->businessOrderIssuanceScript();
+
+        $this->pipeline->run($this->order());
+
+        $this->assertSame('awaiting_ksef', $seen['delivery_status'], 'already held when the KSeF request goes out');
+    }
 }

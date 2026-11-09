@@ -159,4 +159,11 @@ class KsefDeliveryGateTest extends TestCase
 
         $this->assertSame(array(), Db::getInstance()->queries);
     }
+    public function testTheWaitCanBeReadFromThePlainFieldsWithoutAnObject()
+    {
+        $this->assertTrue(IfirmaKsefDeliveryGate::isWaitingState('awaiting_ksef', 'WYSLANA', ''));
+        $this->assertTrue(IfirmaKsefDeliveryGate::isWaitingState('awaiting_ksef', null, null));
+        $this->assertFalse(IfirmaKsefDeliveryGate::isWaitingState('awaiting_ksef', '', 'N-1'));
+        $this->assertFalse(IfirmaKsefDeliveryGate::isWaitingState('sent', 'WYSLANA', ''));
+    }
 }

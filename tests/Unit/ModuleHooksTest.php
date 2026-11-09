@@ -2024,7 +2024,8 @@ class ModuleHooksTest extends TestCase
         );
         $this->assertSame('Suspected duplicate', $words['outcomes']['suspected']);
         $this->assertSame(
-            array('held', 'error', 'unknown', 'suspected', 'missing', 'ksef_failed', 'delivery_failed'),
+            // deliberate change (task 7.2): the queue and the KSeF wait are kinds of their own
+            array('held', 'error', 'unknown', 'suspected', 'queued_stale', 'missing', 'ksef_failed', 'ksef_rejected', 'ksef_overdue', 'delivery_failed'),
             array_keys($words['kinds'])
         );
         $this->assertSame('KSeF failed', $words['kinds']['ksef_failed']);

@@ -59,6 +59,7 @@ class UpgradeTest extends TestCase
         require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.4.0.php';
         require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.5.0.php';
         require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.6.0.php';
+        require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.8.0.php';
     }
 
     protected function tearDown(): void
@@ -614,6 +615,67 @@ class UpgradeTest extends TestCase
         Db::getInstance()->whenExecute('/ifirma_guest_code/', false);
 
         $this->assertFalse(upgrade_module_1_6_0(new Module()));
+    }
+
+    // ---- upgrade-1.8.0.php: the queue, the day cap, the back-off, the KSeF submitter and the cron cap ---
+
+    /**
+     * @return array[] key => default
+     */
+    public function newSettingsOf180()
+    {
+        return array(
+            'the day cap' => array('IFIRMA_RATE_MAX_PER_DAY', 14000),
+            'the day counter' => array('IFIRMA_RATE_DAY_WINDOW', ''),
+            'the back-off end' => array('IFIRMA_RATE_BACKOFF_UNTIL', ''),
+            'the KSeF submitter' => array('IFIRMA_KSEF_SUBMITTER', 'module'),
+            'the cron item cap' => array('IFIRMA_CRON_MAX_ITEMS', 10),
+        );
+    }
+
+    /**
+     * @dataProvider newSettingsOf180
+     */
+    public function testUpgrade180AddsTheSettingWithItsDefault($key, $default)
+    {
+        $this->assertFalse(Configuration::hasKey($key));
+
+        $this->assertTrue(upgrade_module_1_8_0(new Module()));
+
+        $this->assertSame($default, Configuration::get($key));
+    }
+
+    public function testUpgrade180KeepsTheValuesTheMerchantSet()
+    {
+        Configuration::updateValue('IFIRMA_RATE_MAX_PER_DAY', 9000);
+        Configuration::updateValue('IFIRMA_KSEF_SUBMITTER', 'ifirma');
+        Configuration::updateValue('IFIRMA_CRON_MAX_ITEMS', 25);
+
+        $this->assertTrue(upgrade_module_1_8_0(new Module()));
+
+        $this->assertSame(9000, Configuration::get('IFIRMA_RATE_MAX_PER_DAY'));
+        $this->assertSame('ifirma', Configuration::get('IFIRMA_KSEF_SUBMITTER'));
+        $this->assertSame(25, Configuration::get('IFIRMA_CRON_MAX_ITEMS'));
+    }
+
+    public function testUpgrade180IsIdempotent()
+    {
+        $this->assertTrue(upgrade_module_1_8_0(new Module()));
+        $after = Configuration::$values;
+
+        $this->assertTrue(upgrade_module_1_8_0(new Module()));
+
+        $this->assertSame($after, Configuration::$values);
+    }
+
+    public function testUpgrade180TouchesNoRowAndNoTable()
+    {
+        $this->assertTrue(upgrade_module_1_8_0(new Module()));
+
+        $this->assertSame(array(), Db::getInstance()->inserts);
+        $this->assertSame(array(), Db::getInstance()->updates);
+        $this->assertSame(array(), Db::getInstance()->deletes);
+        $this->assertSame(array(), Db::getInstance()->executed, 'no statement, so no receipt row changes');
     }
 
     // ---- helpers: the database each path runs on ----------------------------------------------------

@@ -380,6 +380,8 @@ From 2026, B2B invoices must be submitted to the National e-Invoicing System (KS
 
 Receipts, invoices to private buyers in `b2b` mode, every document in mode `off`, and every document when the delivery channel is `none` are delivered (or recorded as skipped) at issuance as before and never wait.
 
+The hold follows the delivery channel on purpose: with the channel `none` the module e-mails nothing, so an invoice does not wait and the customer can download it as soon as it is issued. Choose a delivering channel if a KSeF invoice must not be available before KSeF accepted it.
+
 **Order panel.** The KSeF row shows exactly one of five states: not sent (with the reason), waiting for iFirma (submitter `ifirma`, no state reported yet), sent and awaiting acceptance (sent at `ksef_sent_at`, or reported by iFirma with its status, for example scheduled), accepted (with the KSeF number), or error (`BLAD` with the message, or `ODRZUCONA`, rejected by KSeF). **Send to KSeF** submits the document regardless of the mode and the submitter, after reading its state: it refuses when iFirma reports the document as sent, scheduled or accepted, and allows a new submission after a rejection. It is never offered for a document that is already accepted.
 
 **Customer order page.** The KSeF number is shown when one is present. KSeF errors are not shown to the customer.

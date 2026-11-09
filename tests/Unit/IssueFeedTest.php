@@ -47,7 +47,8 @@ class IssueFeedTest extends TestCase
         $this->assertStringContainsString("r.status IN ('error','unknown','duplicate_suspected')", $sql);
         $this->assertStringContainsString("r.status = 'held' AND EXISTS (SELECT 1 FROM ps_ifirma_data_request d WHERE d.id_order = r.id_order AND d.status = 'pending')", $sql);
         $this->assertStringContainsString("r.delivery_status = 'failed'", $sql);
-        $this->assertStringContainsString("r.ksef_status = 'BLAD'", $sql);
+        // deliberate change (task 7.2): a rejection by KSeF needs attention too
+        $this->assertStringContainsString("r.ksef_status IN ('BLAD','ODRZUCONA')", $sql);
         $this->assertStringContainsString('r.remote_missing = 1', $sql);
         $this->assertStringStartsWith('(', $sql);
         $this->assertStringEndsWith(')', $sql);
@@ -115,7 +116,7 @@ class IssueFeedTest extends TestCase
     public function testKindsListTheDecisionOrder()
     {
         $this->assertSame(
-            array('held', 'error', 'unknown', 'suspected', 'missing', 'ksef_failed', 'delivery_failed'),
+            array('held', 'error', 'unknown', 'suspected', 'queued_stale', 'missing', 'ksef_failed', 'ksef_rejected', 'ksef_overdue', 'delivery_failed'),
             IfirmaIssueFeed::kinds()
         );
     }
@@ -212,5 +213,101 @@ class IssueFeedTest extends TestCase
         $feed->markSeen('4');
 
         $this->assertSame('2026-11-07 09:15:00', Configuration::get('IFIRMA_SEEN_4'));
+    }
+    // ---- the queue and the KSeF wait (spec receipt-issue-notifications) -----------------------------------
+
+    private function feedAt($hour, $minute)
+    {
+        return new IfirmaIssueFeed(function () use ($hour, $minute) {
+            return mktime($hour, $minute, 0, 11, 7, 2026);
+        });
+    }
+
+    public function testThePredicateListsAQueueEntryOlderThanThirtyMinutes()
+    {
+        $now = mktime(14, 0, 0, 11, 7, 2026);
+
+        $sql = IfirmaIssueFeed::issuePredicate('r', $now);
+
+        $this->assertStringContainsString("(r.status = 'queued' AND r.date_upd < '2026-11-07 13:30:00')", $sql);
+    }
+
+    public function testThePredicateListsAKsefWaitOlderThanFortyEightHours()
+    {
+        $now = mktime(14, 0, 0, 11, 7, 2026);
+
+        $sql = IfirmaIssueFeed::issuePredicate('r', $now);
+
+        $this->assertStringContainsString("(r.delivery_status = 'awaiting_ksef' AND r.date_add < '2026-11-05 14:00:00')", $sql);
+    }
+
+    public function testThePredicateTakesTheTimeFromTheCallerSoItHoldsNoNow()
+    {
+        $this->assertStringNotContainsString('NOW()', IfirmaIssueFeed::issuePredicate('r', 0 + mktime(1, 2, 3, 4, 5, 2026)));
+    }
+
+    public function testAStaleQueueEntryIsListedAsQueued()
+    {
+        $row = $this->row(array('status' => 'queued', 'ifirma_id' => '', 'date_upd' => '2026-11-07 13:29:00'));
+
+        $this->assertSame(IfirmaIssueFeed::KIND_QUEUED_STALE, IfirmaIssueFeed::classify($row, mktime(14, 0, 0, 11, 7, 2026)));
+    }
+
+    public function testAFreshQueueEntryDoesNotNeedAttention()
+    {
+        $row = $this->row(array('status' => 'queued', 'ifirma_id' => '', 'date_upd' => '2026-11-07 13:55:00'));
+
+        $this->assertSame('', IfirmaIssueFeed::classify($row, mktime(14, 0, 0, 11, 7, 2026)));
+    }
+
+    public function testARejectionByKsefIsItsOwnKind()
+    {
+        $this->assertSame(IfirmaIssueFeed::KIND_KSEF_REJECTED, IfirmaIssueFeed::classify($this->row(array('ksef_status' => 'ODRZUCONA'))));
+        $this->assertSame(IfirmaIssueFeed::KIND_KSEF_FAILED, IfirmaIssueFeed::classify($this->row(array('ksef_status' => 'BLAD'))));
+    }
+
+    public function testAnOverdueKsefWaitIsListed()
+    {
+        $row = $this->row(array('delivery_status' => 'awaiting_ksef', 'date_add' => '2026-11-05 13:00:00'));
+
+        $this->assertSame(IfirmaIssueFeed::KIND_KSEF_OVERDUE, IfirmaIssueFeed::classify($row, mktime(14, 0, 0, 11, 7, 2026)));
+    }
+
+    public function testANormalKsefWaitIsNotListed()
+    {
+        $row = $this->row(array('delivery_status' => 'awaiting_ksef', 'date_add' => '2026-11-07 12:00:00'));
+
+        $this->assertSame('', IfirmaIssueFeed::classify($row, mktime(14, 0, 0, 11, 7, 2026)));
+    }
+
+    public function testALongWaitAtTheBoundaryIsNotYetListed()
+    {
+        $row = $this->row(array('delivery_status' => 'awaiting_ksef', 'date_add' => '2026-11-05 14:00:00'));
+
+        $this->assertSame('', IfirmaIssueFeed::classify($row, mktime(14, 0, 0, 11, 7, 2026)));
+    }
+
+    public function testLatestAsksForTheDatesTheKindsNeedAndUsesItsOwnClock()
+    {
+        $db = Db::getInstance();
+        $db->whenExecuteS('/FROM ps_ifirma_receipt r/', array(
+            $this->row(array('id_ifirma_receipt' => '5', 'status' => 'queued', 'ifirma_id' => '', 'date_upd' => '2026-11-07 13:00:00')),
+        ));
+
+        $items = $this->feedAt(14, 0)->latest();
+
+        $this->assertStringContainsString('r.date_add', $db->queries[0]);
+        $this->assertStringContainsString("r.date_upd < '2026-11-07 13:30:00'", $db->queries[0]);
+        $this->assertSame('queued_stale', $items[0]['kind']);
+    }
+
+    public function testUnseenCountUsesTheClockOfTheFeed()
+    {
+        $db = Db::getInstance();
+        $db->whenGetValue('/SELECT COUNT\(\*\) FROM ps_ifirma_receipt r/', 1);
+
+        $this->feedAt(14, 0)->unseenCount('');
+
+        $this->assertStringContainsString("r.date_upd < '2026-11-07 13:30:00'", $db->queries[0]);
     }
 }

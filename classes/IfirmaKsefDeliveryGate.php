@@ -61,7 +61,20 @@ class IfirmaKsefDeliveryGate
      */
     public function isWaiting(IfirmaReceipt $receipt)
     {
-        return (string) $receipt->delivery_status === IfirmaReceipt::DELIVERY_AWAITING_KSEF
-            && !IfirmaKsefStatus::isAccepted($receipt->ksef_status, $receipt->ksef_number);
+        return self::isWaitingState($receipt->delivery_status, $receipt->ksef_status, $receipt->ksef_number);
+    }
+
+    /**
+     * The same rule on plain field values, for the places that hold a database row and not a receipt object.
+     *
+     * @param mixed $deliveryStatus
+     * @param mixed $ksefStatus
+     * @param mixed $ksefNumber
+     * @return bool
+     */
+    public static function isWaitingState($deliveryStatus, $ksefStatus, $ksefNumber)
+    {
+        return (string) $deliveryStatus === IfirmaReceipt::DELIVERY_AWAITING_KSEF
+            && !IfirmaKsefStatus::isAccepted($ksefStatus, $ksefNumber);
     }
 }

@@ -346,6 +346,7 @@ class IfirmaIssuancePipeline
             return $stop;
         }
         $this->stepNumber($result);
+        $this->holdForKsef($order, $result);
         $this->stepKsef($order, $options, $result);
         $this->stepDeliver($order, $options, $result);
 
@@ -545,6 +546,24 @@ class IfirmaIssuancePipeline
         }
         $result->addStep(self::STEP_NUMBER, 'ok', $result->receipt->ifirma_number ? '' : 'number not yet available');
         $result->markIssued();
+    }
+
+    /**
+     * Holds a document that goes to KSeF back from the customer before the KSeF request is made, so there is no window
+     * between the create and the deliver step in which it could be downloaded (a fatal error in between would leave
+     * it open for good). The deliver step decides again: an invoice that KSeF already accepted is delivered.
+     *
+     * @param Order                $order
+     * @param IfirmaPipelineResult $result
+     */
+    private function holdForKsef(Order $order, IfirmaPipelineResult $result)
+    {
+        $receipt = $result->receipt;
+        if (!$receipt instanceof IfirmaReceipt || !(new IfirmaKsefDeliveryGate($this->ksef))->mustWait($receipt, $order)) {
+            return;
+        }
+        $receipt->markAwaitingKsef();
+        $receipt->save();
     }
 
     /**
