@@ -20,3 +20,6 @@ graphify-out/cache/stat-index.json
 graphify-out/cache/last_query_stamp
 graphify-out/cache/hook_sessions/
 graphify-out/cache/.gfy-replace-bak-*.tmp
+
+
+settings.local.json
