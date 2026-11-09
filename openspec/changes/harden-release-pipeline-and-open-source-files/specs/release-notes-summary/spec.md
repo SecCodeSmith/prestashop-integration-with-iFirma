@@ -37,6 +37,10 @@ Only commit subjects SHALL be sent to the service, never file contents, diffs, a
 - **WHEN** a commit subject tells the model to ignore its instructions or to emit workflow commands
 - **THEN** the published summary is escaped plain text and no workflow command or extra release asset results
 
+#### Scenario: Subject contains a link
+- **WHEN** a commit subject or the model's answer contains a markdown link, an image or a bare URL
+- **THEN** the published notes contain no clickable link from that text, in the summary and in the fallback list alike
+
 #### Scenario: Large history
 - **WHEN** more subjects exist than the input limit allows
 - **THEN** the newest subjects up to the limit are sent and the body notes that the list was truncated

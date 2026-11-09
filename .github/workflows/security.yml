@@ -122,10 +122,12 @@ jobs:
           scan-type: fs
           scanners: vuln,secret,misconfig
           severity: HIGH,CRITICAL
-          skip-dirs: node_modules,tests/vendor,graphify-out
+          # test-stack is its own repository (git submodule) and never ships; it is reported below.
+          skip-dirs: node_modules,tests/vendor,graphify-out,test-stack
           exit-code: "1"
-      - name: Test-stack images (report only, they never ship with the module)
+      - name: Test-stack configuration and images (report only, they never ship with the module)
         run: |
+          docker run --rm -v "$PWD/test-stack:/repo" aquasec/trivy:0.58.0 config --severity HIGH,CRITICAL /repo || true
           for image in mariadb:11.4 prestashop/prestashop:9.1.4-apache python:3.12-slim; do
             docker run --rm aquasec/trivy:0.58.0 image --severity HIGH,CRITICAL --no-progress "$image" || true
           done

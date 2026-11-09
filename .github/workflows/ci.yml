@@ -115,8 +115,6 @@ jobs:
         with:
           ref: ${{ env.IFIRMA_BUILD_COMMIT }}
           submodules: true
-        with:
-          ref: ${{ env.IFIRMA_BUILD_COMMIT }}
       - uses: actions/setup-node@v7
         with:
           node-version: "20"

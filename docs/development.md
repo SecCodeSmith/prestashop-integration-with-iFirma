@@ -73,8 +73,11 @@ IFIRMA_BUILD_CHANNEL=test IFIRMA_BUILD_NUMBER=7 npm run build:zip    # dist/ifir
 only after lint, PHPUnit and the mock tests pass. Download it from the run's *Artifacts* section
 (`ifirma-<version>+build.<n>`, kept 90 days).
 
-**Releases.** Actions -> *Release* -> *Run workflow* with `patch`, `minor` or `major`, from a branch (not a tag).
-The workflow runs PHPUnit, lint, the licence-header check, the tool tests and the dependency and licence audits
+**Releases.** Actions -> *Release* -> *Run workflow* with `patch`, `minor` or `major`, from `master` or a `release/*`
+branch (any other branch or a tag is refused). The workflow has two jobs. `verify` holds a read-only token and is the
+only place where dependency code runs (`npm ci --ignore-scripts`, `composer install --no-scripts`, `pip install`);
+`release` holds the write token and installs nothing, because the build and release scripts use only Node and Python
+built-ins. Neither job leaves credentials in `.git/config`; the push step receives the token explicitly. The workflow runs PHPUnit, lint, the licence-header check, the tool tests and the dependency and licence audits
 (`composer audit`, `npm audit`, `tools/check_dependency_licenses.py`), then asks `scripts/release-plan.mjs` where the
 release lands, bumps and syncs the version (`package.json`, `package-lock.json`, `ifirma.php`, `config.xml`) into a
 local commit + tag `v<version>`, builds `ifirma-<version>.zip` (channel `release`), verifies it
@@ -86,7 +89,7 @@ failure before the push leaves the remote untouched, and the push is atomic: if 
 
 | bump | from | result |
 |---|---|---|
-| `minor`, `major` | any branch | new branch `release/<major>.<minor>` holds the release commit and the tag; the dispatched branch does not move; a pull request `release/X.Y` -> `master` carries the bump |
+| `minor`, `major` | `master` or `release/*` | new branch `release/<major>.<minor>` holds the release commit and the tag; the dispatched branch does not move; a pull request `release/X.Y` -> `master` carries the bump |
 | `patch` | `master` | commit and tag on `master`, no pull request |
 | `patch` | `release/*` | commit and tag on that branch, plus a pull request into `master` |
 
@@ -99,8 +102,8 @@ reviewed.
 
 *Release notes.* `scripts/release-summary.mjs` sends only the commit subjects since the previous tag (newest 100,
 control characters stripped) to GitHub Models with the workflow's `GITHUB_TOKEN` (`models: read`) and publishes a
-short summary above GitHub's generated notes. The answer is treated as untrusted: it is escaped, mentions are
-neutralised and it is cut to 120 words. If the call fails, times out or no token is available, the release carries the
+short summary above GitHub's generated notes. The answer and the subjects are treated as untrusted: HTML is escaped,
+mentions, markdown links and bare URLs are defused and the summary is cut to 120 words. If the call fails, times out or no token is available, the release carries the
 plain list of subjects and the log names the reason; the release is never blocked. The model comes from the
 repository variable `RELEASE_SUMMARY_MODEL` (default `openai/gpt-4.1-mini`).
 
@@ -129,12 +132,15 @@ Tool tests (no PHP needed): `python -m unittest discover -s tests/tools -p "test
 requests), a gitleaks scan of the tree and history, Semgrep (PHP and secrets rules, ERROR severity), the licence
 audit, and Trivy on the repository (vulnerabilities, secrets, configuration; HIGH and CRITICAL). The container images
 of the test stack are scanned report-only because they never ship; `tools/check_pinned_images.py` fails on an image
-without a pinned tag. Dependabot (`.github/dependabot.yml`) proposes updates for Composer, npm, pip, Docker and the
+without a pinned tag. The build refuses a symbolic link inside the package tree, so a link cannot pull a file
+from outside the module into the published zip. Dependabot (`.github/dependabot.yml`) proposes updates for Composer, npm, pip, Docker and the
 workflow actions. A high or critical finding fails the run and is fixed in its own `fix-vuln:` commit.
 
 There is no silent ignore list. Accepted risks are recorded with a reason and a review date: the two gitleaks
 false-positive paths in `.gitleaks.toml` (graphify cache hashes, fake `IFIRMA_KEY_*` test values; accepted
-2026-11-09, review by 2027-05-09) and the licence exception in `docs/third-party-licenses.md`.
+2026-11-09, review by 2027-05-09) and the licence exception in `docs/third-party-licenses.md`. Known report-only
+finding: the mock image runs as root (Trivy AVD-DS-0002, `test-stack/ifirma-mock/Dockerfile`); it is a local test
+service that never ships, to be fixed in the test-stack repository, review by 2027-05-09.
 
 Licences: [third-party-licenses.md](third-party-licenses.md). PrestaShop Addons: [marketplace-readiness.md](marketplace-readiness.md).
 

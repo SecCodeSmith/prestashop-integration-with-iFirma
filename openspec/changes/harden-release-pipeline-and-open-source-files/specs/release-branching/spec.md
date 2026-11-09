@@ -22,6 +22,20 @@ A minor or major release SHALL be committed and tagged on a new branch named `re
 - **WHEN** the target `release/<major>.<minor>` branch or the target tag already exists on the remote
 - **THEN** the run fails before pushing anything and says to merge or remove the existing release first
 
+### Requirement: Releases start only from the default or a release branch
+A release SHALL be accepted only when started from the default branch or a `release/*` branch. Started from any other branch or from a tag, it SHALL stop before the version bump with nothing pushed.
+
+#### Scenario: Release started from a feature branch
+- **WHEN** a release is started from `feat/something`
+- **THEN** the run fails before bumping and names the allowed branches
+
+### Requirement: Dependency code never runs beside the write token
+The steps that install or execute third-party dependencies SHALL run with a read-only token and no stored credentials, and the steps that hold write access SHALL install no dependencies.
+
+#### Scenario: Compromised dependency during a release
+- **WHEN** a dependency's install script runs during the verification of a release
+- **THEN** it has no token that can push, tag or publish
+
 ### Requirement: Version bumps return by pull request
 After a release from a branch other than the default branch, the workflow SHALL open a pull request into the default branch that carries the version bump, titled with the version. The pull request SHALL be opened only after the atomic push succeeded.
 

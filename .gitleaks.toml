@@ -1,14 +1,16 @@
 # gitleaks configuration: the default rules plus two reviewed false-positive paths.
 # Accepted on 2026-11-09, review by 2027-05-09 (also recorded in docs/development.md).
+#   - two graphify cache files that exist only in history: file content hashes, not credentials
+#   - the settings tests and their golden fixture: IFIRMA_KEY_* names with obviously fake values
 title = "ifirma gitleaks"
 
 [extend]
 useDefault = true
 
-[[allowlists]]
-description = "graphify knowledge-graph cache: file content hashes, not credentials"
-paths = ['''^graphify-out/''']
-
-[[allowlists]]
-description = "unit-test fixtures: the IFIRMA_KEY_* names with obviously fake values (hex placeholders)"
-paths = ['''^tests/Unit/(SettingsSaveTest|IfirmaSettingsTest)\.php$''', '''^tests/fixtures/settings/golden\.json$''']
+[allowlist]
+description = "graphify cache hashes and fake IFIRMA_KEY_* test values"
+paths = [
+  '''^graphify-out/cache/(stat-index\.json|\.gfy-replace-bak-[^/]+\.tmp)$''',
+  '''^tests/Unit/(SettingsSaveTest|IfirmaSettingsTest)\.php$''',
+  '''^tests/fixtures/settings/golden\.json$''',
+]

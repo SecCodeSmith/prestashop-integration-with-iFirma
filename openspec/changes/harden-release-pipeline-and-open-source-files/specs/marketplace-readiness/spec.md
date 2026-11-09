@@ -17,6 +17,13 @@ Every built package SHALL pass an automated check of the structural rules: a sin
 - **WHEN** a package follows all structural rules
 - **THEN** the check passes and CI continues to the test build
 
+### Requirement: The package tree contains no symbolic links
+The package build SHALL refuse a symbolic link anywhere in the shipped tree, so no file from outside the module can enter the published package.
+
+#### Scenario: Link to a file outside the module
+- **WHEN** a shipped folder contains a symbolic link
+- **THEN** the build fails, names the link and writes no package
+
 ### Requirement: Shipped PHP follows the marketplace code rules
 Every shipped PHP file other than an `index.php` SHALL start with the PrestaShop `_PS_VERSION_` guard unless it is a translation file, and the shipped code SHALL contain no `eval`, no `base64_decode` of code, no debug output (`var_dump`, `print_r`, `die`) and no `@` error suppression.
 

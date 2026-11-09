@@ -39,7 +39,7 @@ Test-first throughout (CLAUDE.md): each code task starts with the failing test. 
 - [x] 5.2 Add a check that compose files under `test-stack/` use pinned tags (test, then script)
 - [x] 5.3 Add `.github/dependabot.yml` for composer, npm, pip, github-actions and docker
 - [x] 5.4 Add the dependency audits to the `release.yml` verify step
-- [ ] 5.5 Run every scanner locally or in a draft run; triage findings, fix highs/criticals each in its own `fix-vuln:` commit with a regression test
+- [x] 5.5 Run every scanner locally or in a draft run; triage findings, fix highs/criticals each in its own `fix-vuln:` commit with a regression test
 - [x] 5.6 Document the security workflow and the accepted-risk rule in `docs/development.md`
 
 ## 5b. Dependency licence audit
@@ -63,7 +63,16 @@ Test-first throughout (CLAUDE.md): each code task starts with the failing test. 
 
 ## 7. Finish
 
-- [ ] 7.1 Full suite, diff-cover gate, `npm run build` + `verify:package` + readiness check on the built zip
-- [ ] 7.2 Red-team pass on the workflow changes (token permissions, injection through commit text, PR creation path) per CLAUDE.md; security-sensitive, so one read-only reviewer
-- [ ] 7.3 `openspec validate harden-release-pipeline-and-open-source-files`, `graphify update .`
+- [x] 7.1 Full suite, diff-cover gate, `npm run build` + `verify:package` + readiness check on the built zip
+- [x] 7.2 Red-team pass on the workflow changes (token permissions, injection through commit text, PR creation path) per CLAUDE.md; security-sensitive, so one read-only reviewer
+- [x] 7.3 `openspec validate harden-release-pipeline-and-open-source-files`, `graphify update .`
 - [ ] 7.4 Open the PR of `feat/rate-limit-queue-ksef-delivery` into `master` with the summary of both changes (after asking, since it is outward-facing)
+
+## Notes from the apply
+
+- 2.5: the community-file denylist is in `tools/check_marketplace_readiness.py` (reads the zip, tested), not in `verify-package.mjs`.
+- 5.2: `test-stack/docker-compose.yml` now uses `PS_IMAGE_TAG` (default `9.1.4-apache`); the change is in the submodule working tree and must be committed in the test-stack repository.
+- 5.5: `archiver` removed (unfixable minimatch advisory) and replaced by `scripts/zip-writer.mjs`; Trivy's root-user finding on the mock image is report-only.
+- 7.2: report in `build/red-team/2026-11-09-1.8.0-release-pipeline.md` (local); no high or critical finding; fixes in `fix-vuln:` commits.
+- 7.4 stays open: opening the pull request is outward-facing and waits for the owner.
+- Added on the owner's request: `smoke.yml` matrix over every supported PrestaShop version; actions by version tag, latest majors.
