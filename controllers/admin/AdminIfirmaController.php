@@ -1138,7 +1138,8 @@ class AdminIfirmaController extends ModuleAdminController
     protected function output(array $payload)
     {
         header('Content-Type: application/json');
-        die(json_encode($this->decodeMessages($payload)));
+        echo json_encode($this->decodeMessages($payload));
+        exit;
     }
 
     /**
