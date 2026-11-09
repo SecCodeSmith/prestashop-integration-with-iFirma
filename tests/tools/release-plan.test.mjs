@@ -80,3 +80,8 @@ test("parseRemoteRefs keeps the ref names of git ls-remote output", () => {
 
   assert.deepEqual(parseRemoteRefs(output), ["refs/heads/master", "refs/tags/v1.8.0", "refs/tags/v1.8.0^{}"]);
 });
+
+test("A release is refused from a branch that is neither the default branch nor a release branch", () => {
+  assert.throws(() => planRelease({ ...base, ref: "feat/unreviewed", bump: "patch" }), /only from master or a release\/\* branch/);
+  assert.throws(() => planRelease({ ...base, ref: "feat/unreviewed", bump: "minor" }), /only from master or a release\/\* branch/);
+});

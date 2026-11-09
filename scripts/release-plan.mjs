@@ -39,6 +39,9 @@ export function parseRemoteRefs(lsRemoteOutput) {
 /** @returns {{version: string, tag: string, releaseBranch: string|null, baseBranch: string, openPullRequest: boolean}} */
 export function planRelease({ currentVersion, bump, ref, defaultBranch, remoteRefs }) {
   if (!ref) throw new Error("a release must be started from a branch, not from a tag");
+  if (ref !== defaultBranch && !ref.startsWith("release/")) {
+    throw new Error(`a release is made only from ${defaultBranch} or a release/* branch, not from ${ref}`);
+  }
   const version = bumpVersion(currentVersion, bump);
   const tag = `v${version}`;
   const [major, minor] = version.split(".");
