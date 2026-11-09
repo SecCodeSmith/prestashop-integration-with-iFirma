@@ -1002,4 +1002,10 @@ class DeliveryServiceTest extends TestCase
         $this->assertSame('awaiting_ksef', $row['delivery_status']);
         $this->assertNotSame('', $row['delivery_error']);
     }
+    public function testDescribeDeliveryNamesTheKsefWait()
+    {
+        $r = $this->seeded(array('delivery_status' => 'awaiting_ksef'), 'fakturakraj');
+
+        $this->assertSame('Waiting for KSeF acceptance', $this->svc->describeDelivery($r));
+    }
 }

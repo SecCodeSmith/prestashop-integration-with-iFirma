@@ -390,14 +390,21 @@ class IfirmaKsefService
         if ($status === self::STATUS_ERROR) {
             return $this->module->l('error', 'ifirmaksefservice') . ': ' . (string) $receipt->ksef_error;
         }
-        if ($status === self::STATUS_SENT) {
+        if (IfirmaKsefStatus::isRejected($status)) {
+            return $this->module->l('error', 'ifirmaksefservice') . ': ' . $this->module->l('rejected by KSeF', 'ifirmaksefservice');
+        }
+        if ($status === self::STATUS_SENT && trim((string) $receipt->ksef_sent_at) !== '') {
             return sprintf(
                 $this->module->l('sent %s, awaiting KSeF', 'ifirmaksefservice'),
                 substr((string) $receipt->ksef_sent_at, 0, 16)
             );
         }
         if ($status !== '') {
-            return $status;
+            // reported by iFirma: it sent the document, or scheduled it, itself
+            return $this->module->l('sent or scheduled by iFirma', 'ifirmaksefservice') . ': ' . $status;
+        }
+        if ($receipt->isIssued() && $this->submitter() === self::SUBMITTER_IFIRMA && $this->goesToKsef($receipt, $order)) {
+            return $this->module->l('waiting for iFirma to send the document', 'ifirmaksefservice');
         }
 
         $text = $this->module->l('not sent', 'ifirmaksefservice');

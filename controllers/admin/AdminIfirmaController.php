@@ -232,6 +232,7 @@ class AdminIfirmaController extends ModuleAdminController
             IfirmaReceipt::STATUS_UNKNOWN => $this->module->l('Unknown', 'adminifirmacontroller'),
             IfirmaReceipt::STATUS_DUPLICATE_SUSPECTED => $this->module->l('Suspected duplicate', 'adminifirmacontroller'),
             IfirmaReceipt::STATUS_HELD => $this->module->l('Held', 'adminifirmacontroller'),
+            IfirmaReceipt::STATUS_QUEUED => $this->module->l('Queued', 'adminifirmacontroller'),
         );
         $sources = array(
             IfirmaReceipt::SOURCE_MODULE => $this->module->l('Module', 'adminifirmacontroller'),
@@ -242,6 +243,7 @@ class AdminIfirmaController extends ModuleAdminController
             IfirmaReceipt::DELIVERY_SENT => $this->module->l('Sent', 'adminifirmacontroller'),
             IfirmaReceipt::DELIVERY_FAILED => $this->module->l('Failed', 'adminifirmacontroller'),
             IfirmaReceipt::DELIVERY_SKIPPED => $this->module->l('Skipped', 'adminifirmacontroller'),
+            IfirmaReceipt::DELIVERY_AWAITING_KSEF => $this->module->l('Awaiting KSeF', 'adminifirmacontroller'),
         );
 
         $this->fields_list = array(

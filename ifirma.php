@@ -1201,6 +1201,7 @@ class Ifirma extends Module
     {
         return array(
             IfirmaAdminPanelPresenter::STATE_HELD => $this->l('On hold (data change request pending)'),
+            IfirmaAdminPanelPresenter::STATE_QUEUED => $this->l('Queued for issuance'),
             IfirmaAdminPanelPresenter::STATE_SUSPECTED => $this->l('Suspected duplicate'),
             IfirmaAdminPanelPresenter::STATE_UNKNOWN => $this->l('Outcome unknown - verify in iFirma'),
             IfirmaAdminPanelPresenter::STATE_ERROR => $this->l('Error'),
@@ -1343,7 +1344,7 @@ class Ifirma extends Module
         $column = new $columnClass(IfirmaOrderGridIndicator::FIELD);
         $column->setName($this->l('iFirma'))->setOptions(array(
             'field' => IfirmaOrderGridIndicator::FIELD,
-            'sortable' => false,
+            'sortable' => true,
             'clickable' => true,
         ));
         $params['definition']->getColumns()->addBefore('actions', $column);
@@ -1376,6 +1377,26 @@ class Ifirma extends Module
         foreach (IfirmaOrderGridIndicator::selectSql() as $select) {
             $params['search_query_builder']->addSelect($select);
         }
+        $this->sortByTheColumn($params['search_query_builder'], isset($params['search_criteria']) ? $params['search_criteria'] : null);
+    }
+
+    /**
+     * The core sorts the Orders list only by its own whitelist and adds no ORDER BY for any other field, so the sort of the
+     * iFirma column is this hook's alone. The direction goes through a whitelist, never into the SQL as given; orders in the
+     * same state are listed newest first. The count query is not touched, so the paging cannot change.
+     *
+     * @param object      $searchQuery
+     * @param object|null $criteria    the grid's search criteria
+     */
+    private function sortByTheColumn($searchQuery, $criteria)
+    {
+        if (!is_object($criteria) || !method_exists($criteria, 'getOrderBy')
+            || $criteria->getOrderBy() !== IfirmaOrderGridIndicator::FIELD) {
+            return;
+        }
+        $way = strtolower((string) $criteria->getOrderWay()) === 'desc' ? 'DESC' : 'ASC';
+        $searchQuery->orderBy(IfirmaOrderGridIndicator::SORT_ALIAS, $way);
+        $searchQuery->addOrderBy('o.id_order', 'DESC');
     }
 
     /**
@@ -1416,15 +1437,35 @@ class Ifirma extends Module
      */
     public function gridCellLabels()
     {
-        return array(
-            'paid' => $this->l('Paid'),
-            'issued' => $this->l('Issued'),
-            'issue' => $this->l('Issue iFirma document'),
-            'error' => $this->l('failed'),
-            'unknown' => $this->l('unknown outcome'),
-            'duplicate_suspected' => $this->l('suspected duplicate'),
-            'held' => $this->l('held'),
-        );
+        return self::decodeWords(array(
+            'invoice_issued' => $this->l('Invoice issued'),
+            'invoice_sent' => $this->l('Invoice sent'),
+            'invoice_paid' => $this->l('Invoice paid'),
+            'invoice_ksef' => $this->l('Invoice waiting for KSeF'),
+            'receipt_issued' => $this->l('Receipt issued'),
+            'receipt_sent' => $this->l('Receipt sent'),
+            'receipt_paid' => $this->l('Receipt paid'),
+            'receipt_ksef' => $this->l('Receipt waiting for KSeF'),
+            'delivery_sent_invoice' => $this->l('Sent to the customer: %s'),
+            'delivery_sent_receipt' => $this->l('Receipt sent to the customer: %s'),
+            'delivery_none_invoice' => $this->l('Not sent yet'),
+            'delivery_none_receipt' => $this->l('Receipt not sent yet'),
+            'delivery_failed' => $this->l('Delivery failed'),
+            'unpaid_invoice' => $this->l('Unpaid'),
+            'unpaid_receipt' => $this->l('Receipt unpaid'),
+            'ksef_accepted' => $this->l('KSeF: accepted (%s)'),
+            'ksef_progress' => $this->l('KSeF: sent, awaiting confirmation'),
+            'ksef_waiting' => $this->l('KSeF: waiting to be sent'),
+            'ksef_error' => $this->l('KSeF: error'),
+            'ksef_rejected' => $this->l('KSeF: rejected by KSeF'),
+            'state_none' => $this->l('No document yet'),
+            'state_error' => $this->l('Issuance failed'),
+            'state_unknown' => $this->l('Unknown outcome'),
+            'state_duplicate_suspected' => $this->l('Suspected duplicate'),
+            'state_held' => $this->l('Held (data change request)'),
+            'state_queued' => $this->l('Queued (iFirma limit)'),
+            'click_to_issue' => $this->l('click to issue'),
+        ));
     }
 
     /**

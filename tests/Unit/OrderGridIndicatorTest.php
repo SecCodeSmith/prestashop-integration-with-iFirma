@@ -29,7 +29,8 @@ class OrderGridIndicatorTest extends TestCase
 
         $this->assertStringContainsString('material-icons', $cell);
         $this->assertStringContainsString('receipt_long', $cell);
-        $this->assertStringContainsString('title="iFirma: FP 7/2026 (Issued)"', $cell);
+        // deliberate change (task 7.8): the tooltip names the document kind and state in words
+        $this->assertStringContainsString("title=\"Invoice issued: FP 7/2026\nNot sent yet\nUnpaid\"", $cell);
         $this->assertStringContainsString('text-info', $cell);
         $this->assertStringNotContainsString('text-success', $cell);
     }
@@ -41,7 +42,7 @@ class OrderGridIndicatorTest extends TestCase
             IfirmaOrderGridIndicator::FIELD_STATUS => 'paid',
         ), $this->labels);
 
-        $this->assertStringContainsString('(Paid)', $cell);
+        $this->assertStringContainsString('title="Invoice paid: FP 7/2026', $cell);
         $this->assertStringContainsString('text-success', $cell);
     }
 
@@ -109,9 +110,57 @@ class OrderGridIndicatorTest extends TestCase
         IfirmaOrderGridIndicator::joinSql('o; DROP');
     }
 
-    public function testTheSelectCountIsThree()
+    public function testTheSelectListHasEveryAliasOnce()
     {
-        $this->assertCount(3, IfirmaOrderGridIndicator::selectSql());
+        $aliases = array();
+        foreach (IfirmaOrderGridIndicator::selectSql() as $expression) {
+            $this->assertSame(1, preg_match('/ AS (\w+)$/', $expression, $m), $expression);
+            $aliases[] = $m[1];
+        }
+
+        $this->assertSame(array(
+            'ifirma_document_number', 'ifirma_document_status', 'ifirma_document_state', 'ifirma_document_type',
+            'ifirma_document_delivery', 'ifirma_document_sent_date', 'ifirma_document_ksef_status',
+            'ifirma_document_ksef_number', 'ifirma_document_error', 'ifirma_document_rank',
+        ), $aliases);
+        $this->assertSame($aliases, array_unique($aliases));
+    }
+
+    public function testNoSelectIsACorrelatedSubquery()
+    {
+        foreach (IfirmaOrderGridIndicator::selectSql() as $expression) {
+            $this->assertStringNotContainsString('SELECT', $expression);
+        }
+    }
+
+    public function testTheErrorIsReadOneCharacterLongerThanShown()
+    {
+        $this->assertSame("LEFT(IFNULL(ifr.last_error, ''), 101) AS ifirma_document_error", IfirmaOrderGridIndicator::selectSql()[8]);
+    }
+
+    public function testTheRankConstantsOrderTheStates()
+    {
+        $this->assertSame(array(1, 2, 3, 4, 5, 6, 7, 8, 9, 10), array(
+            IfirmaOrderGridIndicator::RANK_ERROR, IfirmaOrderGridIndicator::RANK_UNKNOWN, IfirmaOrderGridIndicator::RANK_SUSPECTED,
+            IfirmaOrderGridIndicator::RANK_HELD, IfirmaOrderGridIndicator::RANK_QUEUED, IfirmaOrderGridIndicator::RANK_NO_RECORD,
+            IfirmaOrderGridIndicator::RANK_ISSUED, IfirmaOrderGridIndicator::RANK_AWAITING_KSEF, IfirmaOrderGridIndicator::RANK_SENT,
+            IfirmaOrderGridIndicator::RANK_PAID,
+        ));
+    }
+
+    public function testTheRankExpressionPutsPaidAboveItsDeliveryAndKsefBetweenIssuedAndSent()
+    {
+        $rank = IfirmaOrderGridIndicator::selectSql()[9];
+
+        $this->assertStringStartsWith('CASE ', $rank);
+        $this->assertLessThan(strpos($rank, "ifr.delivery_status = 'awaiting_ksef'"), strpos($rank, "ifr.status = 'paid'"));
+        $this->assertLessThan(strpos($rank, "ifr.delivery_status = 'sent'"), strpos($rank, "ifr.delivery_status = 'awaiting_ksef'"));
+        $this->assertStringEndsWith(' AS ifirma_document_rank', $rank);
+    }
+
+    public function testTheOrderByNamesTheRankAlias()
+    {
+        $this->assertSame('ifirma_document_rank', IfirmaOrderGridIndicator::SORT_ALIAS);
     }
 
     public function testTheThirdSelectIsTheRawStateOfTheNewestRecord()
@@ -142,7 +191,7 @@ class OrderGridIndicatorTest extends TestCase
         ), $this->issueLabels(), true);
 
         $this->assertSame(
-            '<a href="#" class="js-ifirma-issue" data-id-order="42" title="Issue iFirma document"><i class="material-icons">add_circle_outline</i></a>',
+            '<a href="#" class="js-ifirma-issue" data-id-order="42" title="No document yet – click to issue"><i class="material-icons">add_circle_outline</i></a>',
             $cell
         );
     }
@@ -162,7 +211,7 @@ class OrderGridIndicatorTest extends TestCase
             IfirmaOrderGridIndicator::FIELD_STATE => 'error',
         ), $this->issueLabels(), true);
 
-        $this->assertStringContainsString('title="Issue iFirma document (Issuance failed)"', $cell);
+        $this->assertStringContainsString('title="Issuance failed – click to issue"', $cell);
         $this->assertStringContainsString('data-id-order="42"', $cell);
     }
 
@@ -173,7 +222,7 @@ class OrderGridIndicatorTest extends TestCase
             IfirmaOrderGridIndicator::FIELD_STATE => 'held',
         ), $this->issueLabels(), true);
 
-        $this->assertStringContainsString('title="Issue iFirma document (Held)"', $cell);
+        $this->assertStringContainsString('title="Held (data change request) – click to issue"', $cell);
     }
 
     public function testAnUnlabelledStateFallsBackToTheRawState()
@@ -183,7 +232,7 @@ class OrderGridIndicatorTest extends TestCase
             IfirmaOrderGridIndicator::FIELD_STATE => 'weird',
         ), array('issue' => 'Issue'), true);
 
-        $this->assertStringContainsString('title="Issue (weird)"', $cell);
+        $this->assertStringContainsString('title="weird – click to issue"', $cell);
     }
 
     public function testMarkupInTheIssueTitleIsEscaped()
@@ -196,7 +245,7 @@ class OrderGridIndicatorTest extends TestCase
         $this->assertStringContainsString('data-id-order="7"', $cell);
         $this->assertStringNotContainsString('<script>', $cell);
         $this->assertStringNotContainsString('<b>', $cell);
-        $this->assertStringContainsString('&quot;Issue&quot; (&lt;b&gt;x&lt;/b&gt;)', $cell);
+        $this->assertStringContainsString('&lt;b&gt;x&lt;/b&gt; – click to issue', $cell);
     }
 
     public function testAnIssuedRecordKeepsTheIconEvenWhenIssuingIsAllowed()

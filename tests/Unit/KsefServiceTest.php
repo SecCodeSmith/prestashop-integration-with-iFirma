@@ -666,4 +666,52 @@ class KsefServiceTest extends TestCase
 
         $this->assertTrue($this->svc->goesToKsef($r, $this->order()));
     }
+    // ---- the five readable KSeF states of the panel (spec ksef-submission "Status visibility") ---------------
+
+    public function testNotSentCarriesTheReason()
+    {
+        Configuration::updateValue('IFIRMA_KSEF_MODE', 'off');
+
+        $this->assertSame('not sent (KSeF disabled)', $this->svc->describe($this->receipt('1234567890'), $this->order()));
+    }
+
+    public function testWaitingForIfirmaWhenTheSubmitterIsIfirmaAndNoStateIsReported()
+    {
+        Configuration::updateValue('IFIRMA_KSEF_SUBMITTER', 'ifirma');
+
+        $this->assertSame('waiting for iFirma to send the document', $this->svc->describe($this->receipt('1234567890'), $this->order()));
+    }
+
+    public function testSentAndAwaitingAcceptanceShowsTheTimeOfTheModule()
+    {
+        $r = $this->receipt('1234567890');
+        $r->ksef_status = 'WYSLANA';
+        $r->ksef_sent_at = '2026-11-01 10:15:00';
+
+        $this->assertSame('sent 2026-11-01 10:15, awaiting KSeF', $this->svc->describe($r, $this->order()));
+    }
+
+    public function testSentOrScheduledByIfirmaShowsTheStatusAsReported()
+    {
+        $r = $this->receipt('1234567890');
+        $r->ksef_status = 'ZAPLANOWANA';
+
+        $this->assertSame('sent or scheduled by iFirma: ZAPLANOWANA', $this->svc->describe($r, $this->order()));
+    }
+
+    public function testRejectedByKsefIsAnErrorThatSaysSo()
+    {
+        $r = $this->receipt('1234567890');
+        $r->ksef_status = 'ODRZUCONA';
+
+        $this->assertSame('error: rejected by KSeF', $this->svc->describe($r, $this->order()));
+    }
+
+    public function testASentStatusWithoutOurTimestampIsSentByIfirma()
+    {
+        $r = $this->receipt('1234567890');
+        $r->ksef_status = 'WYSLANA';
+
+        $this->assertSame('sent or scheduled by iFirma: WYSLANA', $this->svc->describe($r, $this->order()));
+    }
 }

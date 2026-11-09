@@ -372,6 +372,8 @@ class IfirmaDeliveryService
                 );
             case IfirmaReceipt::DELIVERY_FAILED:
                 return sprintf($this->module->l('Failed: %s', 'ifirmadeliveryservice'), (string) $receipt->delivery_error);
+            case IfirmaReceipt::DELIVERY_AWAITING_KSEF:
+                return $this->module->l('Waiting for KSeF acceptance', 'ifirmadeliveryservice');
             case IfirmaReceipt::DELIVERY_SKIPPED:
                 if ($receipt->source === IfirmaReceipt::SOURCE_EXTERNAL) {
                     return $this->module->l('Skipped (external)', 'ifirmadeliveryservice');
