@@ -1,0 +1,14 @@
+# gitleaks configuration: the default rules plus two reviewed false-positive paths.
+# Accepted on 2026-11-09, review by 2027-05-09 (also recorded in docs/development.md).
+title = "ifirma gitleaks"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "graphify knowledge-graph cache: file content hashes, not credentials"
+paths = ['''^graphify-out/''']
+
+[[allowlists]]
+description = "unit-test fixtures: the IFIRMA_KEY_* names with obviously fake values (hex placeholders)"
+paths = ['''^tests/Unit/(SettingsSaveTest|IfirmaSettingsTest)\.php$''', '''^tests/fixtures/settings/golden\.json$''']

@@ -1,0 +1,25 @@
+version: 2
+
+# Update pull requests for every ecosystem the repository uses; workflow actions are referenced by
+# version tag and Dependabot proposes the newer tag.
+updates:
+  - package-ecosystem: composer
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /test-stack/ifirma-mock
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /test-stack/ifirma-mock
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
