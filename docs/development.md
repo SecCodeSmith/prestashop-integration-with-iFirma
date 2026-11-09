@@ -112,6 +112,13 @@ The Docker smoke suite (`tests/smoke/run.php`, described in [tests/smoke/README.
 | `P` | Auto-accept keeps identity changes pending | In mode `safe` a request that changes the NIP stays pending, the hold is recorded and the merchant mail has no automatic line; in mode `none` every request stays pending as before. |
 | `Q` | Stamp prefix and shop webpage | With a custom prefix and webpage the mock's document shows `Uwagi` as the stamp, a space and the webpage, and `NUMER_ZAMOWIENIA` as the bare stamp; a remote document with the legacy `PS-ORDER-` stamp is adopted, one with another shop's prefix is not; the delivery attachment and the customer download are named `<shop-domain>-<number>.pdf`. |
 
+Since 1.8.0 two more cover the queue and KSeF-confirmed delivery (they need mock 1.4.0, which enforces iFirma's limits and simulates KSeF auto-send, and the module's cron runner):
+
+| Letter | Scenario | What it proves |
+|---|---|---|
+| `R` | Burst issuance under the limits | 50 orders in a row each end with exactly one document; the module's cap queues the surplus and the cron drains it once a minute without the mock ever refusing a call; the mock's minute and day limits and the module's own day cap queue the orders, start the back-off and drain afterwards. About 8 to 10 minutes; run it alone. |
+| `S` | KSeF-confirmed delivery | The module submits once, delivery waits and the customer's download answers "not found" until KSeF accepts, then one cron run delivers once; iFirma's own submission and the submitter `ifirma` mean no send call; a rejection keeps the delivery waiting; documents that do not go to KSeF are delivered at issuance. |
+
 Run one scenario with `SMOKE_ONLY=<letter>`, for example `SMOKE_ONLY=O`. Scenario `N` (e-mails) also checks the inline logo and the shop link of the module's e-mails.
 
 **Shared form partial.** The invoice-data fields of the customer form live in `views/templates/front/_datarequest_fields.tpl`. Both `datarequest.tpl` (logged-in customers) and `guestrequest.tpl` (guests) include it, so the field list, the messages and the pre-filling cannot drift apart.
