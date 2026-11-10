@@ -4,9 +4,9 @@ Rules for every group (CLAUDE.md): test first and show the red run before the co
 
 ## 1. Prerequisites
 
-- [ ] 1.1 Ask the owner whether to archive `add-rate-limit-queue-and-ksef-confirmed-delivery` now or to finish its open tasks (8.1, 8.4, 8.5, 9.3, 9.4) first, then archive it. Verify: `openspec list --json` no longer lists it and `openspec/specs/receipt-status-sync/spec.md` contains "Cron jobs and their order", `openspec/specs/receipt-delivery/spec.md` contains "KSeF documents are delivered after acceptance", and `openspec/specs/order-list-receipt-indicator/spec.md` contains "Sorting by document state".
-- [ ] 1.2 Compare the three MODIFIED requirements of this change that came from that change ("Cron jobs and their order", "KSeF documents are delivered after acceptance", "Column behaviour in the list") with the archived text and carry over any wording that differs. Verify: `openspec validate add-api-usage-delivery-retry-status-filter-and-ci-fix --strict` passes.
-- [ ] 1.3 Record the baseline on master before any code change: `composer test` (test and assertion counts) and `python tools/check_pinned_images.py test-stack` on a clean checkout of the pinned submodule commit. Verify: the counts and the one finding (`docker-compose.yml:67 ... latest`) are written to `build/progress.log`.
+- [x] 1.1 Ask the owner whether to archive `add-rate-limit-queue-and-ksef-confirmed-delivery` now or to finish its open tasks (8.1, 8.4, 8.5, 9.3, 9.4) first, then archive it. Verify: `openspec list --json` no longer lists it and `openspec/specs/receipt-status-sync/spec.md` contains "Cron jobs and their order", `openspec/specs/receipt-delivery/spec.md` contains "KSeF documents are delivered after acceptance", and `openspec/specs/order-list-receipt-indicator/spec.md` contains "Sorting by document state".
+- [x] 1.2 Compare the three MODIFIED requirements of this change that came from that change ("Cron jobs and their order", "KSeF documents are delivered after acceptance", "Column behaviour in the list") with the archived text and carry over any wording that differs. Verify: `openspec validate add-api-usage-delivery-retry-status-filter-and-ci-fix --strict` passes.
+- [x] 1.3 Record the baseline on master before any code change: `composer test` (test and assertion counts) and `python tools/check_pinned_images.py test-stack` on a clean checkout of the pinned submodule commit. Verify: the counts and the one finding (`docker-compose.yml:67 ... latest`) are written to `build/progress.log`.
 
 ## 2. Security workflow: pinned image
 

@@ -6,7 +6,7 @@ Keeps the state of the mock iFirma API (documents, contractors, identifier seque
 ## Requirements
 
 ### Requirement: State survives a restart
-When a state file is configured, the mock SHALL write its complete state to that file after every change and SHALL load it when it starts, so that documents, contractors, the identifier sequences, the test switches and the served-call counter are the same after a restart as before it.
+When a state file is configured, the mock SHALL write its complete state to that file after every change and SHALL load it when it starts, so that documents (with their KSeF state and KSeF send calls), contractors, the identifier sequences, the test switches (including the KSeF auto-send mode and the runtime rate limits), the served-call counter, the refused-call counter and the current day's call count are the same after a restart as before it. The per-minute count SHALL NOT be persisted.
 
 #### Scenario: Issued document outlives a restart
 - **WHEN** a document was created through `POST /iapi/fakturakraj.json` (or seeded through `POST /__mock/documents`) and the mock process or container is restarted
@@ -30,6 +30,18 @@ When a state file is configured, the mock SHALL write its complete state to that
 #### Scenario: Payments and deletions are kept
 - **WHEN** a payment was registered for a document and another document was deleted through `DELETE /__mock/documents/{id}` before a restart
 - **THEN** after the restart the first document still reports the paid amount and the second one stays absent from lists and detail
+
+#### Scenario: Day count and limits are kept
+- **WHEN** 40 calls were served today, the per-day limit was set to 500 at runtime and the KSeF auto-send mode is `send`, and the mock restarts on the same day
+- **THEN** the day count continues from 40, the per-day limit is 500 and the KSeF auto-send mode is `send`
+
+#### Scenario: Day count from an earlier day
+- **WHEN** the state file holds a day count of 40 for yesterday and the mock starts today
+- **THEN** the day count starts from zero
+
+#### Scenario: State file without the new keys
+- **WHEN** the mock starts with a version 1 state file written before this change
+- **THEN** it loads the file, starts with a day count of zero, the environment limits, KSeF auto-send `off` and zero KSeF send calls per document
 
 ### Requirement: Memory-only mode without a state file
 When no state file is configured, the mock SHALL keep its state in memory only, write nothing to disk and start empty, exactly as before this capability existed.

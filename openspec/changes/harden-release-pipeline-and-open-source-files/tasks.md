@@ -66,7 +66,7 @@ Test-first throughout (CLAUDE.md): each code task starts with the failing test. 
 - [x] 7.1 Full suite, diff-cover gate, `npm run build` + `verify:package` + readiness check on the built zip
 - [x] 7.2 Red-team pass on the workflow changes (token permissions, injection through commit text, PR creation path) per CLAUDE.md; security-sensitive, so one read-only reviewer
 - [x] 7.3 `openspec validate harden-release-pipeline-and-open-source-files`, `graphify update .`
-- [ ] 7.4 Open the PR of `feat/rate-limit-queue-ksef-delivery` into `master` with the summary of both changes (after asking, since it is outward-facing)
+- [x] 7.4 Open the PR of `feat/rate-limit-queue-ksef-delivery` into `master` with the summary of both changes (after asking, since it is outward-facing)
 
 ## Notes from the apply
 

@@ -97,3 +97,7 @@ Design decisions are referenced as D1 to D12 (design.md). Scenarios are referenc
 - Archive `add-smtp-mock-and-mail-e2e` and `add-guest-data-request-auto-accept-and-logo` before archiving this change, so their deltas are in the main specs first.
 - Push the test-stack commit first, then the module commits, after the user's go-ahead (`git fetch` first: the release bot and IDE syncs move master).
 - Archive this change with `/openspec-archive-change` once the release gates are met, then verify the main specs with `openspec validate --specs --strict`.
+
+## Workflow follow-up
+
+- The spec deltas of this change were applied to `openspec/specs/` on 2026-11-10 (owner's decision, so that `add-api-usage-delivery-retry-status-filter-and-ci-fix` can build on them). Archive this change with `openspec archive add-rate-limit-queue-and-ksef-confirmed-delivery --skip-specs` once the open tasks above are done.
