@@ -42,7 +42,7 @@ class AdminController
     }
 
     /**
-     * The ORDER BY of the core list (without the cookie fallback and the validity exceptions of the real class):
+     * The ORDER BY of the core list (the direction check follows the real class):
      * the column goes through order_key and bqSQL, the direction through pSQL.
      */
     protected function getOrderByClause($orderBy, $orderDirection)
@@ -79,13 +79,33 @@ class AdminController
         return $orderBy;
     }
 
+    /** As the core: an empty direction falls back to the list cookie, then the list state, then the default, and an
+     *  invalid one is an exception. */
     protected function checkOrderDirection($orderDirection)
     {
+        $prefix = $this->getCookieOrderByPrefix();
         if (empty($orderDirection)) {
-            $orderDirection = $this->_orderWay ? $this->_orderWay : $this->_defaultOrderWay;
+            // the real Cookie answers false for a key it does not hold
+            $stored = isset($this->context->cookie->{$prefix . $this->list_id . 'Orderway'}) ? $this->context->cookie->{$prefix . $this->list_id . 'Orderway'} : false;
+            if ($stored) {
+                $orderDirection = $stored;
+            } elseif ($this->_orderWay) {
+                $orderDirection = $this->_orderWay;
+            } else {
+                $orderDirection = $this->_defaultOrderWay;
+            }
+        }
+
+        if (!Validate::isOrderWay($orderDirection)) {
+            throw new PrestaShopException('Invalid order direction.');
         }
 
         return pSQL(Tools::strtoupper($orderDirection));
+    }
+
+    protected function getCookieOrderByPrefix()
+    {
+        return str_replace(['admin', 'controller'], '', Tools::strtolower(get_class($this)));
     }
 
     public function init()

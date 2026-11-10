@@ -46,6 +46,7 @@ class DocumentsListSortTest extends TestCase
     protected function tearDown(): void
     {
         Tools::$values = array();
+        unset(Context::getContext()->cookie->{'ifirmatestsortifirma_receiptOrderway'});
     }
 
     private function controller(array $request = array())
@@ -261,5 +262,45 @@ class DocumentsListSortTest extends TestCase
         $this->assertStringContainsString(IfirmaIssueFeed::issuePredicate('a'), $c->_where);
         $this->assertStringNotContainsString('ifirma_state_rank', $c->_where);
         $this->assertSame('a!delivery_status', $c->fields_list['delivery_status']['filter_key']);
+    }
+
+    /** The core keeps the last direction of the list in the employee's cookie. */
+    private function storeDirectionInTheCookie($value)
+    {
+        Context::getContext()->cookie->{'ifirmatestsortifirma_receiptOrderway'} = $value;
+    }
+
+    public function testAnUnexpectedDirectionStoredInTheCookieSortsAscendingWhenTheRequestHasNone()
+    {
+        $this->storeDirectionInTheCookie('random');
+        $c = $this->controller();
+
+        $this->assertSame('ASC', $c->direction(null));
+        $this->assertSame(' ORDER BY ifirma_state_rank ASC, a.`id_ifirma_receipt` DESC', $c->orderByClause('status', null));
+    }
+
+    public function testADirectionStoredInTheCookieIsKeptWhenItIsValid()
+    {
+        $this->storeDirectionInTheCookie('asc');
+        $c = $this->controller();
+
+        $this->assertSame('ASC', $c->direction(null));
+    }
+
+    public function testAnUnexpectedDefaultOrderWayStillNeverReachesTheSql()
+    {
+        $this->storeDirectionInTheCookie(false);
+        $c = $this->controller();
+        $c->_defaultOrderWay = 'random; DROP';
+
+        $this->assertSame('ASC', $c->direction(null));
+    }
+
+    public function testACookieThatIsNotAStringSortsAscending()
+    {
+        $this->storeDirectionInTheCookie(array('desc'));
+        $c = $this->controller();
+
+        $this->assertSame('ASC', $c->direction(null));
     }
 }

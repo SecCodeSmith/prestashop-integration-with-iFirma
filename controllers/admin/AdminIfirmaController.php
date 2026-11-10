@@ -327,8 +327,10 @@ class AdminIfirmaController extends ModuleAdminController
     }
 
     /**
-     * The core refuses a request direction that is not asc or desc by leaving it out, which would sort the list in its
-     * default way: here an unexpected direction sorts ascending, and the value never reaches the SQL.
+     * The core throws on a direction that is not asc or desc, and it takes the direction from the request, then from the
+     * list's cookie, then from the list's state and its default. The cookie is stored by the employee's browser: here the
+     * direction is resolved the same way and anything that is not asc or desc, from whichever source, sorts ascending and
+     * never reaches the core or the SQL.
      *
      * @param string|null $orderDirection
      * @return string ASC or DESC
@@ -340,7 +342,30 @@ class AdminIfirmaController extends ModuleAdminController
             return IfirmaDocumentListSort::ASCENDING;
         }
 
-        return parent::checkOrderDirection($orderDirection);
+        $effective = $this->effectiveOrderDirection($orderDirection);
+        if (!IfirmaDocumentListSort::isDirection($effective)) {
+            return IfirmaDocumentListSort::ASCENDING;
+        }
+
+        return parent::checkOrderDirection($effective);
+    }
+
+    /**
+     * @param mixed $orderDirection the direction the core was asked for
+     * @return mixed the first of: that direction, the list's cookie, the list's state, its default
+     */
+    private function effectiveOrderDirection($orderDirection)
+    {
+        $cookie = $this->context->cookie;
+        $prefix = str_replace(array('admin', 'controller'), '', Tools::strtolower(get_class($this)));
+        $stored = isset($cookie->{$prefix . $this->list_id . 'Orderway'}) ? $cookie->{$prefix . $this->list_id . 'Orderway'} : false;
+        foreach (array($orderDirection, $stored, $this->_orderWay, $this->_defaultOrderWay) as $candidate) {
+            if (!empty($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return '';
     }
 
     /**

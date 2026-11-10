@@ -11,6 +11,11 @@
 
 class Validate
 {
+    public static function isOrderWay($orderWay)
+    {
+        return is_string($orderWay) && in_array(Tools::strtoupper($orderWay), ['ASC', 'DESC'], true);
+    }
+
     public static function isLoadedObject($object)
     {
         return is_object($object) && !empty($object->id);
