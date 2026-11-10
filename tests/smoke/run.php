@@ -1080,6 +1080,7 @@ function scenarioD($module, $actions)
     assertSame(true, $receipt ? (bool) $receipt->remote_missing : null, 'receipt remote_missing = 1');
 
     smokeUsageAndRefusalChecks($module, $actions);
+    smokeCustomerBudgetChecks($actions);
 
     // Real front controller through the web server (skipped when it is not reachable from here).
     $base = rtrim(getenv('PS_LOCAL_URL') ? getenv('PS_LOCAL_URL') : 'http://localhost', '/')
@@ -1429,6 +1430,14 @@ function scenarioJ($module)
         $r3b = new IfirmaReceipt((int) $r3->id);
         assertSame('sent', $r3b->delivery_status, 'delivery_status is sent after the resend');
 
+        // quiet time: the same bulk resend again, a moment after the delivery, sends nothing and reports a skip
+        $res = $runner->run('resend', array((int) $r3->id), 1, array('final' => true));
+        $row = $res['results'] ? $res['results'][0] : array('outcome' => null, 'message' => '');
+        assertSame('skipped', $row['outcome'], 'quiet time: a repeated bulk resend reports the document as skipped');
+        assertSame('This document was sent a moment ago. Wait before sending it again.', (string) $row['message'], 'quiet time: the skip names the reason');
+        assertSame('', $res['stopped'], 'quiet time: the skipped resend does not stop the run');
+        assertSame((string) $r3b->delivered_at, (string) (new IfirmaReceipt((int) $r3->id))->delivered_at, 'quiet time: the skipped resend left delivered_at unchanged');
+
         $ids = array((int) $issued1->id, (int) $issued2->id, (int) $r3->id);
         $res = $runner->run('refresh', $ids, 1, array('final' => true));
         $outcomes = array();
@@ -1488,6 +1497,46 @@ function scenarioK($module)
     }
 }
 
+/**
+ * Moves the recorded delivery of a record into the past in the database (the quiet time of a manual resend is 30
+ * seconds; the run does not sleep it out).
+ *
+ * @return string the new delivered_at
+ */
+function smokeAgeDelivery(IfirmaReceipt $receipt, $seconds = 31)
+{
+    $aged = date('Y-m-d H:i:s', time() - (int) $seconds);
+    Db::getInstance()->execute(
+        'UPDATE `' . _DB_PREFIX_ . 'ifirma_receipt` SET delivered_at = \'' . pSQL($aged) . '\' WHERE id_ifirma_receipt = ' . (int) $receipt->id
+    );
+    Cache::clean('objectmodel_IfirmaReceipt_*');
+
+    return $aged;
+}
+
+/**
+ * Scenario N, part 4: a manual resend right after a delivery is refused and changes nothing; after the quiet time it
+ * goes out. The order's document has just been delivered by the last resend.
+ */
+function smokeManualResendQuietTimeChecks($actions, Order $order)
+{
+    $before = deliveryMailCountFor($order);
+    $deliveredAt = (string) receiptOf($order)->delivered_at;
+    $r = $actions->resend((int) $order->id);
+    assertSame(false, $r['success'], 'quiet time: a resend right after a delivery is refused');
+    assertSame('This document was sent a moment ago. Wait before sending it again.', (string) $r['message'], 'quiet time: the refusal says the document was sent a moment ago');
+    assertSame($before, deliveryMailCountFor($order), 'quiet time: the sink still holds the same e-mails of the order');
+    $receipt = receiptOf($order);
+    assertSame($deliveredAt, (string) $receipt->delivered_at, 'quiet time: delivered_at is unchanged by the refused resend');
+    assertSame('sent', (string) $receipt->delivery_status, 'quiet time: the delivery status stays sent');
+
+    $aged = smokeAgeDelivery($receipt);
+    $r = $actions->resend((int) $order->id);
+    assertTrue($r['success'], 'quiet time: a resend 31 seconds after the delivery succeeds', $r['message']);
+    assertSame($before + 1, deliveryMailCountFor($order), 'quiet time: the resend after the quiet time added exactly one e-mail');
+    assertTrue((string) receiptOf($order)->delivered_at > $aged, 'quiet time: delivered_at is renewed by the later resend', $aged . ' -> ' . receiptOf($order)->delivered_at);
+}
+
 function scenarioN($module, $actions)
 {
     $order = freshScenario('N. E-mail delivery through the SMTP sink');
@@ -1543,6 +1592,7 @@ function scenarioN($module, $actions)
         // 2. copy mode shop, manual resend: the shop address is a blind copy
         Configuration::updateValue('IFIRMA_SEND_COPY_MODE', 'shop');
         sleep(1); // delivered_at has a one-second resolution
+        $deliveredAt = smokeAgeDelivery($receipt); // an employee resends after the quiet time of a delivery
         $r = $actions->resend((int) $order->id);
         assertTrue($r['success'], 'resend with copy mode shop succeeds', $r['message']);
         $rows = mailbox();
@@ -1560,6 +1610,7 @@ function scenarioN($module, $actions)
         assertTrue($receipt && (string) $receipt->delivered_at > $deliveredAt, 'copy shop: delivered_at renewed by the resend', $deliveredAt . ' -> ' . ($receipt ? $receipt->delivered_at : 'n/a'));
 
         // 3. the copy address equals the customer's (compared ignoring case): the envelope holds one recipient
+        smokeAgeDelivery($receipt); // the resend above delivered a moment ago: the employee waits out the quiet time
         Configuration::updateValue('PS_SHOP_EMAIL', strtoupper($customerEmail));
         $r = $actions->resend((int) $order->id);
         assertTrue($r['success'], 'resend with the shop address equal to the customer succeeds', $r['message']);
@@ -1571,6 +1622,7 @@ function scenarioN($module, $actions)
                 'rcpt_tos' => array($customerEmail),
             ), 'copy equal to the customer');
         }
+        smokeManualResendQuietTimeChecks($actions, $order);
         Configuration::updateValue('PS_SHOP_EMAIL', $shopEmail);
         Configuration::updateValue('IFIRMA_SEND_COPY_MODE', 'none');
 
@@ -1757,6 +1809,19 @@ class SmokeJsonOut extends Exception
     }
 }
 
+class SmokeLimitOut extends Exception
+{
+    public $seconds;
+    public $text;
+
+    public function __construct($seconds, $text)
+    {
+        parent::__construct('limit');
+        $this->seconds = (int) $seconds;
+        $this->text = $text;
+    }
+}
+
 class SmokeTextOut extends Exception
 {
     public $status;
@@ -1767,6 +1832,247 @@ class SmokeTextOut extends Exception
         parent::__construct('text');
         $this->status = $status;
         $this->text = $text;
+    }
+}
+
+// ---------------------------------------------------------------- download limits (customer budget, day cap, employee budget)
+
+/** Loads the classes of the download limits (the module loads them lazily). */
+function smokeLimitClasses()
+{
+    foreach (array('IfirmaSchema', 'IfirmaDownloadThrottle', 'IfirmaDownloadBudget', 'IfirmaDownloadDayCap') as $class) {
+        require_once _PS_MODULE_DIR_ . 'ifirma/classes/' . $class . '.php';
+    }
+}
+
+/** Frees the document's own 30-second download window (the stamp), so the next download of it is judged by the other limits. */
+function smokeClearDownloadStamp(IfirmaReceipt $record)
+{
+    Db::getInstance()->execute('UPDATE `' . _DB_PREFIX_ . 'ifirma_receipt` SET last_download_at = NULL WHERE id_ifirma_receipt = ' . (int) $record->id);
+    Cache::clean('objectmodel_IfirmaReceipt_*');
+}
+
+/** @return array the download columns of the record, read from the database */
+function smokeDownloadRow(IfirmaReceipt $record)
+{
+    $row = Db::getInstance()->getRow('SELECT last_download_at, download_day, download_count FROM `' . _DB_PREFIX_ . 'ifirma_receipt` WHERE id_ifirma_receipt = ' . (int) $record->id, false);
+
+    return is_array($row) ? $row : array();
+}
+
+/** The 429 of the customer download: status, Retry-After 60 and the generic text, asserted on an HTTP answer. */
+function smokeAssertCustomerRefusal(array $answer, $label)
+{
+    assertSame(429, $answer['code'], $label . ': the owner\'s download answers 429');
+    $retryAfter = preg_match('/^Retry-After:\s*(\d+)/mi', $answer['headers'], $m) ? (int) $m[1] : null;
+    assertSame(60, $retryAfter, $label . ': the 429 carries Retry-After 60');
+    assertSame('Too many requests at the moment. Please try again shortly.', trim($answer['body']), $label . ': the 429 body is the generic text');
+}
+
+/**
+ * Scenario D, part 3: the budget all customers share (20 per minute, 2,000 per day). A full counter refuses the owner's
+ * download without a request to iFirma and without spending anything, and the module's own status request still goes out.
+ */
+function smokeCustomerBudgetChecks($actions)
+{
+    smokeLimitClasses();
+    $order = freshScenario('D. Customer download budget');
+    if (!$order) {
+        return;
+    }
+    $record = smokeIssuedRecordFor($order);
+    $windows = array(
+        'minute' => array(IfirmaDownloadBudget::CUSTOMER_MINUTE_KEY, IfirmaDownloadBudget::MINUTE_BUCKET_FORMAT, IfirmaDownloadBudget::CUSTOMER_MINUTE_CAP),
+        'day' => array(IfirmaDownloadBudget::CUSTOMER_DAY_KEY, IfirmaDownloadBudget::DAY_BUCKET_FORMAT, IfirmaDownloadBudget::CUSTOMER_DAY_CAP),
+    );
+    $previous = array();
+    foreach ($windows as $spec) {
+        $previous[$spec[0]] = smokeReadSetting($spec[0]);
+    }
+    try {
+        smokeClearRateWindow();
+        $probe = smokeDownloadAs($order, $record);
+        $overHttp = $probe['code'] === 200;
+        if ($overHttp) {
+            assertSame('%PDF-', substr($probe['body'], 0, 5), 'customer budget: the owner download over HTTP returns a PDF while the budget has room');
+        } else {
+            skip('customer budget: the download over HTTP', 'the owner could not be logged in over HTTP with the demo password (HTTP ' . $probe['code'] . '); the budget is asserted through its class');
+        }
+        foreach ($windows as $name => $spec) {
+            if (time() % 60 >= 50) {
+                sleepToNextMinute(); // the full counter is the current minute's
+            }
+            $full = date($spec[1]) . ':' . $spec[2];
+            smokeWriteSetting($spec[0], $full);
+            smokeClearDownloadStamp($record);
+            $calls = mockCallCount();
+            $label = 'customer budget (' . $name . ')';
+            if ($overHttp) {
+                smokeAssertCustomerRefusal(smokeDownloadAs($order, $record), $label);
+            }
+            assertSame($full, smokeStoredValue($spec[0]), $label . ': the refused download left the counter unchanged');
+            assertSame($calls, mockCallCount(), $label . ': the refused download reached the mock with no call');
+            assertSame(false, IfirmaDownloadBudget::forCustomers()->take(), $label . ': the budget class refuses a take');
+            assertSame($full, smokeStoredValue($spec[0]), $label . ': a refused take spends nothing');
+
+            $r = $actions->refreshStatus((int) $order->id);
+            assertTrue($r['success'], $label . ': the module\'s own status refresh still succeeds', $r['message']);
+            assertSame($calls + 1, mockCallCount(), $label . ': the status refresh sent exactly one request');
+            smokeWriteSetting($spec[0], '');
+        }
+        if ($overHttp) {
+            smokeClearDownloadStamp($record);
+            $calls = mockCallCount();
+            $again = smokeDownloadAs($order, $record);
+            assertSame(200, $again['code'], 'customer budget: the owner download works again once the counters are cleared');
+            assertSame($calls + 1, mockCallCount(), 'customer budget: that download sent exactly one request');
+            assertTrue(preg_match('/^\d{12}:1$/', (string) smokeStoredValue(IfirmaDownloadBudget::CUSTOMER_MINUTE_KEY)) === 1, 'customer budget: the download took one unit of the minute counter', (string) smokeStoredValue(IfirmaDownloadBudget::CUSTOMER_MINUTE_KEY));
+        }
+    } finally {
+        foreach ($previous as $key => $value) {
+            smokeRestoreSetting($key, $value);
+        }
+        smokeClearRateWindow();
+        $record->delete();
+        mockReset();
+    }
+}
+
+/**
+ * Scenario M, part 2: the customer's own day cap (30 downloads, all their documents together), end to end. The refused
+ * request spends no throttle slot and no shared budget; another customer is not affected; yesterday's count is ignored.
+ */
+function smokeCustomerDayCapChecks(Order $order)
+{
+    smokeLimitClasses();
+    IfirmaSchema::ensureReceiptDownloadCountColumns();
+    $idCustomer = (int) $order->id_customer;
+    $made = array();
+    $minuteKey = IfirmaDownloadBudget::CUSTOMER_MINUTE_KEY;
+    $previousMinute = smokeReadSetting($minuteKey);
+    try {
+        smokeClearRateWindow();
+        $used = smokeIssuedRecordFor($order);
+        $wanted = smokeIssuedRecordFor($order);
+        $made = array($used, $wanted);
+        $today = date('Y-m-d');
+        $db = Db::getInstance();
+        $db->execute('UPDATE `' . _DB_PREFIX_ . 'ifirma_receipt` SET download_day = \'' . pSQL($today) . '\', download_count = ' . (int) IfirmaDownloadThrottle::CUSTOMER_DAILY_MAX . ' WHERE id_ifirma_receipt = ' . (int) $used->id);
+        Cache::clean('objectmodel_IfirmaReceipt_*');
+        $cap = new IfirmaDownloadDayCap();
+        assertSame(true, $cap->isExhausted($idCustomer), 'day cap: a customer with 30 downloads today is exhausted');
+        assertSame(false, $cap->isExhausted($idCustomer + 100000), 'day cap: another customer id is not affected (asserted through the class: the scenario has one customer with a known password)');
+
+        smokeWriteSetting($minuteKey, '');
+        $before = smokeDownloadRow($wanted);
+        $calls = mockCallCount();
+        $answer = smokeDownloadAs($order, $wanted);
+        $overHttp = in_array($answer['code'], array(200, 429), true);
+        if ($overHttp) {
+            smokeAssertCustomerRefusal($answer, 'day cap');
+        } else {
+            skip('day cap: the download over HTTP', 'the owner could not be logged in over HTTP with the demo password (HTTP ' . $answer['code'] . '); the cap is asserted through its class');
+        }
+        assertSame($calls, mockCallCount(), 'day cap: the refused download reached the mock with no call');
+        assertSame($before, smokeDownloadRow($wanted), 'day cap: the refused download used no throttle slot and counted nothing');
+        assertSame('', (string) smokeStoredValue($minuteKey), 'day cap: the refused download did not touch the shared minute counter');
+
+        $yesterday = date('Y-m-d', time() - 86400);
+        $db->execute('UPDATE `' . _DB_PREFIX_ . 'ifirma_receipt` SET download_day = \'' . pSQL($yesterday) . '\' WHERE id_ifirma_receipt = ' . (int) $used->id);
+        assertSame(false, $cap->isExhausted($idCustomer), 'day cap: yesterday\'s count no longer applies');
+        if ($overHttp) {
+            $answer = smokeDownloadAs($order, $wanted);
+            assertSame(200, $answer['code'], 'day cap: the owner\'s download works once the count is from yesterday');
+            $row = smokeDownloadRow($wanted);
+            assertSame(1, (int) $row['download_count'], 'day cap: the download was counted once on its document');
+            assertSame($today, (string) $row['download_day'], 'day cap: the count carries today\'s date');
+        }
+    } finally {
+        smokeRestoreSetting($minuteKey, $previousMinute);
+        foreach ($made as $rec) {
+            $rec->delete();
+        }
+    }
+}
+
+/**
+ * Scenario L, part 2: a state-changing action sent with GET is refused with 405 and changes nothing; the read-only feed
+ * still answers GET.
+ */
+function smokePostOnlyChecks($dispatch)
+{
+    $order = createOrder();
+    if (!assertTrue($order instanceof Order && Validate::isLoadedObject($order), 'post only: an order without a document created')) {
+        return;
+    }
+    $_POST['id_order'] = $_GET['id_order'] = (string) (int) $order->id;
+    $_SERVER['REQUEST_METHOD'] = 'GET';
+    try {
+        $calls = mockCallCount();
+        $out = $dispatch('ajaxProcessCreateReceipt');
+        assertTrue($out['kind'] === 'json' && $out['payload']['success'] === false && $out['statuses'] === array(405) && !$out['called'], 'CreateReceipt sent with GET answers the 405 failure envelope', json_encode($out));
+        assertSame('This action must be sent with POST.', isset($out['payload']['message']) ? (string) $out['payload']['message'] : null, 'post only: the 405 carries the POST message');
+        assertTrue(!IfirmaReceipt::getByOrder((int) $order->id), 'post only: the refused GET created no document record');
+        assertSame($calls, mockCallCount(), 'post only: the refused GET reached the mock with no call');
+        $out = $dispatch('ajaxProcessIssueFeed');
+        assertTrue($out['kind'] === 'json' && $out['payload']['success'] === true && !$out['statuses'], 'the read-only IssueFeed still answers GET', json_encode($out));
+    } finally {
+        $_SERVER['REQUEST_METHOD'] = 'POST';
+        $_POST['id_order'] = $_GET['id_order'] = '1';
+    }
+}
+
+/**
+ * Scenario L, part 3: the budget of all employees' PDF downloads (30 per minute, 2,000 per day): a full counter answers
+ * 429 with the wait and the back-office text, without a request to iFirma; cleared, the download works.
+ */
+function smokeEmployeeDownloadBudgetChecks($dispatch)
+{
+    smokeLimitClasses();
+    $order = createOrder();
+    if (!assertTrue($order instanceof Order && Validate::isLoadedObject($order), 'employee budget: an order created')) {
+        return;
+    }
+    $windows = array(
+        'minute' => array(IfirmaDownloadBudget::EMPLOYEE_MINUTE_KEY, IfirmaDownloadBudget::MINUTE_BUCKET_FORMAT, IfirmaDownloadBudget::EMPLOYEE_MINUTE_CAP),
+        'day' => array(IfirmaDownloadBudget::EMPLOYEE_DAY_KEY, IfirmaDownloadBudget::DAY_BUCKET_FORMAT, IfirmaDownloadBudget::EMPLOYEE_DAY_CAP),
+    );
+    $previous = array();
+    foreach ($windows as $spec) {
+        $previous[$spec[0]] = smokeReadSetting($spec[0]);
+    }
+    $record = null;
+    try {
+        smokeClearRateWindow();
+        $record = smokeIssuedRecordFor($order);
+        $_POST['id_order'] = $_GET['id_order'] = (string) (int) $order->id;
+        foreach ($windows as $name => $spec) {
+            if (time() % 60 >= 50) {
+                sleepToNextMinute();
+            }
+            $full = date($spec[1]) . ':' . $spec[2];
+            smokeWriteSetting($spec[0], $full);
+            $calls = mockCallCount();
+            $label = 'employee budget (' . $name . ')';
+            $out = $dispatch('ajaxProcessDownloadPdf');
+            assertTrue($out['kind'] === 'limit' && $out['seconds'] >= 1 && $out['seconds'] <= 60, $label . ': the download answers 429 with a Retry-After between 1 and 60', json_encode($out));
+            assertSame('The PDF was not downloaded: the back-office download limit is reached. Try again in a moment.', isset($out['text']) ? (string) $out['text'] : null, $label . ': the answer is the back-office message');
+            assertSame($calls, mockCallCount(), $label . ': the refused download reached the mock with no call');
+            assertSame($full, smokeStoredValue($spec[0]), $label . ': the refused download left the counter unchanged');
+            smokeWriteSetting($spec[0], '');
+            $out = $dispatch('ajaxProcessDownloadPdf');
+            assertTrue($out['kind'] === 'text' && $out['status'] === 200 && $out['text'] === '%PDF-', $label . ': cleared, the download works', json_encode($out));
+            assertSame($calls + 1, mockCallCount(), $label . ': the download sent exactly one request');
+        }
+    } finally {
+        foreach ($previous as $key => $value) {
+            smokeRestoreSetting($key, $value);
+        }
+        smokeClearRateWindow();
+        if ($record) {
+            $record->delete();
+        }
+        $_POST['id_order'] = $_GET['id_order'] = '1';
     }
 }
 
@@ -1781,6 +2087,8 @@ function scenarioL($module)
             public function wire($module, $context) { $this->module = $module; $this->context = $context; }
             protected function output(array $payload) { throw new SmokeJsonOut($payload); }
             protected function textResponse($status, $text) { throw new SmokeTextOut($status, $text); }
+            protected function refusedByRateLimit($retryAfterSeconds, $text) { throw new SmokeLimitOut($retryAfterSeconds, $text); }
+            protected function streamPdf($pdf, IfirmaReceipt $receipt) { throw new SmokeTextOut(200, substr($pdf, 0, 5)); }
             protected function statusHeader($code) { $this->statuses[] = $code; }
             protected function actions() { return new SmokeRecordingActions($this->called); }
         }');
@@ -1812,6 +2120,8 @@ function scenarioL($module)
                 return array('kind' => 'json', 'payload' => $j->payload, 'statuses' => $c->statuses, 'called' => $c->called);
             } catch (SmokeTextOut $t) {
                 return array('kind' => 'text', 'status' => $t->status, 'text' => $t->text, 'statuses' => $c->statuses, 'called' => $c->called);
+            } catch (SmokeLimitOut $l) {
+                return array('kind' => 'limit', 'seconds' => $l->seconds, 'text' => $l->text, 'statuses' => $c->statuses, 'called' => $c->called);
             }
 
             return array('kind' => 'none', 'statuses' => $c->statuses, 'called' => $c->called);
@@ -1826,8 +2136,22 @@ function scenarioL($module)
         $out = $dispatch('ajaxProcessDownloadPdf');
         assertTrue($out['kind'] === 'text' && $out['status'] === 403 && $out['text'] !== '', 'DownloadPdf without roles answers 403 with a text', json_encode($out));
 
-        // grant view + issue
+        // view + the customer-edit right but no issue level: registering a contractor is refused before any call
         $db = Db::getInstance();
+        $db->execute('INSERT IGNORE INTO `' . _DB_PREFIX_ . 'access` (id_profile, id_authorization_role) SELECT ' . $profileId . ", id_authorization_role FROM `" . _DB_PREFIX_
+            . "authorization_role` WHERE slug IN ('ROLE_MOD_TAB_ADMINIFIRMA_READ', 'ROLE_MOD_TAB_ADMINCUSTOMERS_UPDATE')");
+        assertTrue(IfirmaPermission::canView($pair['employee']) && !IfirmaPermission::canIssue($pair['employee']), 'register: the profile holds view but not issue');
+        assertTrue((bool) Access::isGranted('ROLE_MOD_TAB_ADMINCUSTOMERS_UPDATE', $profileId), 'register: the profile may edit customers');
+        $_SERVER['REQUEST_METHOD'] = 'POST';
+        $_POST['id_customer'] = $_GET['id_customer'] = '1';
+        $callsBefore = mockCallCount();
+        $out = $dispatch('ajaxProcessCustomerRegister');
+        assertTrue($out['kind'] === 'json' && $out['payload']['success'] === false && $out['statuses'] === array(403), 'CustomerRegister with view and customer-edit but no issue level answers 403', json_encode($out));
+        assertSame('You do not have permission to issue iFirma documents.', isset($out['payload']['message']) ? (string) $out['payload']['message'] : null, 'CustomerRegister: the refusal names the issue permission');
+        assertSame($callsBefore, mockCallCount(), 'CustomerRegister without the issue level: the mock received no call');
+        unset($_SERVER['REQUEST_METHOD'], $_POST['id_customer'], $_GET['id_customer']);
+
+        // grant view + issue
         $db->execute('INSERT IGNORE INTO `' . _DB_PREFIX_ . 'access` (id_profile, id_authorization_role) SELECT ' . $profileId . ", id_authorization_role FROM `" . _DB_PREFIX_
             . "authorization_role` WHERE slug IN ('ROLE_MOD_TAB_ADMINIFIRMA_READ', 'ROLE_MOD_TAB_ADMINIFIRMA_CREATE')");
         assertTrue(IfirmaPermission::canView($pair['employee']) && IfirmaPermission::canIssue($pair['employee']) && !IfirmaPermission::canManage($pair['employee']),
@@ -1841,6 +2165,9 @@ function scenarioL($module)
         $out = $dispatch('ajaxProcessResendDocument');
         assertTrue($out['kind'] === 'json' && $out['payload']['success'] === false && $out['statuses'] === array(403) && !$out['called'],
             'ResendDocument with READ + CREATE is still 403', json_encode($out));
+
+        smokePostOnlyChecks($dispatch);
+        smokeEmployeeDownloadBudgetChecks($dispatch);
     } finally {
         $context->employee = $original;
         unset($_SERVER['REQUEST_METHOD'], $_GET['token'], $_POST['token'], $_POST['id_order'], $_GET['id_order']);
@@ -1887,6 +2214,8 @@ function scenarioM($module)
             return $now + IfirmaDownloadThrottle::CUSTOMER_WINDOW + 5;
         });
         assertSame(true, $afterWindow->allows($fresh), 'it is allowed once the minute has passed');
+
+        smokeCustomerDayCapChecks($order);
     } finally {
         foreach ($made as $rec) {
             $rec->delete();
@@ -1904,7 +2233,7 @@ function scenarioM($module)
  */
 function smokeIsCounterKey($key)
 {
-    return preg_match('/^IFIRMA_(RATE_(WINDOW|DAY_WINDOW|BACKOFF_UNTIL)|USAGE_[A-Z]+)$/', (string) $key) === 1;
+    return preg_match('/^IFIRMA_(RATE_(WINDOW|DAY_WINDOW|BACKOFF_UNTIL)|USAGE_[A-Z]+|DL_(CUSTOMER|EMPLOYEE)_(MINUTE|DAY))$/', (string) $key) === 1;
 }
 
 /** @return string|false the value of a Configuration row read from the database, false when the row does not exist */
