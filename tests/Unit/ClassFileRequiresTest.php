@@ -83,6 +83,7 @@ class ClassFileRequiresTest extends TestCase
             'the shop link' => array('IfirmaShopLink'),
             'the data request auto-accept criteria' => array('IfirmaDataRequestAutoAccept'),
             'the guest code service' => array('IfirmaGuestCodeService'),
+            'the request kind' => array('IfirmaRequestKind'),
         );
     }
 

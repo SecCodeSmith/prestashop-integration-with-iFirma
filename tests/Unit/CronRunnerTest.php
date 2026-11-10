@@ -59,6 +59,27 @@ class CronRunnerFakeJob implements IfirmaCronJob
     }
 }
 
+/**
+ * Usage reader with the contract of IfirmaApiUsage::summary(); it notes when it was read.
+ */
+class CronRunnerUsageSpy
+{
+    /** @var string[] shared log of the runner test */
+    private $log;
+
+    public function __construct(array &$log)
+    {
+        $this->log = &$log;
+    }
+
+    public function summary()
+    {
+        $this->log[] = 'usage:read';
+
+        return array('minute' => 4, 'day' => 4, 'by_kind' => array('status' => 4));
+    }
+}
+
 class CronRunnerTest extends TestCase
 {
     /** @var string[] */
@@ -149,6 +170,64 @@ class CronRunnerTest extends TestCase
         $this->assertSame(array('handled' => 1, 'succeeded' => 0, 'failed' => 1, 'left' => 3), $summary['delivery']);
         $this->assertSame(0, $summary['rate_limited']);
         $this->assertSame('', $summary['rate_limited_window']);
+    }
+
+    /**
+     * api-usage-accounting "Usage in the cron summary".
+     */
+    private function runnerWithUsage(array $jobs, $usage = null)
+    {
+        return new IfirmaCronRunner($jobs, function () {
+            return mktime(10, 15, 20, 11, 1, 2026);
+        }, $usage);
+    }
+
+    public function testTheSummaryCarriesTheUsageReadAfterTheJobs()
+    {
+        $usage = new CronRunnerUsageSpy($this->log);
+
+        $summary = $this->runnerWithUsage(array($this->job('queue'), $this->job('sync')), $usage)->run();
+
+        $this->assertSame(array('queue:run', 'sync:run', 'usage:read'), $this->log);
+        $this->assertSame(array('minute' => 4, 'day' => 4, 'by_kind' => array('status' => 4)), $summary['usage']);
+    }
+
+    public function testALimitedRunStillCarriesTheUsage()
+    {
+        $jobs = array(
+            $this->job('queue', IfirmaCronJobReport::counts('queue', 3, 2, 0, 4)->limited(IfirmaRateDecision::WINDOW_DAY)),
+            $this->job('sync'),
+        );
+
+        $summary = $this->runnerWithUsage($jobs, new CronRunnerUsageSpy($this->log))->run();
+
+        $this->assertSame(1, $summary['rate_limited']);
+        $this->assertSame(4, $summary['usage']['day']);
+    }
+
+    public function testARunSkippedByTheLockReportsNoUsage()
+    {
+        Db::getInstance()->whenGetValue('/^SELECT GET_LOCK\(/', 0);
+
+        $summary = $this->runnerWithUsage(array($this->job('queue')), new CronRunnerUsageSpy($this->log))->run();
+
+        $this->assertSame(array('skipped' => 'another cron run is busy'), $summary);
+        $this->assertSame(array(), $this->log);
+    }
+
+    public function testTheDefaultUsageReaderReportsTheCountsOfToday()
+    {
+        $now = mktime(10, 15, 20, 11, 1, 2026);
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi', $now) . ':3');
+        Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', date('Ymd', $now) . ':9');
+        Configuration::updateValue('IFIRMA_USAGE_STATUS', date('Y-m-d', $now) . ':4');
+
+        $summary = $this->runner(array($this->job('queue')))->run();
+
+        $this->assertSame(3, $summary['usage']['minute']);
+        $this->assertSame(9, $summary['usage']['day']);
+        $this->assertSame(4, $summary['usage']['by_kind']['status']);
+        $this->assertSame(0, $summary['usage']['by_kind']['pdf']);
     }
 
     public function testTheContextCarriesTheItemCapAndTheClock()

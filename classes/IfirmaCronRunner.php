@@ -15,6 +15,7 @@ if (!defined('_PS_VERSION_')) {
 
 require_once dirname(__FILE__) . '/IfirmaCronJob.php';
 require_once dirname(__FILE__) . '/IfirmaNamedLock.php';
+require_once dirname(__FILE__) . '/IfirmaApiUsage.php';
 require_once dirname(__FILE__) . '/IfirmaRemoteLimitJob.php';
 require_once dirname(__FILE__) . '/IfirmaIssueQueueJob.php';
 require_once dirname(__FILE__) . '/IfirmaStatusSyncJob.php';
@@ -36,14 +37,19 @@ class IfirmaCronRunner
     /** @var callable|null */
     private $clock;
 
+    /** @var object answers summary() with the usage block of the cron answer */
+    private $usage;
+
     /**
      * @param IfirmaCronJob[] $jobs  in the order they run
      * @param callable|null   $clock
+     * @param object|null     $usage reader with summary(): array('minute', 'day', 'by_kind'); by default IfirmaApiUsage
      */
-    public function __construct(array $jobs, $clock = null)
+    public function __construct(array $jobs, $clock = null, $usage = null)
     {
         $this->jobs = $jobs;
         $this->clock = $clock;
+        $this->usage = $usage !== null ? $usage : new IfirmaApiUsage($clock);
     }
 
     /**
@@ -72,7 +78,9 @@ class IfirmaCronRunner
 
     /**
      * @return array the cron answer: the status sync summary at the top level, a block per other job,
-     *               rate_limited (0 or 1) and rate_limited_window; or array('skipped' => ...) when another run is busy
+     *               rate_limited (0 or 1), rate_limited_window and the usage block (the module's requests of the
+     *               current minute and day and the day's count per kind); or array('skipped' => ...) when another run
+     *               is busy
      */
     public function run()
     {
@@ -111,6 +119,7 @@ class IfirmaCronRunner
 
         $summary['rate_limited'] = max(isset($summary['rate_limited']) ? (int) $summary['rate_limited'] : 0, $limited ? 1 : 0);
         $summary['rate_limited_window'] = $window;
+        $summary['usage'] = $this->usage->summary();
 
         return $summary;
     }

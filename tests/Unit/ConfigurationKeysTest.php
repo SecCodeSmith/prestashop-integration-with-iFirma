@@ -62,6 +62,24 @@ class ConfigurationKeysTest extends TestCase
         }
     }
 
+    public function testEveryRequestKindHasAnEmptyUsageCounterInstalledAndRemoved()
+    {
+        $module = IfirmaTestModuleLoader::loadModule();
+        $this->assertTrue($module->install());
+
+        foreach (IfirmaRequestKind::all() as $kind) {
+            $key = IfirmaApiUsage::keyOf($kind);
+            $this->assertSame('IFIRMA_USAGE_' . strtoupper($kind), $key);
+            $this->assertArrayHasKey($key, IfirmaSchema::configurationDefaults());
+            $this->assertSame('', Configuration::get($key), $key);
+        }
+
+        $this->assertTrue($module->uninstall());
+        foreach (IfirmaRequestKind::all() as $kind) {
+            $this->assertFalse(Configuration::hasKey(IfirmaApiUsage::keyOf($kind)), $kind . ' counter should be removed');
+        }
+    }
+
     public function testAuthFailureDefaultIsEmptyAndUninstallRemovesIt()
     {
         $module = IfirmaTestModuleLoader::loadModule();

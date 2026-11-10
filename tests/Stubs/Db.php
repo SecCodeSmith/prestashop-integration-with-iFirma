@@ -29,6 +29,8 @@ class Db
     public $rateQueries = [];
     /** @var string[] statements on the IFIRMA_RATE_DAY_WINDOW row, kept apart for the same reason */
     public $rateDayQueries = [];
+    /** @var string[] statements on the IFIRMA_USAGE_* rows (IfirmaApiUsage), kept apart for the same reason */
+    public $usageQueries = [];
     /** @var int rows the last execute() affected */
     protected $affected = 1;
 
@@ -96,6 +98,11 @@ class Db
         }
         if (strpos($sql, 'IFIRMA_RATE_DAY_WINDOW') !== false) {
             $this->rateDayQueries[] = $sql;
+
+            return;
+        }
+        if (strpos($sql, 'IFIRMA_USAGE_') !== false) {
+            $this->usageQueries[] = $sql;
 
             return;
         }
@@ -182,7 +189,8 @@ class Db
 
             return is_int($r) ? true : (bool) $r;
         }
-        $this->affected = $this->emulateRateWindow($sql);
+        $usageAffected = $this->emulateUsageCounter($sql);
+        $this->affected = $usageAffected !== null ? $usageAffected : $this->emulateRateWindow($sql);
 
         return true;
     }
@@ -247,6 +255,31 @@ class Db
         } else {
             Configuration::$values[$key] = $bucket . ':1';
         }
+
+        return 1;
+    }
+
+    /**
+     * Runs the atomic counter statement of IfirmaApiUsage (one IFIRMA_USAGE_<KIND> row, no cap) against the
+     * Configuration stub, the way MySQL would.
+     *
+     * @return int|null affected rows, null when the statement is not a usage counter statement
+     */
+    protected function emulateUsageCounter($sql)
+    {
+        if (!preg_match("/SET `value` = IF\(.*CONCAT\('([\d-]{10}):'.*name` = '(IFIRMA_USAGE_\w+)'\s*$/s", $sql, $m)) {
+            return null;
+        }
+        $day = $m[1];
+        $key = $m[2];
+        if (!Configuration::hasKey($key)) {
+            // install() writes every default, so on an installed module the row is there; seeded without a recorded write
+            Configuration::$values[$key] = '';
+        }
+        $parts = explode(':', (string) Configuration::get($key), 2);
+        Configuration::$values[$key] = (count($parts) === 2 && $parts[0] === $day)
+            ? $day . ':' . ((int) $parts[1] + 1)
+            : $day . ':1';
 
         return 1;
     }

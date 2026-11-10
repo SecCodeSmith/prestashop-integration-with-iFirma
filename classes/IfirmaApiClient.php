@@ -10,6 +10,8 @@ if (!defined('_PS_VERSION_')) {
 
 require_once dirname(__FILE__) . '/IfirmaHttpTransport.php';
 require_once dirname(__FILE__) . '/IfirmaRateGuard.php';
+require_once dirname(__FILE__) . '/IfirmaRequestKind.php';
+require_once dirname(__FILE__) . '/IfirmaApiUsage.php';
 
 class IfirmaApiClient
 {
@@ -58,6 +60,9 @@ class IfirmaApiClient
     /** @var IfirmaRateGuard */
     private $rateGuard;
 
+    /** @var IfirmaApiUsage counts every request that is sent, per kind */
+    private $usage;
+
     /** @var callable|null runs once, right before the next request that passes the guards is sent */
     private $beforeSend = null;
 
@@ -77,8 +82,9 @@ class IfirmaApiClient
      * @param int         $timeout
      * @param object|null $transport object with request($method, $url, array $headers, $body, $timeout)
      * @param IfirmaRateGuard|null $rateGuard admission control; by default one on this client's clock
+     * @param IfirmaApiUsage|null  $usage     statistics of the sent requests; by default one on this client's clock
      */
-    public function __construct($user, array $keys, $baseUrl = self::BASE_URL, $timeout = 30, $transport = null, $rateGuard = null)
+    public function __construct($user, array $keys, $baseUrl = self::BASE_URL, $timeout = 30, $transport = null, $rateGuard = null, $usage = null)
     {
         $this->user = trim((string) $user);
         $this->keys = $keys;
@@ -87,6 +93,7 @@ class IfirmaApiClient
         $this->timeout = (int) $timeout;
         $this->transport = $transport !== null ? $transport : self::$defaultTransport;
         $this->rateGuard = $rateGuard !== null ? $rateGuard : $this->guardOnOwnClock();
+        $this->usage = $usage !== null ? $usage : $this->usageOnOwnClock();
     }
 
     /**
@@ -565,6 +572,18 @@ class IfirmaApiClient
     }
 
     /**
+     * @return IfirmaApiUsage usage statistics that read this client's clock at every request, so setClock() reaches them
+     */
+    private function usageOnOwnClock()
+    {
+        $client = $this;
+
+        return new IfirmaApiUsage(function () use ($client) {
+            return $client->now();
+        });
+    }
+
+    /**
      * @return int
      */
     private function now()
@@ -774,6 +793,7 @@ class IfirmaApiClient
         }
 
         $this->requestCount++;
+        $this->usage->record(IfirmaRequestKind::of($method, ltrim((string) $endpoint, '/')));
         $this->requestSent = true;
         $result = $this->getTransport()->request(
             $method,

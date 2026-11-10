@@ -100,6 +100,47 @@ class IfirmaRateGuard
     }
 
     /**
+     * What the windows count right now, read from the database (a counter raised by another statement in this
+     * request is seen), without counting a request.
+     *
+     * @return array window name => array('used' => int, 'cap' => int); a window of an earlier minute or day reads 0
+     */
+    public function windowUsage()
+    {
+        $now = $this->now();
+        $usage = array();
+        foreach ($this->windows() as $window) {
+            $usage[$window->getName()] = array('used' => $this->storedCount($window, $now), 'cap' => $window->getCap());
+        }
+
+        return $usage;
+    }
+
+    /**
+     * @return int the unix time a running back-off ends, 0 when none runs
+     */
+    public function backoffUntil()
+    {
+        return $this->backoffEnd($this->now());
+    }
+
+    /**
+     * @param IfirmaRateWindow $window
+     * @param int              $now
+     * @return int requests counted in the window's current bucket
+     */
+    private function storedCount(IfirmaRateWindow $window, $now)
+    {
+        $stored = Db::getInstance()->getValue(
+            "SELECT `value` FROM `" . _DB_PREFIX_ . "configuration` WHERE `name` = '" . pSQL($window->getCounterKey()) . "'",
+            false
+        );
+        $parts = explode(':', (string) $stored, 2);
+
+        return (count($parts) === 2 && $parts[0] === $window->bucketAt($now)) ? (int) $parts[1] : 0;
+    }
+
+    /**
      * Starts the back-off after iFirma refused a request for exceeding its limit.
      *
      * @param string $retryAfter the Retry-After header of the answer, '' when there was none
