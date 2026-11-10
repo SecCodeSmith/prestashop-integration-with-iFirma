@@ -73,6 +73,27 @@ class SmokeCheckFloorTest extends TestCase
         SmokeCheckFloor::parse('{"A": "many"}');
     }
 
+    public function testAMissingFloorFileFailsTheRunLikeAScenarioUnderItsFloor()
+    {
+        $problems = SmokeCheckFloor::problems(array('A' => 12), null, array('A'));
+
+        $this->assertSame(array('check floor: tests/smoke/check-floor.json is missing; write it from a green run (SMOKE_WRITE_FLOOR=1) and commit it'), $problems);
+    }
+
+    public function testAMalformedFloorFileIsReportedAsAProblem()
+    {
+        $problems = SmokeCheckFloor::problems(array('A' => 12), '{"A": "many"}', array('A'));
+
+        $this->assertSame(array('check floor: check-floor.json: the floor of scenario A is not a non-negative integer'), $problems);
+    }
+
+    public function testAFloorFileIsComparedWithTheExecutedCounts()
+    {
+        $problems = SmokeCheckFloor::problems(array('A' => 11, 'B' => 4), '{"A": 12, "B": 4}', array('A', 'B'));
+
+        $this->assertSame(array('check floor: scenario A executed 11 checks, the committed floor is 12'), $problems);
+    }
+
     public function testReadingAValidFloorFileReturnsTheCounts()
     {
         $this->assertSame(array('A' => 12), SmokeCheckFloor::parse('{"A": 12}'));

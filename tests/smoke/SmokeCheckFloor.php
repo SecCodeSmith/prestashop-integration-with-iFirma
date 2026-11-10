@@ -41,6 +41,28 @@ final class SmokeCheckFloor
     }
 
     /**
+     * Everything the run has to say about the floor: a missing or malformed file counts like a scenario under its floor,
+     * so a run can never pass without its check count being verified.
+     *
+     * @param array       $executed     scenario name => checks executed in this run
+     * @param string|null $floorContent  the content of check-floor.json, null when the file does not exist
+     * @param string[]    $selected      scenarios that ran
+     *
+     * @return string[] one line per problem
+     */
+    public static function problems(array $executed, $floorContent, array $selected)
+    {
+        if ($floorContent === null) {
+            return array('check floor: tests/smoke/check-floor.json is missing; write it from a green run (SMOKE_WRITE_FLOOR=1) and commit it');
+        }
+        try {
+            return self::violations($executed, self::parse($floorContent), $selected);
+        } catch (RuntimeException $e) {
+            return array('check floor: ' . $e->getMessage());
+        }
+    }
+
+    /**
      * @return array scenario name => minimum
      *
      * @throws RuntimeException when the file is not a JSON object of non-negative integers
