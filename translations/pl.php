@@ -311,6 +311,7 @@ $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_efb56ed22b73c2e76fffc3cd65ec8341'
 $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_5d3438ed5c149e85d6b53246e385cba7'] = 'nie podjęto próby (odrzucone dane logowania)';
 $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_51086060bebfd6f7507919ebea37c5c8'] = 'nie podjęto próby (limit zapytań)';
 $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_b84255145c31d3c3793504c7bf41b041'] = 'Uruchom ponownie jutro.';
+$_MODULE['<{ifirma}prestashop>ifirmabulkrunner_55a3445d8c246a8db048f444b6c6321e'] = 'Uruchom ponownie po %s.';
 $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_1819257f59157cc26c8d6c63d96cb790'] = 'Uruchom ponownie za minutę.';
 $_MODULE['<{ifirma}prestashop>ifirmaadminactions_8c3ed5d27c935cbcaad0c4280274948f'] = 'Nieprawidłowe zamówienie.';
 $_MODULE['<{ifirma}prestashop>ifirmaadminactions_cd7f11c5947dfd51d846b19dedc8d766'] = 'Rejestracja kontrahenta jest wyłączona w ustawieniach modułu.';

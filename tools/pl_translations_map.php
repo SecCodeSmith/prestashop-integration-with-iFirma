@@ -261,6 +261,7 @@ return array(
     'Most queued orders, KSeF submissions and deliveries one cron run handles per job (1-50).' => 'Najwięcej zamówień z kolejki, wysyłek do KSeF i dostaw, które jeden przebieg crona obsługuje w ramach jednego zadania (1-50).',
     'Run it again tomorrow.' => 'Uruchom ponownie jutro.',
     'Run it again in a minute.' => 'Uruchom ponownie za minutę.',
+    'Run it again after %s.' => 'Uruchom ponownie po %s.',
     'iFirma has not answered the create request yet.' => 'iFirma nie odpowiedziała jeszcze na żądanie utworzenia dokumentu.',
     'Unknown iFirma error.' => 'Nieznany błąd iFirma.',
     'iFirma rejected the document: %s' => 'iFirma odrzuciła dokument: %s',

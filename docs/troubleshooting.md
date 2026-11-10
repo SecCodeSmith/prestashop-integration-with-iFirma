@@ -88,8 +88,9 @@ minute), the per-day cap (default 14,000 requests a day) or a running back-off a
 refused is queued and the cron issues it later; the records the run did not reach keep their previous state and are not
 errors. The records already handled keep their outcome.
 
-**What to do:** read the hint at the end of the message. `Run it again in a minute.` is shown for the minute cap and for a
-back-off; `Run it again tomorrow.` is shown when the day cap was reached. Then select the records that were not attempted in
+**What to do:** read the hint at the end of the message. `Run it again in a minute.` is shown for the minute cap,
+`Run it again tomorrow.` when the day cap was reached, and `Run it again after 13:15.` (the time, with the date when it
+is not today) when iFirma asked the module to wait. Then select the records that were not attempted in
 the [documents list](usage.md#ifirma-documents-list) and run the action again; queued orders need no new click, because the
 cron issues them. The cap is shared with every other client of the same iFirma account, so a busy account may need the
 bulk runs at quiet times.

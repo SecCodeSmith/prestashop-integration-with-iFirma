@@ -171,8 +171,8 @@ The run stops in one of two cases:
 
 The records that were not yet attempted are then reported as **Not attempted**, with the message
 `not attempted (rate limited)` or `not attempted (credentials rejected)`. In the first case the message ends with the
-hint `Run it again tomorrow.` when the day cap was reached and with `Run it again in a minute.` otherwise (the minute
-cap or a back-off). In an issue or retry run the order whose request was refused is queued, so the cron issues it
+hint `Run it again tomorrow.` when the day cap was reached, with `Run it again after <time>.` when iFirma asked the
+module to wait (the time that wait ends), and with `Run it again in a minute.` for the minute cap. In an issue or retry run the order whose request was refused is queued, so the cron issues it
 later. Records already handled keep their outcome, and the records that were not reached keep their previous state.
 
 **Summary.** When the run ends, a dialog lists every selected record with its order or ID, its outcome and its

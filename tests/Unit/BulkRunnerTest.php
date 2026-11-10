@@ -899,6 +899,36 @@ class BulkRunnerTest extends TestCase
         $this->assertSame('not attempted (rate limited). Run it again in a minute.', $data['results'][2]['message']);
     }
 
+    /** A back-off iFirma asked for can last far longer than a minute: the hint names the time it ends. */
+    public function testTheRemainingRecordsAreToldWhenTheBackOffEndsWhenIfirmaAskedTheModuleToWait()
+    {
+        $ids = $this->fourReceiptsWhoseSecondResendIsRefused();
+        $backoffEnd = $this->now + 3 * 3600;
+        Configuration::updateValue('IFIRMA_RATE_BACKOFF_UNTIL', (string) $backoffEnd);
+
+        $data = $this->runner()->setDeliveryService($this->refusingDelivery())->run('resend', $ids, 9);
+
+        $this->assertSame(
+            'not attempted (rate limited). Run it again after ' . date('H:i', $backoffEnd) . '.',
+            $data['results'][3]['message']
+        );
+    }
+
+    public function testABackOffThatEndsOnAnotherDayIsNamedWithItsDate()
+    {
+        $this->now = 20 * 3600;
+        $ids = $this->fourReceiptsWhoseSecondResendIsRefused();
+        $backoffEnd = $this->now + 6 * 3600;
+        Configuration::updateValue('IFIRMA_RATE_BACKOFF_UNTIL', (string) $backoffEnd);
+
+        $data = $this->runner()->setDeliveryService($this->refusingDelivery())->run('resend', $ids, 9);
+
+        $this->assertSame(
+            'not attempted (rate limited). Run it again after ' . date('Y-m-d H:i', $backoffEnd) . '.',
+            $data['results'][3]['message']
+        );
+    }
+
     public function testTheRemainingRecordsAreToldToRunAgainTomorrowWhenTheDayCapRefused()
     {
         $ids = $this->fourReceiptsWhoseSecondResendIsRefused();
