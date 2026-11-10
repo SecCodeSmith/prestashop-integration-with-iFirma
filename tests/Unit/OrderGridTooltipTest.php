@@ -176,6 +176,18 @@ class OrderGridTooltipTest extends TestCase
         $this->assertStringStartsWith('Held', $held[0]);
     }
 
+    public function testAHeldOrderInPolishNamesTheHeldStateWithItsShippedTranslation()
+    {
+        $held = 'Wstrzymana (wniosek o zmianę danych)';
+        $lines = IfirmaOrderGridTooltip::lines(
+            array('ifirma_document_number' => '', 'ifirma_document_state' => 'held'),
+            array_merge(self::POLISH, array('state_held' => $held, 'click_to_issue' => 'kliknij, aby wystawić'))
+        );
+
+        $this->assertSame(array($held . ' – kliknij, aby wystawić'), $lines);
+        $this->assertStringContainsString("= '" . $held . "';", file_get_contents(dirname(__DIR__, 2) . '/translations/pl.php'));
+    }
+
     public function testAStateWithoutAWordFallsBackToTheRawState()
     {
         $lines = IfirmaOrderGridTooltip::lines(array('ifirma_document_number' => '', 'ifirma_document_state' => 'weird'), array());

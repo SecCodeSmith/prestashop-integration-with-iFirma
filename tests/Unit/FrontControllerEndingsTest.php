@@ -358,6 +358,29 @@ class FrontControllerEndingsTest extends TestCase
         $this->assertCount(1, $this->t->calls);
     }
 
+    public function testTheOwnerGetsThePdfStraightFromIfirmaAndTheShopStoresNoCopy()
+    {
+        $pdf = "%PDF-1.4\nfake body\n%%EOF";
+        $this->waitingReceipt(array('delivery_status' => 'sent', 'ksef_status' => 'PRZYJETA', 'ksef_number' => '5260001122-20261101-ABC-01'));
+        Db::getInstance()->whenExecute('/UPDATE `\w*ifirma_receipt`\s+SET last_download_at/', 1);
+        $this->t->queue('GET', '#\.pdf#', array('body' => $pdf));
+        Tools::$values = array('token' => 'tok123');
+        IfirmaTestState::clearWrites();
+        $controller = new class extends IfirmaTestEndingReceiptController {
+            protected function streamPdf($pdf, IfirmaReceipt $receipt)
+            {
+                throw new IfirmaTestFrontEnding('streamed:' . $pdf);
+            }
+        };
+
+        $this->assertSame('streamed:' . $pdf, $this->answer($controller), 'the bytes go from iFirma to the response');
+        $this->assertSame(array(), IfirmaTestState::writes('ifirma_receipt'), 'no stored copy, no changed record');
+        $writes = array_filter(Db::getInstance()->executed, function ($sql) {
+            return preg_match('/^\s*(INSERT|UPDATE|REPLACE|DELETE)/i', $sql) && strpos($sql, 'last_download_at') === false && strpos($sql, 'download_count') === false;
+        });
+        $this->assertSame(array(), array_values($writes), 'the only writes are the download throttle and the day count');
+    }
+
     public function testADeliveredDocumentIsNeverMistakenForAWaitingOne()
     {
         $this->waitingReceipt(array('delivery_status' => 'sent', 'ksef_status' => 'WYSLANA'));

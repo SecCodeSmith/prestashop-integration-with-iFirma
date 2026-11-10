@@ -580,6 +580,64 @@ class BulkRunnerTest extends TestCase
         $this->assertCount(2, $pipeline->runs);
     }
 
+    /** Day cap that lets the first order of the run issue and refuses the create request of the second. */
+    private function dayCapThatRefusesTheSecondOrdersCreate()
+    {
+        $requestsOfAnIssuedOrder = 4; // guard list, create, number, PDF
+        $this->now = time(); // the runner names the window from its own clock, the client counts by the real one
+        Configuration::updateValue('IFIRMA_RATE_MAX_PER_DAY', $requestsOfAnIssuedOrder + 1);
+        Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', date('Ymd') . ':0');
+    }
+
+    private function statusOfOrder($idOrder)
+    {
+        $receipt = IfirmaReceipt::getByOrder($idOrder);
+
+        return $receipt ? (string) $receipt->status : '';
+    }
+
+    public function testTheOrderTheGuardRefusesInABulkIssueIsQueuedAndTheRestIsNotAttempted()
+    {
+        foreach (array(16, 17, 18) as $id) {
+            $this->order($id);
+        }
+        $this->dayCapThatRefusesTheSecondOrdersCreate();
+        $this->queueFullSuccess();
+        $this->queueGuardNone();
+
+        $data = $this->runner()->run('issue', array(15, 16, 17, 18), 9);
+
+        $this->assertSame(array('issued', 'not_attempted', 'not_attempted'), $this->outcomes($data), 'one batch holds three orders');
+        $this->assertSame('rate_limited', $data['stopped']);
+        $this->assertSame(array(), $data['remaining']);
+        $this->assertSame(array(15, 16, 17), array_column($data['results'], 'id'));
+        $this->assertSame('queued', $this->statusOfOrder(16), 'the refused order waits for the cron');
+        $this->assertSame('', $this->statusOfOrder(17), 'the orders after it are not touched');
+        $this->assertSame('created', $this->statusOfOrder(15));
+        $this->assertCount(1, $this->posts(), 'only the first order was created');
+        $this->assertSame('not attempted (rate limited). Run it again tomorrow.', $data['results'][2]['message']);
+    }
+
+    public function testTheRecordTheGuardRefusesInABulkRetryIsQueuedAndTheRestIsNotAttempted()
+    {
+        $ids = array();
+        foreach (array(15, 16, 17) as $idOrder) {
+            $idOrder === 15 ?: $this->order($idOrder);
+            $ids[] = (int) $this->makeReceipt(array('id_order' => $idOrder, 'status' => 'error', 'ifirma_id' => '', 'ifirma_number' => ''))->id;
+        }
+        $this->dayCapThatRefusesTheSecondOrdersCreate();
+        $this->queueFullSuccess();
+        $this->queueGuardNone();
+
+        $data = $this->runner()->run('retry', $ids, 9);
+
+        $this->assertSame(array('issued', 'not_attempted', 'not_attempted'), $this->outcomes($data));
+        $this->assertSame('rate_limited', $data['stopped']);
+        $this->assertSame('queued', $this->statusOfOrder(16));
+        $this->assertSame('error', $this->statusOfOrder(17), 'the record after it keeps its state');
+        $this->assertSame('not attempted (rate limited). Run it again tomorrow.', $data['results'][2]['message']);
+    }
+
     public function testRejectedCredentialsStopTheRunAfterAFailedItem()
     {
         foreach (array(80, 81, 82) as $id) {

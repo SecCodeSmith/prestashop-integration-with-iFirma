@@ -120,6 +120,33 @@ class AdminListDefinitionTest extends TestCase
         $this->assertFalse($c->fields_list['actions']['search']);
     }
 
+    public function testTheStateFilterOffersQueuedAndAFilterOnErrorMatchesOnlyTheErrorState()
+    {
+        $column = $this->controller()->fields_list['status'];
+
+        $this->assertArrayHasKey('queued', $column['list']);
+        $this->assertSame('a!status', $column['filter_key']);
+        $this->assertSame('string', $column['filter_type']);
+        // the core compares the chosen word with the column, exactly or as a substring: either way only `error` matches
+        $matching = array_filter(array_keys($column['list']), function ($state) {
+            return strpos($state, 'error') !== false;
+        });
+        $this->assertSame(array('error'), array_values($matching));
+    }
+
+    public function testTheDeliveryFilterOffersAwaitingKsefAndAFilterOnItMatchesOnlyThatState()
+    {
+        $column = $this->controller()->fields_list['delivery_status'];
+
+        $this->assertArrayHasKey('awaiting_ksef', $column['list']);
+        $this->assertSame('a!delivery_status', $column['filter_key']);
+        $this->assertSame('string', $column['filter_type']);
+        $matching = array_filter(array_keys($column['list']), function ($state) {
+            return strpos($state, 'awaiting_ksef') !== false;
+        });
+        $this->assertSame(array('awaiting_ksef'), array_values($matching));
+    }
+
     public function testTheBulkEntriesAreTheThreeBatchActions()
     {
         $c = $this->controller();

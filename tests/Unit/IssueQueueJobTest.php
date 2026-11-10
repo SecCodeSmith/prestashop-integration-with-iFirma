@@ -302,6 +302,107 @@ class IssueQueueJobTest extends TestCase
         $this->assertSame(array('handled' => 1, 'succeeded' => 1, 'failed' => 0, 'left' => 1), $report->block());
     }
 
+    public function testAnOrderWhoseFirstRequestEndedBeforeTheCreateIsIssuedByTheNextCronRunExactlyOnce()
+    {
+        $this->queued(92, 1);
+        $this->scriptIssuance(92, 192);
+
+        $firstRun = $this->job()->run($this->context());
+        $secondRun = $this->job()->run($this->context());
+
+        $this->assertSame(array(92), $this->postedOrderStamps(), 'one create request in all');
+        $this->assertSame(array(92 => 'created'), $this->statuses());
+        $this->assertSame(1, $firstRun->block()['succeeded']);
+        $this->assertSame(array('handled' => 0, 'succeeded' => 0, 'failed' => 0, 'left' => 0), $secondRun->block());
+    }
+
+    public function testAQueuedOrderWhoseDocumentAlreadyExistsInIfirmaIsAdoptedAndNotCreatedAgain()
+    {
+        $this->queued(70, 1);
+        $this->t->queue('GET', '#faktury\.json#', array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array(array(
+            'FakturaId' => 77, 'IdentyfikatorKontrahenta' => 'PS-C5', 'PelnyNumer' => '7/2026',
+            'DataWystawienia' => date('Y-m-d'), 'Brutto' => 170.00, 'Zaplacono' => 0, 'KontrahentNazwa' => 'Jan K',
+            'Rodzaj' => 'prz_faktura_kraj', 'Waluta' => 'PLN', 'CzySzkic' => false, 'CzyWyslano' => false,
+        )))))));
+        $this->t->queue('GET', '#fakturakraj/77\.json#', array('body' => '{"response":{"Uwagi":"PS-ORDER-70-REF70"}}'));
+
+        $this->job()->run($this->context());
+
+        $creates = array_filter($this->t->calls, function ($call) {
+            return $call['method'] === 'POST';
+        });
+        $rows = IfirmaTestState::objects('ifirma_receipt');
+        $row = reset($rows);
+        $this->assertCount(0, $creates, 'no create request is sent');
+        $this->assertSame('77', (string) $row['ifirma_id']);
+        $this->assertNotSame('queued', $row['status']);
+    }
+
+    public function testAStatusChangeWhileTheDrainHoldsTheOrderLockIssuesNothingAndTheOrderGetsOneDocument()
+    {
+        $this->emulateOrderLocks();
+        $this->queued(93, 1);
+        $hook = null;
+        $self = $this;
+        $this->t->queue('GET', '#faktury\.json#', function () {
+            return array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array()))));
+        });
+        $this->t->queue('POST', '#fakturakraj\.json#', function () use (&$hook, $self) {
+            $hook = $self->pipeline->onOrderStatusChange(93, 5);
+
+            return array('body' => json_encode(array('response' => array(
+                'Kod' => 0, 'Informacja' => 'ok', 'Identyfikator' => '193', 'PelnyNumer' => '193/2026',
+            ))));
+        });
+
+        $this->job()->run($this->context());
+
+        $this->assertNull($hook, 'the status change finds the order lock busy and does nothing');
+        $this->assertSame(array(93), $this->postedOrderStamps(), 'exactly one document is created');
+        $this->assertSame(array(93 => 'created'), $this->statuses());
+    }
+
+    public function testTheDrainWhileAStatusChangeHoldsTheOrderLockLeavesTheOrderAndTheOrderGetsOneDocument()
+    {
+        $this->emulateOrderLocks();
+        $this->order(94);
+        $drain = null;
+        $self = $this;
+        $this->t->queue('GET', '#faktury\.json#', function () use (&$drain, $self) {
+            $drain = $self->job()->run($self->context());
+
+            return array('body' => json_encode(array('response' => array('Kod' => 0, 'Wynik' => array()))));
+        });
+        $this->t->queue('POST', '#fakturakraj\.json#', array('body' => json_encode(array('response' => array(
+            'Kod' => 0, 'Informacja' => 'ok', 'Identyfikator' => '194', 'PelnyNumer' => '194/2026',
+        )))));
+
+        $this->pipeline->onOrderStatusChange(94, 5);
+
+        $this->assertSame(array('handled' => 0, 'succeeded' => 0, 'failed' => 0, 'left' => 1), $drain->block());
+        $this->assertSame(array(94), $this->postedOrderStamps(), 'exactly one document is created');
+        $this->assertSame(array(94 => 'created'), $this->statuses());
+    }
+
+    /** Order locks as MySQL grants them: a lock that is held is refused to the next taker until it is released. */
+    private function emulateOrderLocks()
+    {
+        $held = array();
+        Db::getInstance()->whenGetValue('/^SELECT GET_LOCK\(\'(\w+)\'/', function ($sql, $m) use (&$held) {
+            if (isset($held[$m[1]])) {
+                return 0;
+            }
+            $held[$m[1]] = true;
+
+            return 1;
+        });
+        Db::getInstance()->whenGetValue('/^SELECT RELEASE_LOCK\(\'(\w+)\'/', function ($sql, $m) use (&$held) {
+            unset($held[$m[1]]);
+
+            return 1;
+        });
+    }
+
     public function testTheOrderLockIsTakenWithoutWaitingAndReleased()
     {
         $this->queued(95, 1);
