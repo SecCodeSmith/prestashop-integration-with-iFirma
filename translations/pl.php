@@ -382,9 +382,8 @@ $_MODULE['<{ifirma}prestashop>ifirmadeliveryretryview_943d8590841e0161176fb29714
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryretryview_a74d5664b2656552e6e4764edcf286d2'] = 'Nie zaplanowano żadnej automatycznej próby';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_50ba6d2a6f0c7d3ae2d503878652c09f'] = 'Dokument nie został jeszcze wystawiony.';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_786e3dc02677d322e4182fca0e2d2c61'] = 'Wysyłka jest wyłączona (kanał: brak)';
-$_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_b9558cb395d75ad375e3130f2b8d5d64'] = 'Ten dokument jest właśnie wysyłany. Spróbuj ponownie za chwilę.';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_66f7b32591e77c6ef6e44636bd4fcddd'] = 'Nie udało się zapisać próby wysyłki, więc nic nie wysłano.';
-$_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_906d6f502763b9d6be708ad68091fe2f'] = 'Próba wysyłki została rozpoczęta, a jej wynik nie został zapisany. Sprawdź, czy klient dostał dokument, zanim wyślesz go ponownie.';
+$_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_b9558cb395d75ad375e3130f2b8d5d64'] = 'Ten dokument jest właśnie wysyłany. Spróbuj ponownie za chwilę.';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_a971fddd37f9e43b928577b185cece39'] = 'iFirma nie potwierdziła wysłania e-maila';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_3641c76a16e4948031800d0b421d1c86'] = 'Klient nie ma adresu e-mail.';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_466eadd40b3c10580e3ab4e8061161ce'] = 'Faktura';
@@ -400,6 +399,7 @@ $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_e80768ee1134a26a1ad88b9004f5
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_f24e9aad3dac9bb9d4b43745d6c5cdb1'] = 'e-mail ze sklepu (zastępczo)';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_2309a0d972fc80d3b12aa7667a4fbcf8'] = 'e-mail z iFirma';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_db6633a765aaabb47453b4ce9bb53005'] = 'Nie udało się pobrać pliku PDF po %1$d próbach: %2$s';
+$_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_906d6f502763b9d6be708ad68091fe2f'] = 'Próba wysyłki została rozpoczęta, a jej wynik nie został zapisany. Sprawdź, czy klient dostał dokument, zanim wyślesz go ponownie.';
 $_MODULE['<{ifirma}prestashop>ifirmaissuancepipeline_cbd0fefeef59bd452b8386702095c227'] = 'Przejęto istniejący dokument iFirma: %s';
 $_MODULE['<{ifirma}prestashop>ifirmaissuancepipeline_dfb74412ea44080d7387bf0b385d1b3c'] = 'Wystawiono dokument: %s';
 $_MODULE['<{ifirma}prestashop>ifirmaissuancepipeline_3000c2e8b1278c7920ce3260c54b359e'] = 'Krok wysyłki nie powiódł się: %s';
