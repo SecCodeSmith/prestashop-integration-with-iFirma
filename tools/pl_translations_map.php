@@ -588,6 +588,7 @@ return array(
     'The request could not be saved. Please try again.' => 'Nie udało się zapisać prośby. Spróbuj ponownie.',
     'Too many requests at the moment. Please try again shortly.' => 'W tej chwili jest zbyt wiele żądań. Spróbuj ponownie za chwilę.',
     'The PDF was not downloaded: the minute request limit is reached. Try again in a moment.' => 'Nie pobrano pliku PDF: osiągnięto minutowy limit żądań. Spróbuj ponownie za chwilę.',
+    'The PDF was not downloaded: the back-office download limit is reached. Try again in a moment.' => 'Nie pobrano pliku PDF: osiągnięto limit pobrań w panelu administracyjnym. Spróbuj ponownie za chwilę.',
     'The PDF was not downloaded: the day request limit is reached. Try again later.' => 'Nie pobrano pliku PDF: osiągnięto dzienny limit żądań. Spróbuj ponownie później.',
     'The PDF was not downloaded: iFirma asked the module to wait before the next request. Try again shortly.' => 'Nie pobrano pliku PDF: iFirma poprosiła moduł o odczekanie przed kolejnym żądaniem. Spróbuj ponownie wkrótce.',
     'The status was not refreshed: the minute request limit is reached. Try again in a moment.' => 'Nie odświeżono statusu: osiągnięto minutowy limit żądań. Spróbuj ponownie za chwilę.',

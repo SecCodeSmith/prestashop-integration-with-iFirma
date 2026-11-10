@@ -10,6 +10,7 @@ if (!defined('_PS_VERSION_')) {
 
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaActionSupport.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaApiClient.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDownloadBudget.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaHttpOutput.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaHttpStatus.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaPermission.php';
@@ -1171,10 +1172,17 @@ class AdminIfirmaController extends ModuleAdminController
             return;
         }
 
+        $budget = $this->employeeBudget();
+        if (!$budget->take()) {
+            $this->refusedByRateLimit($budget->secondsToNextMinute(), $this->module->l('The PDF was not downloaded: the back-office download limit is reached. Try again in a moment.', 'adminifirmacontroller'));
+            return;
+        }
+
         try {
             $service = IfirmaReceiptService::build($this->module);
             $pdf = $service->fetchPdf($receipt, (bool) Tools::getValue('duplicate'));
         } catch (IfirmaRateLimitedException $e) {
+            $budget->release();
             $this->refusedByRateLimit($e->getRetryAfterSeconds(), $this->rateLimitedDownloadMessage($e->getWindow()));
             return;
         } catch (Throwable $e) {
@@ -1183,6 +1191,14 @@ class AdminIfirmaController extends ModuleAdminController
         }
 
         $this->streamPdf($pdf, $receipt);
+    }
+
+    /**
+     * @return IfirmaDownloadBudget the budget of all back-office downloads; protected so a test can fix its clock
+     */
+    protected function employeeBudget()
+    {
+        return IfirmaDownloadBudget::forEmployees();
     }
 
     /**
@@ -1262,7 +1278,7 @@ class AdminIfirmaController extends ModuleAdminController
         exit;
     }
 
-    private function streamPdf($pdf, IfirmaReceipt $receipt)
+    protected function streamPdf($pdf, IfirmaReceipt $receipt)
     {
         IfirmaHttpOutput::pdf($pdf, $receipt->ifirma_number ? $receipt->ifirma_number : $receipt->ifirma_id);
         exit;

@@ -499,6 +499,7 @@ $_MODULE['<{ifirma}prestashop>adminifirmacontroller_d760d220c84012e8525622580ca2
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_6e3874f64b28f08ef51ee0d2025af68e'] = 'Nie pobrano pliku PDF: osiągnięto dzienny limit żądań. Spróbuj ponownie później.';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_9ed573438481e46b9fdf068b7346af2f'] = 'Nie pobrano pliku PDF: iFirma poprosiła moduł o odczekanie przed kolejnym żądaniem. Spróbuj ponownie wkrótce.';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_42ced55a70e099686ca37c98b4970bff'] = 'Nie pobrano pliku PDF: osiągnięto minutowy limit żądań. Spróbuj ponownie za chwilę.';
+$_MODULE['<{ifirma}prestashop>adminifirmacontroller_a2437cf4a30fd976f2adbe8cca0b4956'] = 'Nie pobrano pliku PDF: osiągnięto limit pobrań w panelu administracyjnym. Spróbuj ponownie za chwilę.';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_a7dafa6b31b3a00b7a1ffeae6e4d1e42'] = 'Błąd wewnętrzny; szczegóły są w logu PrestaShop.';
 $_MODULE['<{ifirma}prestashop>guestrequest_90061b39f8ad72129fddb0a53197bf0c'] = 'Jeśli dane pasują do zamówienia, wysłaliśmy kod na jego adres e-mail.';
 $_MODULE['<{ifirma}prestashop>guestrequest_bb8d00cce367a1c9567821ebc8f66c05'] = 'Twój kod weryfikacyjny ze sklepu %s';

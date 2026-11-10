@@ -351,7 +351,11 @@ budget gets HTTP 429 with `Retry-After: 60` and the text "Too many requests at t
 The budget is checked after the login, token, owner and KSeF checks, so those answers do not change. The caps are
 fixed, not settings.
 
-The back-office **Download PDF** is not part of the customer budget; it needs the view level instead.
+The back-office **Download PDF** needs the view level and has a budget of its own, separate from the customers': all
+employees together can send 30 downloads per calendar minute. A download over it answers HTTP 429 with a `Retry-After`
+header (the seconds to the next minute) and the text "The PDF was not downloaded: the back-office download limit is
+reached. Try again in a moment."; nothing is sent to iFirma. Issuing documents is not affected. An employee without the
+view level still gets the access-denied answer first.
 
 ## Delivery
 
