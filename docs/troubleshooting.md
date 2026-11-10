@@ -140,6 +140,14 @@ them. After an upgrade from an earlier version, profiles other than these have n
 **What to do:** open **Advanced Parameters > Team > Permissions**, choose the profile and grant *View*, *Add* and *Edit* for
 **Orders > iFirma documents**, as needed (see the table in [Permissions](configuration.md#permissions)). Then reload the page.
 
+### "This action must be sent with POST." (HTTP 405)
+
+**Message:** "This action must be sent with POST."
+
+**Meaning:** since 1.10.0 every back-office action that changes something or sends a request to iFirma (issuing, linking, sending again, status updates, KSeF, approving or rejecting a request, the customer link, unlink and register, marking the bell as seen, and all bulk runs) runs only for a POST request. The module's own buttons send POST. A GET, for example a bookmarked or scripted `...&ajax=1&action=CreateReceipt` URL, is answered with HTTP 405 and this text, and nothing is changed. Only the PDF download and the read-only checks (the notification feed, the customer check, search and count) still accept GET.
+
+**What to do:** change the script to send a POST with the back-office token. If a button of the module shows this message, a proxy or a browser extension is rewriting the request method; report it.
+
 ### Internal error on the iFirma panel or in a download
 
 **Message:** "Internal error; details are in the PrestaShop log." Only a module error shows its own text; any other failure

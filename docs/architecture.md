@@ -66,7 +66,7 @@ The customer pages do not start the pipeline: the front controllers read and wri
 **Admin controller** [`controllers/admin/AdminIfirmaController.php`](../controllers/admin/AdminIfirmaController.php) is the tab `AdminIfirma` (menu *Orders > iFirma documents*). It has two parts:
 
 - **The documents list**: a legacy list of the `ifirma_receipt` table (`fields_list`, filters, the preset `ifirma_preset=attention`, the three native bulk entries). Row buttons are rendered by list callbacks. Without JavaScript the bulk entries only explain that they need it (`processBulk*()`).
-- **AJAX actions** (`ajaxProcess<Name>()`, called with `ajax=1&action=<Name>`), each answering the JSON envelope (`success`, `message`, `data`). Every action looks up its level in a static table and answers HTTP 403 with the same envelope when the employee lacks it (see Security notes):
+- **AJAX actions** (`ajaxProcess<Name>()`, called with `ajax=1&action=<Name>`), each answering the JSON envelope (`success`, `message`, `data`). Every action looks up its level in a static table and answers HTTP 403 with the same envelope when the employee lacks it; every action except the five read-only ones (`DownloadPdf`, `IssueFeed`, `CustomerCheck`, `CustomerSearch`, `CustomerCountRemote`) also needs the request method POST and otherwise answers HTTP 405 (see Security notes):
 
 | Level | Actions |
 |-------|---------|

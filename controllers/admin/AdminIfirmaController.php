@@ -65,6 +65,22 @@ class AdminIfirmaController extends ModuleAdminController
         'CustomerRegister' => self::LEVEL_ISSUE,
     );
 
+    /**
+     * The actions that only read and so may be sent with GET (the PDF link of the panels is a plain link). Every
+     * other action, and any action added later, changes state or sends a request to iFirma and runs only for a
+     * POST: the core's token check is skipped when the shop runs without PS_SECURITY_TOKEN, so the method is the
+     * second guard against a link or an image tag that triggers an action.
+     *
+     * @var string[]
+     */
+    private static $readOnlyActions = array(
+        'DownloadPdf',
+        'IssueFeed',
+        'CustomerCheck',
+        'CustomerSearch',
+        'CustomerCountRemote',
+    );
+
     /** @var array bulk kind => level */
     private static $bulkLevels = array(
         'issue' => self::LEVEL_ISSUE,
@@ -614,6 +630,23 @@ class AdminIfirmaController extends ModuleAdminController
     }
 
     /**
+     * @param string $action the action name without the ajaxProcess prefix
+     * @return bool true when the action may run only for a POST (BulkRun and every action not listed as read-only)
+     */
+    public static function requiresPost($action)
+    {
+        return !in_array($action, self::$readOnlyActions, true);
+    }
+
+    /**
+     * @return bool true when the request is a POST (the raw request method, so a `_method` parameter does not count)
+     */
+    protected function requestIsPost()
+    {
+        return IfirmaInput::isPost();
+    }
+
+    /**
      * Runs an action body when the employee of the context holds the level the action needs; otherwise
      * answers 403 with the failure envelope. The token has been checked by the core before this point.
      *
@@ -631,6 +664,17 @@ class AdminIfirmaController extends ModuleAdminController
             $this->output(array(
                 'success' => false,
                 'message' => $this->denialMessage($level),
+                'data' => array(),
+            ));
+
+            return;
+        }
+
+        if (self::requiresPost($action) && !$this->requestIsPost()) {
+            $this->statusHeader(405);
+            $this->output(array(
+                'success' => false,
+                'message' => $this->module->l('This action must be sent with POST.', 'adminifirmacontroller'),
                 'data' => array(),
             ));
 
