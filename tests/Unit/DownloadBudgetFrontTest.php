@@ -34,6 +34,13 @@ class IfirmaTestBudgetReceiptController extends IfirmaReceiptModuleFrontControll
         });
     }
 
+    protected function downloadDayCap()
+    {
+        return new IfirmaDownloadDayCap(function () {
+            return IfirmaTestBudgetReceiptController::$now;
+        });
+    }
+
     protected function streamPdf($pdf, IfirmaReceipt $receipt)
     {
         throw new IfirmaTestBudgetEnding('streamed');

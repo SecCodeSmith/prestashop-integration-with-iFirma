@@ -10,6 +10,7 @@ if (!defined('_PS_VERSION_')) {
 
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaApiClient.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDownloadBudget.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDownloadDayCap.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDownloadThrottle.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaHttpOutput.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaInput.php';
@@ -56,6 +57,13 @@ class IfirmaReceiptModuleFrontController extends ModuleFrontController
             $this->notFound();
         }
 
+        // The customer's own day (all their documents, guests included: a guest order has a customer record too).
+        // Checked before anything is claimed, so a refused request uses no throttle slot and no budget.
+        $dayCap = $this->downloadDayCap();
+        if ($dayCap->isExhausted((int) $receipt->id_customer)) {
+            $this->refuseForTooManyRequests();
+        }
+
         IfirmaSchema::ensureReceiptDownloadColumn();
         $throttle = new IfirmaDownloadThrottle();
         if (!$throttle->claim($receipt)) {
@@ -70,12 +78,16 @@ class IfirmaReceiptModuleFrontController extends ModuleFrontController
             $this->refuseForTooManyRequests();
         }
 
+        // Counted before the request leaves, so parallel requests all see it; given back when none was sent.
+        $dayCap->take($receipt);
+
         try {
             $service = IfirmaReceiptService::build($this->module);
             $pdf = $service->fetchPdf($receipt, (bool) IfirmaInput::scalar(Tools::getValue('duplicate')));
         } catch (IfirmaRateLimitedException $e) {
-            // Refused before it was sent: the unit goes back, so the budget counts what reached iFirma.
+            // Refused before it was sent: the unit and the day count go back, so both count what reached iFirma.
             $budget->release();
+            $dayCap->giveBack($receipt);
             // Only reached after the ownership, token, KSeF-wait and throttle checks above. The customer is told
             // nothing about the limit; the shop owner finds the reason in the log.
             PrestaShopLogger::addLog('iFirma front download refused by the request limit (receipt ' . (int) $receipt->id . '): ' . $e->getMessage(), 1);
@@ -94,6 +106,14 @@ class IfirmaReceiptModuleFrontController extends ModuleFrontController
     protected function customerBudget()
     {
         return IfirmaDownloadBudget::forCustomers();
+    }
+
+    /**
+     * @return IfirmaDownloadDayCap the per-customer daily cap; protected so a test can fix its clock
+     */
+    protected function downloadDayCap()
+    {
+        return new IfirmaDownloadDayCap();
     }
 
     /**

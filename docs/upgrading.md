@@ -113,6 +113,8 @@ New settings (all editable on the settings page except the two internal counters
 
 **Send again is refused for 30 seconds after a delivery (behaviour change).** A manual **Send again**, single or in a bulk run, of a document whose delivery was recorded as sent less than 30 seconds earlier sends nothing and answers "This document was sent a moment ago. Wait before sending it again."; a bulk run reports the document as skipped and goes on. A failed delivery can still be sent again at once. There is no setting. See [Automatic retry of a failed delivery](usage.md#automatic-retry-of-a-failed-delivery).
 
+**A customer can download at most 30 PDFs per day, and the receipt table gets two more columns (security fix).** One customer can send at most 30 PDF downloads to iFirma per calendar day, all their documents together; the 31st answers HTTP 429 with `Retry-After: 60` like the other limit answers. The count needs two columns on the receipt table, added by the upgrade (or by the first write of a receipt, if the files were deployed before the upgrade ran): `download_day` (`DATE NULL`, the day the count belongs to) and `download_count` (`INT(11) UNSIGNED NOT NULL DEFAULT 0`, the downloads of this document that reached iFirma that day). No row is written: every document starts at 0. There is no setting. See [Download limits](usage.md#download-limits).
+
 **The limit box shows the last reading until you click.** The iFirma request limit box on the settings page no longer reads the limit
 from iFirma every time the page is opened (that was one request per view). It shows the last stored reading with its time (the
 cron refreshes it when the `abonent` key is set) and a button, **Check the remaining iFirma limit**, that reads a fresh figure on request. The

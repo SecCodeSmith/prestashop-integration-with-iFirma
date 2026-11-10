@@ -24,6 +24,9 @@ class IfirmaDownloadThrottle
     const CUSTOMER_WINDOW = 60;
     const CUSTOMER_MAX = 10;
 
+    /** Downloads one customer can send to iFirma per calendar day, all documents together (see IfirmaDownloadDayCap). */
+    const CUSTOMER_DAILY_MAX = 30;
+
     /** @var callable|null returns a unix timestamp */
     private $clock;
 

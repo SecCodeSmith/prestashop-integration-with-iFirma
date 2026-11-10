@@ -351,6 +351,23 @@ budget gets HTTP 429 with `Retry-After: 60` and the text "Too many requests at t
 The budget is checked after the login, token, owner and KSeF checks, so those answers do not change. The caps are
 fixed, not settings.
 
+Together, the three customer download limits are:
+
+| Limit | Scope | Cap |
+|---|---|---|
+| Per document | one document | once every 30 seconds |
+| Per customer | one customer, all documents | 10 per 60 seconds and 30 per calendar day |
+| All customers | the whole shop | 20 per calendar minute and 2,000 per calendar day |
+
+The per-customer day cap counts the downloads that reached iFirma, on the customer's own documents, in the shop time
+zone; a new day starts a new count. It exists so one account cannot use up the shop-wide budget for everyone else.
+The 31st download of a day answers like every other limit (HTTP 429, `Retry-After: 60`, "Too many requests at the
+moment. Please try again shortly."), sends nothing to iFirma and uses no slot of the other two limits. It is checked
+after the login, token, owner and KSeF checks. A download refused by any limit is not counted. The count is kept on
+the customer's receipt rows (`download_day`, `download_count`); a guest order has a customer record, so a guest is
+capped the same way.
+
+
 The back-office **Download PDF** needs the view level and has a budget of its own, separate from the customers': all
 employees together can send 30 downloads per calendar minute. A download over it answers HTTP 429 with a `Retry-After`
 header (the seconds to the next minute) and the text "The PDF was not downloaded: the back-office download limit is

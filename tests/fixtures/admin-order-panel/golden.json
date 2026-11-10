@@ -45,6 +45,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": "{\"candidates\":[{\"id\":\"77\",\"number\":\"7\\/2026\",\"date\":\"2026-11-03\",\"gross\":123,\"paid\":0,\"contractor\":\"Jan K\",\"rodzaj\":\"prz_faktura_paragon\",\"currency\":\"PLN\",\"sent\":false,\"sale_date\":\"\",\"matched_by\":\"\"}],\"resolution\":null}",
                     "id_data_request": null
@@ -139,6 +141,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -219,6 +223,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -299,6 +305,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -379,6 +387,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -459,6 +469,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -539,6 +551,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -619,6 +633,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -739,6 +755,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1026,6 +1044,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1106,6 +1126,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1186,6 +1208,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1266,6 +1290,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1346,6 +1372,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1426,6 +1454,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1506,6 +1536,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1586,6 +1618,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1666,6 +1700,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1746,6 +1782,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1824,6 +1862,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1902,6 +1942,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -1980,6 +2022,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -2058,6 +2102,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -2136,6 +2182,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -2214,6 +2262,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -2292,6 +2342,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": "{\"candidates\":[{\"id\":\"77\",\"number\":\"7\\/2026\",\"date\":\"2026-11-03\",\"gross\":123,\"paid\":0,\"contractor\":\"Jan K\",\"rodzaj\":\"prz_faktura_paragon\",\"currency\":\"PLN\",\"sent\":false,\"sale_date\":\"\",\"matched_by\":\"\"}],\"resolution\":{\"action\":\"link\",\"id_employee\":3,\"at\":\"2026-11-02 11:00:00\"}}",
                     "id_data_request": null
@@ -2388,6 +2440,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": "[{\"id\":\"77\",\"number\":\"7\\/2026\",\"date\":\"2026-11-03\",\"gross\":123,\"paid\":0,\"contractor\":\"Jan K\",\"rodzaj\":\"prz_faktura_paragon\",\"currency\":\"PLN\",\"sent\":false,\"sale_date\":\"\",\"matched_by\":\"\"}]",
                     "id_data_request": null
@@ -2466,6 +2520,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": "{\"candidates\":\"none\",\"resolution\":{\"action\":\"link\",\"id_employee\":null,\"at\":\"2026-11-02 11:00:00\"}}",
                     "id_data_request": null
@@ -2544,6 +2600,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": "{\"candidates\":[{\"id\":\"77\",\"number\":\"7\\/2026\",\"date\":\"2026-11-03\",\"gross\":123,\"paid\":0,\"contractor\":\"Jan K\",\"rodzaj\":\"prz_faktura_paragon\",\"currency\":\"PLN\",\"sent\":false,\"sale_date\":\"\",\"matched_by\":\"\"}]}",
                     "id_data_request": null
@@ -2636,6 +2694,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -2951,6 +3011,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -3136,6 +3198,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -3353,6 +3417,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -3658,6 +3724,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null
@@ -3736,6 +3804,8 @@
                     "linked_document": "",
                     "last_sync_at": "2026-11-03 09:30:00",
                     "last_download_at": null,
+                    "download_day": null,
+                    "download_count": 0,
                     "sync_error": null,
                     "duplicate_candidates": null,
                     "id_data_request": null

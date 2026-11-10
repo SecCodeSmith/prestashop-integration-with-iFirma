@@ -118,6 +118,12 @@ class IfirmaReceipt extends ObjectModel
     /** @var string|null when the customer last downloaded the document (download throttle) */
     public $last_download_at;
 
+    /** @var string|null the day (Y-m-d) download_count was counted on */
+    public $download_day;
+
+    /** @var int PDF downloads of this document that reached iFirma on download_day */
+    public $download_count = 0;
+
     /** @var string|null */
     public $sync_error;
 
@@ -188,6 +194,8 @@ class IfirmaReceipt extends ObjectModel
             'linked_document' => array('type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'size' => 128),
             'last_sync_at' => array('type' => self::TYPE_DATE, 'validate' => 'isDate', 'allow_null' => true),
             'last_download_at' => array('type' => self::TYPE_DATE, 'validate' => 'isDateFormat', 'allow_null' => true),
+            'download_day' => array('type' => self::TYPE_DATE, 'validate' => 'isDateFormat', 'allow_null' => true),
+            'download_count' => array('type' => self::TYPE_INT, 'validate' => 'isUnsignedInt'),
             'sync_error' => array('type' => self::TYPE_HTML),
             'duplicate_candidates' => array('type' => self::TYPE_HTML),
             'id_data_request' => array('type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'allow_null' => true),
@@ -197,8 +205,22 @@ class IfirmaReceipt extends ObjectModel
     /** The columns of a delivery's recorded state: a save writes only the ones its object changed. */
     const DELIVERY_COLUMNS = array('delivery_status', 'delivery_channel', 'delivered_at', 'delivery_error', 'delivery_attempts', 'delivery_retry_at');
 
-    /** @var array|null the delivery columns as they were when this object was loaded or last saved; null when unknown */
+    /**
+     * The columns of the PDF download accounting (the throttle's last download time and the daily count). Other requests
+     * change them with their own atomic statements, so a whole-row save must never write an object's old value back.
+     */
+    const DOWNLOAD_COLUMNS = array('last_download_at', 'download_day', 'download_count');
+
+    /** @var array|null the guarded columns (stateGuardedColumns()) as they were when this object was loaded or last saved; null when unknown */
     private $storedDeliveryState = null;
+
+    /**
+     * @return string[] the columns a save writes only when its object changed them: the delivery state and the download accounting
+     */
+    private static function stateGuardedColumns()
+    {
+        return array_merge(self::DELIVERY_COLUMNS, self::DOWNLOAD_COLUMNS);
+    }
 
     /**
      * @param int|null $id
@@ -236,6 +258,7 @@ class IfirmaReceipt extends ObjectModel
     public function add($auto_date = true, $null_values = false)
     {
         IfirmaSchema::ensureReceiptRetryColumns();
+        IfirmaSchema::ensureReceiptDownloadCountColumns();
         $saved = parent::add($auto_date, $null_values);
         if ($saved) {
             $this->rememberStoredDeliveryState();
@@ -257,6 +280,7 @@ class IfirmaReceipt extends ObjectModel
     public function update($null_values = false)
     {
         IfirmaSchema::ensureReceiptRetryColumns();
+        IfirmaSchema::ensureReceiptDownloadCountColumns();
         $callerFields = $this->update_fields;
         $unchanged = $this->unchangedDeliveryColumns();
         if ($unchanged !== array()) {
@@ -295,7 +319,7 @@ class IfirmaReceipt extends ObjectModel
     private function rememberStoredDeliveryState()
     {
         $state = array();
-        foreach (self::DELIVERY_COLUMNS as $column) {
+        foreach (self::stateGuardedColumns() as $column) {
             $state[$column] = $this->$column === null ? null : (string) $this->$column;
         }
         $this->storedDeliveryState = $state;
@@ -310,7 +334,7 @@ class IfirmaReceipt extends ObjectModel
             return array();
         }
         $unchanged = array();
-        foreach (self::DELIVERY_COLUMNS as $column) {
+        foreach (self::stateGuardedColumns() as $column) {
             $now = $this->$column === null ? null : (string) $this->$column;
             if ($now === $this->storedDeliveryState[$column]) {
                 $unchanged[] = $column;

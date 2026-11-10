@@ -94,6 +94,7 @@ class ClassFileRequiresTest extends TestCase
             'the API usage presenter' => array('IfirmaApiUsagePresenter'),
             'the limit check action' => array('IfirmaLimitCheckAction'),
             'the download budget' => array('IfirmaDownloadBudget'),
+            'the download day cap' => array('IfirmaDownloadDayCap'),
             'the window counter' => array('IfirmaWindowCounter'),
         );
     }

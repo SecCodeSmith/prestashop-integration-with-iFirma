@@ -289,7 +289,7 @@ class ReceiptDeliveryRetryTest extends TestCase
 
     public function testNoAlterIsIssuedWhenTheColumnsExist()
     {
-        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'delivery_/", '1');
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = '(delivery|download)_/", '1');
 
         $r = new IfirmaReceipt();
         $r->id_order = 1;

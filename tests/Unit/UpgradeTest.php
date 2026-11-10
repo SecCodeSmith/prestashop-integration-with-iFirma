@@ -320,7 +320,7 @@ class UpgradeTest extends TestCase
         $alters = array_values(array_filter($sent, function ($sql) {
             return strpos($sql, 'ALTER TABLE') === 0 && strpos($sql, 'ADD COLUMN') !== false;
         }));
-        $this->assertCount(23, $alters, 'the 20 receipt columns of 1.1.0, last_download_at of 1.5.0 and the two retry columns of 1.10.0, nothing else is added');
+        $this->assertCount(25, $alters, 'the 20 receipt columns of 1.1.0, last_download_at of 1.5.0 and the two retry and the two download count columns of 1.10.0, nothing else is added');
         $this->assertContains('ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `last_download_at` DATETIME NULL', $alters);
         $keys = array_values(array_filter($sent, function ($sql) {
             return strpos($sql, 'ALTER TABLE') === 0 && strpos($sql, 'ADD KEY') !== false;
@@ -687,12 +687,17 @@ class UpgradeTest extends TestCase
     private function schemaOf19x()
     {
         $schema = $this->expectedSchema();
-        unset($schema[self::RECEIPT]['delivery_attempts'], $schema[self::RECEIPT]['delivery_retry_at']);
+        unset(
+            $schema[self::RECEIPT]['delivery_attempts'],
+            $schema[self::RECEIPT]['delivery_retry_at'],
+            $schema[self::RECEIPT]['download_day'],
+            $schema[self::RECEIPT]['download_count']
+        );
 
         return $schema;
     }
 
-    public function testUpgrade1100AddsTheTwoRetryColumns()
+    public function testUpgrade1100AddsTheRetryAndTheDownloadCountColumns()
     {
         $this->startFrom($this->schemaOf19x());
 
@@ -701,6 +706,8 @@ class UpgradeTest extends TestCase
         $this->assertSame(array(
             'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `delivery_attempts` INT(11) UNSIGNED NOT NULL DEFAULT 0',
             'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `delivery_retry_at` DATETIME NULL',
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `download_day` DATE NULL',
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `download_count` INT(11) UNSIGNED NOT NULL DEFAULT 0',
         ), $this->alterStatementsOf($this->sentQueries()));
         $this->assertSame($this->expectedSchema()[self::RECEIPT], $this->schema[self::RECEIPT]);
     }
@@ -729,12 +736,20 @@ class UpgradeTest extends TestCase
         $this->assertTrue(upgrade_module_1_10_0(new Module()));
 
         $this->assertSame($after, $this->schema);
-        $this->assertCount(2, $this->alterStatementsOf($this->sentQueries()), 'the second run adds nothing');
+        $this->assertCount(4, $this->alterStatementsOf($this->sentQueries()), 'the second run adds nothing');
     }
 
     public function testUpgrade1100ReportsAFailedAlter()
     {
         Db::getInstance()->whenExecute('/ADD COLUMN `delivery_retry_at`/', false);
+        $this->startFrom($this->schemaOf19x());
+
+        $this->assertFalse(upgrade_module_1_10_0(new Module()));
+    }
+
+    public function testUpgrade1100ReportsAFailedDownloadCountAlter()
+    {
+        Db::getInstance()->whenExecute('/ADD COLUMN `download_count`/', false);
         $this->startFrom($this->schemaOf19x());
 
         $this->assertFalse(upgrade_module_1_10_0(new Module()));
@@ -760,7 +775,8 @@ class UpgradeTest extends TestCase
             IfirmaSchema::receiptColumns(),
             IfirmaSchema::newReceiptColumnsFor110(),
             IfirmaSchema::newReceiptColumnsFor150(),
-            IfirmaSchema::newReceiptColumnsFor1100()
+            IfirmaSchema::newReceiptColumnsFor1100(),
+            IfirmaSchema::newReceiptDownloadCountColumnsFor1100()
         ));
     }
 
