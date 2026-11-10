@@ -25,6 +25,7 @@ Four gaps were found on module 1.9.1 (master `e9ce900`).
 - **Documents list: state sorts by rank.** Sorting the *State* column of *Orders > iFirma documents* uses the same order as the Orders list (what needs action first), not the alphabet.
 - **CI: Security green again.** The image pin is committed in the `test-stack` repository and the module pins that commit. The remaining steps of the Trivy job, which never ran on master, are run and their findings handled.
 - **CI: Smoke made diagnosable, then fixed at the cause.** The workflow keeps the smoke output (job summary and artifact), checks that the shop runs the version the matrix asked for, waits for the finished install, and also runs scenario A2, which the letter filter dropped silently. Each failing assertion is then fixed where the defect is: in the module, the stack or the workflow. **No test or scenario is deleted, skipped or weakened to get a green run.**
+- **Security fix: the configuration page checks the Configure permission itself (added during apply, on the owner's request).** On PrestaShop 9.1 the core opens a module's configuration page for an employee with any Module Manager right and does not check the module's own Configure permission; the module did not check it either, and ran its actions for any request that named them. The page now refuses an employee without the permission, and every state-changing action needs POST and a valid back-office token. It ships as its own `fix-vuln` commit.
 - **BREAKING (behaviour, no API change):** the configuration page shows the last limit reading instead of a fresh one until the button is clicked; a failed delivery may now be sent later by the cron without an employee; a PDF download refused by the limit answers 429 instead of 502; a refused **Refresh** reports a failure instead of success.
 
 Assumptions recorded for review:
@@ -49,6 +50,7 @@ Assumptions recorded for review:
 - `order-list-receipt-indicator`: the column is filterable by state.
 - `receipt-documents-list`: the state column sorts by the action rank; the row shows the retry schedule of a failed delivery.
 - `email-e2e-verification`: the smoke run proves the automatic retry after a rejected mail.
+- `receipt-access-control`: the configuration page enforces the module's Configure permission itself, and its state-changing actions need POST and a valid token.
 
 ## Impact
 
