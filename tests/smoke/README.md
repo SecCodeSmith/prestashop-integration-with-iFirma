@@ -64,9 +64,63 @@ not be prepared (PrestaShop/mock/fixtures missing).
 | `IFIRMA_SMTP_HOST` | `ifirma-mock` | SMTP server written to `PS_MAIL_SERVER` (the mock's mail sink) |
 | `IFIRMA_SMTP_PORT` | `1025` | SMTP port written to `PS_MAIL_SMTP_PORT` |
 | `PS_LOCAL_URL` | `http://localhost` | shop URL used for the cron HTTP check |
-| `SMOKE_ONLY` | all | letters of the scenarios to run, e.g. `SMOKE_ONLY=AB` |
+| `SMOKE_ONLY` | all | scenarios to run: a letter string (`SMOKE_ONLY=AB`) or a comma-separated list of names (`SMOKE_ONLY=A,A2,B`); see "Selecting scenarios" |
+| `SMOKE_SKIP` | none | comma-separated scenarios to leave out on purpose, e.g. `SMOKE_SKIP=R` |
+| `SMOKE_WRITE_FLOOR` | unset | `1` writes the executed check counts to `tests/smoke/check-floor.json` (see "The check floor") |
 
 Pass them with `exec -e NAME=value prestashop php ...`.
+
+## Selecting scenarios
+
+The scenario names are `J K L M A A2 B C D E F G H I N O P Q R S` (run order). Without `SMOKE_ONLY` and `SMOKE_SKIP`
+every one runs.
+
+- `SMOKE_ONLY=AB` (no comma) is the old letter string: each character is one single-letter scenario. A value that is
+  exactly one known name (`SMOKE_ONLY=A2`) selects that scenario.
+- `SMOKE_ONLY=A,A2,B` (with a comma) is a list of names, the only way to select a scenario whose name has more than one
+  character together with others. Plain `SMOKE_ONLY=A` does not run `A2`.
+- `SMOKE_SKIP=R` removes scenarios from the selection (it wins over `SMOKE_ONLY`). The run prints `selected: ...;
+  skipped on purpose: ...` at the start and again in the summary.
+- An unknown name in either variable stops the run with exit code `2` before the shop is touched, so a typo can never
+  silently run fewer scenarios.
+
+The scheduled workflow uses `SMOKE_SKIP=R` and no `SMOKE_ONLY`, so a new scenario is picked up automatically (it must
+then be added to `$smokeScenarioNames` in `run.php` and to the check floor).
+
+## The check floor
+
+`tests/smoke/check-floor.json` holds, per scenario, the minimum number of checks that scenario executes (passed plus
+failed; skipped checks do not count). After a run, every selected scenario that executed fewer checks, and every
+selected scenario without an entry in the file, produces a `[FAIL] check floor: ...` line and exit code `1`. So a
+check cannot disappear, and a new scenario cannot be added, without a visible change to this file.
+Until the first floor is committed, the run only prints a `[WARN]` that the file is missing.
+
+Raise or create the floor from a fully green run of every scenario you want covered (it refuses to write when any
+check failed, and it keeps the entries of scenarios that did not run):
+
+```bash
+docker compose -f test-stack/docker-compose.yml exec -T -u www-data -e SMOKE_SKIP=R -e SMOKE_WRITE_FLOOR=1 prestashop php modules/ifirma/tests/smoke/run.php
+```
+
+Scenario R is slow; to include its floor, run it once alone with `-e SMOKE_ONLY=R -e SMOKE_WRITE_FLOOR=1`. Commit the
+changed file with the change that added the checks. Lowering a number is a removal of checks: say in the commit and in
+the scenario table above which checks went and why.
+
+## Smoke in CI and where the evidence is
+
+`.github/workflows/smoke.yml` runs the scenarios (all but R) weekly and on demand for PrestaShop 8.0.5, 8.1.7, 8.2.2,
+9.0.3 and 9.1.4. Each job first checks that the shop really reports the matrix version, so a stack that ignores the
+image tag fails there and not in a scenario. Evidence of every job, green or red:
+
+- the job summary lists the `[FAIL]` lines with their detail, the totals and the selection;
+- the artifact `smoke-output-<tag>` holds the complete output. Keys and tokens in it are masked to their last four
+  characters by `run.php`.
+
+## A red smoke run is fixed at its cause
+
+A failing check is fixed in the module, the test stack or the workflow, with a unit test that reproduces the defect
+first. No check is removed, skipped or loosened, no scenario or matrix entry is dropped, to get a green run. A check
+whose expectation was wrong is corrected only together with the specification scenario that states the right behaviour.
 
 ## Reading the output
 
@@ -96,7 +150,7 @@ and list every failed assertion. `[SKIP]` lines do not affect the exit code.
   The shop keeps sending through the sink after the run, so back-office mail also lands there: read it on
   the mock status page (`http://localhost:8001/__mock/status`, section Mail) or at `/__mock/mail`. To go back, set
   `PS_MAIL_METHOD=3` (mail off) or restore your own server in Advanced Parameters > E-mail.
-- The script has not been run in CI; it needs the Docker stack.
+- It needs the Docker stack; in CI it runs through `.github/workflows/smoke.yml` (see above).
 
 ## Notes from the first real run (PrestaShop 8.1.7, 2026-11-01)
 

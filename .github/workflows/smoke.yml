@@ -3,7 +3,12 @@ name: Smoke (all supported PrestaShop versions)
 # Boots the test-stack for every supported PrestaShop version (the module declares 8.0 - 9.x) and
 # runs the end-to-end smoke scenarios against the iFirma mock. Slow (each shop installs itself
 # first), so it runs weekly and on demand, not on every push. Scenario R (burst issuance, 8-10
-# minutes) is left out; run it alone with SMOKE_ONLY=R.
+# minutes) is skipped on purpose with SMOKE_SKIP=R; every other scenario runs, and run.php fails
+# when a scenario exists that it does not know about. Run R alone with SMOKE_ONLY=R.
+#
+# Evidence: the full output of each job is kept as the artifact "smoke-output-<tag>" (also for a
+# green run) and the failed checks plus the totals are written to the job summary. run.php masks
+# keys and tokens to their last four characters, so the artifact is safe on a public repository.
 on:
   schedule:
     - cron: "43 3 * * 2"
@@ -24,25 +29,90 @@ jobs:
     env:
       PS_IMAGE_TAG: ${{ matrix.tag }}
       COMPOSE: docker compose -f test-stack/docker-compose.yml
+      SMOKE_OUTPUT: smoke-output/smoke-${{ matrix.tag }}.txt
     steps:
       - uses: actions/checkout@v7
         with:
           submodules: true
       - name: Start the shop and the mock
         run: $COMPOSE up -d --build
-      - name: Wait for the first-boot install
+      # The image's start script (/tmp/docker_run.sh) prints "Setup completed" when the install
+      # script has finished and "Starting web server now" just before Apache starts. It keeps going
+      # after a failed install with only the line "warning: PrestaShop installation failed.", so
+      # that line fails the job here instead of surfacing later as a scenario failure.
+      - name: Wait for the first-boot install and the front page
         run: |
-          for i in $(seq 1 120); do
-            if curl -fsS -o /dev/null http://localhost:8080/; then echo "shop is up"; exit 0; fi
+          limit_minutes=20
+          deadline=$((SECONDS + limit_minutes * 60))
+          fail_with_log() {
+            $COMPOSE logs --no-color --tail 120 prestashop
+            echo "::error::$1"
+            exit 1
+          }
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            log=$($COMPOSE logs --no-color prestashop 2>&1 || true)
+            if printf '%s\n' "$log" | grep -Fq 'PrestaShop installation failed'; then
+              fail_with_log "the PrestaShop first-boot install failed"
+            fi
+            if $COMPOSE ps --status exited --services | grep -Fxq prestashop; then
+              fail_with_log "the shop container exited during the first-boot install"
+            fi
+            if printf '%s\n' "$log" | grep -Fq 'Starting web server now'; then
+              code=$(curl -sL --max-redirs 3 -o /dev/null -w '%{http_code}' http://localhost:8080/ || true)
+              if [ "$code" = "200" ]; then echo "shop is installed and the front page answers 200"; exit 0; fi
+              echo "install finished, front page answers $code"
+            fi
             sleep 10
           done
-          $COMPOSE logs --tail 80 prestashop
-          echo "::error::the shop did not come up within 20 minutes"
-          exit 1
+          fail_with_log "the shop was not ready within the ${limit_minutes} minute limit (install finished and front page 200)"
+      - name: Check the shop runs the matrix version
+        run: |
+          expected="${PS_IMAGE_TAG%%-*}"
+          found=$($COMPOSE exec -T -u www-data -w /var/www/html prestashop \
+            php -r 'require "config/config.inc.php"; echo _PS_VERSION_;' | tail -n 1 | tr -d '\r')
+          if [ "$found" != "$expected" ]; then
+            echo "::error::version mismatch: the matrix expects PrestaShop $expected, the shop reports '$found'"
+            exit 1
+          fi
+          echo "PrestaShop $found, as expected"
       - name: Smoke scenarios
         run: |
-          $COMPOSE exec -T -u www-data -e SMOKE_ONLY=ABCDEFGHIJKLMNOPQS prestashop \
-            php modules/ifirma/tests/smoke/run.php
+          set -o pipefail
+          mkdir -p smoke-output
+          $COMPOSE exec -T -u www-data -e SMOKE_SKIP=R prestashop \
+            php modules/ifirma/tests/smoke/run.php 2>&1 | tee "$SMOKE_OUTPUT"
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Smoke: PrestaShop $PS_IMAGE_TAG"
+            echo
+            if [ -f "$SMOKE_OUTPUT" ]; then
+              echo "Failed checks:"
+              echo
+              echo '```text'
+              grep -F '[FAIL]' "$SMOKE_OUTPUT" | head -n 100 || true
+              echo '```'
+              echo
+              echo "Totals and selection:"
+              echo
+              echo '```text'
+              sed -n '/^=== Summary ===$/,$p' "$SMOKE_OUTPUT" | head -n 150
+              echo '```'
+            else
+              echo "No smoke output was produced; an earlier step failed (see the job log)."
+            fi
+            echo
+            echo "Scenario R (burst issuance, 8 to 10 minutes) is skipped on purpose; run it alone with SMOKE_ONLY=R."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the smoke output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-output-${{ matrix.tag }}
+          path: smoke-output/
+          if-no-files-found: warn
+          retention-days: 30
       - name: Logs on failure
         if: failure()
         run: $COMPOSE logs --tail 200

@@ -148,8 +148,20 @@ Licences: [third-party-licenses.md](third-party-licenses.md). PrestaShop Addons:
 
 The test stack image is pinned (`PS_IMAGE_TAG`, default `9.1.4-apache`). `.github/workflows/smoke.yml` (weekly and on
 demand) boots the stack for PrestaShop 8.0.5, 8.1.7, 8.2.2, 9.0.3 and 9.1.4 and runs the smoke scenarios against the
-mock, except scenario R, which takes 8 to 10 minutes and is run alone with `SMOKE_ONLY=R`. Locally:
+mock, except scenario R, which takes 8 to 10 minutes: the workflow skips it on purpose with `SMOKE_SKIP=R` (everything
+else runs, including `A2`) and it is run alone with `SMOKE_ONLY=R`. Locally:
 `PS_IMAGE_TAG=8.2.2-apache docker compose -f test-stack/docker-compose.yml up -d --build`.
+
+Each job waits until the shop's first-boot install has finished and the front page answers 200 (20 minute limit, the
+shop log is printed on failure), then checks that the shop reports the version of its matrix tag, and only then runs
+the scenarios. Where the evidence is: the job summary lists the failed checks (`[FAIL]` lines) and the totals, and the
+artifact `smoke-output-<tag>` holds the full output of each job, also for a green run; keys and tokens are masked to
+their last four characters. Scenario selection by name (`SMOKE_ONLY=A,A2,B`, `SMOKE_SKIP=R`) and the check floor
+(`tests/smoke/check-floor.json`, the minimum number of executed checks per scenario, and how to raise it) are described
+in [tests/smoke/README.md](../tests/smoke/README.md).
+
+Rule: a red smoke run is fixed at its cause, with a unit test that reproduces the defect first. No check is removed,
+skipped or loosened, and no scenario or matrix entry is dropped, to turn a run green.
 
 ### Dev dependencies and PrestaShop
 
@@ -176,7 +188,7 @@ Since 1.8.0 two more cover the queue and KSeF-confirmed delivery (they need mock
 | `R` | Burst issuance under the limits | 50 orders in a row each end with exactly one document; the module's cap queues the surplus and the cron drains it once a minute without the mock ever refusing a call; the mock's minute and day limits and the module's own day cap queue the orders, start the back-off and drain afterwards. About 8 to 10 minutes; run it alone. |
 | `S` | KSeF-confirmed delivery | The module submits once, delivery waits and the customer's download answers "not found" until KSeF accepts, then one cron run delivers once; iFirma's own submission and the submitter `ifirma` mean no send call; a rejection keeps the delivery waiting; documents that do not go to KSeF are delivered at issuance. |
 
-Run one scenario with `SMOKE_ONLY=<letter>`, for example `SMOKE_ONLY=O`. Scenario `N` (e-mails) also checks the inline logo and the shop link of the module's e-mails.
+Run one scenario with `SMOKE_ONLY=<letter>`, for example `SMOKE_ONLY=O`, or several by name with `SMOKE_ONLY=A,A2,B`. Scenario `N` (e-mails) also checks the inline logo and the shop link of the module's e-mails.
 
 **Shared form partial.** The invoice-data fields of the customer form live in `views/templates/front/_datarequest_fields.tpl`. Both `datarequest.tpl` (logged-in customers) and `guestrequest.tpl` (guests) include it, so the field list, the messages and the pre-filling cannot drift apart.
 
