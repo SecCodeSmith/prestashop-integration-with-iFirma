@@ -193,6 +193,7 @@ return array(
     'iFirma did not confirm the e-mail' => 'iFirma nie potwierdziła wysłania e-maila',
     'The customer has no e-mail address.' => 'Klient nie ma adresu e-mail.',
     'Another delivery of this document is in progress. Try again in a moment.' => 'Ten dokument jest właśnie wysyłany. Spróbuj ponownie za chwilę.',
+    'This document was sent a moment ago. Wait before sending it again.' => 'Ten dokument został wysłany przed chwilą. Poczekaj przed ponownym wysłaniem.',
     'The delivery attempt could not be recorded, so nothing was sent.' => 'Nie udało się zapisać próby wysyłki, więc nic nie wysłano.',
     'A delivery attempt started and its outcome was not recorded. Check whether the customer received the document before sending it again.' => 'Próba wysyłki została rozpoczęta, a jej wynik nie został zapisany. Sprawdź, czy klient dostał dokument, zanim wyślesz go ponownie.',
     'Invoice' => 'Faktura',

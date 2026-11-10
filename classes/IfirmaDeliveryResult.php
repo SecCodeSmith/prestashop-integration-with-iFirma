@@ -29,6 +29,12 @@ if (!defined('_PS_VERSION_')) {
  */
 class IfirmaDeliveryResult
 {
+    /**
+     * A manual resend was refused because the document was delivered a moment ago. Nothing was sent and nothing was
+     * recorded, but the API client did not refuse anything, so it is not refusedLocally() and a bulk run goes on.
+     */
+    const REFUSAL_JUST_SENT = 'just_sent';
+
     /** @var bool */
     private $ok;
 
@@ -97,11 +103,19 @@ class IfirmaDeliveryResult
      */
     public function refusedLocally()
     {
-        return $this->refusal !== '';
+        return $this->refusal !== '' && $this->refusal !== self::REFUSAL_JUST_SENT;
     }
 
     /**
-     * @return string '' | rate_limited | auth_blocked
+     * @return bool true when a manual resend was refused because the document was delivered less than a moment ago
+     */
+    public function isJustSent()
+    {
+        return $this->refusal === self::REFUSAL_JUST_SENT;
+    }
+
+    /**
+     * @return string '' | rate_limited | auth_blocked | just_sent
      */
     public function getRefusal()
     {

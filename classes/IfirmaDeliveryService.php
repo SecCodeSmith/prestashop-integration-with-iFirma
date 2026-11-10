@@ -76,6 +76,9 @@ class IfirmaDeliveryService
     /** Seconds a manual resend waits for a delivery of the same document that is already running. */
     const RESEND_LOCK_WAIT = 5;
 
+    /** Seconds after a recorded delivery during which a manual resend is refused. */
+    const RESEND_QUIET_SECONDS = 30;
+
     const COPY_NONE = 'none';
     const COPY_SHOP = 'shop';
     const COPY_EMPLOYEE = 'employee';
@@ -403,11 +406,42 @@ class IfirmaDeliveryService
             if (!empty($receipt->id)) {
                 $this->adoptDeliveryState($receipt, IfirmaReceipt::loadFresh((int) $receipt->id));
             }
+            if ($this->deliveredMomentAgo($receipt)) {
+                return new IfirmaDeliveryResult(
+                    false,
+                    'failed',
+                    $this->getChannel(),
+                    $this->module->l('This document was sent a moment ago. Wait before sending it again.', 'ifirmadeliveryservice'),
+                    IfirmaDeliveryResult::REFUSAL_JUST_SENT
+                );
+            }
 
             return $this->deliver($receipt, $order, array('manual' => true));
         } finally {
             IfirmaNamedLock::release($lock);
         }
+    }
+
+    /**
+     * A double click, a bulk run started twice and a cron delivery that just ended must not e-mail the customer
+     * again; a delivery that failed has no such delay. A delivery time in the future (a clock stepped back) is
+     * not "a moment ago", so it can never block a resend for long.
+     *
+     * @param IfirmaReceipt $receipt the record with the freshly adopted delivery state
+     * @return bool
+     */
+    private function deliveredMomentAgo(IfirmaReceipt $receipt)
+    {
+        if ($receipt->delivery_status !== IfirmaReceipt::DELIVERY_SENT) {
+            return false;
+        }
+        $deliveredAt = strtotime((string) $receipt->delivered_at);
+        if ($deliveredAt === false) {
+            return false;
+        }
+        $age = $this->now() - $deliveredAt;
+
+        return $age >= 0 && $age < self::RESEND_QUIET_SECONDS;
     }
 
     /**

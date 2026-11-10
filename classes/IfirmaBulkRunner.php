@@ -390,6 +390,12 @@ class IfirmaBulkRunner
 
             return '';
         }
+        if ($res->isJustSent()) {
+            // delivered a moment ago: nothing was sent, the run goes on with the next document
+            $state['results'][$id] = $this->result($id, $idOrder, self::OUTCOME_SKIPPED, $message, $receipt);
+
+            return '';
+        }
         if ($res->refusedLocally()) {
             // the client refused the call itself and the record was left untouched: stop the run
             $reason = $res->getRefusal() === 'auth_blocked' ? self::STOP_AUTH_BLOCKED : self::STOP_RATE_LIMITED;
