@@ -364,12 +364,11 @@ zone; a new day starts a new count. It exists so one account cannot use up the s
 The 31st download of a day answers like every other limit (HTTP 429, `Retry-After: 60`, "Too many requests at the
 moment. Please try again shortly."), sends nothing to iFirma and uses no slot of the other two limits. It is checked
 after the login, token, owner and KSeF checks. A download refused by any limit is not counted. The count is kept on
-the customer's receipt rows (`download_day`, `download_count`); a guest order has a customer record, so a guest is
-capped the same way.
+the customer's receipt rows (`download_day`, `download_count`).
 
 
 The back-office **Download PDF** needs the view level and has a budget of its own, separate from the customers': all
-employees together can send 30 downloads per calendar minute. A download over it answers HTTP 429 with a `Retry-After`
+employees together can send 30 downloads per calendar minute and 2,000 per calendar day. A download over either answers HTTP 429 with a `Retry-After`
 header (the seconds to the next minute) and the text "The PDF was not downloaded: the back-office download limit is
 reached. Try again in a moment."; nothing is sent to iFirma. Issuing documents is not affected. An employee without the
 view level still gets the access-denied answer first.

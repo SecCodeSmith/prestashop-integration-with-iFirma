@@ -30,10 +30,12 @@ class IfirmaDownloadBudget
     const CUSTOMER_MINUTE_KEY = 'IFIRMA_DL_CUSTOMER_MINUTE';
     const CUSTOMER_DAY_KEY = 'IFIRMA_DL_CUSTOMER_DAY';
     const EMPLOYEE_MINUTE_KEY = 'IFIRMA_DL_EMPLOYEE_MINUTE';
+    const EMPLOYEE_DAY_KEY = 'IFIRMA_DL_EMPLOYEE_DAY';
 
     const CUSTOMER_MINUTE_CAP = 20;
     const CUSTOMER_DAY_CAP = 2000;
     const EMPLOYEE_MINUTE_CAP = 30;
+    const EMPLOYEE_DAY_CAP = 2000;
 
     const MINUTE_BUCKET_FORMAT = 'YmdHi';
     const DAY_BUCKET_FORMAT = 'Ymd';
@@ -77,12 +79,13 @@ class IfirmaDownloadBudget
 
     /**
      * @param callable|null $clock
-     * @return IfirmaDownloadBudget 30 downloads per minute for all employees together, no day cap
+     * @return IfirmaDownloadBudget 30 per minute and 2,000 per day for all employees together
      */
     public static function forEmployees($clock = null)
     {
         return new self(array(
             new IfirmaRateWindow(IfirmaRateDecision::WINDOW_MINUTE, self::EMPLOYEE_MINUTE_KEY, self::MINUTE_BUCKET_FORMAT, self::EMPLOYEE_MINUTE_CAP),
+            new IfirmaRateWindow(IfirmaRateDecision::WINDOW_DAY, self::EMPLOYEE_DAY_KEY, self::DAY_BUCKET_FORMAT, self::EMPLOYEE_DAY_CAP),
         ), $clock);
     }
 

@@ -86,6 +86,7 @@ class ConfigurationKeysTest extends TestCase
             IfirmaDownloadBudget::CUSTOMER_MINUTE_KEY,
             IfirmaDownloadBudget::CUSTOMER_DAY_KEY,
             IfirmaDownloadBudget::EMPLOYEE_MINUTE_KEY,
+            IfirmaDownloadBudget::EMPLOYEE_DAY_KEY,
         );
         $module = IfirmaTestModuleLoader::loadModule();
         $this->assertTrue($module->install());

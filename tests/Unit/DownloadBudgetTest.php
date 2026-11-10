@@ -145,7 +145,7 @@ class DownloadBudgetTest extends TestCase
         $this->assertSame('202611101015:1', Configuration::get('IFIRMA_DL_CUSTOMER_MINUTE'));
     }
 
-    public function testTheEmployeeBudgetAdmitsThirtyAMinuteWithNoDayCap()
+    public function testTheEmployeeBudgetAdmitsThirtyAMinute()
     {
         $budget = $this->employees();
         for ($i = 0; $i < 30; $i++) {
@@ -189,5 +189,13 @@ class DownloadBudgetTest extends TestCase
     {
         $this->assertTrue(IfirmaDownloadBudget::forEmployees()->take());
         $this->assertSame(date('YmdHi') . ':1', Configuration::get('IFIRMA_DL_EMPLOYEE_MINUTE'));
+    }
+
+    public function testTheEmployeeDayBudgetRefusesAtTwoThousand()
+    {
+        Configuration::updateValue('IFIRMA_DL_EMPLOYEE_DAY', '20261110:2000');
+
+        $this->assertFalse($this->employees()->take());
+        $this->assertSame('202611101015:0', Configuration::get('IFIRMA_DL_EMPLOYEE_MINUTE'), 'the minute unit went back');
     }
 }

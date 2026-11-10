@@ -57,7 +57,7 @@ class IfirmaReceiptModuleFrontController extends ModuleFrontController
             $this->notFound();
         }
 
-        // The customer's own day (all their documents, guests included: a guest order has a customer record too).
+        // The customer's own day (all their documents together).
         // Checked before anything is claimed, so a refused request uses no throttle slot and no budget.
         $dayCap = $this->downloadDayCap();
         if ($dayCap->isExhausted((int) $receipt->id_customer)) {

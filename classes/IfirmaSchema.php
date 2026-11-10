@@ -583,6 +583,7 @@ class IfirmaSchema
             'IFIRMA_DL_CUSTOMER_MINUTE' => '',
             'IFIRMA_DL_CUSTOMER_DAY' => '',
             'IFIRMA_DL_EMPLOYEE_MINUTE' => '',
+            'IFIRMA_DL_EMPLOYEE_DAY' => '',
             'IFIRMA_USAGE_DOCUMENT' => '',
             'IFIRMA_USAGE_STATUS' => '',
             'IFIRMA_USAGE_PDF' => '',

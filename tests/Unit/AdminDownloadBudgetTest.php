@@ -185,4 +185,16 @@ class AdminDownloadBudgetTest extends TestCase
 
         $this->assertSame($this->minute() . ':30', Configuration::get('IFIRMA_DL_EMPLOYEE_MINUTE'));
     }
+
+    public function testTheDayBudgetOfTheBackOfficeIsUsedUpAfterTwoThousandDownloadsAndSendsNothing()
+    {
+        $this->makeReceipt();
+        Configuration::updateValue('IFIRMA_DL_EMPLOYEE_DAY', '20261110:2000');
+
+        $controller = $this->download();
+
+        $this->assertCount(1, $controller->limits);
+        $this->assertSame(array(), $this->t->calls);
+        $this->assertFalse(Configuration::hasKey('IFIRMA_RATE_DAY_WINDOW'), 'the shared day counter is untouched');
+    }
 }

@@ -1833,6 +1833,8 @@ function scenarioL($module)
         assertTrue(IfirmaPermission::canView($pair['employee']) && IfirmaPermission::canIssue($pair['employee']) && !IfirmaPermission::canManage($pair['employee']),
             'the profile now holds view and issue, not manage');
 
+        // state-changing actions run only for a POST; the CLI has no request method
+        $_SERVER['REQUEST_METHOD'] = 'POST';
         $out = $dispatch('ajaxProcessCreateReceipt');
         assertTrue($out['kind'] === 'json' && $out['payload']['success'] === true && $out['called'] === array('createReceipt') && !$out['statuses'],
             'CreateReceipt with READ + CREATE is dispatched (no 403)', json_encode($out));
@@ -1841,7 +1843,7 @@ function scenarioL($module)
             'ResendDocument with READ + CREATE is still 403', json_encode($out));
     } finally {
         $context->employee = $original;
-        unset($_GET['token'], $_POST['token'], $_POST['id_order'], $_GET['id_order']);
+        unset($_SERVER['REQUEST_METHOD'], $_GET['token'], $_POST['token'], $_POST['id_order'], $_GET['id_order']);
         dropRolelessEmployee($pair);
     }
     assertSame(0, (int) Db::getInstance()->getValue('SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'access` WHERE id_profile = ' . $profileId), 'throw-away profile has no access rows left');
