@@ -103,6 +103,8 @@ New settings (all editable on the settings page except the two internal counters
 
 ## Upgrading to 1.10.0
 
+**BREAKING for integrations: a download refused by the module's request limit answers 429 instead of 502.** When the module's own request limit (the minute cap, the day cap or a running back-off) refuses a PDF download before it is sent to iFirma, the customer download (`/module/ifirma/receipt`) and the back office download now answer HTTP 429 with a `Retry-After` header (seconds) and a short plain-text message. Before this release they answered HTTP 502. The customer message is generic ("Too many requests at the moment. Please try again shortly.") and contains no count or cap; the back office message names the refusing window. A download that was sent to iFirma and failed there, a wrong token, another customer's document and the pause after a rejected key keep their answers (502, 404, 404, 502). Monitors, link checkers or scripts that treat only 502 as "temporarily unavailable" must treat 429 with `Retry-After` the same way. See [HTTP 429 on a PDF download because of the module's request limit](troubleshooting.md#http-429-on-a-pdf-download-because-of-the-modules-request-limit).
+
 **The limit box shows the last reading until you click.** The iFirma request limit box on the settings page no longer reads the limit
 from iFirma every time the page is opened (that was one request per view). It shows the last stored reading with its time (the
 cron refreshes it when the `abonent` key is set) and a button, **Check the remaining iFirma limit**, that reads a fresh figure on request. The

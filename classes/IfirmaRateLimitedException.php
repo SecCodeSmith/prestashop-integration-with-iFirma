@@ -14,22 +14,36 @@ if (!defined('_PS_VERSION_')) {
 }
 
 /**
- * Thrown when a request that creates a document was refused by the rate limit (the local minute or day
- * cap, a running back-off, or an iFirma limit answer). No document was created; the order is queued.
+ * Thrown when a request was refused by the rate limit (the local minute or day cap, a running back-off, or an
+ * iFirma limit answer). A create is queued and no document exists; a PDF download is answered with a 429 that
+ * carries the seconds to wait.
  */
 class IfirmaRateLimitedException extends Exception
 {
     /** @var string one of the IfirmaRateDecision::WINDOW_* constants */
     private $window;
 
+    /** @var int */
+    private $retryAfterSeconds;
+
     /**
-     * @param string $message the refusal message
-     * @param string $window  the window that refused
+     * @param string $message           the refusal message
+     * @param string $window            the window that refused
+     * @param int    $retryAfterSeconds seconds the caller is told to wait, 0 when the refusal has none
      */
-    public function __construct($message, $window = '')
+    public function __construct($message, $window = '', $retryAfterSeconds = 0)
     {
         parent::__construct((string) $message);
         $this->window = (string) $window;
+        $this->retryAfterSeconds = max(0, (int) $retryAfterSeconds);
+    }
+
+    /**
+     * @return int seconds to wait before the request can pass, 0 when unknown
+     */
+    public function getRetryAfterSeconds()
+    {
+        return $this->retryAfterSeconds;
     }
 
     /**

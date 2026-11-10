@@ -35,6 +35,19 @@ class IfirmaTestEndingReceiptController extends IfirmaReceiptModuleFrontControll
     {
         throw new IfirmaTestFrontEnding('502');
     }
+
+    /** @var int|null */
+    public $limitRetryAfter;
+
+    /** @var string|null */
+    public $limitBody;
+
+    protected function refusedByRateLimit($retryAfterSeconds, $message)
+    {
+        $this->limitRetryAfter = $retryAfterSeconds;
+        $this->limitBody = $message;
+        throw new IfirmaTestFrontEnding('429-limit');
+    }
 }
 
 require_once _PS_MODULE_DIR_ . 'ifirma/controllers/front/datarequest.php';
@@ -353,5 +366,180 @@ class FrontControllerEndingsTest extends TestCase
         Tools::$values = array('token' => 'tok123');
 
         $this->assertSame('502', $this->answer(new IfirmaTestEndingReceiptController()));
+    }
+
+    // ---- a download refused by the module's request limit (spec customer-receipt-visibility) ----
+
+    private function atMinuteCap()
+    {
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi') . ':80');
+    }
+
+    private function claimableReceipt(array $over = array())
+    {
+        $receipt = $this->makeReceipt(array_merge(array('security_token' => 'tok123'), $over));
+        Db::getInstance()->whenGetValue('/WHERE security_token = "tok123"/', (int) $receipt->id);
+        Db::getInstance()->whenExecute('/UPDATE `\w*ifirma_receipt`\s+SET last_download_at/', 1);
+
+        return $receipt;
+    }
+
+    public function testTheOwnerAtTheMinuteCapGetsTheLimitAnswerWithTheSecondsToWaitAndNoRequestIsSent()
+    {
+        $this->claimableReceipt();
+        $this->atMinuteCap();
+        Tools::$values = array('token' => 'tok123');
+        $controller = new IfirmaTestEndingReceiptController();
+
+        $this->assertSame('429-limit', $this->answer($controller));
+        $this->assertSame(60, $controller->limitRetryAfter);
+        $this->assertSame(array(), $this->t->calls, 'no iFirma request is sent');
+    }
+
+    public function testTheOwnerAtTheDayCapGetsTheLimitAnswer()
+    {
+        $this->claimableReceipt();
+        Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', date('Ymd') . ':14000');
+        Tools::$values = array('token' => 'tok123');
+        $controller = new IfirmaTestEndingReceiptController();
+
+        $this->assertSame('429-limit', $this->answer($controller));
+        $this->assertSame(60, $controller->limitRetryAfter, 'the same wait as for the minute cap');
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testARunningBackoffGivesTheCustomerTheSameWaitAsTheCaps()
+    {
+        $this->claimableReceipt();
+        Configuration::updateValue('IFIRMA_RATE_BACKOFF_UNTIL', (string) (time() + 5000));
+        Tools::$values = array('token' => 'tok123');
+        $controller = new IfirmaTestEndingReceiptController();
+
+        $this->assertSame('429-limit', $this->answer($controller));
+        $this->assertSame(60, $controller->limitRetryAfter, 'the end of the back-off is not revealed');
+    }
+
+    public function testTheLimitAnswerRevealsNoCountCapWindowOrIfirmaDetail()
+    {
+        $this->claimableReceipt();
+        $this->atMinuteCap();
+        Tools::$values = array('token' => 'tok123');
+        $controller = new IfirmaTestEndingReceiptController();
+        $this->answer($controller);
+
+        $this->assertSame('Too many requests at the moment. Please try again shortly.', $controller->limitBody);
+        $this->assertDoesNotMatchRegularExpression('/\d/', $controller->limitBody);
+        foreach (array('limit', 'cap', 'minute', 'day', 'iFirma', 'guard', 'back-off', 'backoff') as $word) {
+            $this->assertStringNotContainsStringIgnoringCase($word, $controller->limitBody);
+        }
+    }
+
+    public function testTheLimitRefusalIsLoggedForTheShopOwnerWithoutBeingShown()
+    {
+        $this->claimableReceipt();
+        $this->atMinuteCap();
+        Tools::$values = array('token' => 'tok123');
+        PrestaShopLogger::reset();
+
+        $this->answer(new IfirmaTestEndingReceiptController());
+
+        $this->assertCount(1, PrestaShopLogger::$logs);
+        $this->assertStringContainsString('iFirma front download refused by the request limit', PrestaShopLogger::$logs[0]['message']);
+    }
+
+    public function testAnotherCustomersDocumentAtTheCapIsNotFoundExactlyAsWithoutTheCap()
+    {
+        $this->claimableReceipt(array('id_customer' => 99));
+        Tools::$values = array('token' => 'tok123');
+        $withoutCap = $this->answer(new IfirmaTestEndingReceiptController());
+
+        $this->atMinuteCap();
+        $atCap = $this->answer(new IfirmaTestEndingReceiptController());
+
+        $this->assertSame('404', $withoutCap);
+        $this->assertSame($withoutCap, $atCap);
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testAWrongTokenAtTheCapAnswersAsWithoutTheCap()
+    {
+        $this->claimableReceipt();
+        Tools::$values = array('token' => 'wrong');
+        $withoutCap = $this->answer(new IfirmaTestEndingReceiptController());
+
+        $this->atMinuteCap();
+        $atCap = $this->answer(new IfirmaTestEndingReceiptController());
+
+        $this->assertSame('404', $withoutCap);
+        $this->assertSame($withoutCap, $atCap);
+    }
+
+    public function testADocumentWaitingForKsefAtTheCapIsStillNotFound()
+    {
+        $this->waitingReceipt();
+        $this->atMinuteCap();
+        Tools::$values = array('token' => 'tok123');
+
+        $this->assertSame('404', $this->answer(new IfirmaTestEndingReceiptController()));
+    }
+
+    public function testTheDownloadThrottleStillAnswersBeforeTheLimitIsLookedAt()
+    {
+        $receipt = $this->makeReceipt(array('security_token' => 'tok123', 'last_download_at' => date('Y-m-d H:i:s')));
+        Db::getInstance()->whenGetValue('/WHERE security_token = "tok123"/', (int) $receipt->id);
+        Db::getInstance()->whenExecute('/UPDATE `\w*ifirma_receipt`\s+SET last_download_at/', 0);
+        $this->atMinuteCap();
+        Tools::$values = array('token' => 'tok123');
+        $controller = new IfirmaTestEndingReceiptController();
+
+        $this->assertSame('429', $this->answer($controller), 'the local throttle answer, not the limit answer');
+        $this->assertNull($controller->limitRetryAfter);
+    }
+
+    public function testAnIfirmaErrorAfterASentRequestIsStillTheServerErrorAnswer()
+    {
+        $this->claimableReceipt();
+        $this->t->queue('GET', '#\.pdf#', array('status' => 404, 'body' => '{"response":{"Kod":404,"Informacja":"x"}}'));
+        Tools::$values = array('token' => 'tok123');
+        $controller = new IfirmaTestEndingReceiptController();
+
+        $this->assertSame('502', $this->answer($controller));
+        $this->assertNull($controller->limitRetryAfter);
+    }
+
+    public function testIfirmasOwnLimitAnswerToASentRequestIsStillTheServerErrorAnswer()
+    {
+        $this->claimableReceipt();
+        $this->t->queue('GET', '#\.pdf#', array(
+            'status' => 429,
+            'body' => '{"response":{"Kod":100,"Informacja":"Przekroczono limit zapytan"}}',
+            'headers' => array('Retry-After' => '20'),
+        ));
+        Tools::$values = array('token' => 'tok123');
+
+        $this->assertSame('502', $this->answer(new IfirmaTestEndingReceiptController()));
+        $this->assertCount(1, $this->t->calls);
+    }
+
+    public function testTheLimitAnswerIsSentThroughTheHttpOutput()
+    {
+        $lines = array();
+        IfirmaHttpOutput::useHeaderSink(function ($line) use (&$lines) {
+            $lines[] = $line;
+        });
+        $controller = new class extends IfirmaReceiptModuleFrontController {
+            public function answer($seconds, $message)
+            {
+                $this->sendLimitAnswer($seconds, $message);
+            }
+        };
+        ob_start();
+        ob_start(); // the answer discards the page buffer, so a level of its own comes first
+        $controller->answer(12, 'Try later.');
+        $body = ob_get_clean();
+
+        $this->assertSame('HTTP/1.1 429 Too Many Requests', $lines[0]);
+        $this->assertContains('Retry-After: 12', $lines);
+        $this->assertSame('Try later.', $body);
     }
 }

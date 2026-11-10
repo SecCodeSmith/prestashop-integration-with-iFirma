@@ -13,6 +13,7 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
+require_once dirname(__FILE__) . '/IfirmaHttpStatus.php';
 require_once dirname(__FILE__) . '/IfirmaShopLink.php';
 
 /**
@@ -60,5 +61,28 @@ class IfirmaHttpOutput
         call_user_func(self::$sendHeader, 'Cache-Control: private, must-revalidate');
         call_user_func(self::$sendHeader, 'X-Content-Type-Options: nosniff');
         echo $pdf;
+    }
+
+    /**
+     * Discards the pending output buffer, sends a 429 with the seconds to wait and echoes the message. The caller
+     * ends the request right after it.
+     *
+     * The wait is cast to a whole number of at least one second, so no text can reach a header line; the message is
+     * plain text under nosniff and is never part of a header.
+     *
+     * @param int    $retryAfterSeconds
+     * @param string $message           plain text for the person who was refused
+     */
+    public static function tooManyRequests($retryAfterSeconds, $message)
+    {
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        call_user_func(self::$sendHeader, IfirmaHttpStatus::statusLine(429));
+        call_user_func(self::$sendHeader, 'Retry-After: ' . max(1, (int) $retryAfterSeconds));
+        call_user_func(self::$sendHeader, 'Content-Type: text/plain; charset=utf-8');
+        call_user_func(self::$sendHeader, 'Cache-Control: no-store');
+        call_user_func(self::$sendHeader, 'X-Content-Type-Options: nosniff');
+        echo $message;
     }
 }

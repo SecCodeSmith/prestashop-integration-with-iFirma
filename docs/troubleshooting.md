@@ -165,6 +165,38 @@ The document itself is fine.
 **What to do:** wait a few seconds and reload. If customers hit the limit routinely, look for something that downloads the
 PDF repeatedly, such as a link preview or a script.
 
+### HTTP 429 on a PDF download because of the module's request limit
+
+**Message for the customer:** "Too many requests at the moment. Please try again shortly." The answer is HTTP 429 with a
+`Retry-After` header (the seconds to wait, 1 to 60 for the minute limit, for a customer always 60).
+
+**Message for an employee (back office download):** one of "The PDF was not downloaded: the minute request limit is
+reached. Try again in a moment.", "... the day request limit is reached. Try again later." or "... iFirma asked the module to
+wait before the next request. Try again shortly."
+
+**Meaning:** the module's own request limit ([Rate limits](configuration.md#rate-limits)) or a running back-off refused the
+request before it was sent: no request reached iFirma and no document was changed. It is not an error of the document and
+not the download limit of the customer ([HTTP 429 on the customer's PDF download](#http-429-on-the-customers-pdf-download)).
+The customer is only asked to try again; the exact window and the counters are shown to employees, never to customers. A
+request that was sent and failed at iFirma is still answered with HTTP 502 ("The document is temporarily unavailable.").
+A pause after a rejected key is not a rate limit and keeps its own message ([Calls paused after a rejected key](#calls-paused-after-a-rejected-key)).
+
+**What to do:** wait for the seconds in `Retry-After` and download again. The module does not wait or retry by itself.
+If it happens often, other programs use the same iFirma account or the caps are too low for your traffic: see
+[Rate limited by iFirma](#rate-limited-by-ifirma).
+
+### "The status was not refreshed" on the order panel
+
+**Message:** "The status was not refreshed: the minute request limit is reached. Try again in a moment." (or the day
+limit, or "iFirma asked the module to wait before the next request", or "iFirma reported that its request limit was
+exceeded").
+
+**Meaning:** **Refresh from iFirma** was refused by the request limit, so no list call was made. The stored state, the last
+sync time and the sync error of the document are unchanged and nothing was recorded as an error. The same refusal on the
+customer's order page is silent: the page shows the last known state.
+
+**What to do:** wait a moment and click **Refresh from iFirma** again.
+
 ### Delivery shows "sent" but no e-mail arrived
 
 **Meaning:** the module records a delivery as *sent* when PrestaShop's mailer accepted the message; it does not wait for the recipient's mail server. With `PS_MAIL_METHOD=3` mail is switched off in the shop, and such a delivery still counts as sent.

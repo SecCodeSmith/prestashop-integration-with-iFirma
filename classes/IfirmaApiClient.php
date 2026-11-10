@@ -11,6 +11,7 @@ if (!defined('_PS_VERSION_')) {
 require_once dirname(__FILE__) . '/IfirmaHttpTransport.php';
 require_once dirname(__FILE__) . '/IfirmaRateGuard.php';
 require_once dirname(__FILE__) . '/IfirmaRequestKind.php';
+require_once dirname(__FILE__) . '/IfirmaRetryAfter.php';
 require_once dirname(__FILE__) . '/IfirmaApiUsage.php';
 
 class IfirmaApiClient
@@ -480,6 +481,29 @@ class IfirmaApiClient
     public function rateLimitWindow()
     {
         return $this->rateLimitWindow;
+    }
+
+    /**
+     * @return bool true when the last call was refused before it was sent, by the minute cap, the day cap or a
+     *              running back-off; false for iFirma's own limit answer (that request was sent) and for the
+     *              credentials cool-down (not a rate limit)
+     */
+    public function refusedBeforeSendingByRateLimit()
+    {
+        return $this->rateLimited && $this->rateLimitWindow !== IfirmaRateDecision::WINDOW_SERVER;
+    }
+
+    /**
+     * @return int seconds until the window that refused the last call lets requests pass again, 0 when the last
+     *             call was not refused before it was sent
+     */
+    public function retryAfterSeconds()
+    {
+        if (!$this->refusedBeforeSendingByRateLimit()) {
+            return 0;
+        }
+
+        return IfirmaRetryAfter::seconds($this->rateLimitWindow, $this->now(), $this->rateGuard->backoffUntil());
     }
 
     /**

@@ -14,6 +14,8 @@ require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaHttpOutput.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaHttpStatus.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaPermission.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaReceipt.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaRateDecision.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaRateLimitedException.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaReceiptService.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaAdminActions.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaBulkRunner.php';
@@ -1057,12 +1059,57 @@ class AdminIfirmaController extends ModuleAdminController
         try {
             $service = IfirmaReceiptService::build($this->module);
             $pdf = $service->fetchPdf($receipt, (bool) Tools::getValue('duplicate'));
+        } catch (IfirmaRateLimitedException $e) {
+            $this->refusedByRateLimit($e->getRetryAfterSeconds(), $this->rateLimitedDownloadMessage($e->getWindow()));
+            return;
         } catch (Throwable $e) {
             $this->textResponse(502, $this->downloadFailureMessage($e));
             return;
         }
 
         $this->streamPdf($pdf, $receipt);
+    }
+
+    /**
+     * The employee is told which window refused the download; the customer front never is.
+     *
+     * @param string $window one of the IfirmaRateDecision::WINDOW_* constants
+     * @return string
+     */
+    private function rateLimitedDownloadMessage($window)
+    {
+        if ($window === IfirmaRateDecision::WINDOW_DAY) {
+            return $this->module->l('The PDF was not downloaded: the day request limit is reached. Try again later.', 'adminifirmacontroller');
+        }
+        if ($window === IfirmaRateDecision::WINDOW_BACKOFF) {
+            return $this->module->l('The PDF was not downloaded: iFirma asked the module to wait before the next request. Try again shortly.', 'adminifirmacontroller');
+        }
+
+        return $this->module->l('The PDF was not downloaded: the minute request limit is reached. Try again in a moment.', 'adminifirmacontroller');
+    }
+
+    /**
+     * Answers a 429 with the seconds to wait and ends the request. Overridable so tests can capture the answer;
+     * the caller returns right after the call.
+     *
+     * @codeCoverageIgnore exit ends the request; the tests override this twin, sendLimitAnswer() is tested on its own
+     *
+     * @param int    $retryAfterSeconds
+     * @param string $text
+     */
+    protected function refusedByRateLimit($retryAfterSeconds, $text)
+    {
+        $this->sendLimitAnswer($retryAfterSeconds, $text);
+        exit;
+    }
+
+    /**
+     * @param int    $retryAfterSeconds
+     * @param string $text
+     */
+    protected function sendLimitAnswer($retryAfterSeconds, $text)
+    {
+        IfirmaHttpOutput::tooManyRequests($retryAfterSeconds, $text);
     }
 
     /**

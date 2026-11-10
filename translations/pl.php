@@ -426,6 +426,10 @@ $_MODULE['<{ifirma}prestashop>ifirmaadminactions_3c4ae1b3d1bce8ed0cc3fc218bedd2f
 $_MODULE['<{ifirma}prestashop>ifirmaadminactions_91a4f450a6ebb80ca9edadef616f1d49'] = 'Nie udało się wysłać dokumentu do KSeF.';
 $_MODULE['<{ifirma}prestashop>ifirmaadminactions_8279a8362f6c5762152cadc5a639bc3e'] = 'Odświeżenie z iFirma nie powiodło się: %s';
 $_MODULE['<{ifirma}prestashop>ifirmaadminactions_1732e8155156fef2ec9974f9b4d86d26'] = 'Status odświeżony z iFirma.';
+$_MODULE['<{ifirma}prestashop>ifirmaadminactions_d244492c07949f5ff034385803d3ab5a'] = 'Nie odświeżono statusu: osiągnięto minutowy limit żądań. Spróbuj ponownie za chwilę.';
+$_MODULE['<{ifirma}prestashop>ifirmaadminactions_e673b96a839136d0f1a73260fafeaa51'] = 'Nie odświeżono statusu: osiągnięto dzienny limit żądań. Spróbuj ponownie później.';
+$_MODULE['<{ifirma}prestashop>ifirmaadminactions_c29adf13fd5a5bf466c8edd7fe8ab5ca'] = 'Nie odświeżono statusu: iFirma poprosiła moduł o odczekanie przed kolejnym żądaniem. Spróbuj ponownie wkrótce.';
+$_MODULE['<{ifirma}prestashop>ifirmaadminactions_1d838c4c4dae968f3d75757ffea525cb'] = 'Nie odświeżono statusu: iFirma zgłosiła przekroczenie limitu żądań. Spróbuj ponownie wkrótce.';
 $_MODULE['<{ifirma}prestashop>ifirmareceiptservice_b8c91a014b189e33bc6e825754a3acd8'] = 'Dla tego zamówienia wystawiono już dokument (%s).';
 $_MODULE['<{ifirma}prestashop>ifirmareceiptservice_79344e68e30c44832765d484528c4a74'] = 'iFirma nie odpowiedziała jeszcze na żądanie utworzenia dokumentu.';
 $_MODULE['<{ifirma}prestashop>ifirmareceiptservice_c6f7fdbb1ac50ea83799b7cd244c415a'] = 'Nie można połączyć się z iFirma: %s';
@@ -481,12 +485,16 @@ $_MODULE['<{ifirma}prestashop>adminifirmacontroller_6c702fcd26e77a9e9251b1855036
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_3fff95713d5b3e23e0ab0e657683600b'] = 'Zaznacz co najmniej jeden wiersz.';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_50c2d7ea9c31974b3c1ba842c0200917'] = 'Przetworzono %1$d z %2$d.';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_d760d220c84012e8525622580ca299d3'] = 'Nie znaleziono dokumentu.';
+$_MODULE['<{ifirma}prestashop>adminifirmacontroller_6e3874f64b28f08ef51ee0d2025af68e'] = 'Nie pobrano pliku PDF: osiągnięto dzienny limit żądań. Spróbuj ponownie później.';
+$_MODULE['<{ifirma}prestashop>adminifirmacontroller_9ed573438481e46b9fdf068b7346af2f'] = 'Nie pobrano pliku PDF: iFirma poprosiła moduł o odczekanie przed kolejnym żądaniem. Spróbuj ponownie wkrótce.';
+$_MODULE['<{ifirma}prestashop>adminifirmacontroller_42ced55a70e099686ca37c98b4970bff'] = 'Nie pobrano pliku PDF: osiągnięto minutowy limit żądań. Spróbuj ponownie za chwilę.';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_a7dafa6b31b3a00b7a1ffeae6e4d1e42'] = 'Błąd wewnętrzny; szczegóły są w logu PrestaShop.';
 $_MODULE['<{ifirma}prestashop>guestrequest_90061b39f8ad72129fddb0a53197bf0c'] = 'Jeśli dane pasują do zamówienia, wysłaliśmy kod na jego adres e-mail.';
 $_MODULE['<{ifirma}prestashop>guestrequest_bb8d00cce367a1c9567821ebc8f66c05'] = 'Twój kod weryfikacyjny ze sklepu %s';
 $_MODULE['<{ifirma}prestashop>guestrequest_ae14207abd99dba557cc827d03fca227'] = 'Nieprawidłowy lub wygasły kod. Możesz poprosić o nowy poniżej.';
 $_MODULE['<{ifirma}prestashop>guestrequest_8644ac105927b621fe3dddaf8ba20a44'] = 'Nie udało się zapisać prośby. Spróbuj ponownie.';
 $_MODULE['<{ifirma}prestashop>guestrequest_d3b543f0b004d6cf8590ec0e52588451'] = 'Twoja weryfikacja wygasła lub nie dotyczy tego zamówienia. Zidentyfikuj zamówienie ponownie.';
+$_MODULE['<{ifirma}prestashop>receipt_1d3f00ef54b65dced61ef73f44ade6d6'] = 'W tej chwili jest zbyt wiele żądań. Spróbuj ponownie za chwilę.';
 $_MODULE['<{ifirma}prestashop>receipt_d760d220c84012e8525622580ca299d3'] = 'Nie znaleziono dokumentu.';
 $_MODULE['<{ifirma}prestashop>receipt_8ab423107f309dd2ab3b802ea35cba27'] = 'Poczekaj chwilę przed ponownym pobraniem dokumentu.';
 $_MODULE['<{ifirma}prestashop>receipt_9fce2d0b814ae474132a92c1f1503184'] = 'Dokument jest tymczasowo niedostępny. Spróbuj ponownie później.';

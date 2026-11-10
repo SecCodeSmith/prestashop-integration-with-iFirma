@@ -98,7 +98,7 @@ class IfirmaStatusSyncService
     /**
      * @param string   $date    Y-m-d
      * @param int|null $timeout
-     * @return array rows (array|null), error, rate_limited, calls
+     * @return array rows (array|null), error, rate_limited, rate_limit_window (only when rows is null), calls
      */
     public function fetchRowsForDate($date, $timeout = null)
     {
@@ -120,6 +120,7 @@ class IfirmaStatusSyncService
                     'rows' => null,
                     'error' => (string) $this->client->getLastError(),
                     'rate_limited' => (bool) $this->client->isRateLimited(),
+                    'rate_limit_window' => (string) $this->client->rateLimitWindow(),
                     'calls' => $calls,
                 );
             }
@@ -191,7 +192,7 @@ class IfirmaStatusSyncService
 
     /**
      * Summary keys: checked, updated (rows refreshed, incl. paid/reappeared),
-     * paid (newly paid), missing, errors, calls, rate_limited, error.
+     * paid (newly paid), missing, errors, calls, rate_limited, error; a refused call adds rate_limit_window.
      *
      * @param string          $date
      * @param IfirmaReceipt[] $receipts
@@ -212,6 +213,7 @@ class IfirmaStatusSyncService
             $summary['error'] = $result['error'];
             if ($result['rate_limited']) {
                 $summary['rate_limited'] = 1;
+                $summary['rate_limit_window'] = $result['rate_limit_window'];
 
                 return $summary;
             }
@@ -285,7 +287,8 @@ class IfirmaStatusSyncService
      * Never throws.
      *
      * @param IfirmaReceipt $receipt
-     * @return bool true when a call was made
+     * @return bool true when a call was made and the limit did not refuse it; a refused sync writes nothing, so
+     *              the stored record is still the last known state
      */
     public function opportunisticSync(IfirmaReceipt $receipt)
     {
@@ -295,7 +298,7 @@ class IfirmaStatusSyncService
             }
             $summary = $this->syncReceipt($receipt, self::OPPORTUNISTIC_TIMEOUT);
 
-            return $summary['calls'] > 0;
+            return $summary['calls'] > 0 && !$summary['rate_limited'];
         } catch (Throwable $e) {
             return false;
         }
