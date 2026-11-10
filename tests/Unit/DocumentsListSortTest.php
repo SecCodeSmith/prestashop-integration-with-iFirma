@@ -296,6 +296,16 @@ class DocumentsListSortTest extends TestCase
         $this->assertSame('ASC', $c->direction(null));
     }
 
+    public function testAListWithNoDirectionAnywhereSortsAscending()
+    {
+        $this->storeDirectionInTheCookie(false);
+        $c = $this->controller();
+        $c->_orderWay = '';
+        $c->_defaultOrderWay = '';
+
+        $this->assertSame('ASC', $c->direction(null));
+    }
+
     public function testACookieThatIsNotAStringSortsAscending()
     {
         $this->storeDirectionInTheCookie(array('desc'));
