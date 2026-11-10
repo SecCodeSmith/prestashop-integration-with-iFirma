@@ -424,7 +424,19 @@ class IfirmaApiClient
             return null;
         }
 
-        return array('used' => (int) $node['LimitWykorzystany'], 'granted' => (int) $node['LimitPrzyznany']);
+        return array('used' => self::limitFigure($node['LimitWykorzystany']), 'granted' => self::limitFigure($node['LimitPrzyznany']));
+    }
+
+    /**
+     * A plain digit string becomes an integer; anything else (a float such as 1e30, a sign, text) is handed on as it
+     * came, because a cast would turn it into some other number. The reader of the answer decides what is usable.
+     *
+     * @param mixed $figure
+     * @return mixed
+     */
+    private static function limitFigure($figure)
+    {
+        return is_string($figure) && ctype_digit($figure) ? (int) $figure : $figure;
     }
 
     /**

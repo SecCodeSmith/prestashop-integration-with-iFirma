@@ -33,6 +33,10 @@ class IfirmaRemoteLimit
     /** How long a reading is reused before iFirma is asked again. */
     const REFRESH_SECONDS = 600;
 
+    /** The largest figure of iFirma's limit answer that is believed; a day cap is a few thousand requests. */
+    const MAX_FIGURE = 10000000;
+    const MAX_FIGURE_DIGITS = 8;
+
     /** @var callable returns array('used' => int, 'granted' => int), or null when the limit cannot be read */
     private $fetch;
 
@@ -178,9 +182,9 @@ class IfirmaRemoteLimit
     private function readAndStore($today, $now)
     {
         $answer = call_user_func($this->fetch);
-        $used = is_array($answer) && isset($answer['used']) && is_numeric($answer['used']) ? (int) $answer['used'] : -1;
-        $granted = is_array($answer) && isset($answer['granted']) && is_numeric($answer['granted']) ? (int) $answer['granted'] : 0;
-        if ($used < 0 || $granted <= 0) {
+        $used = is_array($answer) && isset($answer['used']) ? self::figure($answer['used']) : null;
+        $granted = is_array($answer) && isset($answer['granted']) ? self::figure($answer['granted']) : null;
+        if ($used === null || $granted === null || $granted <= 0) {
             return null;
         }
 
@@ -188,6 +192,20 @@ class IfirmaRemoteLimit
         $this->raiseDayCounterTo($today, $used);
 
         return new IfirmaLimitReading($today, $used, $granted, $now);
+    }
+
+    /**
+     * @param mixed $value a figure of iFirma's answer
+     * @return int|null the figure when it is a non-negative whole number (an integer or plain digits) up to MAX_FIGURE;
+     *                  null for anything else: a float, a sign, an exponent, text, a value out of bounds
+     */
+    private static function figure($value)
+    {
+        if (is_string($value) && ctype_digit($value) && strlen($value) <= self::MAX_FIGURE_DIGITS) {
+            $value = (int) $value;
+        }
+
+        return is_int($value) && $value >= 0 && $value <= self::MAX_FIGURE ? $value : null;
     }
 
     /**
