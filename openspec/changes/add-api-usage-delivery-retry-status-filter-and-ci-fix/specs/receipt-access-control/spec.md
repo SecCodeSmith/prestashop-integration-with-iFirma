@@ -75,7 +75,11 @@ Creating a contractor in iFirma from a customer's page SHALL need the same permi
 - **THEN** the action works as before
 
 ### Requirement: State-changing back-office actions need POST
-Every back-office action of the module that changes state in the shop or in iFirma SHALL run only for a POST request: creating or issuing a document, issuing anyway, linking, registering a contractor, updating a status, sending again, sending to KSeF, refreshing, approving or rejecting a data request, linking or unlinking a customer, marking the issue feed as seen, and the bulk runs. A GET request that names such an action SHALL be refused and SHALL change nothing. Read-only actions SHALL keep working with GET.
+Every back-office action of the module that changes state in the shop or in iFirma SHALL run only for a POST request. A GET request that names such an action SHALL be refused and SHALL change nothing. Read-only actions (PDF download, issue feed, customer check, search and remote count) SHALL keep working with GET.
+
+#### Scenario: Which actions change state
+- **WHEN** the module's back-office actions are listed
+- **THEN** these need POST: create receipt, issue anyway, link candidate, register contractor, issue from the list, update status, send again, send to KSeF, refresh, approve request, reject request, link customer, unlink customer, register customer, mark the issue feed as seen, and every bulk run
 
 #### Scenario: GET names a state-changing action
 - **GIVEN** an employee with the manage level and a valid token
