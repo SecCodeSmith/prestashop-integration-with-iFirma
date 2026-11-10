@@ -30,7 +30,7 @@ return array(
     'Not yet sent' => 'Jeszcze nie wysłano',
     'Download receipt (PDF)' => 'Pobierz dokument (PDF)',
     'This document is no longer available. Please contact the shop.' => 'Ten dokument nie jest już dostępny. Skontaktuj się ze sklepem.',
-    'The shop is verifying the accounting document for this order.' => 'Sklep weryfikuje  dla tego zamówienia.',
+    'The shop is verifying the accounting document for this order.' => 'Sklep weryfikuje dokument księgowy dla tego zamówienia.',
     'The document is on hold pending your request to change the billing data.' => 'Dokument jest wstrzymany do czasu rozpatrzenia Twojej prośby o zmianę danych do dokumentu.',
     'Request submitted on' => 'Prośbę złożono dnia',
     'Cancel request' => 'Anuluj prośbę',
