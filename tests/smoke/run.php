@@ -22,6 +22,21 @@ if (PHP_SAPI !== 'cli') {
     exit("This script must be run from the command line.\n");
 }
 
+require_once __DIR__ . '/SmokeSelection.php';
+require_once __DIR__ . '/SmokeCheckFloor.php';
+require_once __DIR__ . '/SmokeOutputMask.php';
+
+// Every scenario name, in run order. The map of scenario bodies further down must hold exactly these keys.
+$smokeScenarioNames = array('J', 'K', 'L', 'M', 'A', 'A2', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'N', 'O', 'P', 'Q', 'R', 'S');
+
+// Decided before the shop is touched: a typo in the selection must not change any shop setting.
+try {
+    $smokeSelection = SmokeSelection::parse((string) getenv('SMOKE_ONLY'), (string) getenv('SMOKE_SKIP'), $smokeScenarioNames);
+} catch (InvalidArgumentException $e) {
+    fwrite(STDERR, $e->getMessage() . "\n");
+    exit(2);
+}
+
 $psRoot = getenv('PS_ROOT') ? rtrim(getenv('PS_ROOT'), '/\\') : dirname(__DIR__, 4);
 if (!is_file($psRoot . '/config/config.inc.php')) {
     fwrite(STDERR, 'PrestaShop not found at ' . $psRoot . " (set PS_ROOT).\n");
@@ -52,9 +67,15 @@ if (!isset($GLOBALS['kernel'])) {
 
 $GLOBALS['smoke'] = array('ok' => 0, 'fail' => 0, 'skip' => 0, 'failures' => array());
 
+$GLOBALS['smokeSecrets'] = array();
+
+// The output is kept as a public CI artifact; keys and tokens are shown by their last four characters only.
 function smokeOut($tag, $label, $detail = '')
 {
-    echo '[' . $tag . '] ' . $label . ($detail !== '' ? ' -- ' . $detail : '') . "\n";
+    echo SmokeOutputMask::mask(
+        '[' . $tag . '] ' . $label . ($detail !== '' ? ' -- ' . $detail : '') . "\n",
+        $GLOBALS['smokeSecrets']
+    );
 }
 
 function assertTrue($cond, $label, $detail = '')
@@ -573,6 +594,7 @@ Configuration::updateValue('PS_ORDER_OUT_OF_STOCK', 1);
 if ((string) Configuration::get('IFIRMA_CRON_TOKEN') === '' && class_exists('IfirmaSchema')) {
     Configuration::updateValue('IFIRMA_CRON_TOKEN', IfirmaSchema::generateCronToken());
 }
+$GLOBALS['smokeSecrets'][] = (string) Configuration::get('IFIRMA_CRON_TOKEN');
 assertTrue($module->isConfigured(), 'module configured for the mock');
 mailCheck();
 
@@ -2685,11 +2707,24 @@ $scenarios = array(
     },
 );
 
-$only = getenv('SMOKE_ONLY') ? strtoupper(getenv('SMOKE_ONLY')) : '';
+if (array_keys($scenarios) !== $smokeScenarioNames) {
+    fwrite(STDERR, 'The scenario map (' . implode(',', array_keys($scenarios)) . ') and $smokeScenarioNames ('
+        . implode(',', $smokeScenarioNames) . ") differ; keep them in sync.\n");
+    exit(2);
+}
+
+section('Scenario selection');
+echo $smokeSelection->describe() . "\n";
+if ($smokeSelection->notSelected() !== array()) {
+    echo 'not selected (a partial run): ' . implode(', ', $smokeSelection->notSelected()) . "\n";
+}
+
+$executedChecks = array();
 foreach ($scenarios as $name => $fn) {
-    if ($only !== '' && strpos($only, $name) === false) {
+    if (!$smokeSelection->runs($name)) {
         continue;
     }
+    $before = $GLOBALS['smoke']['ok'] + $GLOBALS['smoke']['fail'];
     try {
         $fn();
     } catch (Exception $e) {
@@ -2697,6 +2732,33 @@ foreach ($scenarios as $name => $fn) {
     } catch (Throwable $e) {
         assertTrue(false, 'scenario ' . $name . ' ran without error', get_class($e) . ': ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
     }
+    $executedChecks[$name] = $GLOBALS['smoke']['ok'] + $GLOBALS['smoke']['fail'] - $before;
+}
+
+// ---------------------------------------------------------------- check floor
+
+$floorFile = __DIR__ . '/check-floor.json';
+$floorProblems = array();
+if (getenv('SMOKE_WRITE_FLOOR') === '1') {
+    try {
+        $existingFloor = is_file($floorFile) ? SmokeCheckFloor::parse(file_get_contents($floorFile)) : array();
+        file_put_contents($floorFile, SmokeCheckFloor::render($executedChecks, $GLOBALS['smoke']['fail'], $existingFloor));
+        smokeOut('INFO', 'check floor written to tests/smoke/check-floor.json for ' . implode(', ', array_keys($executedChecks)));
+    } catch (RuntimeException $e) {
+        $floorProblems[] = 'check floor: ' . $e->getMessage();
+    }
+} elseif (!is_file($floorFile)) {
+    // Only until the first floor is committed: without the file there is nothing to compare with.
+    smokeOut('WARN', 'check floor: tests/smoke/check-floor.json is missing, the number of executed checks is not verified');
+} else {
+    try {
+        $floorProblems = SmokeCheckFloor::violations($executedChecks, SmokeCheckFloor::parse(file_get_contents($floorFile)), $smokeSelection->selected());
+    } catch (RuntimeException $e) {
+        $floorProblems[] = 'check floor: ' . $e->getMessage();
+    }
+}
+foreach ($floorProblems as $problem) {
+    assertTrue(false, $problem);
 }
 
 // ---------------------------------------------------------------- summary
@@ -2704,7 +2766,8 @@ foreach ($scenarios as $name => $fn) {
 $s = $GLOBALS['smoke'];
 echo "\n=== Summary ===\n";
 echo 'passed ' . $s['ok'] . ', failed ' . $s['fail'] . ', skipped ' . $s['skip'] . "\n";
+echo $smokeSelection->describe() . "\n";
 foreach ($s['failures'] as $label) {
-    echo '  FAILED: ' . $label . "\n";
+    echo SmokeOutputMask::mask('  FAILED: ' . $label, $GLOBALS['smokeSecrets']) . "\n";
 }
 exit($s['fail'] > 0 ? 1 : 0);
