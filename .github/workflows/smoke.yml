@@ -81,6 +81,13 @@ jobs:
           mkdir -p smoke-output
           $COMPOSE exec -T -u www-data -e SMOKE_SKIP=R prestashop \
             php modules/ifirma/tests/smoke/run.php 2>&1 | tee "$SMOKE_OUTPUT"
+      # The Orders-list column, its sort and its state filter go through the shop's own grid, which differs
+      # between PrestaShop versions, so the grid check runs on every version of the matrix too.
+      - name: Orders-list grid check
+        run: |
+          set -o pipefail
+          $COMPOSE exec -T -u www-data prestashop \
+            php modules/ifirma/tests/smoke/order-grid-check.php 2>&1 | tee "smoke-output/grid-${PS_IMAGE_TAG}.txt"
       - name: Job summary
         if: always()
         run: |
@@ -103,6 +110,14 @@ jobs:
               echo "No smoke output was produced; an earlier step failed (see the job log)."
             fi
             echo
+            if [ -f "smoke-output/grid-${PS_IMAGE_TAG}.txt" ]; then
+              echo "Orders-list grid check:"
+              echo
+              echo '```text'
+              grep -E 'FAIL|SUMMARY' "smoke-output/grid-${PS_IMAGE_TAG}.txt" | head -n 40 || true
+              echo '```'
+              echo
+            fi
             echo "Scenario R (burst issuance, 8 to 10 minutes) is skipped on purpose; run it alone with SMOKE_ONLY=R."
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Keep the smoke output
