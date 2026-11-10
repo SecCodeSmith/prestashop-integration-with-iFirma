@@ -383,6 +383,8 @@ $_MODULE['<{ifirma}prestashop>ifirmadeliveryretryview_a74d5664b2656552e6e4764edc
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_50ba6d2a6f0c7d3ae2d503878652c09f'] = 'Dokument nie został jeszcze wystawiony.';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_786e3dc02677d322e4182fca0e2d2c61'] = 'Wysyłka jest wyłączona (kanał: brak)';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_b9558cb395d75ad375e3130f2b8d5d64'] = 'Ten dokument jest właśnie wysyłany. Spróbuj ponownie za chwilę.';
+$_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_66f7b32591e77c6ef6e44636bd4fcddd'] = 'Nie udało się zapisać próby wysyłki, więc nic nie wysłano.';
+$_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_906d6f502763b9d6be708ad68091fe2f'] = 'Próba wysyłki została rozpoczęta, a jej wynik nie został zapisany. Sprawdź, czy klient dostał dokument, zanim wyślesz go ponownie.';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_a971fddd37f9e43b928577b185cece39'] = 'iFirma nie potwierdziła wysłania e-maila';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_3641c76a16e4948031800d0b421d1c86'] = 'Klient nie ma adresu e-mail.';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_466eadd40b3c10580e3ab4e8061161ce'] = 'Faktura';

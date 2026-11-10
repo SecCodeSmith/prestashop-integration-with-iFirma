@@ -19,7 +19,8 @@
  * Contract:
  *  - deliver(receipt, order, options) -> IfirmaDeliveryResult (isSent(), getStatus() sent|failed|skipped|
  *    disabled, getChannel(), getMessage()); options: manual (bool), channel (override).
- *    Never throws; records the outcome on the receipt.
+ *    Never throws; records the outcome on the receipt. Option claim_attempt (the cron jobs): the attempt is counted and
+ *    saved before anything is sent, and nothing is sent when that save fails.
  *  - resend(receipt, order) = deliver() with manual => true.
  *  - sendViaIfirma() / sendViaShopMail() -> array(ok, message), and on a failure the failure class (temporary,
  *    permanent, unknown_outcome, refused) that decides whether the cron tries again: see IfirmaDeliveryRetryPolicy.
@@ -54,6 +55,12 @@ class IfirmaDeliveryService
     const TEXT_MAX = 1000;
     const FAILURE_RETRY_SEPARATOR = ' – ';
     const EXTERNAL_REASON = 'external document - not auto-delivered';
+
+    /** deliver() option: a cron job claims the attempt in the database before it sends anything. */
+    const OPTION_CLAIM_ATTEMPT = 'claim_attempt';
+
+    /** The receipt fields that make up the recorded state of a delivery. */
+    const DELIVERY_STATE_FIELDS = array('delivery_status', 'delivery_channel', 'delivery_error', 'delivered_at', 'delivery_attempts', 'delivery_retry_at');
 
     /** Total PDF download attempts in a shop-mail delivery, and the waits (seconds) between them. */
     const PDF_ATTEMPTS = 3;
@@ -203,6 +210,11 @@ class IfirmaDeliveryService
             return $this->result(true, 'skipped', $channel, self::EXTERNAL_REASON);
         }
 
+        $claimed = !$manual && !empty($options[self::OPTION_CLAIM_ATTEMPT]);
+        if ($claimed && !$this->claimAttempt($receipt, $channel)) {
+            return $this->result(false, 'failed', $channel, $this->module->l('The delivery attempt could not be recorded, so nothing was sent.', 'ifirmadeliveryservice'));
+        }
+
         $effective = $channel;
         try {
             if ($order === null) {
@@ -242,7 +254,7 @@ class IfirmaDeliveryService
             // a failed resend must not open the download of a document KSeF has not accepted: it keeps waiting
             $receipt->delivery_error = $message;
         } else {
-            $this->recordFailure($receipt, $effective, $message, $this->failureClassOf($receipt, $res), $manual);
+            $this->recordFailure($receipt, $effective, $message, $this->failureClassOf($receipt, $res), $manual, $claimed);
         }
         $this->persist($receipt);
 
@@ -258,15 +270,16 @@ class IfirmaDeliveryService
      * @param string        $message
      * @param string        $failure one of the IfirmaDeliveryRetryPolicy::FAILURE_* constants
      * @param bool          $manual
+     * @param bool          $claimed true when the attempt is already counted in the receipt (see claimAttempt())
      */
-    private function recordFailure(IfirmaReceipt $receipt, $channel, $message, $failure, $manual)
+    private function recordFailure(IfirmaReceipt $receipt, $channel, $message, $failure, $manual, $claimed)
     {
         if ($manual) {
             $receipt->recordDelivery(IfirmaReceipt::DELIVERY_FAILED, $channel, $message);
 
             return;
         }
-        $used = $receipt->getDeliveryAttempts();
+        $used = $receipt->getDeliveryAttempts() - ($claimed ? 1 : 0);
         $receipt->recordDelivery(
             IfirmaReceipt::DELIVERY_FAILED,
             $channel,
@@ -350,7 +363,7 @@ class IfirmaDeliveryService
      */
     private function adoptDeliveryState(IfirmaReceipt $target, IfirmaReceipt $stored)
     {
-        foreach (array('delivery_status', 'delivery_channel', 'delivery_error', 'delivered_at', 'delivery_attempts', 'delivery_retry_at') as $field) {
+        foreach (self::DELIVERY_STATE_FIELDS as $field) {
             $target->$field = $stored->$field;
         }
     }
@@ -726,18 +739,54 @@ class IfirmaDeliveryService
     }
 
     /**
+     * Writes the attempt to the database before anything is sent: counts it, clears the due time and says in the error
+     * that the outcome is not recorded yet. A process that dies, or an outcome that cannot be saved, after the e-mail
+     * left then leaves a failed delivery that no job selects again and that needs attention, instead of one the next
+     * run sends a second time. A failure that sent nothing gives the attempt back (see recordFailure()).
+     *
      * @param IfirmaReceipt $receipt
+     * @param string        $channel
+     * @return bool false when the claim could not be saved: nothing may be sent and the receipt is as it was
+     */
+    private function claimAttempt(IfirmaReceipt $receipt, $channel)
+    {
+        $before = array();
+        foreach (self::DELIVERY_STATE_FIELDS as $field) {
+            $before[$field] = $receipt->$field;
+        }
+        $receipt->recordDelivery(
+            IfirmaReceipt::DELIVERY_FAILED,
+            $channel,
+            $this->module->l('A delivery attempt started and its outcome was not recorded. Check whether the customer received the document before sending it again.', 'ifirmadeliveryservice'),
+            $receipt->getDeliveryAttempts() + 1,
+            null
+        );
+        if ($this->persist($receipt)) {
+            return true;
+        }
+        foreach ($before as $field => $value) {
+            $receipt->$field = $value;
+        }
+
+        return false;
+    }
+
+    /**
+     * @param IfirmaReceipt $receipt
+     * @return bool whether the receipt was saved; a failed save is logged and never thrown at the caller
      */
     private function persist(IfirmaReceipt $receipt)
     {
         try {
-            if (!$receipt->save()) {
-                PrestaShopLogger::addLog(sprintf('iFirma: the delivery outcome of order #%d could not be saved', (int) $receipt->id_order), 3);
+            if ($receipt->save()) {
+                return true;
             }
         } catch (Exception $e) {
             // Recording must never break the caller.
-            PrestaShopLogger::addLog(sprintf('iFirma: the delivery outcome of order #%d could not be saved', (int) $receipt->id_order), 3);
         }
+        PrestaShopLogger::addLog(sprintf('iFirma: the delivery outcome of order #%d could not be saved', (int) $receipt->id_order), 3);
+
+        return false;
     }
 
     /**

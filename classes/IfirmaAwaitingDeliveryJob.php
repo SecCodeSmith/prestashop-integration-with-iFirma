@@ -101,7 +101,11 @@ class IfirmaAwaitingDeliveryJob implements IfirmaCronJob
             }
             $order = new Order((int) $record->id_order);
 
-            return $this->delivery->deliver($record, Validate::isLoadedObject($order) ? $order : null)->isSent();
+            return $this->delivery->deliver(
+                $record,
+                Validate::isLoadedObject($order) ? $order : null,
+                array(IfirmaDeliveryService::OPTION_CLAIM_ATTEMPT => true)
+            )->isSent();
         } finally {
             IfirmaNamedLock::release($lock);
         }
