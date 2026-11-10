@@ -109,6 +109,18 @@ programs use the same account: lower `API calls per minute` and `API calls per d
 ([Rate limits](configuration.md#rate-limits)). The exact answer of iFirma's limit is not documented; if a limit answer is not
 recognised (it shows up as a technical problem, `Kod` 100), please report its HTTP status and text.
 
+### What uses my request limit
+
+**Meaning:** iFirma's limit (100 requests a minute, 15,000 a day) is shared by every program that uses the account's API,
+and the module counts every request it sends, status checks and PDF downloads included.
+
+**What to do:** open the **Module requests** box on the settings page. It shows the requests of the current minute and of today
+next to the caps and today's count per kind ([Module requests](configuration.md#module-requests)). A high `status` count
+means the status sync or the documents list ran a lot; a high `pdf` count means many downloads or deliveries. If the day count
+is higher than the kinds add up to, the row **Other clients of the account** shows what other programs used. Click **Check the
+remaining iFirma limit** (needs the `abonent` key) to see what iFirma itself counts; one click costs one request. Then lower
+the caps or the cron frequency ([Rate limits](configuration.md#rate-limits)).
+
 ### A KSeF invoice was not e-mailed to the customer
 
 **Meaning:** an invoice that goes to KSeF (mode `b2b` for a buyer with a NIP, or `all`) is delivered only after KSeF has accepted it. Its delivery state is `awaiting_ksef` and the order panel says "waiting for KSeF acceptance"; the customer's page shows "not yet sent" and no download link.

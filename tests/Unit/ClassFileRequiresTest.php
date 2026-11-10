@@ -84,6 +84,11 @@ class ClassFileRequiresTest extends TestCase
             'the data request auto-accept criteria' => array('IfirmaDataRequestAutoAccept'),
             'the guest code service' => array('IfirmaGuestCodeService'),
             'the request kind' => array('IfirmaRequestKind'),
+            'the limit reading' => array('IfirmaLimitReading'),
+            'the limit check outcome' => array('IfirmaLimitCheck'),
+            'the remote limit presenter' => array('IfirmaRemoteLimitPresenter'),
+            'the API usage presenter' => array('IfirmaApiUsagePresenter'),
+            'the limit check action' => array('IfirmaLimitCheckAction'),
         );
     }
 

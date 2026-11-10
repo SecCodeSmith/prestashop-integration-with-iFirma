@@ -37,6 +37,15 @@ require_once __DIR__ . '/classes/IfirmaPermission.php';
 require_once __DIR__ . '/classes/IfirmaIssueFeed.php';
 require_once __DIR__ . '/classes/IfirmaBulkRunner.php';
 require_once __DIR__ . '/classes/IfirmaHelpLinks.php';
+require_once __DIR__ . '/classes/IfirmaInput.php';
+require_once __DIR__ . '/classes/IfirmaApiUsage.php';
+require_once __DIR__ . '/classes/IfirmaApiUsagePresenter.php';
+require_once __DIR__ . '/classes/IfirmaRemoteLimit.php';
+require_once __DIR__ . '/classes/IfirmaRequestKind.php';
+require_once __DIR__ . '/classes/IfirmaRateDecision.php';
+require_once __DIR__ . '/classes/IfirmaRemoteLimitPresenter.php';
+require_once __DIR__ . '/classes/IfirmaLimitCheck.php';
+require_once __DIR__ . '/classes/IfirmaLimitCheckAction.php';
 
 class Ifirma extends Module
 {
@@ -207,8 +216,11 @@ class Ifirma extends Module
 
         $report = null;
         $errors = array();
+        $limitCheck = null;
         if (Tools::isSubmit('submitIfirmaRegenerateCron')) {
             $output .= $this->regenerateCronToken();
+        } elseif (Tools::isSubmit(IfirmaRemoteLimitPresenter::SUBMIT)) {
+            $limitCheck = $this->checkRemoteLimit();
         } elseif (Tools::isSubmit('submitIfirma')) {
             $output .= $this->postProcessConfiguration();
         } elseif (Tools::isSubmit('submitIfirmaImportContractors')) {
@@ -217,7 +229,9 @@ class Ifirma extends Module
             $output .= $this->resetContractorMap();
         }
 
-        return $this->authBlockBanner() . $this->storedBaseUrlWarning() . $output . $this->renderConfigForm() . $this->renderContractorsPanel($report, $errors) . $this->helpLinks();
+        return $this->authBlockBanner() . $this->storedBaseUrlWarning() . $output
+            . $this->renderLimitBox($limitCheck) . $this->renderUsageBox()
+            . $this->renderConfigForm() . $this->renderContractorsPanel($report, $errors) . $this->helpLinks();
     }
 
     /**
@@ -579,35 +593,125 @@ class Ifirma extends Module
     }
 
     /**
-     * Daily API limit box; nothing (and no request) without the abonent key.
+     * The limit box: the last stored reading and the button that reads a fresh one. Opening the page sends no request.
+     *
+     * @param IfirmaLimitCheck|null $check the outcome of the click that produced this page
+     * @return string HTML
+     */
+    private function renderLimitBox($check)
+    {
+        $token = Tools::getAdminTokenLite('AdminModules');
+        $presenter = new IfirmaRemoteLimitPresenter(
+            $this->remoteLimitLabels(),
+            AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . $token,
+            $token
+        );
+
+        return $this->hasAbonentKey() ? $presenter->render(IfirmaRemoteLimit::stored(), $check) : $presenter->renderWithoutKey();
+    }
+
+    /**
+     * The click on "Check the remaining iFirma limit". PrestaShop checks the back-office token before getContent() runs
+     * (and, on 8.1, the right to configure the module); the check itself still requires a POST, the module's configure
+     * permission (9.1 does not check it for this page) and the abonent key.
+     *
+     * @return IfirmaLimitCheck|null null when the request was not allowed and nothing was asked
+     */
+    private function checkRemoteLimit()
+    {
+        $module = $this;
+        $action = new IfirmaLimitCheckAction(
+            IfirmaRemoteLimit::forClient($this->buildApiClient()),
+            function () use ($module) {
+                return IfirmaInput::isPost() && $module->hasValidAdminToken() && $module->getPermission('configure') && $module->hasAbonentKey();
+            },
+            function ($message) {
+                PrestaShopLogger::addLog($message, IfirmaLimitCheckAction::LOG_ERROR);
+            }
+        );
+
+        return $action->run();
+    }
+
+    /**
+     * @return bool
+     */
+    private function hasValidAdminToken()
+    {
+        // PrestaShop checks the token before getContent() unless tokens in admin URLs are switched off: do not rely on it alone
+        return hash_equals(Tools::getAdminTokenLite('AdminModules'), (string) Tools::getValue('token'));
+    }
+
+    /**
+     * @return bool
+     */
+    private function hasAbonentKey()
+    {
+        return trim((string) Configuration::get('IFIRMA_KEY_ABONENT')) !== '';
+    }
+
+    /**
+     * The "Module requests" box: what the module counted itself, read from the database only.
      *
      * @return string HTML
      */
-    private function renderLimitBox()
+    private function renderUsageBox()
     {
-        if (trim((string) Configuration::get('IFIRMA_KEY_ABONENT')) === '') {
-            return '';
-        }
+        $usage = new IfirmaApiUsage();
 
-        $limit = null;
-        try {
-            $limit = $this->buildApiClient()->getLimit();
-        } catch (Throwable $e) {
-            $limit = null;
-        }
+        return (new IfirmaApiUsagePresenter($this->usageLabels()))->render($usage->windows(), $usage->todayByKind(), $usage->backoffUntil());
+    }
 
-        if (!is_array($limit)) {
-            return '<div class="alert alert-warning">'
-                . $this->esc($this->l('iFirma API limit is currently unavailable.')) . '</div>';
-        }
+    /**
+     * @return array the words of the limit box, as IfirmaRemoteLimitPresenter takes them
+     */
+    private function remoteLimitLabels()
+    {
+        return array(
+            'title' => $this->l('iFirma request limit'),
+            'not_checked' => $this->l('The remaining limit has not been checked yet.'),
+            'reading' => $this->l('Used %1$d of %2$d requests, %3$d remaining (read %4$s).'),
+            'earlier_day' => $this->l('Last reading, from %1$s: used %2$d of %3$d requests. It is not a figure for today.'),
+            'nothing_left' => $this->l('No request is left for today: the module sends no request to iFirma until tomorrow.'),
+            'unavailable' => $this->l('iFirma API limit is currently unavailable.'),
+            'refused' => array(
+                IfirmaRateDecision::WINDOW_MINUTE => $this->l('The limit was not checked because the module reached its limit of requests per minute. Nothing was sent to iFirma.'),
+                IfirmaRateDecision::WINDOW_DAY => $this->l('The limit was not checked because the module reached its limit of requests per day. Nothing was sent to iFirma.'),
+                IfirmaRateDecision::WINDOW_BACKOFF => $this->l('The limit was not checked because iFirma asked the module to wait. Nothing was sent to iFirma.'),
+                IfirmaLimitCheck::WINDOW_AUTH => $this->l('The limit was not checked because iFirma rejected the credentials a moment ago and requests are paused. Nothing was sent to iFirma.'),
+            ),
+            'button' => $this->l('Check the remaining iFirma limit'),
+            'one_request' => $this->l('One click sends one request to iFirma and counts toward the limit.'),
+            'no_key' => $this->l('To read the remaining iFirma limit, enter the abonent API key and save.'),
+        );
+    }
 
-        return '<div class="alert alert-info">'
-            . $this->esc(sprintf(
-                $this->l('iFirma API limit today: %1$d/%2$d'),
-                (int) $limit['used'],
-                (int) $limit['granted']
-            ))
-            . '</div>';
+    /**
+     * @return array the words of the "Module requests" box, as IfirmaApiUsagePresenter takes them
+     */
+    private function usageLabels()
+    {
+        return array(
+            'title' => $this->l('Module requests'),
+            'intro' => $this->l('Requests this module sent to iFirma, counted by the module itself. Opening this page sends none.'),
+            'window_minute' => $this->l('Current minute'),
+            'window_day' => $this->l('Today'),
+            'of' => $this->l('%1$d of %2$d'),
+            'by_kind' => $this->l('Today by kind of request'),
+            'kinds' => array(
+                IfirmaRequestKind::KIND_DOCUMENT => $this->l('Creating documents'),
+                IfirmaRequestKind::KIND_STATUS => $this->l('Status checks (document lists and details)'),
+                IfirmaRequestKind::KIND_PDF => $this->l('PDF downloads'),
+                IfirmaRequestKind::KIND_EMAIL => $this->l('Sending documents by e-mail through iFirma'),
+                IfirmaRequestKind::KIND_KSEF => $this->l('KSeF submissions'),
+                IfirmaRequestKind::KIND_PAYMENT => $this->l('Payments'),
+                IfirmaRequestKind::KIND_CONTRACTOR => $this->l('Contractors'),
+                IfirmaRequestKind::KIND_LIMIT => $this->l('Limit checks'),
+                IfirmaRequestKind::KIND_OTHER => $this->l('Other requests'),
+            ),
+            'other_clients' => $this->l('Other clients of the account (the account count is higher than this module sent)'),
+            'backoff' => $this->l('iFirma asked the module to wait: no request is sent until %s.'),
+        );
     }
 
     /**
@@ -696,18 +800,7 @@ class Ifirma extends Module
             );
         }
 
-        $inputs = array();
-
-        $limitBox = $this->renderLimitBox();
-        if ($limitBox !== '') {
-            $inputs[] = array(
-                'type' => 'html',
-                'name' => 'IFIRMA_API_LIMIT',
-                'html_content' => $limitBox,
-            );
-        }
-
-        $inputs = array_merge($inputs, array(
+        $inputs = array(
             array(
                 'type' => 'text',
                 'label' => $this->l('API base URL'),
@@ -722,7 +815,7 @@ class Ifirma extends Module
                 'required' => true,
             ),
             // never a stored key in the page: the password input is empty and an empty field keeps the key
-        ));
+        );
         $inputs = array_merge(
             $inputs,
             $this->secretInputs(

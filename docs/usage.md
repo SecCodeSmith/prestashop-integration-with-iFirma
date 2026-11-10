@@ -208,6 +208,11 @@ Three ways to sync:
    A run makes at most `IFIRMA_CRON_MAX_CALLS` list calls (default 40); remaining dates
    wait for the next run. It returns a JSON summary (receipts checked, updated, marked
    paid, marked missing, errors, rate limited, calls, orders held by pending data requests).
+   The summary also carries a `usage` block with the module's own requests, read after the jobs:
+   `{"minute": 6, "day": 250, "by_kind": {"document": 2, "status": 200, "pdf": 40, "email": 0, "ksef": 0,
+   "payment": 0, "contractor": 8, "limit": 0, "other": 0}}` - the requests of the current minute, of today and
+   today's count per kind (all nine kinds, zeros included). The block is also there when the run was refused by the
+   limit. See [Module requests](configuration.md#module-requests).
 
 **Rate limits:** see [Rate limits](configuration.md#rate-limits).
 

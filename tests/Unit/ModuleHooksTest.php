@@ -1303,27 +1303,26 @@ class ModuleHooksTest extends TestCase
 
     // ---- API limit box -------------------------------------------------------------------
 
-    public function testLimitBoxShownWhenAbonentKeyIsSet()
+    public function testLimitBoxShowsTheStoredReadingWithItsTimeAndSendsNoRequest()
     {
         Configuration::updateValue('IFIRMA_KEY_ABONENT', str_repeat('2', 64));
-        $this->t->queue('GET', '#abonent/limit\.json#', array('body' => '{"response":{"Kod":0,"LimitWykorzystany":12,"LimitPrzyznany":15000}}'));
+        Configuration::updateValue('IFIRMA_REMOTE_LIMIT', date('Ymd') . ':12:15000:' . mktime(10, 2, 0, 11, 1, 2026));
 
-        $this->module->getContent();
-        $html = $this->formInputNames()['IFIRMA_API_LIMIT']['html_content'];
+        $page = $this->module->getContent();
 
-        $this->assertStringContainsString('iFirma API limit today: 12/15000', $html);
-        $this->assertCount(1, $this->t->calls);
+        $this->assertStringContainsString('Used 12 of 15000 requests, 14988 remaining (read 2026-11-01 10:02).', $page);
+        $this->assertCount(0, $this->t->calls);
     }
 
-    public function testLimitUnavailableNotice()
+    public function testLimitBoxSaysNothingWasCheckedYetWhenNoReadingIsStored()
     {
         Configuration::updateValue('IFIRMA_KEY_ABONENT', str_repeat('2', 64));
 
-        $this->module->getContent();
-        $html = $this->formInputNames()['IFIRMA_API_LIMIT']['html_content'];
+        $page = $this->module->getContent();
 
-        $this->assertStringContainsString('currently unavailable', $html);
-        $this->assertStringNotContainsString('15000', $html);
+        $this->assertStringContainsString('The remaining limit has not been checked yet.', $page);
+        $this->assertStringNotContainsString('15000', $page);
+        $this->assertCount(0, $this->t->calls);
     }
 
     public function testNoLimitBoxAndNoRequestWithoutTheAbonentKey()

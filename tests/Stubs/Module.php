@@ -38,12 +38,15 @@ class Module
     public static $displayed = [];
     /** @var string[] hooks registered via registerHook */
     public static $hooks = [];
+    /** @var string[] module permissions (view, configure, uninstall) the current employee lacks; tests set this */
+    public static $deniedPermissions = [];
 
     public static function reset()
     {
         self::$instances = [];
         self::$displayed = [];
         self::$hooks = [];
+        self::$deniedPermissions = [];
     }
 
     public function __construct($name = null, $context = null)
@@ -62,6 +65,14 @@ class Module
         self::$displayed[] = [$template, Context::getContext()->smarty->vars];
 
         return '<rendered:' . $template . '>';
+    }
+
+    /**
+     * Like Module::getPermission(): only view, configure and uninstall are permissions of a module.
+     */
+    public function getPermission($variable, $employee = null)
+    {
+        return in_array($variable, ['view', 'configure', 'uninstall'], true) && !in_array($variable, self::$deniedPermissions, true);
     }
 
     public function registerHook($hookName, $shopList = null)

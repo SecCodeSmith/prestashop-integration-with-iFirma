@@ -29,7 +29,7 @@ class SettingsGoldenTest extends TestCase
     /** @var array|null the decoded fixture, read once */
     private static $golden;
 
-    /** @var string what getContent() renders when nothing is submitted: the form and the contractors panel */
+    /** @var string what getContent() renders when nothing is submitted: the limit and usage boxes, the form and the contractors panel */
     private $pageWithoutNotice;
 
     protected function setUp(): void
@@ -152,48 +152,6 @@ class SettingsGoldenTest extends TestCase
     }
 
     /**
-     * After a successful save the page is built again from the stored values. With an abonent key it
-     * shows the API limit box, which calls iFirma, and the API rate guard stamps the current minute and
-     * the number of calls in it into IFIRMA_RATE_WINDOW, and the current day into IFIRMA_RATE_DAY_WINDOW.
-     * Those writes belong to the page and not to the settings, and their value is the clock, so they are
-     * expected after the settings as "<minute>:1" and "<day>:1".
-     * That holds for an even-length hex abonent key only: IfirmaApiClient::buildAuthHeader() returns false
-     * for any other key before the guard runs, so that save makes no stamp. A scenario with such a key
-     * sets 'page_writes' in golden.json instead.
-     *
-     * @param array[] $settingWrites the [key, value] calls the save must make
-     * @return array[] the calls the page makes after it
-     */
-    private static function pageWrites(array $settingWrites)
-    {
-        foreach ($settingWrites as $write) {
-            if ($write[0] === 'IFIRMA_KEY_ABONENT' && trim((string) $write[1]) !== '') {
-                return array(array('IFIRMA_RATE_WINDOW', '<minute>:1'), array('IFIRMA_RATE_DAY_WINDOW', '<day>:1'));
-            }
-        }
-
-        return array();
-    }
-
-    /**
-     * @param array[] $writes the [key, value] calls Configuration recorded
-     * @return array[] the same calls with the bucket of the rate rows replaced by "<minute>" and "<day>"
-     */
-    private static function withoutTheClock(array $writes)
-    {
-        foreach ($writes as $position => $write) {
-            if ($write[0] === 'IFIRMA_RATE_WINDOW' && preg_match('/^\d{12}:(\d+)$/', (string) $write[1], $parts)) {
-                $writes[$position][1] = '<minute>:' . $parts[1];
-            }
-            if ($write[0] === 'IFIRMA_RATE_DAY_WINDOW' && preg_match('/^\d{8}:(\d+)$/', (string) $write[1], $parts)) {
-                $writes[$position][1] = '<day>:' . $parts[1];
-            }
-        }
-
-        return $writes;
-    }
-
-    /**
      * @param string $name
      * @return array
      */
@@ -245,11 +203,13 @@ class SettingsGoldenTest extends TestCase
         $page = $this->module->getContent();
 
         $this->assertSame(
-            array_merge($writes, array_key_exists('page_writes', $scenario) ? $scenario['page_writes'] : self::pageWrites($writes)),
-            self::withoutTheClock(Configuration::$writes),
+            array_merge($writes, array_key_exists('page_writes', $scenario) ? $scenario['page_writes'] : array()),
+            Configuration::$writes,
             'Configuration writes'
         );
-        $this->assertSame($scenario['notice'] . $this->pageWithoutNotice, $page, 'page');
+        // the limit box follows the stored abonent key, so a save that changes the key changes the page below the notice
+        Tools::$values = array();
+        $this->assertSame($scenario['notice'] . ($writes === array() ? $this->pageWithoutNotice : $this->module->getContent()), $page, 'page');
         if ($writes === array()) {
             $this->assertSame($storedBefore, Configuration::$values, 'a rejected request stores nothing');
         }

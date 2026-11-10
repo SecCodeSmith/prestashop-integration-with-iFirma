@@ -302,10 +302,11 @@ class ApiClientFactoryTest extends TestCase
         $this->assertClientConfigured($buildApiClient->invoke($module), self::CONFIGURED_BASE);
     }
 
-    public function testTheModuleLimitBoxAsksIfirmaThroughAClientConfiguredFromConfiguration()
+    public function testTheModuleLimitCheckAsksIfirmaThroughAClientConfiguredFromConfiguration()
     {
         $module = IfirmaTestModuleLoader::loadModule();
         $this->t->queue('GET', '#abonent/limit\.json$#', array('body' => '{"response":{"Kod":0,"LimitWykorzystany":12,"LimitPrzyznany":15000}}'));
+        Tools::$values = array('submitIfirmaCheckLimit' => '1', 'token' => 'admin-token-AdminModules');
 
         $module->getContent();
 
@@ -319,11 +320,12 @@ class ApiClientFactoryTest extends TestCase
         );
     }
 
-    public function testTheModuleLimitBoxFallsBackToIfirmaWithoutAConfiguredBaseUrl()
+    public function testTheModuleLimitCheckFallsBackToIfirmaWithoutAConfiguredBaseUrl()
     {
         Configuration::deleteByName('IFIRMA_BASE_URL');
         $module = IfirmaTestModuleLoader::loadModule();
         $this->t->queue('GET', '#abonent/limit\.json$#', array('body' => '{"response":{"Kod":0,"LimitWykorzystany":1,"LimitPrzyznany":2}}'));
+        Tools::$values = array('submitIfirmaCheckLimit' => '1', 'token' => 'admin-token-AdminModules');
 
         $module->getContent();
 
@@ -332,24 +334,20 @@ class ApiClientFactoryTest extends TestCase
     }
 
     /**
-     * The client lets a transport failure through; the limit box must still render.
+     * The client lets a transport failure through; the page must still render with the notice.
      *
      * @dataProvider limitRequestFailures
      */
-    public function testTheModuleLimitBoxReportsAnUnavailableLimitWhenTheRequestThrows($thrown)
+    public function testTheModuleLimitCheckReportsAnUnavailableLimitWhenTheRequestThrows($thrown)
     {
         $module = IfirmaTestModuleLoader::loadModule();
         IfirmaApiClient::setDefaultTransport(new ThrowingLimitTransport($thrown));
+        Tools::$values = array('submitIfirmaCheckLimit' => '1', 'token' => 'admin-token-AdminModules');
 
-        $module->getContent();
+        $page = $module->getContent();
 
-        $limitBox = null;
-        foreach (HelperForm::$lastForm[0]['form']['input'] as $input) {
-            if ($input['name'] === 'IFIRMA_API_LIMIT') {
-                $limitBox = $input['html_content'];
-            }
-        }
-        $this->assertSame('<div class="alert alert-warning">iFirma API limit is currently unavailable.</div>', $limitBox);
+        $this->assertStringContainsString('iFirma API limit is currently unavailable.', $page);
+        $this->assertStringNotContainsString($thrown->getMessage(), $page);
     }
 
     public static function limitRequestFailures()

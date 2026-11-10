@@ -27,7 +27,7 @@ Open the module configuration and fill in:
 - **Payment registration type** – URL token for the payment endpoint
   (default `prz_faktura_kraj`; adjust to your document/payment type).
 - Optionally an **Auto‑create on order status** to issue documents automatically.
-- **API key: abonent** (optional) – shows today's API usage on this page ("used/granted").
+- **API key: abonent** (optional) – lets you read the remaining iFirma request limit of the account with the button **Check the remaining iFirma limit** on this page (see [Checking the remaining limit](#checking-the-remaining-limit)). The page never reads the limit by itself. Without the key the button is replaced by a hint to enter it.
 - **Delivery channel** – *Shop e‑mail with PDF attached* (default), *iFirma e‑mail*
   (available for every created document, since `fakturakraj` is a documented send type) or
   *Do not send*. With the default channel, documents are e‑mailed to customers
@@ -213,7 +213,7 @@ around midnight. A refusal names the window that refused ("... requests in the c
 "... requests today (cap 14000)") and is a transient "rate limited" error, never stored as a document error.
 A request refused by the day window has already used a minute slot; that only makes the guard more conservative.
 Timeouts: 30 s by default, 5 s for
-the customer-page sync. A shop-mail delivery may add up to 10 s of waiting when the PDF is not ready yet. With the optional `abonent` key the used/granted daily limit can be read.
+the customer-page sync. A shop-mail delivery may add up to 10 s of waiting when the PDF is not ready yet. With the optional `abonent` key the remaining daily limit can be read on request (see [Checking the remaining limit](#checking-the-remaining-limit)).
 
 A bulk run of the documents list stops at the first refusal and reports the rest as "not attempted" (see
 [iFirma documents list](usage.md#ifirma-documents-list)). The cURL transport accepts only the HTTP and HTTPS protocols,
@@ -237,3 +237,60 @@ exceed the limit iFirma granted (a smaller grant lowers the cap for that day). A
 extra request is made at most about six times an hour. The cron answer reports it in a `limit` block
 (`used`, `granted`, `remaining`; all `null` without the key or when iFirma does not answer). A failed read changes nothing:
 the module goes on with its local counters.
+
+### Module requests
+
+The settings page has a **Module requests** box above the settings form. It shows what the module itself counted, with or
+without the `abonent` key, and it sends no request to iFirma to do so:
+
+- **Current minute** and **Today**: the requests the module sent in this calendar minute and today, next to the caps
+  (for example "6 of 80" and "250 of 14000").
+- **Today by kind of request**: the same requests split by what they were for. Every kind is listed, with a zero when
+  nothing of that kind was sent today.
+- A notice with the time when a back-off after an iFirma limit answer ends, while one runs: until then the module sends nothing.
+- **Other clients of the account**, when the day count is higher than the kinds add up to. After a reading of the limit
+  the module raises its day counter to what iFirma counts (other programs of the account use the same limit); the
+  difference is shown here.
+
+Every request the module sends is counted once, under exactly one kind, and a request that was refused locally before it
+was sent is not counted. A request that iFirma answered with an error is counted, because it used the limit.
+
+| Kind | What it covers |
+| --- | --- |
+| `document` (Creating documents) | Creating a receipt or an invoice. |
+| `status` (Status checks) | Reading the document list (the status sync, the documents list, the customer page sync) and the detail of one document. Status checks count toward the limit like any request. |
+| `pdf` (PDF downloads) | Downloading a document PDF: the customer download, the back-office download and the PDF a shop-mail delivery attaches (each attempt counts, also when the first answer was "not ready"). |
+| `email` (Sending documents by e-mail through iFirma) | The iFirma e-mail send of a document (delivery channel iFirma e-mail). |
+| `ksef` (KSeF submissions) | Submitting an invoice to KSeF. |
+| `payment` (Payments) | Registering a payment. |
+| `contractor` (Contractors) | Looking up, creating or updating a contractor, and the contractor import. |
+| `limit` (Limit checks) | Reading the day limit: the cron's first step and every click on **Check the remaining iFirma limit**. |
+| `other` (Other requests) | Any request that matches none of the kinds above. |
+
+The counts of one day are kept in `IFIRMA_USAGE_<KIND>` (`<day>:<count>`); they are statistics only and never refuse a request.
+The cron answer carries the same numbers in its `usage` block (see [Cron jobs](#cron-jobs)).
+
+### Checking the remaining limit
+
+With the `abonent` key set, the **iFirma request limit** box shows the last reading of the account's day limit: requests
+used, granted and remaining, and the time of the reading. Opening the page does not read the limit. Before the first reading
+the box says that the limit was not checked yet; a reading from an earlier day is shown with its date and is not presented
+as today's figure; when nothing is left the box says that the module sends no request to iFirma until tomorrow.
+
+The button **Check the remaining iFirma limit** reads a fresh figure. One click sends exactly one request (`GET abonent/limit.json`),
+always a new one even when the cron read the limit a minute ago, and that request counts toward the minute and day limit as kind
+`limit` (five clicks in a minute are five requests, and the minute cap applies to the sixth). The reading is stored and the module's
+day counter is raised to iFirma's figure, never lowered, as the cron does.
+
+When the check cannot be done the box says why and keeps the earlier reading and the counters:
+
+- **Refused by the module's own limit** (the minute or day cap, a running back-off, or the pause after a rejected key): nothing
+  was sent; the box names the limit.
+- **iFirma error, a refused `abonent` key or an unusable answer**: the box says the limit is currently unavailable. The detail is
+  in the PrestaShop log (Advanced Parameters, Logs), never on the page, and no key is shown or logged.
+
+**The module's own count is not the account's count.** The module counts only its own requests. The account's limit is shared
+with every other program that uses the iFirma API, so the figure iFirma reports can be higher than the module's day count until
+a reading raises the counter. The button is a POST of the settings page itself (back-office token) and is accepted only from an
+employee who may configure the module; a request that is not a POST, has no key to use or comes from an employee without
+that right sends nothing.

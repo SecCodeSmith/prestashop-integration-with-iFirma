@@ -100,3 +100,12 @@ New settings (all editable on the settings page except the two internal counters
 **Behaviour change in KSeF modes `b2b` and `all`: delivery after acceptance.** An invoice that goes to KSeF is no longer e-mailed to the customer at issuance. Its delivery state is `awaiting_ksef`, the customer's order page shows no download link, and the cron delivers it after KSeF accepted it (**Send again** delivers at once). Receipts, invoices to private buyers in `b2b` mode and every document in mode `off` are delivered at issuance as before. Check that the cron endpoint is called regularly before you upgrade, or B2B invoices are not delivered. See [KSeF](usage.md#ksef-e-invoicing).
 
 **Downgrading.** The extra configuration keys are harmless in 1.7.0. A record in the state `queued` or with the delivery state `awaiting_ksef` is unknown to the older version: before a downgrade, issue the queued orders (bulk **Retry issuance**) and deliver the waiting documents (**Send again**).
+
+## Upgrading to 1.10.0
+
+**The limit box shows the last reading until you click.** The iFirma request limit box on the settings page no longer reads the limit
+from iFirma every time the page is opened (that was one request per view). It shows the last stored reading with its time (the
+cron refreshes it when the `abonent` key is set) and a button, **Check the remaining iFirma limit**, that reads a fresh figure on request. The
+new **Module requests** box shows the module's own requests per kind; its counters start at zero after the upgrade. See
+[Module requests](configuration.md#module-requests).
+
