@@ -82,13 +82,17 @@ rejects the credentials.
 
 ### "Not attempted (rate limited)" in a bulk summary
 
-**Meaning:** during a bulk run the module's per-minute rate guard refused a request (the default cap is 80 requests a
-minute, see [Rate limits](configuration.md#rate-limits)). The run stopped there. The records it did not reach keep their
-previous state and are not errors. The records already handled keep their outcome.
+**Meaning:** during a bulk run the module's rate guard refused a request: the per-minute cap (default 80 requests a
+minute), the per-day cap (default 14,000 requests a day) or a running back-off after iFirma's own limit answer (see
+[Rate limits](configuration.md#rate-limits)). The run stopped there. In an issue or retry run, the order whose request was
+refused is queued and the cron issues it later; the records the run did not reach keep their previous state and are not
+errors. The records already handled keep their outcome.
 
-**What to do:** wait a minute, select the records that were not attempted in the [documents list](usage.md#ifirma-documents-list)
-and run the action again. The cap is shared with every other client of the same iFirma account, so a busy account may need
-the bulk runs at quiet times.
+**What to do:** read the hint at the end of the message. `Run it again in a minute.` is shown for the minute cap and for a
+back-off; `Run it again tomorrow.` is shown when the day cap was reached. Then select the records that were not attempted in
+the [documents list](usage.md#ifirma-documents-list) and run the action again; queued orders need no new click, because the
+cron issues them. The cap is shared with every other client of the same iFirma account, so a busy account may need the
+bulk runs at quiet times.
 
 ### Rate limited by iFirma
 

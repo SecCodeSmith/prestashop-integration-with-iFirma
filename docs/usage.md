@@ -165,13 +165,15 @@ has used 20 seconds, and the records left over go into the next request. Nothing
 
 The run stops in one of two cases:
 
-- the module's per-minute rate guard refuses a request (see [Rate limits](configuration.md#rate-limits));
+- the module's rate guard refuses a request: the per-minute cap, the per-day cap, or a running back-off after iFirma's
+  own limit answer (see [Rate limits](configuration.md#rate-limits));
 - iFirma rejected the credentials, so the 15-minute pause applies (see [Troubleshooting](troubleshooting.md)).
 
 The records that were not yet attempted are then reported as **Not attempted**, with the message
-`not attempted (rate limited)` or `not attempted (credentials rejected)`, and the run asks you to run it again
-in a minute in the first case. Records already handled keep their outcome, and the records that were not reached
-keep their previous state.
+`not attempted (rate limited)` or `not attempted (credentials rejected)`. In the first case the message ends with the
+hint `Run it again tomorrow.` when the day cap was reached and with `Run it again in a minute.` otherwise (the minute
+cap or a back-off). In an issue or retry run the order whose request was refused is queued, so the cron issues it
+later. Records already handled keep their outcome, and the records that were not reached keep their previous state.
 
 **Summary.** When the run ends, a dialog lists every selected record with its order or ID, its outcome and its
 message, and shows the totals per outcome. The outcomes are Issued, Adopted (the guard found the existing

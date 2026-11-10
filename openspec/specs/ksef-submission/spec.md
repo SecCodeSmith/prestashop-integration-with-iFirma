@@ -33,7 +33,7 @@ The issuing pipeline SHALL run a `ksef` step between the `number` and `deliver` 
 #### Scenario: Private buyer is skipped in B2B mode
 - **WHEN** an invoice is issued, the mode is `b2b` and the buyer has no NIP
 - **THEN** no submission call is made
-- **AND** the step is recorded as skipped with the reason "private buyer"
+- **AND** the step is recorded as skipped with the reason "private buyer (B2B mode)"
 
 #### Scenario: Submission failure is non-blocking
 - **WHEN** an invoice is issued and the KSeF submission fails
@@ -50,11 +50,11 @@ The issuing pipeline SHALL run a `ksef` step between the `number` and `deliver` 
 #### Scenario: Unsupported type is skipped
 - **WHEN** the document type does not support the KSeF send endpoint
 - **THEN** no submission call is made
-- **AND** the step is recorded as skipped with the reason "unsupported type"
+- **AND** the step is recorded as skipped with the reason "type not supported"
 
 #### Scenario: Mode off at issuance
 - **WHEN** an invoice is issued and the mode is `off`
-- **THEN** the step is recorded as skipped with the reason "disabled"
+- **THEN** the step is recorded as skipped with the reason "KSeF disabled"
 
 #### Scenario: Already sent by iFirma
 - **WHEN** an invoice for a buyer with a NIP is issued, the submitter is `module`, and iFirma already reports `KsefStatus` `WYSLANA` for it
