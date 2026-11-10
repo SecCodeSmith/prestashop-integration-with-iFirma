@@ -369,4 +369,26 @@ class IssueQueueJobTest extends TestCase
         $this->assertSame(array('handled' => 0, 'succeeded' => 0, 'failed' => 0, 'left' => 1), $report->block());
         $this->assertSame(array(), $this->t->calls);
     }
+
+    public function testTheQueueJobStartsNoOrderOnceTheTimeBudgetIsUsedUp()
+    {
+        $this->queued(90, 1);
+        $this->queued(91, 2);
+        $this->scriptIssuance(90, 910);
+        $this->scriptIssuance(91, 911);
+        $now = mktime(10, 0, 0, 11, 1, 2026);
+        $context = new IfirmaCronContext(10, function () use (&$now) {
+            return $now;
+        }, 45);
+        $stepping = new IfirmaIssueQueueJob($this->pipeline, function () use (&$now) {
+            $now += 50;
+
+            return false;
+        });
+
+        $report = $stepping->run($context);
+
+        $this->assertSame(1, $report->block()['handled'], 'the second order did not start');
+        $this->assertSame(1, $report->block()['left']);
+    }
 }

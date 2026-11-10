@@ -69,6 +69,9 @@ class IfirmaDeliveryRetryJob implements IfirmaCronJob
         $failed = 0;
         $window = IfirmaRateDecision::WINDOW_NONE;
         foreach (IfirmaReceipt::findDeliveriesDueForRetry($context->getMaxItems(), $startedAt) as $record) {
+            if (!$context->allowsAnotherItem()) {
+                break;
+            }
             $window = $guard->blockedBy();
             if ($window !== IfirmaRateDecision::WINDOW_NONE || $this->credentialsPaused()) {
                 break;
@@ -127,7 +130,10 @@ class IfirmaDeliveryRetryJob implements IfirmaCronJob
             return $this->delivery->deliver(
                 $record,
                 Validate::isLoadedObject($order) ? $order : null,
-                array(IfirmaDeliveryService::OPTION_CLAIM_ATTEMPT => true)
+                array(
+                    IfirmaDeliveryService::OPTION_CLAIM_ATTEMPT => true,
+                    IfirmaDeliveryService::OPTION_SINGLE_PDF_ATTEMPT => true,
+                )
             )->isSent();
         } finally {
             IfirmaNamedLock::release($lock);

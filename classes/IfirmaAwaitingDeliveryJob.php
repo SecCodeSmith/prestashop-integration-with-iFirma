@@ -59,6 +59,9 @@ class IfirmaAwaitingDeliveryJob implements IfirmaCronJob
         $failed = 0;
         $window = IfirmaRateDecision::WINDOW_NONE;
         foreach (IfirmaReceipt::findAwaitingDelivery($context->getMaxItems()) as $record) {
+            if (!$context->allowsAnotherItem()) {
+                break;
+            }
             $window = $guard->blockedBy();
             if ($window !== IfirmaRateDecision::WINDOW_NONE) {
                 break;

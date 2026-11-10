@@ -20,7 +20,8 @@
  *  - deliver(receipt, order, options) -> IfirmaDeliveryResult (isSent(), getStatus() sent|failed|skipped|
  *    disabled, getChannel(), getMessage()); options: manual (bool), channel (override).
  *    Never throws; records the outcome on the receipt. Option claim_attempt (the cron jobs): the attempt is counted and
- *    saved before anything is sent, and nothing is sent when that save fails.
+ *    saved before anything is sent, and nothing is sent when that save fails. Option single_pdf_attempt (the retry job):
+ *    one PDF download and no waits, so a slow iFirma cannot hold a cron run.
  *  - resend(receipt, order) = deliver() with manual => true.
  *  - sendViaIfirma() / sendViaShopMail() -> array(ok, message), and on a failure the failure class (temporary,
  *    permanent, unknown_outcome, refused) that decides whether the cron tries again: see IfirmaDeliveryRetryPolicy.
@@ -58,6 +59,9 @@ class IfirmaDeliveryService
 
     /** deliver() option: a cron job claims the attempt in the database before it sends anything. */
     const OPTION_CLAIM_ATTEMPT = 'claim_attempt';
+
+    /** deliver() option: download the PDF once and never sleep for it; a PDF that is not ready is a temporary failure. */
+    const OPTION_SINGLE_PDF_ATTEMPT = 'single_pdf_attempt';
 
     /** The receipt fields that make up the recorded state of a delivery. */
     const DELIVERY_STATE_FIELDS = array('delivery_status', 'delivery_channel', 'delivery_error', 'delivered_at', 'delivery_attempts', 'delivery_retry_at');
@@ -227,7 +231,7 @@ class IfirmaDeliveryService
                 if ($channel === self::CHANNEL_IFIRMA_MAIL) {
                     $effective = self::CHANNEL_SHOP_MAIL_FALLBACK;
                 }
-                $res = $this->sendViaShopMail($receipt, $order);
+                $res = $this->sendViaShopMail($receipt, $order, !empty($options[self::OPTION_SINGLE_PDF_ATTEMPT]));
             }
         } catch (Exception $e) {
             $res = $this->failed($e->getMessage(), IfirmaDeliveryRetryPolicy::FAILURE_TEMPORARY);
@@ -458,12 +462,13 @@ class IfirmaDeliveryService
      *
      * @param IfirmaReceipt $receipt
      * @param Order         $order
+     * @param bool          $singlePdfAttempt download the PDF once, without the waits between attempts
      * @return array array('ok' => bool, 'message' => string)
      */
-    public function sendViaShopMail(IfirmaReceipt $receipt, Order $order)
+    public function sendViaShopMail(IfirmaReceipt $receipt, Order $order, $singlePdfAttempt = false)
     {
         try {
-            $pdf = $this->fetchPdfWithRetry($receipt);
+            $pdf = $singlePdfAttempt ? $this->service->fetchPdf($receipt) : $this->fetchPdfWithRetry($receipt);
         } catch (Exception $e) {
             return $this->failed($e->getMessage(), $this->clientFailureClass(false));
         }

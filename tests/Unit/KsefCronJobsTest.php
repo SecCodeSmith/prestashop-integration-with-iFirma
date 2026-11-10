@@ -440,4 +440,25 @@ class KsefCronJobsTest extends TestCase
         $this->assertSame(array(), $this->posts());
         $this->assertSame(array('handled' => 1, 'succeeded' => 0, 'failed' => 1, 'left' => 0), $report->block());
     }
+
+    public function testTheKsefJobStartsNoSubmissionOnceTheTimeBudgetIsUsedUp()
+    {
+        $this->invoice(80, 1);
+        $this->invoice(81, 2);
+        $now = mktime(10, 15, 20, 11, 1, 2026);
+        $this->t->queue('GET', '#fakturakraj/\d+\.json#', function () use (&$now) {
+            $now += 50;
+
+            return array('body' => json_encode(array('response' => array('Kod' => 0, 'KsefStatus' => '', 'KsefNumer' => ''))));
+        });
+        $this->t->queue('POST', '#ksef/send/\d+\.json#', array('body' => '{"response":{"Kod":0,"Informacja":"ok"}}'));
+        $context = new IfirmaCronContext(10, function () use (&$now) {
+            return $now;
+        }, 45);
+
+        $report = $this->ksefJob()->run($context);
+
+        $this->assertCount(1, $this->posts(), 'the second submission did not start');
+        $this->assertSame(array('handled' => 1, 'succeeded' => 1, 'failed' => 0, 'left' => 1), $report->block());
+    }
 }

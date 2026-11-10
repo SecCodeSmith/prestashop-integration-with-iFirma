@@ -83,7 +83,8 @@ class IfirmaCronRunner
     /**
      * @return array the cron answer: the status sync summary at the top level, a block per other job,
      *               rate_limited (0 or 1), rate_limited_window and the usage block (the module's requests of the
-     *               current minute and day and the day's count per kind); or array('skipped' => ...) when another run
+     *               current minute and day and the day's count per kind) and time_budget_exhausted (0 or 1: the run
+     *               stopped starting records because its time budget was used up); or array('skipped' => ...) when another run
      *               is busy
      */
     public function run()
@@ -109,7 +110,7 @@ class IfirmaCronRunner
         $limited = false;
 
         foreach ($this->jobs as $job) {
-            $report = $limited ? $job->skip($context) : $job->run($context);
+            $report = ($limited || !$context->allowsAnotherItem()) ? $job->skip($context) : $job->run($context);
             if ($report->topLevel() !== null) {
                 $summary = array_merge($summary, $report->topLevel());
             } else {
@@ -123,6 +124,7 @@ class IfirmaCronRunner
 
         $summary['rate_limited'] = max(isset($summary['rate_limited']) ? (int) $summary['rate_limited'] : 0, $limited ? 1 : 0);
         $summary['rate_limited_window'] = $window;
+        $summary['time_budget_exhausted'] = $context->timeBudgetWasUsedUp() ? 1 : 0;
         $summary['usage'] = $this->usage->summary();
 
         return $summary;

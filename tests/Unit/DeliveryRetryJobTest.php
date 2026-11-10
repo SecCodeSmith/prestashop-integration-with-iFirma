@@ -537,4 +537,111 @@ class DeliveryRetryJobTest extends TestCase
         $this->assertSame('sent', $this->row($id)['delivery_status']);
         $this->assertSame(1, $report->block()['succeeded']);
     }
+
+    private function steppingContext($budget)
+    {
+        return new IfirmaCronContext(10, function () {
+            return $this->now;
+        }, $budget);
+    }
+
+    /** The PDF download of the first delivery takes the given seconds of the run. */
+    private function pdfThatTakes($seconds, $times)
+    {
+        for ($i = 0; $i < $times; $i++) {
+            $this->t->queue('GET', '#\.pdf#', function () use ($seconds) {
+                $this->now += $seconds;
+
+                return array('body' => self::PDF);
+            });
+        }
+    }
+
+    public function testTheRetryJobStartsNoRecordOnceTheTimeBudgetIsUsedUpAndReportsTheRestAsLeft()
+    {
+        $first = $this->failed(130, 1, $this->dueIn(-300));
+        $second = $this->failed(131, 1, $this->dueIn(-200));
+        $third = $this->failed(132, 1, $this->dueIn(-100));
+        $this->pdfThatTakes(40, 3);
+        $context = $this->steppingContext(60);
+
+        $report = $this->job()->run($context);
+
+        $this->assertSame('sent', $this->row($first)['delivery_status']);
+        $this->assertSame('sent', $this->row($second)['delivery_status'], 'a record that started inside the budget is finished');
+        $this->assertSame('failed', $this->row($third)['delivery_status']);
+        $this->assertSame(1, $this->row($third)['delivery_attempts']);
+        $this->assertTrue($context->timeBudgetWasUsedUp());
+        $this->assertSame(array('handled' => 2, 'succeeded' => 2, 'failed' => 0, 'left' => 1), $report->block());
+    }
+
+    public function testTheAwaitingDeliveryJobStartsNoRecordOnceTheTimeBudgetIsUsedUp()
+    {
+        foreach (array(140, 141) as $idOrder) {
+            $this->order($idOrder);
+            $r = new IfirmaReceipt();
+            $r->id_order = $idOrder;
+            $r->id_customer = 5;
+            $r->document_type = 'fakturakraj';
+            $r->ifirma_id = (string) (800 + $idOrder);
+            $r->ifirma_number = $idOrder . '/2026';
+            $r->status = 'created';
+            $r->source = 'module';
+            $r->security_token = 'tok' . $idOrder;
+            $r->delivery_status = 'awaiting_ksef';
+            $r->ksef_number = '5260001122-20261101-ABC-01';
+            $r->date_add = '2026-11-01 09:00:00';
+            $r->save(false, false);
+        }
+        IfirmaTestState::clearWrites();
+        Db::getInstance()->whenGetValue("/FROM `ps_ifirma_receipt` WHERE delivery_status = 'awaiting_ksef' AND \(ksef_number != /", 1);
+        $this->pdfThatTakes(50, 2);
+
+        $report = (new IfirmaAwaitingDeliveryJob($this->delivery))->run($this->steppingContext(45));
+
+        $this->assertCount(1, Mail::$sent);
+        $this->assertSame(array('handled' => 1, 'succeeded' => 1, 'failed' => 0, 'left' => 1), $report->block());
+    }
+
+    public function testAJobInsideItsTimeBudgetHandlesEveryRecord()
+    {
+        $this->failed(150, 1, $this->dueIn(-200));
+        $this->failed(151, 1, $this->dueIn(-100));
+        $this->pdfThatTakes(5, 2);
+
+        $report = $this->job()->run($this->steppingContext(45));
+
+        $this->assertSame(array('handled' => 2, 'succeeded' => 2, 'failed' => 0, 'left' => 0), $report->block());
+    }
+
+    public function testTheRetryJobDownloadsThePdfOnceAndNeverSleepsBetweenAttempts()
+    {
+        $waits = array();
+        $module = new Module();
+        $delivery = new IfirmaDeliveryService(
+            $this->client,
+            new IfirmaReceiptService($this->client, $module),
+            $module,
+            function () {
+                return $this->now;
+            },
+            function ($seconds) use (&$waits) {
+                $waits[] = $seconds;
+            }
+        );
+        $id = $this->failed(160, 1, $this->dueIn(-60));
+        $this->t->queue('GET', '#\.pdf#', array('status' => 404, 'body' => ''));
+        $this->t->queue('GET', '#\.pdf#', array('body' => self::PDF));
+
+        $report = (new IfirmaDeliveryRetryJob($delivery))->run($this->context());
+
+        $this->assertSame(array(), $waits);
+        $this->assertCount(1, $this->t->calls, 'one download per retry; the next retry is the second chance');
+        $this->assertCount(0, Mail::$sent);
+        $row = $this->row($id);
+        $this->assertSame('failed', $row['delivery_status']);
+        $this->assertSame(2, $row['delivery_attempts']);
+        $this->assertSame($this->dueIn(7200), $row['delivery_retry_at']);
+        $this->assertSame(1, $report->block()['failed']);
+    }
 }

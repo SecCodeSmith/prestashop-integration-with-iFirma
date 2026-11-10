@@ -195,13 +195,21 @@ The answer keeps the keys of the status sync at its top level, unchanged (`recei
   "ksef":     {"handled": 0, "succeeded": 0, "failed": 0, "left": 0},
   "delivery": {"handled": 1, "succeeded": 1, "failed": 0, "left": 0},
   "rate_limited": 0,
-  "rate_limited_window": ""
+  "rate_limited_window": "",
+  "time_budget_exhausted": 0
 }
 ```
 
 `handled` counts the items the job tried, `left` what still waits. `rate_limited` is 1 when the rate limit stopped the run
 (the sync's own count, when it was the one, is kept), and `rate_limited_window` then says which window: `minute`, `day` or
 `backoff`. A job that did not run because an earlier one was rate limited reports zeros and its `left`.
+
+**Time budget.** A run has a fixed budget of 45 seconds (no setting). A job checks it before it starts each record and stops
+when it is used up; a record that has started is always finished, so a slow mail server or iFirma can delay a run by one
+record, not by the whole item cap. The records not started are reported as `left`, the later jobs only report what is
+left, and `time_budget_exhausted` is 1. The next run goes on. The delivery retry downloads the PDF once per attempt and does
+not wait between attempts (a PDF that is not ready is a temporary failure and comes back on the retry schedule); the
+delivery at issuance keeps its three downloads with the waits.
 
 ### The cron endpoint and the delivery retry
 
