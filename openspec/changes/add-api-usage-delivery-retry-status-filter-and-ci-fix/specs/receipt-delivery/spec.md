@@ -134,3 +134,30 @@ The order panel and the Orders-list tooltip SHALL show, for a failed delivery, h
 #### Scenario: Markup in the error
 - **WHEN** the stored delivery error contains `<script>alert(1)</script>`
 - **THEN** it is shown as text and the browser executes nothing
+
+### Requirement: A manual resend right after a delivery is refused
+A manual **Send again** of a document whose delivery was recorded as sent less than 30 seconds earlier SHALL send nothing and SHALL tell the employee that the document was just sent. The same SHALL hold for each document of a bulk resend. After 30 seconds a manual resend SHALL work as before.
+
+#### Scenario: Double click
+- **GIVEN** an employee sent a document again and the e-mail went out
+- **WHEN** the same action arrives again 2 seconds later
+- **THEN** no second e-mail is sent and the answer says the document was sent a moment ago
+
+#### Scenario: Cron just delivered
+- **GIVEN** the cron delivered a document 5 seconds ago
+- **WHEN** an employee clicks **Send again** for it
+- **THEN** no second e-mail is sent
+
+#### Scenario: Repeated bulk run
+- **GIVEN** a bulk resend delivered three documents
+- **WHEN** the same bulk run is started again within 30 seconds
+- **THEN** none of the three is e-mailed again and the summary reports them as just sent
+
+#### Scenario: Later resend
+- **WHEN** an employee sends the document again one minute after the last delivery
+- **THEN** the customer is e-mailed as before
+
+#### Scenario: Failed delivery can be resent at once
+- **GIVEN** the last delivery of a document failed 2 seconds ago
+- **WHEN** an employee clicks **Send again**
+- **THEN** the delivery is attempted

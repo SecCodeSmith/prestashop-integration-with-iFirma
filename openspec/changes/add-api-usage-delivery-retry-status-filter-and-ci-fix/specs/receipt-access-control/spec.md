@@ -57,3 +57,61 @@ Every action of the configuration page that changes state (saving settings, rege
 #### Scenario: Valid request
 - **WHEN** an employee who may configure the module posts the settings form from the page
 - **THEN** the settings are saved as before
+
+### Requirement: Registering a customer's contractor needs the issue level
+Creating a contractor in iFirma from a customer's page SHALL need the same permission as creating it from an order: the module's issue level, in addition to the right to edit customers. The view level SHALL NOT be enough.
+
+#### Scenario: View level only
+- **GIVEN** an employee with the module's view level and the right to edit customers, without the issue level
+- **WHEN** the employee triggers "Register" on a customer's page
+- **THEN** the action is refused with the permission message and no request is sent to iFirma
+
+#### Scenario: Issue level
+- **WHEN** an employee with the issue level and the right to edit customers triggers "Register"
+- **THEN** the contractor is registered as before
+
+#### Scenario: Read-only customer actions unchanged
+- **WHEN** an employee with the view level checks or searches a customer's contractor
+- **THEN** the action works as before
+
+### Requirement: State-changing back-office actions need POST
+Every back-office action of the module that changes state in the shop or in iFirma SHALL run only for a POST request: creating or issuing a document, issuing anyway, linking, registering a contractor, updating a status, sending again, sending to KSeF, refreshing, approving or rejecting a data request, linking or unlinking a customer, marking the issue feed as seen, and the bulk runs. A GET request that names such an action SHALL be refused and SHALL change nothing. Read-only actions SHALL keep working with GET.
+
+#### Scenario: GET names a state-changing action
+- **GIVEN** an employee with the manage level and a valid token
+- **WHEN** a GET request names the "send again" action for an order
+- **THEN** the answer is a refusal, no e-mail is sent and the record is unchanged
+
+#### Scenario: GET cannot issue a document
+- **WHEN** a GET request names the "create receipt" action with a valid token
+- **THEN** no document is issued and no request is sent to iFirma
+
+#### Scenario: POST works as before
+- **WHEN** the module's own back-office pages post the same actions
+- **THEN** they run as before
+
+#### Scenario: Read-only action over GET
+- **WHEN** an employee with the view level opens the PDF download link
+- **THEN** the PDF is returned as before
+
+#### Scenario: Bulk run over GET
+- **WHEN** a GET request names a bulk action of the Documents list
+- **THEN** nothing is retried, sent or refreshed
+
+### Requirement: Employee PDF downloads have their own request budget
+All back-office PDF downloads together SHALL use at most 30 iFirma requests per calendar minute. A download beyond that SHALL be answered with HTTP 429, a `Retry-After` header and a message that says the download limit of the back office is reached, and SHALL send no request. The budget SHALL NOT refuse issuing documents, status sync or the cron.
+
+#### Scenario: Budget used up
+- **GIVEN** 30 back-office PDF downloads were sent in the current minute
+- **WHEN** an employee with the view level downloads another PDF
+- **THEN** the answer is HTTP 429 with a `Retry-After` header and no request is sent
+
+#### Scenario: Issuance not affected
+- **GIVEN** the back-office download budget is used up
+- **WHEN** an order reaches the trigger status
+- **THEN** its document is issued
+
+#### Scenario: Access check first
+- **GIVEN** the budget is used up
+- **WHEN** an employee without the view level requests a PDF
+- **THEN** the answer is the access-denied answer, not 429
