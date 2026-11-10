@@ -165,7 +165,7 @@ may open and save the settings and does not give any of the three levels.
 
 The module checks this permission itself on every PrestaShop version, because PrestaShop 9.1 opens the settings page for an employee who may only view the Module Manager. An employee without it sees a notice instead of the page (no setting, key hint, cron address or token). Every action of the page (save, regenerate the cron token, check the limit, import or reset the contractors) also needs a POST with the employee's back-office token; the page's own buttons send it.
 
-Link, Unlink and Register on the customer page need, on top of View, the Edit permission on **Customers**.
+Link, Unlink and Register on the customer page need, on top of View, the Edit permission on **Customers**. Register also needs the Issue level (it creates a contractor in iFirma, like Register contractor on the order page); an employee without it sees the reason instead of the button.
 
 ## Cron jobs
 

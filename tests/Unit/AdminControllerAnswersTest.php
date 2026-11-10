@@ -139,7 +139,7 @@ class AdminControllerAnswersTest extends TestCase
     /** @dataProvider customerEditActions */
     public function testAnEmployeeWhoMayNotEditCustomersIsToldSoOnceAndTheActionStops($action)
     {
-        $this->employeeHolding(array(IfirmaPermission::ROLE_READ));
+        $this->employeeHolding(array(IfirmaPermission::ROLE_READ, IfirmaPermission::ROLE_CREATE));
         $controller = $this->controller(array('identifier' => 'KOW-01'));
 
         $controller->{'ajaxProcess' . $action}();

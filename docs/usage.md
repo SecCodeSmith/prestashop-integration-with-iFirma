@@ -500,7 +500,7 @@ Buttons:
 - **Unlink** - removes the stored link only; nothing changes in iFirma.
 - **Register in iFirma** - the same registration as the order panel's "Register contractor in iFirma",
   using the customer's latest order. It is unavailable without an order or when contractor sync is
-  disabled.
+  disabled, and for an employee without the Issue level of the module (the panel then says so).
 
 The panel is shown only to an employee with the View level of the module's
 [permissions](configuration.md#permissions). Link, Unlink and Register still require the employee's edit

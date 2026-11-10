@@ -1316,12 +1316,16 @@ class Ifirma extends Module
         $matchLabels = $this->matchLabels();
 
         $availability = $service->registerAvailability($idCustomer);
-        $canRegister = $availability['available'];
+        // Registering creates a contractor in iFirma, so it needs the issue level (the same as on the order page)
+        $mayIssue = IfirmaPermission::canIssue($this->context->employee);
+        $canRegister = $availability['available'] && $mayIssue;
         $registerReason = '';
         if ($availability['reason'] === IfirmaCustomerContractorService::REGISTER_DISABLED) {
             $registerReason = $this->l('Contractor registration is disabled in the module settings.');
         } elseif ($availability['reason'] === IfirmaCustomerContractorService::REGISTER_NO_ORDERS) {
             $registerReason = $this->l('Registration needs at least one order of this customer.');
+        } elseif (!$mayIssue) {
+            $registerReason = $this->l('Registration needs the permission to issue iFirma documents.');
         }
 
         $token = Tools::getAdminTokenLite('AdminIfirma');

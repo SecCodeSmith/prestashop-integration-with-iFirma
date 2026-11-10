@@ -440,6 +440,7 @@ return array(
     'The link was removed. Nothing was changed in iFirma.' => 'Powiązanie zostało usunięte. W iFirma nic nie zmieniono.',
     'The customer was not linked.' => 'Klient nie był powiązany.',
     'Registration needs at least one order of this customer.' => 'Rejestracja wymaga co najmniej jednego zamówienia tego klienta.',
+    'Registration needs the permission to issue iFirma documents.' => 'Rejestracja wymaga uprawnienia do wystawiania dokumentów iFirma.',
     'The documents could not be counted: %s' => 'Nie udało się policzyć dokumentów: %s',
     '%1$d document(s) in iFirma (%2$d paid), %3$s – %4$s.' => 'Dokumentów w iFirma: %1$d (opłaconych: %2$d), %3$s – %4$s.',
     'At least %1$d document(s) in iFirma (%2$d paid), %3$s – %4$s; the call limit was reached.' => 'Co najmniej %1$d dokumentów w iFirma (opłaconych: %2$d), %3$s – %4$s; osiągnięto limit zapytań.',

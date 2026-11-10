@@ -157,7 +157,7 @@ class AdminControllerPermissionTest extends TestCase
             'CustomerCountRemote' => array('CustomerCountRemote', 'view'),
             'CustomerLink' => array('CustomerLink', 'view'),
             'CustomerUnlink' => array('CustomerUnlink', 'view'),
-            'CustomerRegister' => array('CustomerRegister', 'view'),
+            'CustomerRegister' => array('CustomerRegister', 'issue'),
             'IssueFromList' => array('IssueFromList', 'issue'),
             'IssueFeed' => array('IssueFeed', 'view'),
             'IssueFeedSeen' => array('IssueFeedSeen', 'view'),

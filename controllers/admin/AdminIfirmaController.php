@@ -62,7 +62,7 @@ class AdminIfirmaController extends ModuleAdminController
         'CustomerCountRemote' => self::LEVEL_VIEW,
         'CustomerLink' => self::LEVEL_VIEW,
         'CustomerUnlink' => self::LEVEL_VIEW,
-        'CustomerRegister' => self::LEVEL_VIEW,
+        'CustomerRegister' => self::LEVEL_ISSUE,
     );
 
     /** @var array bulk kind => level */

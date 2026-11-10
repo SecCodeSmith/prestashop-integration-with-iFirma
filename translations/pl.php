@@ -198,6 +198,7 @@ $_MODULE['<{ifirma}prestashop>ifirma_c9cc8cce247e49bae79f15173ce97354'] = 'Zapis
 $_MODULE['<{ifirma}prestashop>ifirma_2df948368572d648199b7404c0f7a660'] = 'Wygeneruj nowy token crona';
 $_MODULE['<{ifirma}prestashop>ifirma_cd7f11c5947dfd51d846b19dedc8d766'] = 'Rejestracja kontrahenta jest wyłączona w ustawieniach modułu.';
 $_MODULE['<{ifirma}prestashop>ifirma_4686d5d06ac25ccf1da69269804ebfdf'] = 'Rejestracja wymaga co najmniej jednego zamówienia tego klienta.';
+$_MODULE['<{ifirma}prestashop>ifirma_6a79138cfe5c545c9edab896b6aa3b39'] = 'Rejestracja wymaga uprawnienia do wystawiania dokumentów iFirma.';
 $_MODULE['<{ifirma}prestashop>ifirma_5267e8f0c59d9f69c9ce9c56c04b13c1'] = 'Wstrzymany (oczekuje prośba o zmianę danych)';
 $_MODULE['<{ifirma}prestashop>ifirma_db7e9ee60b2c0d155b21eb4a844f7f93'] = 'W kolejce do wystawienia';
 $_MODULE['<{ifirma}prestashop>ifirma_913f65aeddfff67e42761efa80c97aef'] = 'Podejrzenie duplikatu';
