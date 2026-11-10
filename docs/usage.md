@@ -340,7 +340,18 @@ Customer texts are translatable (`translations/pl.php` ships Polish).
 The customer download (`controllers/front/receipt.php`) fetches the PDF from iFirma on every request, so it is
 limited: a document can be fetched once every 30 seconds, and a customer can download at most ten documents in any
 60 seconds. A request over one of these limits gets HTTP 429 with the text "Please wait a moment before downloading
-the document again." The back-office **Download PDF** is not limited; it needs the view level instead.
+the document again."
+
+Customer downloads also have a budget of their own, shared by all customers: 20 downloads that reach iFirma per
+calendar minute and 2,000 per calendar day (shop time zone). The budget is separate from the module's request limit
+(80 per minute, 14,000 per day, see [Rate limits](configuration.md#rate-limits)), so customers downloading
+documents cannot use up the requests that issuing documents, the status sync and the cron need. A download over the
+budget gets HTTP 429 with `Retry-After: 60` and the text "Too many requests at the moment. Please try again shortly."
+(the same answer as when the module's request limit refuses a download), sends nothing to iFirma and is not counted.
+The budget is checked after the login, token, owner and KSeF checks, so those answers do not change. The caps are
+fixed, not settings.
+
+The back-office **Download PDF** is not part of the customer budget; it needs the view level instead.
 
 ## Delivery
 

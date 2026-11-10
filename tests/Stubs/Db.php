@@ -101,6 +101,11 @@ class Db
 
             return;
         }
+        if (strpos($sql, 'IFIRMA_DL_') !== false) {
+            $this->rateQueries[] = $sql;
+
+            return;
+        }
         if (strpos($sql, 'IFIRMA_USAGE_') !== false) {
             $this->usageQueries[] = $sql;
 
@@ -189,6 +194,12 @@ class Db
 
             return is_int($r) ? true : (bool) $r;
         }
+        $releaseAffected = $this->emulateWindowGiveBack($sql);
+        if ($releaseAffected !== null) {
+            $this->affected = $releaseAffected;
+
+            return true;
+        }
         $usageAffected = $this->emulateUsageCounter($sql);
         $this->affected = $usageAffected !== null ? $usageAffected : $this->emulateRateWindow($sql);
 
@@ -235,7 +246,7 @@ class Db
      */
     protected function emulateRateWindow($sql)
     {
-        if (!preg_match("/SET `value` = IF\(.*CONCAT\('(\d{8,12}):'.*name` = '(IFIRMA_RATE_(?:DAY_)?WINDOW)'.*< (\d+)\)/s", $sql, $m)) {
+        if (!preg_match("/SET `value` = IF\(.*CONCAT\('(\d{8,12}):'.*name` = '(IFIRMA_(?:RATE_(?:DAY_)?WINDOW|DL_[A-Z_]+))'.*< (\d+)\)/s", $sql, $m)) {
             return 1;
         }
         $bucket = $m[1];
@@ -255,6 +266,29 @@ class Db
         } else {
             Configuration::$values[$key] = $bucket . ':1';
         }
+
+        return 1;
+    }
+
+    /**
+     * Runs the give-back statement of IfirmaWindowCounter (lowers a window counter of the given bucket by one while
+     * it is above zero) against the Configuration stub, the way MySQL would.
+     *
+     * @return int|null affected rows, null when the statement is not a give-back statement
+     */
+    protected function emulateWindowGiveBack($sql)
+    {
+        if (!preg_match("/SET `value` = CONCAT\('(\d{8,12}):'.*name` = '(IFIRMA_\w+)' AND SUBSTRING_INDEX/s", $sql, $m)) {
+            return null;
+        }
+        if (!Configuration::hasKey($m[2])) {
+            return 0;
+        }
+        $parts = explode(':', (string) Configuration::get($m[2]), 2);
+        if (count($parts) !== 2 || $parts[0] !== $m[1] || (int) $parts[1] <= 0) {
+            return 0;
+        }
+        Configuration::$values[$m[2]] = $m[1] . ':' . ((int) $parts[1] - 1);
 
         return 1;
     }

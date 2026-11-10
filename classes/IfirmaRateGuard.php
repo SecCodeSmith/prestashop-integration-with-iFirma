@@ -15,6 +15,7 @@ if (!defined('_PS_VERSION_')) {
 
 require_once dirname(__FILE__) . '/IfirmaRateWindow.php';
 require_once dirname(__FILE__) . '/IfirmaRateDecision.php';
+require_once dirname(__FILE__) . '/IfirmaWindowCounter.php';
 require_once dirname(__FILE__) . '/IfirmaRemoteLimit.php';
 
 /**
@@ -42,12 +43,17 @@ class IfirmaRateGuard
     /** @var callable|null returns the unix time; time() when null */
     private $clock;
 
+    /** @var IfirmaWindowCounter */
+    private $counter;
+
     /**
-     * @param callable|null $clock
+     * @param callable|null            $clock
+     * @param IfirmaWindowCounter|null $counter
      */
-    public function __construct($clock = null)
+    public function __construct($clock = null, IfirmaWindowCounter $counter = null)
     {
         $this->clock = $clock;
+        $this->counter = $counter !== null ? $counter : new IfirmaWindowCounter();
     }
 
     /**
@@ -68,7 +74,7 @@ class IfirmaRateGuard
         }
 
         foreach ($this->windows() as $window) {
-            $count = $this->countIn($window, $now);
+            $count = $this->counter->take($window, $now);
             if ($count !== null) {
                 return IfirmaRateDecision::refuse($window->getName(), $this->refusalMessage($window, $count));
             }
@@ -227,46 +233,6 @@ class IfirmaRateGuard
     private function now()
     {
         return $this->clock !== null ? (int) call_user_func($this->clock) : time();
-    }
-
-    /**
-     * Takes one slot of the window.
-     *
-     * @param IfirmaRateWindow $window
-     * @param int              $now
-     * @return int|null null when the slot was taken, else the count that makes the window full
-     */
-    private function countIn(IfirmaRateWindow $window, $now)
-    {
-        $bucket = $window->bucketAt($now);
-        $cap = $window->getCap();
-        $key = $window->getCounterKey();
-
-        $db = Db::getInstance();
-        $table = _DB_PREFIX_ . 'configuration';
-        $b = pSQL($bucket);
-        // One atomic statement: reset or increment the counter, but only while the cap is not reached.
-        $db->execute(
-            "UPDATE `" . $table . "` SET `value` = IF(SUBSTRING_INDEX(`value`, ':', 1) = '" . $b . "', "
-            . "CONCAT('" . $b . ":', SUBSTRING_INDEX(`value`, ':', -1) + 1), '" . $b . ":1') "
-            . "WHERE `name` = '" . pSQL($key) . "' AND (SUBSTRING_INDEX(`value`, ':', 1) <> '" . $b . "' "
-            . "OR SUBSTRING_INDEX(`value`, ':', -1) < " . (int) $cap . ")"
-        );
-        if ((int) $db->Affected_Rows() >= 1) {
-            return null;
-        }
-
-        $stored = $db->getValue("SELECT `value` FROM `" . $table . "` WHERE `name` = '" . pSQL($key) . "'", false);
-        if ($stored === false || $stored === null) {
-            // No row yet (the module was never installed with the default): start the window.
-            Configuration::updateValue($key, $bucket . ':1');
-
-            return null;
-        }
-
-        $parts = explode(':', (string) $stored, 2);
-
-        return (count($parts) === 2 && $parts[0] === $bucket) ? (int) $parts[1] : $cap;
     }
 
     /**

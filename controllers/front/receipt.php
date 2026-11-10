@@ -9,6 +9,7 @@ if (!defined('_PS_VERSION_')) {
 }
 
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaApiClient.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDownloadBudget.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDownloadThrottle.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaHttpOutput.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaInput.php';
@@ -61,23 +62,49 @@ class IfirmaReceiptModuleFrontController extends ModuleFrontController
             $this->tooManyRequests();
         }
 
+        // The customers' own budget, so downloads cannot use up the request limit issuance shares. It comes after
+        // every check above: a refused request spends nothing. No log line: a refused request costs the attacker
+        // nothing, so one would only flood the log.
+        $budget = $this->customerBudget();
+        if (!$budget->take()) {
+            $this->refuseForTooManyRequests();
+        }
+
         try {
             $service = IfirmaReceiptService::build($this->module);
             $pdf = $service->fetchPdf($receipt, (bool) IfirmaInput::scalar(Tools::getValue('duplicate')));
         } catch (IfirmaRateLimitedException $e) {
+            // Refused before it was sent: the unit goes back, so the budget counts what reached iFirma.
+            $budget->release();
             // Only reached after the ownership, token, KSeF-wait and throttle checks above. The customer is told
             // nothing about the limit; the shop owner finds the reason in the log.
             PrestaShopLogger::addLog('iFirma front download refused by the request limit (receipt ' . (int) $receipt->id . '): ' . $e->getMessage(), 1);
-            $this->refusedByRateLimit(
-                self::LIMIT_RETRY_AFTER_SECONDS,
-                $this->module->l('Too many requests at the moment. Please try again shortly.', 'receipt')
-            );
+            $this->refuseForTooManyRequests();
         } catch (Exception $e) {
             PrestaShopLogger::addLog('iFirma front download failed (receipt ' . (int) $receipt->id . '): ' . $e->getMessage(), 2);
             $this->serverError();
         }
 
         $this->streamPdf($pdf, $receipt);
+    }
+
+    /**
+     * @return IfirmaDownloadBudget the budget of all customers' downloads; protected so a test can fix its clock
+     */
+    protected function customerBudget()
+    {
+        return IfirmaDownloadBudget::forCustomers();
+    }
+
+    /**
+     * Every limit answers the customer the same: no count, no window, one wait.
+     */
+    private function refuseForTooManyRequests()
+    {
+        $this->refusedByRateLimit(
+            self::LIMIT_RETRY_AFTER_SECONDS,
+            $this->module->l('Too many requests at the moment. Please try again shortly.', 'receipt')
+        );
     }
 
     /**
@@ -95,7 +122,7 @@ class IfirmaReceiptModuleFrontController extends ModuleFrontController
      *
      * @codeCoverageIgnore header() output and exit end the request; IfirmaHttpOutput::pdf() is tested on its own
      */
-    private function streamPdf($pdf, IfirmaReceipt $receipt)
+    protected function streamPdf($pdf, IfirmaReceipt $receipt)
     {
         IfirmaHttpOutput::pdf($pdf, $receipt->ifirma_number ?: $receipt->ifirma_id);
         exit;

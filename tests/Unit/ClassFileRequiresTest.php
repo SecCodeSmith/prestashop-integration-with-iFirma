@@ -93,6 +93,8 @@ class ClassFileRequiresTest extends TestCase
             'the remote limit presenter' => array('IfirmaRemoteLimitPresenter'),
             'the API usage presenter' => array('IfirmaApiUsagePresenter'),
             'the limit check action' => array('IfirmaLimitCheckAction'),
+            'the download budget' => array('IfirmaDownloadBudget'),
+            'the window counter' => array('IfirmaWindowCounter'),
         );
     }
 

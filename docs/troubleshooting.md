@@ -163,7 +163,9 @@ ago, or the customer has already downloaded 10 documents in the last 60 seconds 
 The document itself is fine.
 
 **What to do:** wait a few seconds and reload. If customers hit the limit routinely, look for something that downloads the
-PDF repeatedly, such as a link preview or a script.
+PDF repeatedly, such as a link preview or a script. A download can also be refused with "Too many requests at the moment.
+Please try again shortly." when all customers together have used the customer download budget (20 per minute, 2,000 per
+day); it works again in the next minute or day.
 
 ### HTTP 429 on a PDF download because of the module's request limit
 

@@ -110,6 +110,8 @@ Open the module configuration and fill in:
 | `IFIRMA_RATE_MAX_PER_DAY` (new) | `14000` (1 to 15000) |
 | `IFIRMA_RATE_WINDOW` (new) | empty (internal rate-limit state of the minute: `<minute>:<count>`, incremented by one atomic database statement, so two requests at the same time cannot both pass the cap) |
 | `IFIRMA_RATE_DAY_WINDOW` (new) | empty (the same for the calendar day: `<day>:<count>`) |
+| `IFIRMA_DL_CUSTOMER_MINUTE`, `IFIRMA_DL_CUSTOMER_DAY` (new) | empty (internal counters `<minute>:<count>` and `<day>:<count>` of the customers' PDF download budget, 20 per minute and 2,000 per day for all customers together; not settings, see [Download limits](usage.md#download-limits)) |
+| `IFIRMA_DL_EMPLOYEE_MINUTE` (new) | empty (internal counter of the back-office PDF download budget, 30 per minute for all employees together, no day cap) |
 | `IFIRMA_RATE_BACKOFF_UNTIL` (new) | empty (internal: the unix time until which iFirma asked the module to wait after it refused a request for exceeding its limit; no request is sent before it, see [Rate limits](#rate-limits)) |
 | `IFIRMA_REMOTE_LIMIT` (new) | empty (internal: the last reading of the day limit from iFirma, `<day>:<used>:<granted>:<unix time>`; needs the `abonent` key, see [Rate limits](#rate-limits)) |
 | `IFIRMA_AUTH_FAILURE` (new) | empty (internal mark of the pause after a rejected key: `<unix time>|<message>`; set by a failed call, cleared by a successful save of the settings; after 15 minutes the mark no longer pauses calls) |
