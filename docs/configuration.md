@@ -58,7 +58,7 @@ Open the module configuration and fill in:
 - **Cron endpoint** – the module shows the cron URL with its secret token and a crontab
   example; *Regenerate cron token* replaces the token. Call it every 1 to 5 minutes: it issues the queued orders and
   retries failed deliveries, so a longer interval delays them (see [Cron jobs](#cron-jobs)). The example the page prints
-  says every 15 minutes (`*/15`); change it to `*/5` in your crontab, as in the examples below:
+  runs every 5 minutes, like the examples below:
 
   ```
   */5 * * * * curl -fsS "https://<shop>/module/ifirma/cron?token=<IFIRMA_CRON_TOKEN>" >/dev/null

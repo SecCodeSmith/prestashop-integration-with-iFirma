@@ -1013,6 +1013,20 @@ class ModuleHooksTest extends TestCase
         $this->assertSame('submitIfirmaRegenerateCron', $buttons[0]['name']);
     }
 
+    /**
+     * A queued order, a document accepted by KSeF and a delivery due for its retry all wait for the cron, and a retry
+     * is due 15 minutes after a failure: the example the page prints must not run less often than that.
+     */
+    public function testTheCronExampleRunsEveryFiveMinutes()
+    {
+        $this->module->getContent();
+        $html = $this->formInputNames()['IFIRMA_CRON_INFO']['html_content'];
+
+        $this->assertSame(2, substr_count($html, '<pre>*/5 * * * * curl'));
+        $this->assertStringNotContainsString('*/15', $html);
+        $this->assertStringContainsString('every 5 minutes', $html);
+    }
+
     public function testTheSettingsPageWarnsAboutAStoredBaseUrlThatIsRefusedAtRunTime()
     {
         IfirmaSettings::$devMode = false;

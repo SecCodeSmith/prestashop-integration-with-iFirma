@@ -208,7 +208,7 @@ Three ways to sync:
    For shops without friendly URLs use
    `index.php?fc=module&module=ifirma&controller=cron&token=<IFIRMA_CRON_TOKEN>`.
    A wrong or missing token returns HTTP 403. Call it every 1 to 5 minutes (the queue and the delivery retry work only
-   when it is called; the configuration page prints `*/15` as its example, `*/5` is the recommended one). Crontab example:
+   when it is called; the configuration page prints the same `*/5` example). Crontab example:
 
    ```
    */5 * * * * curl -fsS "https://<shop>/module/ifirma/cron?token=<IFIRMA_CRON_TOKEN>" >/dev/null

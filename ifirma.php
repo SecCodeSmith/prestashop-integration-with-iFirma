@@ -807,10 +807,10 @@ class Ifirma extends Module
         return '<p><strong>' . $this->esc($this->l('Token:')) . '</strong> <code>'
             . $this->esc($this->cronToken()) . '</code></p>'
             . '<p><strong>' . $this->esc($this->l('URL:')) . '</strong> <code>' . $this->esc($url) . '</code></p>'
-            . '<p>' . $this->esc($this->l('Example crontab entry (every 15 minutes):')) . '</p>'
-            . '<pre>*/15 * * * * curl -fsS "' . $this->esc($url) . '" &gt;/dev/null</pre>'
+            . '<p>' . $this->esc($this->l('Example crontab entry (every 5 minutes):')) . '</p>'
+            . '<pre>*/5 * * * * curl -fsS "' . $this->esc($url) . '" &gt;/dev/null</pre>'
             . '<p>' . $this->esc($this->l('Or send the token in a header, so it stays out of web server logs:')) . '</p>'
-            . '<pre>*/15 * * * * curl -fsS -H "X-Ifirma-Token: ' . $this->esc($this->cronToken()) . '" "'
+            . '<pre>*/5 * * * * curl -fsS -H "X-Ifirma-Token: ' . $this->esc($this->cronToken()) . '" "'
             . $this->esc($plainUrl) . '" &gt;/dev/null</pre>'
             . '<p class="help-block">' . $this->esc($this->l('Anyone who knows the URL can start a synchronisation. Regenerate the token if it leaks.')) . '</p>';
     }

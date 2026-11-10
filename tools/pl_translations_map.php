@@ -107,7 +107,7 @@ return array(
     'iFirma API limit is currently unavailable.' => 'Limit API iFirma jest obecnie niedostępny.',
     'Token:' => 'Token:',
     'URL:' => 'Adres URL:',
-    'Example crontab entry (every 15 minutes):' => 'Przykładowy wpis crontab (co 15 minut):',
+    'Example crontab entry (every 5 minutes):' => 'Przykładowy wpis crontab (co 5 minut):',
     'Anyone who knows the URL can start a synchronisation. Regenerate the token if it leaks.' => 'Każdy, kto zna ten adres, może uruchomić synchronizację. Jeśli token wycieknie, wygeneruj go ponownie.',
     'Delivery channel' => 'Kanał wysyłki',
     'Copy of the delivery e-mail' => 'Kopia e-maila z dokumentem',
