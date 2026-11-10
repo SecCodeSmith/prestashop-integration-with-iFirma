@@ -114,15 +114,91 @@ class DocumentsListDeliveryTest extends TestCase
         $this->assertArrayHasKey('failed', $column['list']);
     }
 
-    public function testTheRetryColumnsAreEnsuredBeforeTheListIsBuilt()
+    private function schemaStatements()
     {
+        return array_values(array_filter(Db::getInstance()->queries, function ($sql) {
+            return strpos($sql, 'COLUMN_NAME') !== false || strpos($sql, 'ALTER TABLE') !== false;
+        }));
+    }
+
+    public function testTheRetryColumnsAreEnsuredBeforeTheListQuery()
+    {
+        Access::grant(IfirmaPermission::ROLE_READ, 4);
         Db::getInstance()->whenGetValue("/COLUMN_NAME = 'delivery_/", '0');
 
-        $this->controller()->init();
+        $this->controller()->renderList();
 
         $this->assertContains(
             'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `delivery_attempts` INT(11) UNSIGNED NOT NULL DEFAULT 0',
             Db::getInstance()->executed
         );
+        $listQuery = null;
+        $firstSchema = null;
+        foreach (Db::getInstance()->queries as $i => $sql) {
+            if ($firstSchema === null && strpos($sql, 'COLUMN_NAME') !== false) {
+                $firstSchema = $i;
+            }
+            if ($listQuery === null && strpos($sql, 'FROM `ps_ifirma_receipt` a') !== false) {
+                $listQuery = $i;
+            }
+        }
+        $this->assertNotNull($listQuery, 'the list was queried');
+        $this->assertLessThan($listQuery, $firstSchema);
+    }
+
+    public function testOpeningThePageTouchesNoSchemaBeforeTheCoreHasCheckedAccess()
+    {
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'delivery_/", '0');
+
+        $this->controller()->init();
+
+        $this->assertSame(array(), $this->schemaStatements());
+    }
+
+    public function testAnEmployeeWithoutTheViewLevelTriggersNoSchemaStatementOnAnAction()
+    {
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'delivery_/", '0');
+        $controller = new IfirmaTestDispatchController();
+
+        $controller->dispatch('IssueFeed');
+
+        $this->assertSame(array(), $this->schemaStatements());
+        $this->assertFalse($controller->bodyRan);
+    }
+
+    public function testAnEmployeeWithTheViewLevelHasTheSchemaEnsuredBeforeTheActionRuns()
+    {
+        Access::grant(IfirmaPermission::ROLE_READ, 4);
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'delivery_/", '0');
+        $controller = new IfirmaTestDispatchController();
+
+        $controller->dispatch('IssueFeed');
+
+        $this->assertTrue($controller->bodyRan);
+        $this->assertNotSame(array(), $this->schemaStatements());
+        $this->assertTrue($controller->schemaWasEnsuredWhenTheBodyRan);
+    }
+}
+
+/** Runs an action through the controller's access decision and records what the schema looked like by then. */
+class IfirmaTestDispatchController extends AdminIfirmaController
+{
+    public $bodyRan = false;
+    public $schemaWasEnsuredWhenTheBodyRan = false;
+
+    public function dispatch($action)
+    {
+        $this->handle($action, function () {
+            $this->bodyRan = true;
+            $this->schemaWasEnsuredWhenTheBodyRan = count(Db::getInstance()->executed) > 0;
+        });
+    }
+
+    protected function output(array $payload)
+    {
+    }
+
+    protected function statusHeader($code)
+    {
     }
 }

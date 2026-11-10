@@ -110,13 +110,33 @@ class AdminIfirmaController extends ModuleAdminController
      */
     public function init()
     {
-        // the list reads the retry columns of the receipt table; an upgrade that did not add them yet must not hide them
-        IfirmaSchema::ensureReceiptRetryColumns();
         parent::init();
 
         if ($this->attentionPresetActive()) {
             self::$currentIndex .= '&ifirma_preset=attention';
         }
+    }
+
+    /**
+     * The core renders the list only for an employee who may view the tab, so the schema is not touched before the
+     * access decision (init() runs for everyone).
+     *
+     * @return string
+     */
+    public function renderList()
+    {
+        $this->ensureReceiptRetryColumns();
+
+        return parent::renderList();
+    }
+
+    /**
+     * The list and the actions read the retry columns of the receipt table; an upgrade that did not add them yet must
+     * not hide them.
+     */
+    private function ensureReceiptRetryColumns()
+    {
+        IfirmaSchema::ensureReceiptRetryColumns();
     }
 
     /**
@@ -616,6 +636,7 @@ class AdminIfirmaController extends ModuleAdminController
             return;
         }
 
+        $this->ensureReceiptRetryColumns();
         call_user_func($body);
     }
 

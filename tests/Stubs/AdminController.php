@@ -112,6 +112,14 @@ class AdminController
     {
     }
 
+    /** The core builds the list in renderList() (getList() runs the list query); only the query is modelled here. */
+    public function renderList()
+    {
+        Db::getInstance()->executeS('SELECT a.* FROM `' . _DB_PREFIX_ . $this->table . '` a');
+
+        return '';
+    }
+
     /** The core decides the action from the request; the tests set $action before the module override runs. */
     public function initProcess()
     {
