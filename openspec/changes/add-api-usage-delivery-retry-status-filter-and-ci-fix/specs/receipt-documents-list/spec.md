@@ -55,7 +55,7 @@ Sorting by state SHALL keep the active filters, the Needs attention preset, the 
 - **THEN** no request is sent to iFirma
 
 ### Requirement: Delivery retry shown in the list
-The delivery cell of a record whose delivery failed SHALL show how many of the three automatic attempts were used and when the next one is due, or that none remains. The text SHALL be escaped.
+The delivery cell of a record whose delivery failed SHALL show how many of the three automatic attempts were used and when the next one is due, or that none remains, none will be made or none is scheduled. The text SHALL be escaped.
 
 #### Scenario: Retry scheduled
 - **GIVEN** a record whose first delivery attempt failed and whose second is due at 10:15
@@ -66,7 +66,12 @@ The delivery cell of a record whose delivery failed SHALL show how many of the t
 - **WHEN** the third automatic attempt of a record has failed
 - **THEN** the delivery cell shows failed and that no automatic attempt remains
 
+#### Scenario: No automatic attempt will be made
+- **GIVEN** a record whose delivery failed for a permanent reason or with an unknown outcome, with one or two attempts used and no due time
+- **WHEN** the employee opens the list
+- **THEN** the delivery cell shows failed and "No automatic attempt will be made"
+
 #### Scenario: Failure from before the upgrade
 - **GIVEN** a record whose delivery failed before the automatic retry existed
 - **WHEN** the employee opens the list
-- **THEN** the delivery cell shows failed and that no automatic attempt is scheduled
+- **THEN** the delivery cell shows failed and "No automatic attempt is scheduled"

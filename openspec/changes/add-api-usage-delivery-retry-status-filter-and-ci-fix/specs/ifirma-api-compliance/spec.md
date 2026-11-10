@@ -13,7 +13,8 @@ When the optional `abonent` key is configured, the module configuration page SHA
 
 #### Scenario: Key not configured
 - **WHEN** the `abonent` key is empty
-- **THEN** no limit information is shown and no request or error occurs
+- **THEN** no limit figure is shown, no request is sent and no error occurs
+- **AND** the page shows a hint to enter the `abonent` key instead of the check button
 
 #### Scenario: Limit request fails
 - **WHEN** the limit request fails
@@ -60,16 +61,17 @@ With the `abonent` key set, the configuration page SHALL offer a button that rea
 - **THEN** the page shows 0 remaining and states that the module sends no request until tomorrow
 
 ### Requirement: A failed or refused limit check is reported
-When the on-demand check cannot be done, the page SHALL say why and SHALL keep the earlier reading and the counters unchanged. Refused by the module's own limit or the authentication cool-down: nothing is sent. iFirma error or unusable answer: a short generic notice, with the detail in the shop log only. The answer SHALL never show a key.
+When the on-demand check cannot be done, the page SHALL say why and SHALL keep the stored reading unchanged. Refused by the module's own limit or the authentication cool-down: nothing is sent and no counter changes. iFirma error or unusable answer: the request was sent, so it is counted like any request, but the module's day counter is not corrected; the page shows a short generic notice, with the detail in the shop log only. The answer SHALL never show a key.
 
 #### Scenario: Refused by the module's limit
 - **GIVEN** the minute cap is reached
 - **WHEN** the employee clicks the button
-- **THEN** no request is sent, the page says the limit was not checked because of the minute limit, and the earlier reading stays
+- **THEN** no request is sent, no counter changes, the page says the limit was not checked because of the minute limit, and the earlier reading stays
 
 #### Scenario: iFirma answers with an error
 - **WHEN** the limit request is sent and iFirma answers with an error
 - **THEN** the page shows that the limit is unavailable and the earlier reading stays
+- **AND** the request is counted in the minute and day counts, but the day counter is not raised to any figure
 
 #### Scenario: Wrong abonent key
 - **WHEN** iFirma refuses the `abonent` key
@@ -77,7 +79,12 @@ When the on-demand check cannot be done, the page SHALL say why and SHALL keep t
 
 #### Scenario: Unusable answer
 - **WHEN** iFirma answers without usable numbers
-- **THEN** the page shows that the limit is unavailable and the counters are unchanged
+- **THEN** the page shows that the limit is unavailable, the stored reading is not replaced and the day counter is not raised
+- **AND** the click is counted as one request
+
+#### Scenario: Figures that are not whole numbers
+- **WHEN** iFirma answers with a used or granted figure that is a decimal number, carries a sign or an exponent, is text, is above ten million, or with a granted figure of zero
+- **THEN** it is treated as an unusable answer: the page shows that the limit is unavailable and no reading is stored
 
 ### Requirement: Limit check is a protected action
 The on-demand check SHALL run only for an employee who may configure the module, only on a POST request with a valid back-office token. Without the `abonent` key the button SHALL NOT be offered and a forged request SHALL send nothing.
@@ -133,17 +140,17 @@ Every request the module sends to iFirma SHALL count toward its minute limit and
 - **THEN** it is refused, nothing is sent and the day count does not change
 
 ### Requirement: A refused request is reported and not retried in place
-When the limit refuses a request, the caller SHALL learn that it was refused and which window refused it: the minute, the day or the back-off. The module SHALL NOT wait for the window and SHALL NOT send the request again within the same shop request. A refusal SHALL NOT be reported as a success, as an empty result or as an iFirma error.
+When the limit refuses a request, the caller SHALL learn that it was refused and which window refused it: the minute, the day or the back-off. The module SHALL NOT wait for the window and SHALL NOT send the request again within the same shop request. A refusal SHALL NOT be reported as a success, as an empty result or as an iFirma error. The exact seconds to wait concern the back office only; a customer is always told 60 (see `customer-receipt-visibility`).
 
 #### Scenario: Employee downloads a PDF at the cap
 - **GIVEN** the minute cap is reached
 - **WHEN** an employee with the view level downloads the PDF of a document from the back office
-- **THEN** the answer is HTTP 429 with a `Retry-After` header and a message that names the minute limit
+- **THEN** the answer is HTTP 429 with a `Retry-After` header of the seconds left until the next minute (1 to 60) and a message that names the minute limit
 - **AND** no request is sent to iFirma and no PDF bytes are returned
 
 #### Scenario: Refusal during back-off
 - **GIVEN** iFirma's limit answer started a back-off that ends in 40 seconds
-- **WHEN** an employee downloads a PDF
+- **WHEN** an employee downloads a PDF in the back office
 - **THEN** the answer is HTTP 429 and `Retry-After` is at most 40 seconds
 
 #### Scenario: No retry inside the request

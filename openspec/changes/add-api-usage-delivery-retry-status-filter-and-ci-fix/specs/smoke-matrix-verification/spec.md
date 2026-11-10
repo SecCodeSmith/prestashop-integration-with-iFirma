@@ -38,20 +38,30 @@ The workflow SHALL start the scenarios only after the shop's first-boot install 
 - **THEN** the job fails and names the limit
 
 ### Requirement: The scheduled run covers every scenario but the burst
-The scheduled run SHALL execute every smoke scenario listed in the smoke README except the burst scenario R, including scenarios whose name has more than one character. A scenario named in the selection that does not exist, or an existing scenario that was neither selected nor excluded on purpose, SHALL fail the job.
+The scheduled run SHALL execute every scenario the smoke runner defines except those skipped on purpose with the skip list (the burst scenario R), including scenarios whose name has more than one character. A name in the selection or in the skip list that the runner does not define SHALL stop the run before the shop is touched. A scenario that has no entry in the committed check-floor file SHALL fail the run.
 
 #### Scenario: Two-character scenario runs
 - **WHEN** the scheduled run executes
-- **THEN** scenario A2 runs together with A to Q and S
+- **THEN** scenario A2 runs together with every other scenario except R
 
 #### Scenario: Burst left out on purpose
 - **WHEN** the scheduled run executes
 - **THEN** scenario R does not run and the job summary says so
 
-#### Scenario: New scenario not selected
-- **GIVEN** a scenario T was added to the smoke run and not to the workflow's selection
+#### Scenario: New scenario runs without being listed in the workflow
+- **GIVEN** a scenario T was added to the smoke runner and to the check-floor file
 - **WHEN** the scheduled run executes
-- **THEN** the job fails and names scenario T
+- **THEN** T runs, because the run selects every scenario that is not skipped on purpose
+
+#### Scenario: Unknown name in the selection or the skip list
+- **GIVEN** the skip list names a scenario the runner does not define
+- **WHEN** the run starts
+- **THEN** it stops with exit status 2 before any shop setting is changed and names the unknown scenario
+
+#### Scenario: New scenario without a floor entry
+- **GIVEN** a scenario T was added to the smoke runner and has no entry in the check-floor file
+- **WHEN** the scheduled run executes
+- **THEN** the run fails with a failed check that names scenario T
 
 ### Requirement: A failed run keeps its evidence
 The workflow SHALL keep the full output of the smoke run for every job, passed or failed, as a downloadable artifact, and SHALL list the failed checks and the totals in the job summary. The kept output SHALL contain no secret: keys and tokens SHALL be masked.
@@ -72,15 +82,25 @@ The workflow SHALL keep the full output of the smoke run for every job, passed o
 ### Requirement: A red run is fixed at its cause
 A failing smoke check SHALL be resolved by correcting the defect it found in the module, the test stack or the workflow. A check, scenario or matrix entry SHALL NOT be removed, skipped, loosened or made to pass unconditionally to obtain a green run. A check whose expectation was wrong SHALL be corrected only together with the specification scenario that states the right behaviour.
 
-#### Scenario: Module defect found
-- **WHEN** a check fails because the module misbehaves on one PrestaShop version
-- **THEN** the module is fixed with a unit test that reproduces the defect, and the check stays as it was
+#### Scenario: Module defect found (review rule)
+- **WHEN** a change makes a red run green because a check found a module defect
+- **THEN** the change fixes the module, together with a unit test that reproduces the defect, and contains no removed, skipped or loosened check
+- **AND** the check floor and the review verify that no check was dropped
 
-#### Scenario: Unsupported version
+#### Scenario: Unsupported version (review rule)
 - **WHEN** the module cannot support a version in the matrix
 - **THEN** the declared supported range and the documentation are changed in a reviewed change, and the matrix follows that range
 
 #### Scenario: Check count never drops silently
-- **GIVEN** the last green run executed a known number of checks per version
-- **WHEN** a later run executes fewer checks
-- **THEN** the job fails unless the smoke README was changed in the same commit to say which checks were removed and why
+- **GIVEN** the committed check-floor file holds a minimum of executed checks for each scenario
+- **WHEN** a run executes fewer checks in a scenario than its floor
+- **THEN** the run fails with a failed check that names the scenario, the executed count and the floor
+
+#### Scenario: Floor file missing or malformed
+- **WHEN** the check-floor file is missing, or is not a JSON object of non-negative whole numbers
+- **THEN** the run fails, so a run whose check count is not verified is never green
+
+#### Scenario: Lowering the floor is a reviewed change
+- **WHEN** a scenario's floor is lowered
+- **THEN** that is a visible change of the committed check-floor file, which the review has to accept
+- **AND** a run with a failed check never writes the file
