@@ -489,6 +489,7 @@ $_MODULE['<{ifirma}prestashop>adminifirmacontroller_2607298669ace2fc910321afeb9f
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_c99f036a7d88a2e1c49b836915b66204'] = 'Akcje zbiorcze na tej stronie wymagają JavaScript.';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_d77f291c55f4869fdfeb1d27c2ec0d82'] = 'Wszystkie dokumenty';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_d6f5722e464f95d8d6411841b90ee6d2'] = 'Wymaga uwagi';
+$_MODULE['<{ifirma}prestashop>adminifirmacontroller_4a3bab3e5a9ae0642bac841a7188820b'] = 'Tę akcję należy wysłać metodą POST.';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_93fa2da802fbaabf552ecae864b3cc14'] = 'Nie masz uprawnień do wystawiania dokumentów iFirma.';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_c645abf6f7be1fb80c0efe6369de7354'] = 'Nie masz uprawnień do przeglądania dokumentów iFirma.';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_86f650fbc982e68a59765386e999d0d5'] = 'Nie masz uprawnień do zarządzania dokumentami iFirma.';
@@ -498,11 +499,10 @@ $_MODULE['<{ifirma}prestashop>adminifirmacontroller_6c702fcd26e77a9e9251b1855036
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_3fff95713d5b3e23e0ab0e657683600b'] = 'Zaznacz co najmniej jeden wiersz.';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_50c2d7ea9c31974b3c1ba842c0200917'] = 'Przetworzono %1$d z %2$d.';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_d760d220c84012e8525622580ca299d3'] = 'Nie znaleziono dokumentu.';
+$_MODULE['<{ifirma}prestashop>adminifirmacontroller_a2437cf4a30fd976f2adbe8cca0b4956'] = 'Nie pobrano pliku PDF: osiągnięto limit pobrań w panelu administracyjnym. Spróbuj ponownie za chwilę.';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_6e3874f64b28f08ef51ee0d2025af68e'] = 'Nie pobrano pliku PDF: osiągnięto dzienny limit żądań. Spróbuj ponownie później.';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_9ed573438481e46b9fdf068b7346af2f'] = 'Nie pobrano pliku PDF: iFirma poprosiła moduł o odczekanie przed kolejnym żądaniem. Spróbuj ponownie wkrótce.';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_42ced55a70e099686ca37c98b4970bff'] = 'Nie pobrano pliku PDF: osiągnięto minutowy limit żądań. Spróbuj ponownie za chwilę.';
-$_MODULE['<{ifirma}prestashop>adminifirmacontroller_4a3bab3e5a9ae0642bac841a7188820b'] = 'Tę akcję należy wysłać metodą POST.';
-$_MODULE['<{ifirma}prestashop>adminifirmacontroller_a2437cf4a30fd976f2adbe8cca0b4956'] = 'Nie pobrano pliku PDF: osiągnięto limit pobrań w panelu administracyjnym. Spróbuj ponownie za chwilę.';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_a7dafa6b31b3a00b7a1ffeae6e4d1e42'] = 'Błąd wewnętrzny; szczegóły są w logu PrestaShop.';
 $_MODULE['<{ifirma}prestashop>guestrequest_90061b39f8ad72129fddb0a53197bf0c'] = 'Jeśli dane pasują do zamówienia, wysłaliśmy kod na jego adres e-mail.';
 $_MODULE['<{ifirma}prestashop>guestrequest_bb8d00cce367a1c9567821ebc8f66c05'] = 'Twój kod weryfikacyjny ze sklepu %s';
