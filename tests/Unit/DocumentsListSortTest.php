@@ -60,9 +60,10 @@ class DocumentsListSortTest extends TestCase
 
     /**
      * @param array[] $rows
+     * @param string  $where a filter condition on the listed row (alias a), as the core's _where adds it
      * @return int[] the ids in the order the list's ORDER BY gives them
      */
-    private function sortedIds(array $rows, $way)
+    private function sortedIds(array $rows, $way, $where = '')
     {
         if (!extension_loaded('pdo_sqlite')) {
             $this->markTestSkipped('pdo_sqlite is needed to run the sort expression');
@@ -78,7 +79,7 @@ class DocumentsListSortTest extends TestCase
             IfirmaDocumentListSort::RANK_ALIAS,
             $way
         );
-        $sql = 'SELECT a.id_ifirma_receipt FROM (SELECT r.*, ' . IfirmaDocumentListSort::rankSelect('r') . ' FROM r) a' . $clause;
+        $sql = 'SELECT a.id_ifirma_receipt FROM (SELECT r.*, ' . IfirmaDocumentListSort::rankSelect('r') . ' FROM r) a' . $where . $clause;
 
         return array_map('intval', $pdo->query($sql)->fetchAll(PDO::FETCH_COLUMN));
     }
@@ -133,6 +134,65 @@ class DocumentsListSortTest extends TestCase
         $rows = array(array(1, '5', 'created', 'failed'), array(2, '6', 'created', 'sent'), array(3, '', 'held', 'none'));
 
         $this->assertSame(array(3, 1, 2), $this->sortedIds($rows, 'ASC'));
+    }
+
+    public function testSortingInsideAnActiveDeliveryFilterListsTheSameRecordsInRankOrder()
+    {
+        $rows = array();
+        foreach (array(1, 2, 3, 4) as $id) {
+            $rows[] = array($id, '5', 'created', 'failed');
+        }
+        foreach (array(5, 6, 7, 8) as $id) {
+            $rows[] = array($id, '9', 'paid', 'failed');
+        }
+        foreach (array(9, 10, 11, 12) as $id) {
+            $rows[] = array($id, '', 'held', 'failed');
+        }
+        foreach (array(13, 14, 15) as $id) {
+            $rows[] = array($id, '', 'error', 'sent');
+        }
+
+        $listed = $this->sortedIds($rows, 'ASC', " WHERE a.delivery_status = 'failed'");
+
+        $this->assertSame(array(12, 11, 10, 9, 4, 3, 2, 1, 8, 7, 6, 5), $listed);
+    }
+
+    public function testSortingTheStateColumnKeepsTheCountAndThePagesOfTheList()
+    {
+        $states = array(array('', 'error'), array('5', 'created'), array('6', 'paid'));
+        $rows = array();
+        for ($id = 1; $id <= 300; $id++) {
+            $state = $states[$id % 3];
+            $rows[] = array($id, $state[0], $state[1], 'none');
+        }
+        $perPage = 50;
+
+        $ascending = $this->sortedIds($rows, 'ASC');
+        $descending = $this->sortedIds($rows, 'DESC');
+
+        $this->assertCount(300, $ascending);
+        $this->assertCount(6, array_chunk($ascending, $perPage));
+        $this->assertCount(6, array_chunk($descending, $perPage));
+        $this->assertCount(300, array_unique($ascending), 'no record is listed twice or dropped on any page');
+    }
+
+    public function testSortingTheStateColumnChangesNeitherTheFilterNorTheJoinNorTheSelectOfTheList()
+    {
+        $c = $this->controller(array('ifirma_preset' => 'attention'));
+        $before = array($c->_where, $c->_join, $c->_select);
+
+        $c->orderByClause('status', 'desc');
+
+        $this->assertSame($before, array($c->_where, $c->_join, $c->_select));
+    }
+
+    public function testSortingTheStateColumnSendsNoRequestToIfirma()
+    {
+        $c = $this->controller();
+
+        $c->orderByClause('status', 'asc');
+
+        $this->assertSame(array(), $this->t->calls);
     }
 
     // ---- the pure pieces -------------------------------------------------------------------------------------

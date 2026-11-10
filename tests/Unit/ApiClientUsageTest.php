@@ -138,6 +138,19 @@ class ApiClientUsageTest extends TestCase
         $this->assertSame(2, $this->dayCount());
     }
 
+    public function testAPdfDownloadRefusedAtTheMinuteCapIsServedInTheNextMinute()
+    {
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->minute() . ':80');
+        $this->assertFalse($this->c->getBinary('fakturakraj/7.pdf', 'faktura'));
+        $this->now += 60;
+
+        $pdf = $this->c->getBinary('fakturakraj/7.pdf', 'faktura');
+
+        $this->assertSame('%PDF-1.4 data', $pdf);
+        $this->assertFalse($this->c->isRateLimited());
+        $this->assertSame(1, $this->minuteCount());
+    }
+
     public function testAStatusListRequestAtTheMinuteCapIsRefusedAndNothingChanges()
     {
         Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->minute() . ':80');

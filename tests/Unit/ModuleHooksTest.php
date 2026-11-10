@@ -246,6 +246,23 @@ class ModuleHooksTest extends TestCase
         $this->assertSame('paid', (new IfirmaReceipt(1))->status);
     }
 
+    public function testAStaleOrderPageRefusedByTheDayCapMakesNoCallAndShowsTheLastKnownStateWithoutAnError()
+    {
+        $lastSync = date('Y-m-d H:i:s', time() - 20 * 60);
+        $this->makeReceipt(array('last_sync_at' => $lastSync, 'sync_error' => ''));
+        Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', date('Ymd') . ':14000');
+
+        $out = $this->module->hookDisplayOrderDetail(array('order' => Order::$instances[15]));
+
+        $this->assertSame('<rendered:views/templates/hook/order_detail.tpl>', $out);
+        $this->assertSame('issued', $this->vars()['ifirma_view']['state']);
+        $this->assertSame(array(), $this->t->calls);
+        $stored = new IfirmaReceipt(1);
+        $this->assertSame($lastSync, $stored->last_sync_at);
+        $this->assertSame('', (string) $stored->sync_error);
+        $this->assertStringNotContainsString('rror', json_encode($this->vars()['ifirma_view']));
+    }
+
     public function testRecentlySyncedReceiptMakesNoCall()
     {
         $this->makeReceipt(array('last_sync_at' => date('Y-m-d H:i:s', time() - 60)));
@@ -2588,6 +2605,16 @@ class ModuleHooksTest extends TestCase
         $this->assertSame(array(array('ifirma_document_rank', 'DESC')), $search->orderBys);
         $this->assertSame(array(array('o.id_order', 'DESC')), $search->addOrderBys);
         $this->assertSame(array(), $count->orderBys, 'the count query is never sorted');
+    }
+
+    public function testFilteringAndSortingTheOrdersListByTheColumnSendNoRequestToIfirma()
+    {
+        $this->module->hookActionOrderGridQueryBuilderModifier(array(
+            'search_query_builder' => $this->filteringBuilder(), 'count_query_builder' => $this->filteringBuilder(),
+            'search_criteria' => $this->filterCriteria(array('ifirma_document' => '1'), 'ifirma_document', 'asc'),
+        ));
+
+        $this->assertSame(array(), $this->t->calls);
     }
 
     public function testAChosenStateWithoutACountBuilderStillFiltersTheSearch()

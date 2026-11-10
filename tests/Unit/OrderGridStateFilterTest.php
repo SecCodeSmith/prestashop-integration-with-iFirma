@@ -130,6 +130,66 @@ class OrderGridStateFilterTest extends TestCase
         }));
     }
 
+    /**
+     * Runs the join of the newest record and the filter's own condition on real rows.
+     *
+     * @param array[] $records id_ifirma_receipt, id_order, ifirma_id, status, delivery_status
+     * @param int     $rank
+     * @return int[] the orders the filter lists
+     */
+    private function ordersListedFor(array $records, $rank)
+    {
+        if (!extension_loaded('pdo_sqlite')) {
+            $this->markTestSkipped('pdo_sqlite is needed to run the filter condition');
+        }
+        $pdo = new PDO('sqlite::memory:');
+        $pdo->exec('CREATE TABLE o (id_order INTEGER)');
+        $pdo->exec('CREATE TABLE `' . _DB_PREFIX_ . 'ifirma_receipt` (id_ifirma_receipt INTEGER, id_order INTEGER, ifirma_id TEXT, status TEXT, delivery_status TEXT)');
+        foreach (array(1, 2) as $idOrder) {
+            $pdo->exec('INSERT INTO o VALUES (' . $idOrder . ')');
+        }
+        $insert = $pdo->prepare('INSERT INTO `' . _DB_PREFIX_ . 'ifirma_receipt` VALUES (?, ?, ?, ?, ?)');
+        foreach ($records as $record) {
+            $insert->execute($record);
+        }
+        $builder = $this->builder();
+        IfirmaOrderGridStateFilter::apply($builder, $rank);
+        $join = IfirmaOrderGridIndicator::joinSql('o');
+        $statement = $pdo->prepare(
+            'SELECT o.id_order FROM o LEFT JOIN ' . $join['table'] . ' ' . $join['alias'] . ' ON ' . $join['condition']
+            . ' WHERE ' . $builder->wheres[0] . ' ORDER BY o.id_order'
+        );
+        $statement->bindValue(':' . IfirmaOrderGridStateFilter::PARAMETER, $builder->parameters[0][1], PDO::PARAM_INT);
+        $statement->execute();
+
+        return array_map('intval', $statement->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    public function testAnOrderWhoseNewestRecordIsPaidIsNotListedForIssuanceFailedWhateverItsOlderRecordSays()
+    {
+        $records = array(
+            array(10, 1, '', 'error', 'none'),
+            array(11, 1, '77', 'paid', 'sent'),
+            array(12, 2, '', 'error', 'none'),
+        );
+
+        $listed = $this->ordersListedFor($records, IfirmaDocumentStateRank::ERROR);
+
+        $this->assertSame(array(2), $listed);
+    }
+
+    public function testAnOrderWhoseNewestRecordIsFailedIsListedForIssuanceFailedAfterAnOlderOneSucceeded()
+    {
+        $records = array(
+            array(10, 1, '77', 'paid', 'sent'),
+            array(11, 1, '', 'error', 'none'),
+        );
+
+        $listed = $this->ordersListedFor($records, IfirmaDocumentStateRank::ERROR);
+
+        $this->assertSame(array(1), $listed);
+    }
+
     public function testApplyComparesTheRankToABoundInteger()
     {
         $builder = $this->builder();

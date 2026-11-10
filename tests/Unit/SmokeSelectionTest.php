@@ -77,6 +77,14 @@ class SmokeSelectionTest extends TestCase
         $this->assertSame(array('R'), $selection->skipped());
     }
 
+    public function testANewScenarioRunsWithoutBeingListedWhenOnlyTheBurstIsSkipped()
+    {
+        $selection = SmokeSelection::parse('', 'R', array_merge($this->known, array('T')));
+
+        $this->assertTrue($selection->runs('T'));
+        $this->assertFalse($selection->runs('R'));
+    }
+
     public function testSkipWinsOverOnly()
     {
         $selection = SmokeSelection::parse('A,B', 'B', $this->known);

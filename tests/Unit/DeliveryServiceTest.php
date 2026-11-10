@@ -259,6 +259,21 @@ class DeliveryServiceTest extends TestCase
         $this->assertSame('sent', $this->row()['delivery_status']);
     }
 
+    public function testAPdfThatIsNotReadyAtFirstRaisesTheMinuteAndTheDayCountByTwo()
+    {
+        $now = 1800000000;
+        $this->client->setClock(function () use ($now) {
+            return $now;
+        });
+        $this->t->queue('GET', '#\.pdf#', $this->notFound());
+        $this->pdfOk();
+
+        $this->svc->deliver($this->receipt());
+
+        $this->assertSame(date('YmdHi', $now) . ':2', Configuration::get('IFIRMA_RATE_WINDOW'));
+        $this->assertSame(date('Ymd', $now) . ':2', Configuration::get('IFIRMA_RATE_DAY_WINDOW'));
+    }
+
     public function testPdfNeverReadyFailsAfterThreeAttempts()
     {
         for ($i = 0; $i < 3; $i++) {

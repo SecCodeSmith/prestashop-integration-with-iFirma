@@ -203,6 +203,25 @@ class DeliveryRetryJobTest extends TestCase
         $this->assertSame(array('handled' => 1, 'succeeded' => 1, 'failed' => 0, 'left' => 0), $report->block());
     }
 
+    public function testADeliveryThatFailedForWantOfAPdfIsMailedWithTheAttachmentWhenTheRetryComes()
+    {
+        $id = $this->failed(15, 0, null);
+        for ($i = 0; $i < 3; $i++) {
+            $this->t->queue('GET', '#\.pdf#', array('body' => json_encode(array('response' => array('Kod' => 404, 'Informacja' => 'Nie znaleziono dokumentu')))));
+        }
+        $this->delivery->deliver(new IfirmaReceipt($id));
+        $this->assertCount(0, Mail::$sent);
+        $this->assertSame($this->dueIn(900), $this->row($id)['delivery_retry_at']);
+        $this->now += 901;
+        $this->pdfOk();
+
+        $this->job()->run($this->context());
+
+        $this->assertCount(1, Mail::$sent);
+        $this->assertSame(self::PDF, Mail::$sent[0]['fileAttachment']['content']);
+        $this->assertSame('sent', $this->row($id)['delivery_status']);
+    }
+
     public function testADeliveryThatIsNotDueYetIsLeftAlone()
     {
         $id = $this->failed(11, 1, $this->dueIn(600));

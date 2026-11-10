@@ -173,6 +173,21 @@ class AdminOrderPanelTest extends TestCase
         $this->assertSame('Failed: no mailbox – No automatic attempt remains', $v['ifirma_delivery_text']);
     }
 
+    public function testTheSendAgainActionStaysOfferedAfterTheAttemptsAreUsedUp()
+    {
+        $this->makeReceipt(array('delivery_status' => 'failed', 'delivery_error' => 'no mailbox', 'delivery_attempts' => 3));
+        $tpl = file_get_contents(dirname(__DIR__, 2) . '/views/templates/hook/admin_order_panel.tpl');
+        $buttonAt = strpos($tpl, 'id="ifirma-resend"');
+        $guards = substr($tpl, $buttonAt - 120, 120);
+
+        $v = $this->panel();
+
+        $this->assertTrue($v['ifirma_is_issued']);
+        $this->assertTrue($v['ifirma_can_manage']);
+        $this->assertStringContainsString('{if $ifirma_can_manage}', $guards);
+        $this->assertStringNotContainsString('delivery', $guards, 'the button does not depend on the delivery state');
+    }
+
     public function testMarkupInTheDeliveryErrorReachesTheTemplateOnlyThroughItsEscapedLine()
     {
         $this->makeReceipt(array('delivery_status' => 'failed', 'delivery_error' => '<script>alert(1)</script>'));

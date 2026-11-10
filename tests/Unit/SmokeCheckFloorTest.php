@@ -43,6 +43,41 @@ class SmokeCheckFloorTest extends TestCase
         $this->assertSame(array('check floor: scenario A executed 0 checks, the committed floor is 12'), $problems);
     }
 
+    public function testANewScenarioWithAFloorEntryAndEnoughChecksPasses()
+    {
+        $problems = SmokeCheckFloor::problems(array('T' => 6), '{"T": 5}', array('T'));
+
+        $this->assertSame(array(), $problems);
+    }
+
+    public function testANewScenarioWithoutAFloorEntryFailsTheRunNamingIt()
+    {
+        $problems = SmokeCheckFloor::problems(array('A' => 12, 'T' => 6), '{"A": 12}', array('A', 'T'));
+
+        $this->assertSame(array('check floor: scenario T has no entry in check-floor.json; add it on purpose'), $problems);
+    }
+
+    public function testAFloorFileThatIsNotJsonIsReportedAsAProblem()
+    {
+        $problems = SmokeCheckFloor::problems(array('A' => 12), 'not json at all', array('A'));
+
+        $this->assertSame(array('check floor: check-floor.json is not a JSON object'), $problems);
+    }
+
+    public function testANegativeFloorIsReportedAsAProblem()
+    {
+        $problems = SmokeCheckFloor::problems(array('A' => 12), '{"A": -1}', array('A'));
+
+        $this->assertSame(array('check floor: check-floor.json: the floor of scenario A is not a non-negative integer'), $problems);
+    }
+
+    public function testAFloorThatIsAFractionIsReportedAsAProblem()
+    {
+        $problems = SmokeCheckFloor::problems(array('A' => 12), '{"A": 1.5}', array('A'));
+
+        $this->assertSame(array('check floor: check-floor.json: the floor of scenario A is not a non-negative integer'), $problems);
+    }
+
     public function testFloorFileIsWrittenFromAGreenRun()
     {
         $json = SmokeCheckFloor::render(array('B' => 4, 'A' => 12), 0, array());
