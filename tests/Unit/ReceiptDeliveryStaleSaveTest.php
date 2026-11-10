@@ -71,6 +71,23 @@ class ReceiptDeliveryStaleSaveTest extends TestCase
         return $rows[$id];
     }
 
+    /** PrestaShop fills the objects of a collection from rows with hydrate(), not through the constructor. */
+    public function testAnObjectFilledFromARowRemembersItsDeliveryStateToo()
+    {
+        $id = $this->failedAndDue();
+        $stale = new IfirmaReceipt();
+        $stale->hydrate(array('id_ifirma_receipt' => $id) + $this->row($id));
+        $this->deliveredByTheCron($id);
+
+        $stale->sync_error = 'sync note';
+        $stale->save();
+
+        $row = $this->row($id);
+        $this->assertSame('sent', $row['delivery_status']);
+        $this->assertNull($row['delivery_retry_at']);
+        $this->assertSame(array(), array_intersect(self::DELIVERY_COLUMNS, $this->lastWrittenColumns()));
+    }
+
     /** What the cron's retry does to the row: delivered, attempt counted, nothing due. */
     private function deliveredByTheCron($id)
     {
