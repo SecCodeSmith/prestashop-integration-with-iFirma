@@ -497,6 +497,8 @@ return array(
     'Held by a data request' => 'Wstrzymane przez prośbę o zmianę danych',
     'Issuance failed' => 'Wystawienie nie powiodło się',
     'Unknown outcome' => 'Nieznany wynik',
+    'Issued, not sent' => 'Wystawiony, niewysłany',
+    'Waiting for KSeF' => 'Czeka na KSeF',
     'KSeF failed' => 'Błąd KSeF',
     'Delivery failed' => 'Wysyłka nie powiodła się',
     'No document issues.' => 'Brak problemów z dokumentami.',

@@ -9,6 +9,7 @@ if (!defined('_PS_VERSION_')) {
 }
 
 require_once dirname(__FILE__) . '/IfirmaOrderGridTooltip.php';
+require_once dirname(__FILE__) . '/IfirmaDocumentStateRank.php';
 
 /**
  * What the "iFirma" column of the back-office Orders list shows for each order: the SQL that reads the
@@ -33,17 +34,17 @@ class IfirmaOrderGridIndicator
     /** The ORDER BY alias of the column's sort (the column id itself holds the HTML of the cell). */
     const SORT_ALIAS = self::FIELD_RANK;
 
-    /** Position of each state in the sort, ascending: what needs action first. */
-    const RANK_ERROR = 1;
-    const RANK_UNKNOWN = 2;
-    const RANK_SUSPECTED = 3;
-    const RANK_HELD = 4;
-    const RANK_QUEUED = 5;
-    const RANK_NO_RECORD = 6;
-    const RANK_ISSUED = 7;
-    const RANK_AWAITING_KSEF = 8;
-    const RANK_SENT = 9;
-    const RANK_PAID = 10;
+    /** Position of each state in the sort, ascending: what needs action first (the ranks live in IfirmaDocumentStateRank). */
+    const RANK_ERROR = IfirmaDocumentStateRank::ERROR;
+    const RANK_UNKNOWN = IfirmaDocumentStateRank::UNKNOWN;
+    const RANK_SUSPECTED = IfirmaDocumentStateRank::SUSPECTED;
+    const RANK_HELD = IfirmaDocumentStateRank::HELD;
+    const RANK_QUEUED = IfirmaDocumentStateRank::QUEUED;
+    const RANK_NO_RECORD = IfirmaDocumentStateRank::NO_RECORD;
+    const RANK_ISSUED = IfirmaDocumentStateRank::ISSUED;
+    const RANK_AWAITING_KSEF = IfirmaDocumentStateRank::AWAITING_KSEF;
+    const RANK_SENT = IfirmaDocumentStateRank::SENT;
+    const RANK_PAID = IfirmaDocumentStateRank::PAID;
 
     /** @var string alias of the joined receipt row; none of PrestaShop's order-grid aliases (o, cu, cur, a, c, os, osl, s) */
     const JOIN_ALIAS = 'ifr';
@@ -78,8 +79,7 @@ class IfirmaOrderGridIndicator
     public static function selectSql()
     {
         $j = self::JOIN_ALIAS;
-        // the same "issued" rule as IfirmaReceipt::isIssued(): an identifier and not the error state
-        $issued = "{$j}.ifirma_id <> '' AND {$j}.status <> '" . pSQL(IfirmaReceipt::STATUS_ERROR) . "'";
+        $issued = IfirmaDocumentStateRank::issuedSql($j);
 
         return array(
             "IF({$issued}, IF({$j}.ifirma_number <> '', {$j}.ifirma_number, {$j}.ifirma_id), '') AS " . self::FIELD_NUMBER,
@@ -91,7 +91,7 @@ class IfirmaOrderGridIndicator
             "IFNULL({$j}.ksef_status, '') AS " . self::FIELD_KSEF_STATUS,
             "IFNULL({$j}.ksef_number, '') AS " . self::FIELD_KSEF_NUMBER,
             "LEFT(IFNULL({$j}.last_error, ''), " . (IfirmaOrderGridTooltip::ERROR_LIMIT + 1) . ") AS " . self::FIELD_ERROR,
-            self::rankSql($j, $issued) . ' AS ' . self::FIELD_RANK,
+            IfirmaDocumentStateRank::sql($j) . ' AS ' . self::FIELD_RANK,
         );
     }
 

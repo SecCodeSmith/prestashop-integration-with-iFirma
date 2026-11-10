@@ -21,6 +21,7 @@ require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaAdminActions.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaBulkRunner.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaInput.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaIssueFeed.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDocumentListSort.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaOrderGridIndicator.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaReceiptActions.php';
 
@@ -83,7 +84,8 @@ class AdminIfirmaController extends ModuleAdminController
         $this->list_no_link = true;
         $this->_defaultOrderBy = 'id_ifirma_receipt';
         $this->_defaultOrderWay = 'DESC';
-        $this->_select = 'o.reference AS order_reference, CONCAT(c.firstname, \' \', c.lastname) AS customer_name, \'\' AS actions';
+        $this->_select = 'o.reference AS order_reference, CONCAT(c.firstname, \' \', c.lastname) AS customer_name, \'\' AS actions, '
+            . IfirmaDocumentListSort::rankSelect('a');
         $this->_join = 'LEFT JOIN `' . _DB_PREFIX_ . 'orders` o ON o.id_order = a.id_order '
             . 'LEFT JOIN `' . _DB_PREFIX_ . 'customer` c ON c.id_customer = a.id_customer';
         if ($this->attentionPresetActive()) {
@@ -272,6 +274,7 @@ class AdminIfirmaController extends ModuleAdminController
                 'type' => 'select',
                 'list' => $statuses,
                 'filter_key' => 'a!status',
+                'order_key' => IfirmaDocumentListSort::RANK_ALIAS,
                 'filter_type' => 'string',
             ),
             'source' => array(
@@ -324,6 +327,37 @@ class AdminIfirmaController extends ModuleAdminController
             'resend' => array('text' => $this->module->l('Send again', 'adminifirmacontroller'), 'icon' => 'icon-envelope'),
             'refresh' => array('text' => $this->module->l('Refresh from iFirma', 'adminifirmacontroller'), 'icon' => 'icon-download'),
         );
+    }
+
+    /**
+     * The core refuses a request direction that is not asc or desc by leaving it out, which would sort the list in its
+     * default way: here an unexpected direction sorts ascending, and the value never reaches the SQL.
+     *
+     * @param string|null $orderDirection
+     * @return string ASC or DESC
+     */
+    protected function checkOrderDirection($orderDirection)
+    {
+        $requested = IfirmaInput::scalar(Tools::getValue($this->list_id . 'Orderway'));
+        if ($requested !== '' && !IfirmaDocumentListSort::isDirection($requested)) {
+            return IfirmaDocumentListSort::ASCENDING;
+        }
+
+        return parent::checkOrderDirection($orderDirection);
+    }
+
+    /**
+     * Records of the same state are listed newest first in both directions of the state sort.
+     *
+     * @param string|null $orderBy
+     * @param string|null $orderDirection
+     * @return string
+     */
+    protected function getOrderByClause($orderBy, $orderDirection)
+    {
+        $clause = parent::getOrderByClause($orderBy, $orderDirection);
+
+        return IfirmaDocumentListSort::withTieBreak($clause, $this->_orderBy, $this->_orderWay);
     }
 
     /**

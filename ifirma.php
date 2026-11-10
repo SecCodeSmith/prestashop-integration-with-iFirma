@@ -33,6 +33,7 @@ require_once __DIR__ . '/classes/IfirmaAdminOrderPanelView.php';
 require_once __DIR__ . '/classes/IfirmaCustomerContractorService.php';
 require_once __DIR__ . '/classes/IfirmaAdminActions.php';
 require_once __DIR__ . '/classes/IfirmaOrderGridIndicator.php';
+require_once __DIR__ . '/classes/IfirmaOrderGridStateFilter.php';
 require_once __DIR__ . '/classes/IfirmaPermission.php';
 require_once __DIR__ . '/classes/IfirmaIssueFeed.php';
 require_once __DIR__ . '/classes/IfirmaBulkRunner.php';
@@ -1450,6 +1451,7 @@ class Ifirma extends Module
             'clickable' => true,
         ));
         $params['definition']->getColumns()->addBefore('actions', $column);
+        $this->addStateFilter($params['definition']);
 
         $bulkClass = 'PrestaShop\\PrestaShop\\Core\\Grid\\Action\\Bulk\\Type\\ButtonBulkAction';
         if (IfirmaPermission::canIssue($this->context->employee)
@@ -1465,7 +1467,48 @@ class Ifirma extends Module
         }
     }
 
-    /** Orders list: the newest module record of each order joins the search query (never the count query). */
+    /**
+     * The choice filter of the "iFirma" column: one choice per document state. Skipped where the grid has no filter
+     * collection or the filter class (older cores, tests).
+     *
+     * @param object $definition the Orders grid definition
+     */
+    private function addStateFilter($definition)
+    {
+        $filterClass = 'PrestaShop\\PrestaShop\\Core\\Grid\\Filter\\Filter';
+        if (!class_exists($filterClass) || !method_exists($definition, 'getFilters')) {
+            return;
+        }
+        $filter = new $filterClass(IfirmaOrderGridStateFilter::FIELD, 'Symfony\\Component\\Form\\Extension\\Core\\Type\\ChoiceType');
+        $filter->setTypeOptions(array(
+            'required' => false,
+            'choices' => IfirmaOrderGridStateFilter::choices($this->stateFilterLabels()),
+            'translation_domain' => false,
+        ))->setAssociatedColumn(IfirmaOrderGridIndicator::FIELD);
+        $definition->getFilters()->add($filter);
+    }
+
+    /** @return string[] IfirmaDocumentStateRank label key => the word of that state in the filter */
+    private function stateFilterLabels()
+    {
+        return self::decodeWords(array(
+            'state_error' => $this->l('Issuance failed'),
+            'state_unknown' => $this->l('Unknown outcome'),
+            'state_duplicate_suspected' => $this->l('Suspected duplicate'),
+            'state_held' => $this->l('Held (data change request)'),
+            'state_queued' => $this->l('Queued (iFirma limit)'),
+            'state_none' => $this->l('No document yet'),
+            'state_issued' => $this->l('Issued, not sent'),
+            'state_awaiting_ksef' => $this->l('Waiting for KSeF'),
+            'state_sent' => $this->l('Sent'),
+            'state_paid' => $this->l('Paid'),
+        ));
+    }
+
+    /**
+     * Orders list: the newest module record of each order joins the search query, and the count query only while a
+     * state filter is chosen (an unfiltered list keeps its count query as it is).
+     */
     public function hookActionOrderGridQueryBuilderModifier($params)
     {
         if (!IfirmaPermission::canView($this->context->employee)) {
@@ -1479,7 +1522,32 @@ class Ifirma extends Module
         foreach (IfirmaOrderGridIndicator::selectSql() as $select) {
             $params['search_query_builder']->addSelect($select);
         }
-        $this->sortByTheColumn($params['search_query_builder'], isset($params['search_criteria']) ? $params['search_criteria'] : null);
+        $criteria = isset($params['search_criteria']) ? $params['search_criteria'] : null;
+        $this->filterByTheColumn($params['search_query_builder'], isset($params['count_query_builder']) ? $params['count_query_builder'] : null, $criteria);
+        $this->sortByTheColumn($params['search_query_builder'], $criteria);
+    }
+
+    /**
+     * Only an integer from 1 to 10 filters the list; any other value changes neither query. The same condition goes to
+     * the count query, so the total and the paging cover the filtered orders only.
+     *
+     * @param object      $searchQuery the search query, which already holds the newest-record join
+     * @param object|null $countQuery
+     * @param object|null $criteria    the grid's search criteria
+     */
+    private function filterByTheColumn($searchQuery, $countQuery, $criteria)
+    {
+        $rank = IfirmaOrderGridStateFilter::rankFrom($criteria);
+        if ($rank === null) {
+            return;
+        }
+        IfirmaOrderGridStateFilter::apply($searchQuery, $rank);
+        if (!is_object($countQuery)) {
+            return;
+        }
+        $join = IfirmaOrderGridIndicator::joinSql('o');
+        $countQuery->leftJoin('o', $join['table'], $join['alias'], $join['condition']);
+        IfirmaOrderGridStateFilter::apply($countQuery, $rank);
     }
 
     /**

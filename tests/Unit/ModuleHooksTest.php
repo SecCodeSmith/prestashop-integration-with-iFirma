@@ -2232,6 +2232,313 @@ class ModuleHooksTest extends TestCase
         $this->assertSame(array(), $count->selects);
     }
 
+    // ---- filtering the Orders list by the iFirma column (spec "Filtering by document state") -------------------
+
+    private function gridDefinition(&$columns, &$filters)
+    {
+        $columns = new class {
+            public $calls = array();
+
+            public function addBefore($id, $column)
+            {
+                $this->calls[] = array($id, $column);
+
+                return $this;
+            }
+        };
+        $filters = new class {
+            public $added = array();
+
+            public function add($filter)
+            {
+                $this->added[] = $filter;
+
+                return $this;
+            }
+        };
+
+        return new class($columns, $filters) {
+            private $columns;
+            private $filters;
+
+            public function __construct($columns, $filters)
+            {
+                $this->columns = $columns;
+                $this->filters = $filters;
+            }
+
+            public function getColumns()
+            {
+                return $this->columns;
+            }
+
+            public function getFilters()
+            {
+                return $this->filters;
+            }
+        };
+    }
+
+    public function testDefinitionHookAddsAChoiceFilterWithTheTenStatesToTheColumn()
+    {
+        $definition = $this->gridDefinition($columns, $filters);
+
+        $this->module->hookActionOrderGridDefinitionModifier(array('definition' => $definition));
+
+        $this->assertCount(1, $filters->added);
+        $filter = $filters->added[0];
+        $this->assertInstanceOf('PrestaShop\\PrestaShop\\Core\\Grid\\Filter\\Filter', $filter);
+        $this->assertSame('ifirma_document', $filter->getName());
+        $this->assertSame('Symfony\\Component\\Form\\Extension\\Core\\Type\\ChoiceType', $filter->getType());
+        $this->assertSame('ifirma_document', $filter->getAssociatedColumn());
+        $options = $filter->getTypeOptions();
+        $this->assertFalse($options['required']);
+        $this->assertFalse($options['translation_domain']);
+        $this->assertSame(
+            array(
+                'Issuance failed' => 1, 'Unknown outcome' => 2, 'Suspected duplicate' => 3, 'Held (data change request)' => 4,
+                'Queued (iFirma limit)' => 5, 'No document yet' => 6, 'Issued, not sent' => 7, 'Waiting for KSeF' => 8,
+                'Sent' => 9, 'Paid' => 10,
+            ),
+            $options['choices']
+        );
+    }
+
+    public function testTheFilterChoicesHaveAPolishTranslation()
+    {
+        $map = require dirname(__DIR__, 2) . '/tools/pl_translations_map.php';
+
+        foreach (array('Issuance failed', 'Unknown outcome', 'Suspected duplicate', 'Held (data change request)', 'Queued (iFirma limit)',
+            'No document yet', 'Issued, not sent', 'Waiting for KSeF', 'Sent', 'Paid') as $label) {
+            $this->assertArrayHasKey($label, $map, $label);
+        }
+    }
+
+    public function testDefinitionHookWithoutFiltersStillAddsTheColumn()
+    {
+        $columns = new class {
+            public $calls = array();
+
+            public function addBefore($id, $column)
+            {
+                $this->calls[] = array($id, $column);
+
+                return $this;
+            }
+        };
+        $definition = new class($columns) {
+            private $columns;
+
+            public function __construct($columns)
+            {
+                $this->columns = $columns;
+            }
+
+            public function getColumns()
+            {
+                return $this->columns;
+            }
+        };
+
+        $this->module->hookActionOrderGridDefinitionModifier(array('definition' => $definition));
+
+        $this->assertCount(1, $columns->calls);
+    }
+
+    private function filteringBuilder()
+    {
+        return new class {
+            public $joins = array();
+            public $selects = array();
+            public $wheres = array();
+            public $parameters = array();
+            public $orderBys = array();
+            public $addOrderBys = array();
+
+            public function leftJoin($a, $b, $c, $d = null)
+            {
+                $this->joins[] = array($a, $b, $c, $d);
+
+                return $this;
+            }
+
+            public function addSelect($s)
+            {
+                $this->selects[] = $s;
+
+                return $this;
+            }
+
+            public function andWhere($w)
+            {
+                $this->wheres[] = $w;
+
+                return $this;
+            }
+
+            public function setParameter($key, $value, $type = null)
+            {
+                $this->parameters[] = array($key, $value, $type);
+
+                return $this;
+            }
+
+            public function orderBy($sort, $order = null)
+            {
+                $this->orderBys[] = array($sort, $order);
+
+                return $this;
+            }
+
+            public function addOrderBy($sort, $order = null)
+            {
+                $this->addOrderBys[] = array($sort, $order);
+
+                return $this;
+            }
+        };
+    }
+
+    private function filterCriteria($filters, $orderBy = null, $orderWay = null)
+    {
+        return new class($filters, $orderBy, $orderWay) {
+            private $filters;
+            private $by;
+            private $way;
+
+            public function __construct($filters, $by, $way)
+            {
+                $this->filters = $filters;
+                $this->by = $by;
+                $this->way = $way;
+            }
+
+            public function getFilters()
+            {
+                return $this->filters;
+            }
+
+            public function getOrderBy()
+            {
+                return $this->by;
+            }
+
+            public function getOrderWay()
+            {
+                return $this->way;
+            }
+        };
+    }
+
+    public function testAChosenStateFiltersTheSearchAndTheCountQueryWithABoundRank()
+    {
+        $search = $this->filteringBuilder();
+        $count = $this->filteringBuilder();
+
+        $this->module->hookActionOrderGridQueryBuilderModifier(array(
+            'search_query_builder' => $search, 'count_query_builder' => $count,
+            'search_criteria' => $this->filterCriteria(array('ifirma_document' => '1')),
+        ));
+
+        $condition = '(' . IfirmaDocumentStateRank::sql('ifr') . ') = :ifirma_rank';
+        $this->assertSame(array($condition), $search->wheres);
+        $this->assertSame(array($condition), $count->wheres);
+        $this->assertSame(array(array('ifirma_rank', 1, PDO::PARAM_INT)), $search->parameters);
+        $this->assertSame(array(array('ifirma_rank', 1, PDO::PARAM_INT)), $count->parameters);
+    }
+
+    public function testTheCountQueryGetsTheNewestRecordJoinOnlyWhenTheFilterIsActive()
+    {
+        $join = IfirmaOrderGridIndicator::joinSql('o');
+        $expected = array(array('o', $join['table'], $join['alias'], $join['condition']));
+
+        $filtered = $this->filteringBuilder();
+        $this->module->hookActionOrderGridQueryBuilderModifier(array(
+            'search_query_builder' => $this->filteringBuilder(), 'count_query_builder' => $filtered,
+            'search_criteria' => $this->filterCriteria(array('ifirma_document' => '10')),
+        ));
+        $unfiltered = $this->filteringBuilder();
+        $this->module->hookActionOrderGridQueryBuilderModifier(array(
+            'search_query_builder' => $this->filteringBuilder(), 'count_query_builder' => $unfiltered,
+            'search_criteria' => $this->filterCriteria(array('ifirma_document' => '')),
+        ));
+
+        $this->assertSame($expected, $filtered->joins);
+        $this->assertSame(array(), $filtered->selects, 'the count query selects nothing extra');
+        $this->assertSame(array(), $unfiltered->joins);
+        $this->assertSame(array(), $unfiltered->wheres);
+        $this->assertSame(array(), $unfiltered->parameters);
+    }
+
+    /**
+     * @return array[]
+     */
+    public function valuesThatAreNoState()
+    {
+        return array(
+            'unknown state' => array('refunded'),
+            'or one equals one' => array('1 OR 1=1'),
+            'drop table' => array("'; DROP TABLE ps_orders; --"),
+            'array' => array(array('1', '2')),
+            'empty string' => array(''),
+            'zero' => array('0'),
+            'eleven' => array('11'),
+            'null' => array(null),
+        );
+    }
+
+    /**
+     * @dataProvider valuesThatAreNoState
+     */
+    public function testAValueThatIsNoStateLeavesBothQueriesUntouchedAndOutOfTheSql($value)
+    {
+        $search = $this->filteringBuilder();
+        $count = $this->filteringBuilder();
+
+        $this->module->hookActionOrderGridQueryBuilderModifier(array(
+            'search_query_builder' => $search, 'count_query_builder' => $count,
+            'search_criteria' => $this->filterCriteria(array('ifirma_document' => $value)),
+        ));
+
+        $this->assertSame(array(), $search->wheres);
+        $this->assertSame(array(), $search->parameters);
+        $this->assertSame(array(), $count->wheres);
+        $this->assertSame(array(), $count->parameters);
+        $this->assertSame(array(), $count->joins);
+        $this->assertSame(array(), $count->selects);
+        $recorded = json_encode(array($search->joins, $search->selects, $search->wheres, $search->parameters, $count));
+        $this->assertStringNotContainsString('DROP', $recorded);
+        $this->assertStringNotContainsString('1=1', $recorded);
+    }
+
+    public function testTheFilterCombinesWithSortingByTheColumn()
+    {
+        $search = $this->filteringBuilder();
+        $count = $this->filteringBuilder();
+
+        $this->module->hookActionOrderGridQueryBuilderModifier(array(
+            'search_query_builder' => $search, 'count_query_builder' => $count,
+            'search_criteria' => $this->filterCriteria(array('ifirma_document' => '9'), 'ifirma_document', 'desc'),
+        ));
+
+        $this->assertCount(1, $search->wheres);
+        $this->assertSame(array(array('ifirma_document_rank', 'DESC')), $search->orderBys);
+        $this->assertSame(array(array('o.id_order', 'DESC')), $search->addOrderBys);
+        $this->assertSame(array(), $count->orderBys, 'the count query is never sorted');
+    }
+
+    public function testAChosenStateWithoutACountBuilderStillFiltersTheSearch()
+    {
+        $search = $this->filteringBuilder();
+
+        $this->module->hookActionOrderGridQueryBuilderModifier(array(
+            'search_query_builder' => $search,
+            'search_criteria' => $this->filterCriteria(array('ifirma_document' => '4')),
+        ));
+
+        $this->assertCount(1, $search->wheres);
+    }
+
     public function testTheCellTooltipUsesTheModulesWords()
     {
         $grid = array('data' => array('records' => array(array(
