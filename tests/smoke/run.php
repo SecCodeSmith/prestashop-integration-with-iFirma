@@ -1695,6 +1695,7 @@ function smokeAutomaticRetryChecks($module, $actions)
     $receipt = receiptOf($order);
     assertSame('sent', (string) $receipt->delivery_status, 'retry: delivery is recorded as sent');
     assertSame(null, $receipt->getDeliveryRetryAt(), 'retry: no due time is left after the delivery');
+    assertSame(2, $receipt->getDeliveryAttempts(), 'retry: two attempts are used after the successful retry');
 
     // Three rejections
     $order = smokeOrderWithFailedDelivery($module, 'retry x3');
