@@ -888,6 +888,7 @@ class ModuleHooksTest extends TestCase
     {
         return array_merge(array(
             'submitIfirma' => '1',
+            'token' => 'admin-token-AdminModules',
             'IFIRMA_BASE_URL' => 'http://ifirma-mock:8001/iapi/',
             'IFIRMA_USER' => 'u@example.com',
             'IFIRMA_KEY_FAKTURA' => str_repeat('1', 64),
@@ -1021,7 +1022,7 @@ class ModuleHooksTest extends TestCase
 
     public function testRegenerateCronTokenReplacesTheToken()
     {
-        Tools::$values = array('submitIfirmaRegenerateCron' => '1');
+        Tools::$values = array('submitIfirmaRegenerateCron' => '1', 'token' => 'admin-token-AdminModules');
         $out = $this->module->getContent();
 
         $new = Configuration::get('IFIRMA_CRON_TOKEN');
@@ -1443,7 +1444,7 @@ class ModuleHooksTest extends TestCase
             array('id_customer' => 9, 'vat_number' => 'PL5252248481', 'dni' => '', 'postcode' => '00-950', 'company' => 'ACME', 'firstname' => 'A', 'lastname' => 'B'),
         ));
         $tmp = $this->uploadFixture(file_get_contents(dirname(__DIR__) . '/fixtures/contractors-export.csv'));
-        Tools::$values = array('submitIfirmaImportContractors' => '1');
+        Tools::$values = array('submitIfirmaImportContractors' => '1', 'token' => 'admin-token-AdminModules');
 
         $this->module->getContent();
         @unlink($tmp);
@@ -1464,7 +1465,7 @@ class ModuleHooksTest extends TestCase
     public function testUploadWithoutIdentifierColumnShowsTheMissingColumn()
     {
         $tmp = $this->uploadFixture("Nazwa;NIP\nJan;5252248481\n");
-        Tools::$values = array('submitIfirmaImportContractors' => '1');
+        Tools::$values = array('submitIfirmaImportContractors' => '1', 'token' => 'admin-token-AdminModules');
 
         $this->module->getContent();
         @unlink($tmp);
@@ -1478,7 +1479,7 @@ class ModuleHooksTest extends TestCase
 
     public function testUploadRejectsMissingOversizedAndForeignFiles()
     {
-        Tools::$values = array('submitIfirmaImportContractors' => '1');
+        Tools::$values = array('submitIfirmaImportContractors' => '1', 'token' => 'admin-token-AdminModules');
 
         unset($_FILES['IFIRMA_CONTRACTOR_CSV']);
         $this->module->getContent();
@@ -1502,12 +1503,12 @@ class ModuleHooksTest extends TestCase
     public function testForgetAllLinksNeedsTheConfirmationField()
     {
         IfirmaContractorMap::link(1, 'A-1', 'nip');
-        Tools::$values = array('submitIfirmaResetContractorMap' => '1');
+        Tools::$values = array('submitIfirmaResetContractorMap' => '1', 'token' => 'admin-token-AdminModules');
         $out = $this->module->getContent();
         $this->assertStringContainsString('<error>', $out);
         $this->assertNotContains('TRUNCATE TABLE `ps_ifirma_contractor_map`', Db::getInstance()->executed);
 
-        Tools::$values = array('submitIfirmaResetContractorMap' => '1', 'confirm' => '1');
+        Tools::$values = array('submitIfirmaResetContractorMap' => '1', 'confirm' => '1', 'token' => 'admin-token-AdminModules');
         $out = $this->module->getContent();
         $this->assertStringContainsString('<confirmation>', $out);
         $this->assertContains('TRUNCATE TABLE `ps_ifirma_contractor_map`', Db::getInstance()->executed);

@@ -195,7 +195,7 @@ class SettingsGoldenTest extends TestCase
      */
     public function testTheSaveWritesAndReportsWhatWasCaptured(array $scenario)
     {
-        Tools::$values = self::requestOf($scenario);
+        Tools::$values = self::requestOf($scenario) + array('token' => 'admin-token-AdminModules');
         $writes = $this->writesOf($scenario);
         $storedBefore = Configuration::$values;
         Configuration::$writes = array();

@@ -488,6 +488,8 @@ return array(
     'The receipt API key must be a hexadecimal string.' => 'Klucz API rachunek musi być ciągiem szesnastkowym.',
     'The API base URL must be an absolute https URL; http is accepted only for a local host or a shop in developer mode.' => 'Adres bazowy API musi być bezwzględnym adresem https; http jest dozwolone tylko dla hosta lokalnego lub sklepu w trybie deweloperskim.',
     'The cron token could not be regenerated: the secure random generator is unavailable.' => 'Nie udało się wygenerować nowego tokenu crona: bezpieczny generator liczb losowych jest niedostępny.',
+    'You do not have permission to configure this module.' => 'Nie masz uprawnień do konfiguracji tego modułu.',
+    'The request could not be verified. Reload the page and try again.' => 'Nie udało się zweryfikować żądania. Odśwież stronę i spróbuj ponownie.',
     'Or send the token in a header, so it stays out of web server logs:' => 'Lub wyślij token w nagłówku, aby nie trafiał do logów serwera WWW:',
     'Issue iFirma documents' => 'Wystaw dokumenty iFirma',
     'Issue iFirma document' => 'Wystaw dokument iFirma',

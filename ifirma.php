@@ -48,6 +48,8 @@ require_once __DIR__ . '/classes/IfirmaRateDecision.php';
 require_once __DIR__ . '/classes/IfirmaRemoteLimitPresenter.php';
 require_once __DIR__ . '/classes/IfirmaLimitCheck.php';
 require_once __DIR__ . '/classes/IfirmaLimitCheckAction.php';
+require_once __DIR__ . '/classes/IfirmaConfigPageGuard.php';
+require_once __DIR__ . '/classes/IfirmaBackOfficeToken.php';
 
 class Ifirma extends Module
 {
@@ -214,21 +216,34 @@ class Ifirma extends Module
 
     public function getContent()
     {
+        $guard = $this->configPageGuard();
+        // PrestaShop 9.1 opens this page for an employee who may only view the Module Manager: the module asks itself
+        if (!$guard->mayConfigure()) {
+            return $this->displayError($this->l('You do not have permission to configure this module.'));
+        }
+
         $output = '';
 
         $report = null;
         $errors = array();
         $limitCheck = null;
-        if (Tools::isSubmit('submitIfirmaRegenerateCron')) {
-            $output .= $this->regenerateCronToken();
-        } elseif (Tools::isSubmit(IfirmaRemoteLimitPresenter::SUBMIT)) {
-            $limitCheck = $this->checkRemoteLimit();
-        } elseif (Tools::isSubmit('submitIfirma')) {
-            $output .= $this->postProcessConfiguration();
-        } elseif (Tools::isSubmit('submitIfirmaImportContractors')) {
-            list($report, $errors) = $this->processContractorImport();
-        } elseif (Tools::isSubmit('submitIfirmaResetContractorMap')) {
-            $output .= $this->resetContractorMap();
+        $verdict = $guard->verdict();
+        if ($this->requestNamesAnAction() && $verdict === IfirmaConfigPageGuard::BAD_TOKEN) {
+            $output .= $this->displayError($this->l('The request could not be verified. Reload the page and try again.'));
+        }
+        // a GET, or a POST without the token, shows the page and runs no action
+        if ($verdict === IfirmaConfigPageGuard::ALLOWED) {
+            if (Tools::isSubmit('submitIfirmaRegenerateCron')) {
+                $output .= $this->regenerateCronToken();
+            } elseif (Tools::isSubmit(IfirmaRemoteLimitPresenter::SUBMIT)) {
+                $limitCheck = $this->checkRemoteLimit($guard);
+            } elseif (Tools::isSubmit('submitIfirma')) {
+                $output .= $this->postProcessConfiguration();
+            } elseif (Tools::isSubmit('submitIfirmaImportContractors')) {
+                list($report, $errors) = $this->processContractorImport();
+            } elseif (Tools::isSubmit('submitIfirmaResetContractorMap')) {
+                $output .= $this->resetContractorMap();
+            }
         }
 
         return $this->authBlockBanner() . $this->storedBaseUrlWarning() . $output
@@ -619,13 +634,13 @@ class Ifirma extends Module
      *
      * @return IfirmaLimitCheck|null null when the request was not allowed and nothing was asked
      */
-    private function checkRemoteLimit()
+    private function checkRemoteLimit(IfirmaConfigPageGuard $guard)
     {
         $module = $this;
         $action = new IfirmaLimitCheckAction(
             IfirmaRemoteLimit::forClient($this->buildApiClient()),
-            function () use ($module) {
-                return IfirmaInput::isPost() && $module->hasValidAdminToken() && $module->getPermission('configure') && $module->hasAbonentKey();
+            function () use ($module, $guard) {
+                return $guard->allowsStateChange() && $module->hasAbonentKey();
             },
             function ($message) {
                 PrestaShopLogger::addLog($message, IfirmaLimitCheckAction::LOG_ERROR);
@@ -635,13 +650,78 @@ class Ifirma extends Module
         return $action->run();
     }
 
+    /** The submit names of the configuration page's actions: each one changes state. */
+    const CONFIG_PAGE_ACTIONS = array(
+        'submitIfirmaRegenerateCron',
+        IfirmaRemoteLimitPresenter::SUBMIT,
+        'submitIfirma',
+        'submitIfirmaImportContractors',
+        'submitIfirmaResetContractorMap',
+    );
+
     /**
-     * @return bool
+     * @return bool whether the request names an action of the configuration page
      */
-    private function hasValidAdminToken()
+    private function requestNamesAnAction()
     {
-        // PrestaShop checks the token before getContent() unless tokens in admin URLs are switched off: do not rely on it alone
-        return hash_equals(Tools::getAdminTokenLite('AdminModules'), (string) Tools::getValue('token'));
+        foreach (self::CONFIG_PAGE_ACTIONS as $submit) {
+            if (Tools::isSubmit($submit)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return IfirmaConfigPageGuard the one decision whether a request may see the page and run an action
+     */
+    private function configPageGuard()
+    {
+        $module = $this;
+        $token = new IfirmaBackOfficeToken(
+            function () {
+                // the settings form carries the token in its address, the other forms in a field too: both arrive here
+                return Tools::getValue('token');
+            },
+            function () {
+                return Tools::getAdminTokenLite('AdminModules');
+            },
+            $this->coreTokenVerdict()
+        );
+
+        return new IfirmaConfigPageGuard(
+            function () use ($module) {
+                return $module->getPermission('configure');
+            },
+            array('IfirmaInput', 'isPost'),
+            array($token, 'isValid')
+        );
+    }
+
+    /**
+     * PrestaShop 9 hands out a different Symfony CSRF token on every page view, so only its own check can tell whether
+     * a posted one is the employee's; earlier versions have none and use a fixed token.
+     *
+     * @return callable|null returns the core's verdict on the token of the request, null when the shop has no such check
+     */
+    private function coreTokenVerdict()
+    {
+        $managerClass = 'PrestaShopBundle\Security\Admin\UserTokenManager';
+        $containerClass = 'PrestaShop\PrestaShop\Adapter\SymfonyContainer';
+        $container = class_exists($managerClass) && class_exists($containerClass) ? call_user_func(array($containerClass, 'getInstance')) : null;
+        if ($container === null) {
+            return null;
+        }
+
+        return function () use ($container, $managerClass) {
+            try {
+                return $container->get($managerClass)->isTokenValid();
+            } catch (Throwable $e) {
+                // the core throws for a token value that is not a string (token[]=x): that is a refusal, not an error page
+                return false;
+            }
+        };
     }
 
     /**
