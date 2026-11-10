@@ -63,9 +63,6 @@ class IfirmaDeliveryService
     /** deliver() option: download the PDF once and never sleep for it; a PDF that is not ready is a temporary failure. */
     const OPTION_SINGLE_PDF_ATTEMPT = 'single_pdf_attempt';
 
-    /** The receipt fields that make up the recorded state of a delivery. */
-    const DELIVERY_STATE_FIELDS = array('delivery_status', 'delivery_channel', 'delivery_error', 'delivered_at', 'delivery_attempts', 'delivery_retry_at');
-
     /** Total PDF download attempts in a shop-mail delivery, and the waits (seconds) between them. */
     const PDF_ATTEMPTS = 3;
     const PDF_RETRY_WAITS = array(3, 7);
@@ -367,9 +364,7 @@ class IfirmaDeliveryService
      */
     private function adoptDeliveryState(IfirmaReceipt $target, IfirmaReceipt $stored)
     {
-        foreach (self::DELIVERY_STATE_FIELDS as $field) {
-            $target->$field = $stored->$field;
-        }
+        $target->adoptDeliveryState($stored);
     }
 
     /**
@@ -756,7 +751,7 @@ class IfirmaDeliveryService
     private function claimAttempt(IfirmaReceipt $receipt, $channel)
     {
         $before = array();
-        foreach (self::DELIVERY_STATE_FIELDS as $field) {
+        foreach (IfirmaReceipt::DELIVERY_COLUMNS as $field) {
             $before[$field] = $receipt->$field;
         }
         $receipt->recordDelivery(

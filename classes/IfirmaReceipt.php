@@ -194,6 +194,36 @@ class IfirmaReceipt extends ObjectModel
         ),
     );
 
+    /** The columns of a delivery's recorded state: a save writes only the ones its object changed. */
+    const DELIVERY_COLUMNS = array('delivery_status', 'delivery_channel', 'delivered_at', 'delivery_error', 'delivery_attempts', 'delivery_retry_at');
+
+    /** @var array|null the delivery columns as they were when this object was loaded or last saved; null when unknown */
+    private $storedDeliveryState = null;
+
+    /**
+     * @param int|null $id
+     * @param int|null $id_lang
+     * @param int|null $id_shop
+     * @param mixed    $translator
+     */
+    public function __construct($id = null, $id_lang = null, $id_shop = null, $translator = null)
+    {
+        parent::__construct($id, $id_lang, $id_shop, $translator);
+        if ($id) {
+            $this->rememberStoredDeliveryState();
+        }
+    }
+
+    /**
+     * @param array    $data
+     * @param int|null $id_lang
+     */
+    public function hydrate(array $data, $id_lang = null)
+    {
+        parent::hydrate($data, $id_lang);
+        $this->rememberStoredDeliveryState();
+    }
+
     /**
      * Every write of a receipt carries the retry columns, so they are ensured first: a shop whose files were deployed
      * before the upgrade script ran would otherwise fail every insert. At most one check per request. A failed ALTER
@@ -206,19 +236,88 @@ class IfirmaReceipt extends ObjectModel
     public function add($auto_date = true, $null_values = false)
     {
         IfirmaSchema::ensureReceiptRetryColumns();
+        $saved = parent::add($auto_date, $null_values);
+        if ($saved) {
+            $this->rememberStoredDeliveryState();
+        }
 
-        return parent::add($auto_date, $null_values);
+        return $saved;
     }
 
     /**
+     * Leaves out of the UPDATE every delivery column this object did not change since it was loaded: a writer that
+     * loaded the record, waited on iFirma and saves a sync field must not write the old delivery state back over what
+     * a delivery recorded meanwhile (which would make the cron send the e-mail again, or erase its claim). A column
+     * that equals its loaded value is never written, not even by a caller's own partial update: a writer of delivery
+     * state must hold the order lock and read the state fresh first (adoptDeliveryState()).
+     *
      * @param bool $null_values
      * @return bool
      */
     public function update($null_values = false)
     {
         IfirmaSchema::ensureReceiptRetryColumns();
+        $callerFields = $this->update_fields;
+        $unchanged = $this->unchangedDeliveryColumns();
+        if ($unchanged !== array()) {
+            $fields = $callerFields !== null ? $callerFields : array_fill_keys(array_keys(self::$definition['fields']), true);
+            foreach ($unchanged as $column) {
+                unset($fields[$column]);
+            }
+            $this->setFieldsToUpdate($fields);
+        }
+        try {
+            $saved = parent::update($null_values);
+        } finally {
+            $this->setFieldsToUpdate($callerFields);
+        }
+        if ($saved) {
+            $this->rememberStoredDeliveryState();
+        }
 
-        return parent::update($null_values);
+        return $saved;
+    }
+
+    /**
+     * Makes this object mirror the delivery state another, freshly loaded object holds, and counts that state as stored:
+     * what the object records afterwards is compared with it.
+     *
+     * @param IfirmaReceipt $stored
+     */
+    public function adoptDeliveryState(IfirmaReceipt $stored)
+    {
+        foreach (self::DELIVERY_COLUMNS as $column) {
+            $this->$column = $stored->$column;
+        }
+        $this->rememberStoredDeliveryState();
+    }
+
+    private function rememberStoredDeliveryState()
+    {
+        $state = array();
+        foreach (self::DELIVERY_COLUMNS as $column) {
+            $state[$column] = $this->$column === null ? null : (string) $this->$column;
+        }
+        $this->storedDeliveryState = $state;
+    }
+
+    /**
+     * @return string[] the delivery columns whose value is what was stored; none when the stored state is unknown
+     */
+    private function unchangedDeliveryColumns()
+    {
+        if ($this->storedDeliveryState === null) {
+            return array();
+        }
+        $unchanged = array();
+        foreach (self::DELIVERY_COLUMNS as $column) {
+            $now = $this->$column === null ? null : (string) $this->$column;
+            if ($now === $this->storedDeliveryState[$column]) {
+                $unchanged[] = $column;
+            }
+        }
+
+        return $unchanged;
     }
 
     /**

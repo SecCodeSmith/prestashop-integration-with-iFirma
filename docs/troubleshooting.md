@@ -214,7 +214,7 @@ customer's order page is silent: the page shows the last known state.
 - **No automatic attempt will be made**: the failure is permanent (no valid e-mail address of the customer, the document is missing in iFirma, the API key is missing or was rejected) or its outcome is unknown (with the channel `ifirma_mail`, the request to iFirma's mail service got no answer, so the e-mail may have been sent). Check with the customer or in iFirma, then use **Send again** if needed.
 - **No automatic attempt is scheduled**: the delivery failed before the module version 1.10.0, which introduced the retry. Old failures are not retried; use **Send again** (or the bulk **Send again** of the documents list, filtered by delivery Failed).
 
-**Why not retry everything:** a retry that could e-mail the same document twice is never made; that is why a failure with an unknown outcome waits for an employee.
+**Why not retry everything:** a retry that could e-mail the same document twice is never made; that is why a failure with an unknown outcome waits for an employee. The one case the module cannot rule out: when the shop's mail system reports a failure although the mail server had already accepted the message (a lost SMTP answer), the retry sends the document again.
 
 ### Guest did not receive the code
 
