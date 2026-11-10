@@ -1434,6 +1434,18 @@ class ModuleHooksTest extends TestCase
         $this->assertStringContainsString('name="token"', $tpl);
     }
 
+    /**
+     * Inside an inline handler of a form, the bare name "confirm" is the form's own field named "confirm", not the
+     * browser dialog: the handler threw, and one click removed every link without asking.
+     */
+    public function testForgetAllLinksAsksThroughTheWindowBecauseItsOwnFieldIsNamedConfirm()
+    {
+        $tpl = file_get_contents(dirname(__DIR__, 2) . '/views/templates/admin/contractors.tpl');
+
+        $this->assertStringContainsString('onsubmit="return window.confirm(', $tpl);
+        $this->assertStringNotContainsString('onsubmit="return confirm(', $tpl);
+    }
+
     public function testPostedUploadLinksCustomersAndShowsTheReport()
     {
         $db = Db::getInstance();
