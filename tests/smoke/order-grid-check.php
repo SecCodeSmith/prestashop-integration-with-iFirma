@@ -261,6 +261,111 @@ if ($emptyOrder > 0 && isset($records[$emptyOrder])) {
         'SuperAdmin context employee: an order without a document presents the Issue anchor with its data-id-order', $cellEmpty);
 }
 
+// 4f. filtering by the column: one throw-away order per state, filtered through the grid's own filter object
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaReceipt.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDocumentStateRank.php';
+$listed = function (array $extraFilters, array $sort = array()) use ($factory, $presenter) {
+    $defaults = \PrestaShop\PrestaShop\Core\Search\Filters\OrderFilters::getDefaults();
+    $filterSet = new \PrestaShop\PrestaShop\Core\Search\Filters\OrderFilters(array_merge(
+        $defaults,
+        array('limit' => 100000, 'offset' => 0, 'filters' => array_merge(isset($defaults['filters']) ? $defaults['filters'] : array(), $extraFilters)),
+        $sort
+    ));
+    $gridOfFilter = $factory->getGrid($filterSet);
+    $rows = $presenter->present($gridOfFilter)['data']['records'];
+    if (is_object($rows) && method_exists($rows, 'all')) {
+        $rows = $rows->all();
+    }
+    $ids = array();
+    $ranks = array();
+    foreach ($rows as $row) {
+        $ids[] = (int) $row['id_order'];
+        $ranks[(int) $row['id_order']] = (int) $row[IfirmaOrderGridIndicator::FIELD_RANK];
+    }
+
+    return array('ids' => $ids, 'ranks' => $ranks, 'total' => (int) $gridOfFilter->getData()->getRecordsTotal());
+};
+$stateSeed = array(
+    IfirmaDocumentStateRank::ERROR => array('status' => 'error'),
+    IfirmaDocumentStateRank::UNKNOWN => array('status' => 'unknown'),
+    IfirmaDocumentStateRank::SUSPECTED => array('status' => 'duplicate_suspected'),
+    IfirmaDocumentStateRank::HELD => array('status' => 'held'),
+    IfirmaDocumentStateRank::QUEUED => array('status' => 'queued'),
+    IfirmaDocumentStateRank::NO_RECORD => null,
+    IfirmaDocumentStateRank::ISSUED => array('status' => 'created', 'ifirma_id' => 'SMKGRID7', 'delivery_status' => 'none'),
+    IfirmaDocumentStateRank::AWAITING_KSEF => array('status' => 'created', 'ifirma_id' => 'SMKGRID8', 'delivery_status' => 'awaiting_ksef'),
+    IfirmaDocumentStateRank::SENT => array('status' => 'created', 'ifirma_id' => 'SMKGRID9', 'delivery_status' => 'sent'),
+    IfirmaDocumentStateRank::PAID => array('status' => 'paid', 'ifirma_id' => 'SMKGRID10', 'delivery_status' => 'sent'),
+);
+$gridTemplateOrder = $issuedOrder > 0 ? $issuedOrder : (int) $db->getValue('SELECT MAX(id_order) FROM ' . $t . 'orders');
+$seededOrder = array();
+$seededReceipts = array();
+$orderColumns = array();
+foreach ($db->executeS('SHOW COLUMNS FROM ' . $t . 'orders') as $c) {
+    if ($c['Field'] !== 'id_order') {
+        $orderColumns[] = '`' . $c['Field'] . '`';
+    }
+}
+try {
+    foreach ($stateSeed as $rank => $record) {
+        $db->execute('INSERT INTO ' . $t . 'orders (' . implode(',', $orderColumns) . ') SELECT ' . implode(',', $orderColumns) . ' FROM ' . $t . 'orders WHERE id_order = ' . (int) $gridTemplateOrder);
+        $idOrder = (int) $db->Insert_ID();
+        $db->execute('UPDATE ' . $t . 'orders SET reference = \'SMKGRID' . sprintf('%02d', $rank) . '\' WHERE id_order = ' . $idOrder);
+        $seededOrder[$rank] = $idOrder;
+        if ($record === null) {
+            continue;
+        }
+        $r = new IfirmaReceipt();
+        $r->id_order = $idOrder;
+        $r->id_customer = (int) $db->getValue('SELECT id_customer FROM ' . $t . 'orders WHERE id_order = ' . $idOrder);
+        $r->id_shop = 1;
+        $r->document_type = 'fakturakraj';
+        $r->source = 'module';
+        $r->security_token = Tools::passwdGen(32);
+        foreach ($record as $field => $value) {
+            $r->$field = $value;
+        }
+        $r->add();
+        $seededReceipts[] = (int) $r->id;
+    }
+    check(count($seededOrder) === 10 && count($seededReceipts) === 9, 'one throw-away order per document state is seeded', implode(',', $seededOrder));
+    $unfiltered = $listed(array());
+
+    foreach ($stateSeed as $rank => $record) {
+        $name = $rank . ' (' . IfirmaDocumentStateRank::states()[$rank - 1]['state'] . ')';
+        $result = $listed(array('ifirma_document' => (string) $rank));
+        $seededListed = array_values(array_intersect($result['ids'], array_values($seededOrder)));
+        check($seededListed === array($seededOrder[$rank]), 'filter ' . $name . ': of the seeded orders only the one in that state is listed', json_encode($seededListed) . ' expected ' . $seededOrder[$rank]);
+        check($result['total'] === count($result['ids']) && $result['total'] > 0, 'filter ' . $name . ': the reported total equals the listed orders', 'total ' . $result['total'] . ', listed ' . count($result['ids']));
+        check(array_values(array_unique($result['ranks'])) === array($rank), 'filter ' . $name . ': every listed order is in that state', json_encode(array_count_values($result['ranks'])));
+        $combined = $listed(array('ifirma_document' => (string) $rank, 'reference' => 'SMKGRID'));
+        check($combined['ids'] === array($seededOrder[$rank]) && $combined['total'] === 1, 'filter ' . $name . ' with the reference filter: exactly the seeded order, total 1', json_encode($combined['ids']) . ' total ' . $combined['total']);
+    }
+
+    $sortedState = $listed(array('ifirma_document' => (string) IfirmaDocumentStateRank::SENT), array('orderBy' => 'ifirma_document', 'sortOrder' => 'desc'));
+    $plainState = $listed(array('ifirma_document' => (string) IfirmaDocumentStateRank::SENT));
+    check(count($sortedState['ids']) > 0 && $sortedState['total'] === count($sortedState['ids']) && $sortedState['ids'] === $plainState['ids'], 'filter 9 with the sort on the same column keeps the listed orders, newest first, and the total', 'total ' . $sortedState['total']);
+    $sortedById = $listed(array('ifirma_document' => (string) IfirmaDocumentStateRank::SENT, 'reference' => 'SMKGRID'), array('orderBy' => 'id_order', 'sortOrder' => 'asc'));
+    check($sortedById['ids'] === array($seededOrder[IfirmaDocumentStateRank::SENT]), 'filter 9 with the reference filter and another sort lists the seeded order', json_encode($sortedById['ids']));
+
+    foreach (array('refunded', '1 OR 1=1', '0', '11') as $invalid) {
+        $everything = $listed(array('ifirma_document' => $invalid));
+        check($everything['ids'] === $unfiltered['ids'], 'an invalid filter value (' . $invalid . ') lists every order', count($everything['ids']) . ' of ' . count($unfiltered['ids']));
+        check($everything['total'] === $unfiltered['total'], 'an invalid filter value (' . $invalid . ') leaves the total as it is', $everything['total'] . ' = ' . $unfiltered['total']);
+    }
+
+    $afterReset = $listed(array());
+    check($afterReset['total'] === $unfiltered['total'] && $afterReset['ids'] === $unfiltered['ids'], 'after the filters the unfiltered grid lists the same orders again', $afterReset['total'] . ' = ' . $unfiltered['total']);
+} finally {
+    foreach ($seededReceipts as $idReceipt) {
+        $db->execute('DELETE FROM ' . $t . 'ifirma_receipt WHERE id_ifirma_receipt = ' . (int) $idReceipt);
+    }
+    foreach ($seededOrder as $idOrder) {
+        $db->execute('DELETE FROM ' . $t . 'orders WHERE id_order = ' . (int) $idOrder);
+    }
+}
+check((int) $db->getValue('SELECT COUNT(*) FROM ' . $t . 'orders WHERE reference LIKE \'SMKGRID%\'') === 0, 'the seeded throw-away orders are deleted');
+
 // a throw-away profile without roles and an employee of it: the same grid then shows no anchor
 $tmpProfile = null;
 $tmpEmployee = null;
