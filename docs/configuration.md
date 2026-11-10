@@ -56,12 +56,18 @@ Open the module configuration and fill in:
   from iFirma; **Cron call budget (1‑90)**, **Cron items per job (1‑50)**, **API calls per minute (1‑100)** and
   **API calls per day (1‑15000)** – API usage caps and the size of one cron run.
 - **Cron endpoint** – the module shows the cron URL with its secret token and a crontab
-  example (`*/15 * * * * curl -fsS "<url>"`); *Regenerate cron token* replaces the token. Call it every 1 to 5 minutes:
-  it issues the queued orders, so a longer interval delays them (see [Cron jobs](#cron-jobs)).
+  example; *Regenerate cron token* replaces the token. Call it every 1 to 5 minutes: it issues the queued orders and
+  retries failed deliveries, so a longer interval delays them (see [Cron jobs](#cron-jobs)). The example the page prints
+  says every 15 minutes (`*/15`); change it to `*/5` in your crontab, as in the examples below:
+
+  ```
+  */5 * * * * curl -fsS "https://<shop>/module/ifirma/cron?token=<IFIRMA_CRON_TOKEN>" >/dev/null
+  ```
+
   The same page also shows the token-in-header form, which keeps the token out of the web server's access log:
 
   ```
-  */15 * * * * curl -fsS -H "X-Ifirma-Token: <IFIRMA_CRON_TOKEN>" "https://<shop>/module/ifirma/cron" >/dev/null
+  */5 * * * * curl -fsS -H "X-Ifirma-Token: <IFIRMA_CRON_TOKEN>" "https://<shop>/module/ifirma/cron" >/dev/null
   ```
 
   When both are sent, the `token` query parameter is the one checked. A wrong or missing token answers HTTP 403.
@@ -169,53 +175,72 @@ Link, Unlink and Register on the customer page need, on top of View, the Edit pe
 
 ## Cron jobs
 
-One request to the cron endpoint (`/module/ifirma/cron`, token in the query or in the `X-Ifirma-Token` header) runs four jobs in
-a fixed order, under a run lock, after reading the day limit from iFirma (see [Rate limits](#rate-limits)), and answers
-with one JSON summary. The order is chosen so that work reaches the customer
-as early as possible: customer-facing issuance first, a KSeF submission before the sync that reads its state, delivery last so
-that an acceptance read by the sync is delivered in the same run.
+One request to the cron endpoint (`/module/ifirma/cron`, token in the query or in the `X-Ifirma-Token` header) runs six jobs in
+a fixed order under a run lock and answers with one JSON summary. The first job only reads the day limit from iFirma
+(see [Rate limits](#rate-limits)); the other five do the work. The order is chosen so that work reaches the customer
+as early as possible: customer-facing issuance first, a KSeF submission before the sync that reads its state, the delivery of
+accepted documents after the sync so that an acceptance read by the sync is delivered in the same run, and the retry of failed
+deliveries last, so a delivery that fails in this run waits for its schedule.
 
-| # | Job | What it does |
+| # | Job (key in the answer) | What it does |
 |---|-----|--------------|
+| 0 | `limit` | Reads the day limit from iFirma when the `abonent` key is set and the last reading is older than ten minutes (see [Rate limits](#rate-limits)). It never stops the later jobs. |
 | 1 | `queue` | Issues queued orders, oldest first, through the whole issuance pipeline (duplicate guard included), under each order's lock, at most `IFIRMA_CRON_MAX_ITEMS` per run. Stops at the first rate limit refusal. See [Queued issuance](usage.md#queued-issuance). |
 | 2 | `ksef` | Submits invoices to KSeF whose submission was deferred (submitter `module`, no KSeF state yet). See [KSeF](usage.md#ksef-e-invoicing). |
-| 3 | `sync` | The status sync of issued documents (documents that wait for KSeF are always due), within `IFIRMA_CRON_MAX_CALLS` list calls. |
+| 3 | status sync (no block of its own) | The status sync of issued documents (documents that wait for KSeF are always due), within `IFIRMA_CRON_MAX_CALLS` list calls. Its keys are at the top level of the answer. |
 | 4 | `delivery` | Delivers documents that wait for KSeF acceptance and were accepted, at most `IFIRMA_CRON_MAX_ITEMS`. |
+| 5 | `delivery_retry` | Sends again the failed deliveries that are due, oldest due time first, at most `IFIRMA_CRON_MAX_ITEMS`; see [Automatic retry of a failed delivery](usage.md#automatic-retry-of-a-failed-delivery). |
 
-All four share the rate guard (the minute and the day cap and the back-off). After a job reports that the rate limit stopped
+All of them share the rate guard (the minute and the day cap and the back-off). After a job reports that the rate limit stopped
 it, the later jobs do not start and only report what is left. **Only one cron run works at a time**: a request that arrives
 while another run holds the run lock makes no iFirma request and answers `{"skipped": "another cron run is busy"}`. An order
 whose own lock is held (an employee clicking Create, a status change) is skipped by the queue job and stays queued.
 
 The answer keeps the keys of the status sync at its top level, unchanged (`receipts_checked`, `updated`, `marked_paid`,
 `marked_missing`, `errors`, `rate_limited`, `calls`, `dates_total`, `dates_processed`, `held_orders`, `started_at`,
-`finished_at`, `auth_blocked`, `message`), and adds:
+`finished_at`, `auth_blocked`, `message`), and adds one block per other job, `rate_limited_window`, `time_budget_exhausted` and `usage`:
 
 ```json
 {
-  "queue":    {"handled": 4, "succeeded": 4, "failed": 0, "left": 12},
-  "ksef":     {"handled": 0, "succeeded": 0, "failed": 0, "left": 0},
-  "delivery": {"handled": 1, "succeeded": 1, "failed": 0, "left": 0},
+  "receipts_checked": 12,
+  "updated": 3,
   "rate_limited": 0,
+  "limit":          {"used": 1200, "granted": 15000, "remaining": 13800},
+  "queue":          {"handled": 4, "succeeded": 4, "failed": 0, "left": 12},
+  "ksef":           {"handled": 0, "succeeded": 0, "failed": 0, "left": 0},
+  "delivery":       {"handled": 1, "succeeded": 1, "failed": 0, "left": 0},
+  "delivery_retry": {"handled": 2, "succeeded": 1, "failed": 1, "left": 0},
   "rate_limited_window": "",
-  "time_budget_exhausted": 0
+  "time_budget_exhausted": 0,
+  "usage": {"minute": 6, "day": 250, "by_kind": {"document": 2, "status": 200, "pdf": 40, "email": 0, "ksef": 0,
+            "payment": 0, "contractor": 8, "limit": 0, "other": 0}}
 }
 ```
 
-`handled` counts the items the job tried, `left` what still waits. `rate_limited` is 1 when the rate limit stopped the run
-(the sync's own count, when it was the one, is kept), and `rate_limited_window` then says which window: `minute`, `day` or
-`backoff`. A job that did not run because an earlier one was rate limited reports zeros and its `left`.
+(The status sync's other keys are left out of the example.) What the keys mean:
 
-**Time budget.** A run has a fixed budget of 45 seconds (no setting). A job checks it before it starts each record and stops
-when it is used up; a record that has started is always finished, so a slow mail server or iFirma can delay a run by one
-record, not by the whole item cap. The records not started are reported as `left`, the later jobs only report what is
-left, and `time_budget_exhausted` is 1. The next run goes on. The delivery retry downloads the PDF once per attempt and does
-not wait between attempts (a PDF that is not ready is a temporary failure and comes back on the retry schedule); the
-delivery at issuance keeps its three downloads with the waits.
+- `handled` counts the items the job tried, `succeeded` and `failed` how they ended, and `left` what still waits.
+- `limit` holds `used`, `granted` and `remaining`; all three are `null` without the `abonent` key or when iFirma does not answer.
+- `rate_limited` is 1 when the rate limit stopped the run (the sync's own count, when it was the one, is kept), and
+  `rate_limited_window` then says which window: `minute`, `day` or `backoff`; it is empty otherwise. A job that did not run
+  because an earlier one was rate limited reports zeros and its `left`.
+- `time_budget_exhausted` is 1 when the run stopped starting records because its time budget (below) was used up.
+- `usage` is the module's own request count, read after the jobs: the requests of the current minute and of today, and today's
+  count per kind (all nine kinds, zeros included). It is also there when the run was refused by the limit. See
+  [Module requests](#module-requests).
+
+**Time budget.** A run has a fixed budget of 45 seconds (no setting). It is checked before each job and, inside the queue, KSeF,
+delivery and delivery-retry jobs, before each record; a record that has started is always finished, so a slow mail server or
+iFirma can delay a run by one record, not by the whole item cap. The status sync does not check it per call: it is bounded by
+`IFIRMA_CRON_MAX_CALLS` list calls instead (each call may take up to 30 seconds), and it is skipped as a whole when the budget is
+already used up when its turn comes. The records not started are reported as `left`, the later jobs only report what is left, and
+`time_budget_exhausted` is 1. The next run goes on. The delivery retry downloads the PDF once per attempt and does not wait between
+attempts (a PDF that is not ready is a temporary failure and comes back on the retry schedule); the delivery at issuance keeps its
+three downloads with the waits.
 
 ### The cron endpoint and the delivery retry
 
-The `delivery_retry` job is the last job of a run. It sends again the deliveries that failed for a temporary reason and are due (the second attempt 15 minutes after the first failure, the third 2 hours after the second), oldest due time first, at most `IFIRMA_CRON_MAX_ITEMS` per run, and stops at the first refusal by the rate guard or the credentials cool-down (a refusal uses no attempt). Its summary is the `delivery_retry` block of the cron answer, with the same keys as the other jobs (`handled`, `succeeded`, `failed`, `left`). **Without the cron endpoint no failed delivery is retried automatically**: call it every 1 to 5 minutes (see [Cron jobs](#cron-jobs)). There is no new setting: the retry uses the channel and the limits already configured, and the schedule (three attempts, 15 minutes and 2 hours) is fixed. See [Automatic retry of a failed delivery](usage.md#automatic-retry-of-a-failed-delivery) for the rules.
+The `delivery_retry` job is the last job of a run. It sends again the deliveries that failed for a temporary reason and are due (the second attempt 15 minutes after the first failure, the third 2 hours after the second), oldest due time first, at most `IFIRMA_CRON_MAX_ITEMS` per run, and stops at the first refusal by the rate guard or the credentials cool-down (a refusal uses no attempt). Its summary is the `delivery_retry` block of the cron answer, with the same keys as the other jobs (`handled`, `succeeded`, `failed`, `left`), and like the queue job it checks the 45-second time budget before each record. **Without the cron endpoint no failed delivery is retried automatically**: call it every 1 to 5 minutes (see [Cron jobs](#cron-jobs)). There is no new setting: the retry uses the channel and the limits already configured, and the schedule (three attempts, 15 minutes and 2 hours) is fixed. See [Automatic retry of a failed delivery](usage.md#automatic-retry-of-a-failed-delivery) for the rules.
 
 ## Rate limits
 
@@ -225,7 +250,7 @@ start a request once either local cap is reached. The caps are `IFIRMA_RATE_MAX_
 and `IFIRMA_RATE_MAX_PER_DAY` (default 14,000, 1 to 15,000), both on the settings page; they stay below
 iFirma's own limits on purpose. The minute is checked first. The day is the calendar day of the shop's time
 zone; iFirma's own day is presumably Polish time, and the 1,000-request margin below 15,000 absorbs a mismatch
-around midnight. A refusal names the window that refused ("... requests in the current minute (cap 80)" or
+around midnight. PDF downloads have caps of their own on top of these ([Download limits](usage.md#download-limits) lists all of them in one table). A refusal names the window that refused ("... requests in the current minute (cap 80)" or
 "... requests today (cap 14000)") and is a transient "rate limited" error, never stored as a document error.
 A request refused by the day window has already used a minute slot; that only makes the guard more conservative.
 Timeouts: 30 s by default, 5 s for

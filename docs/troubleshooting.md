@@ -167,18 +167,20 @@ class and message of the failure.
 **Message:** "Please wait a moment before downloading the document again."
 
 **Meaning:** the customer's download was refused by the download limit: the same document was fetched less than 30 seconds
-ago, or the customer has already downloaded 10 documents in the last 60 seconds (see [Download limits](usage.md#download-limits)).
-The document itself is fine.
+ago, or the customer has already downloaded 10 documents in the last 60 seconds (see [Download limits](usage.md#download-limits),
+which lists every download limit). The document itself is fine. This answer has no `Retry-After` header.
 
 **What to do:** wait a few seconds and reload. If customers hit the limit routinely, look for something that downloads the
 PDF repeatedly, such as a link preview or a script. A download can also be refused with "Too many requests at the moment.
-Please try again shortly." when all customers together have used the customer download budget (20 per minute, 2,000 per
-day); it works again in the next minute or day.
+Please try again shortly." when the customer has already downloaded 30 documents today, or when all customers together have
+used the customer download budget (20 per minute, 2,000 per day); it works again in the next minute or the next day.
 
 ### HTTP 429 on a PDF download because of the module's request limit
 
 **Message for the customer:** "Too many requests at the moment. Please try again shortly." The answer is HTTP 429 with a
-`Retry-After` header (the seconds to wait, 1 to 60 for the minute limit, for a customer always 60).
+`Retry-After` header. For a customer the value is always 60, whichever limit refused, so the answer does not reveal the window.
+For an employee it is exact: the seconds to the next minute for the minute limit (1 to 60), the seconds to the end of a back-off,
+and for the day limit at most 3600.
 
 **Message for an employee (back office download):** one of "The PDF was not downloaded: the minute request limit is
 reached. Try again in a moment.", "... the day request limit is reached. Try again later." or "... iFirma asked the module to
@@ -188,10 +190,14 @@ wait before the next request. Try again shortly."
 request before it was sent: no request reached iFirma and no document was changed. It is not an error of the document and
 not the download limit of the customer ([HTTP 429 on the customer's PDF download](#http-429-on-the-customers-pdf-download)).
 The customer is only asked to try again; the exact window and the counters are shown to employees, never to customers. A
-request that was sent and failed at iFirma is still answered with HTTP 502 ("The document is temporarily unavailable.").
+request that was sent and failed at iFirma is still answered with HTTP 502 ("The document is temporarily unavailable. Please try again later.").
 A pause after a rejected key is not a rate limit and keeps its own message ([Calls paused after a rejected key](#calls-paused-after-a-rejected-key)).
 
 **What to do:** wait for the seconds in `Retry-After` and download again. The module does not wait or retry by itself.
+A customer request that the limit refused has already taken the 30-second slot of that document, so a retry of the same
+document within 30 seconds gets the answer of the previous section (no `Retry-After`); the unit of the shared budget and the
+customer's day count are given back, so they are not used up by the refusal (see
+[Download limits](usage.md#download-limits)).
 If it happens often, other programs use the same iFirma account or the caps are too low for your traffic: see
 [Rate limited by iFirma](#rate-limited-by-ifirma).
 
@@ -219,9 +225,10 @@ customer's order page is silent: the page shows the last known state.
 
 **Meaning:** the e-mail of an issued document could not be sent. The order panel, the Orders-list tooltip and the delivery column of the iFirma documents list show the error and one line that tells where the automatic retry stands (see [Automatic retry of a failed delivery](usage.md#automatic-retry-of-a-failed-delivery)):
 
-- **Attempt 1 of 3, next attempt at 10:15** (or attempt 2 of 3): nothing to do. The [cron endpoint](configuration.md#cron-jobs) sends the document again when the time has come. If the time has passed and the delivery is still failed, the cron is not called (call it every 1 to 5 minutes), the request limit is reached (a refusal by the limit uses no attempt, the delivery stays due) or the channel is set to `none`.
+- **Attempt 1 of 3, next attempt at 10:15** (or attempt 2 of 3, or **Attempt 0 of 3** for a just issued document whose first delivery the request limit refused before anything was sent): nothing to do. The [cron endpoint](configuration.md#cron-jobs) sends the document again when the time has come. If the time has passed and the delivery is still failed, the cron is not called (call it every 1 to 5 minutes), the request limit is reached (a refusal by the limit uses no attempt, the delivery stays due) or the channel is set to `none`.
 - **No automatic attempt remains**: three attempts failed. Read the error, fix the cause (shop mail settings under Advanced Parameters > E-mail, the customer's address) and use **Send again**.
-- **No automatic attempt will be made**: the failure is permanent (no valid e-mail address of the customer, the document is missing in iFirma, the API key is missing or was rejected) or its outcome is unknown (with the channel `ifirma_mail`, the request to iFirma's mail service got no answer, so the e-mail may have been sent). Check with the customer or in iFirma, then use **Send again** if needed.
+- **No automatic attempt will be made**, with the error "A delivery attempt started and its outcome was not recorded. Check whether the customer received the document before sending it again.": the cron saved the attempt and the process stopped, or the result could not be saved, before the outcome was recorded. The e-mail may or may not have left, also when the run stopped before anything was sent, so the cron never tries it again. Check with the customer or the mail log, then use **Send again** if the document did not arrive.
+- **No automatic attempt will be made** with any other error: the failure is permanent (no valid e-mail address of the customer, the document is missing in iFirma, the API key is missing or was rejected) or its outcome is unknown (with the channel `ifirma_mail`, the request to iFirma's mail service got no answer, so the e-mail may have been sent). Check with the customer or in iFirma, then use **Send again** if needed.
 - **No automatic attempt is scheduled**: the delivery failed before the module version 1.10.0, which introduced the retry. Old failures are not retried; use **Send again** (or the bulk **Send again** of the documents list, filtered by delivery Failed).
 
 **Why not retry everything:** a retry that could e-mail the same document twice is never made; that is why a failure with an unknown outcome waits for an employee. The one case the module cannot rule out: when the shop's mail system reports a failure although the mail server had already accepted the message (a lost SMTP answer), the retry sends the document again.

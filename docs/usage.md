@@ -207,15 +207,18 @@ Three ways to sync:
 
    For shops without friendly URLs use
    `index.php?fc=module&module=ifirma&controller=cron&token=<IFIRMA_CRON_TOKEN>`.
-   A wrong or missing token returns HTTP 403. Crontab example:
+   A wrong or missing token returns HTTP 403. Call it every 1 to 5 minutes (the queue and the delivery retry work only
+   when it is called; the configuration page prints `*/15` as its example, `*/5` is the recommended one). Crontab example:
 
    ```
-   */15 * * * * curl -fsS "https://<shop>/module/ifirma/cron?token=<IFIRMA_CRON_TOKEN>" >/dev/null
+   */5 * * * * curl -fsS "https://<shop>/module/ifirma/cron?token=<IFIRMA_CRON_TOKEN>" >/dev/null
    ```
 
    A run makes at most `IFIRMA_CRON_MAX_CALLS` list calls (default 40); remaining dates
-   wait for the next run. It returns a JSON summary (receipts checked, updated, marked
-   paid, marked missing, errors, rate limited, calls, orders held by pending data requests).
+   wait for the next run. The status sync is one of six jobs of a run (the day-limit read, the queue, KSeF retry,
+   the status sync, the delivery of accepted documents and the delivery retry); see [Cron jobs](configuration.md#cron-jobs).
+   It returns a JSON summary: the keys of the status sync at the top level (receipts checked, updated, marked
+   paid, marked missing, errors, rate limited, calls, orders held by pending data requests) and one block per other job.
    The summary also carries a `usage` block with the module's own requests, read after the jobs:
    `{"minute": 6, "day": 250, "by_kind": {"document": 2, "status": 200, "pdf": 40, "email": 0, "ksef": 0,
    "payment": 0, "contractor": 8, "limit": 0, "other": 0}}` - the requests of the current minute, of today and
@@ -337,41 +340,52 @@ Customer texts are translatable (`translations/pl.php` ships Polish).
 
 ### Download limits
 
-The customer download (`controllers/front/receipt.php`) fetches the PDF from iFirma on every request, so it is
-limited: a document can be fetched once every 30 seconds, and a customer can download at most ten documents in any
-60 seconds. A request over one of these limits gets HTTP 429 with the text "Please wait a moment before downloading
-the document again."
+A PDF download fetches the document from iFirma every time, so it passes several limits. None of the caps is a setting. The
+calendar minute and the calendar day are those of the shop's time zone. All limits together:
 
-Customer downloads also have a budget of their own, shared by all customers: 20 downloads that reach iFirma per
-calendar minute and 2,000 per calendar day (shop time zone). The budget is separate from the module's request limit
-(80 per minute, 14,000 per day, see [Rate limits](configuration.md#rate-limits)), so customers downloading
-documents cannot use up the requests that issuing documents, the status sync and the cron need. A download over the
-budget gets HTTP 429 with `Retry-After: 60` and the text "Too many requests at the moment. Please try again shortly."
-(the same answer as when the module's request limit refuses a download), sends nothing to iFirma and is not counted.
-The budget is checked after the login, token, owner and KSeF checks, so those answers do not change. The caps are
-fixed, not settings.
+| Limit | Applies to | Cap | Answer over the cap |
+|---|---|---|---|
+| Per document | a customer, one document | once every 30 seconds | HTTP 429, "Please wait a moment before downloading the document again.", no `Retry-After` |
+| Per customer, short | a customer, all documents | 10 documents in any 60 seconds | the same answer |
+| Per customer, day | a customer, all documents | 30 per calendar day | HTTP 429, `Retry-After: 60`, "Too many requests at the moment. Please try again shortly." |
+| All customers | every customer together | 20 per calendar minute and 2,000 per calendar day | the same answer as the per-customer day cap |
+| Back office | every employee together | 30 per calendar minute and 2,000 per calendar day | HTTP 429, `Retry-After` with the seconds to the next minute, "The PDF was not downloaded: the back-office download limit is reached. Try again in a moment." |
+| The module's request limit | every request to iFirma, downloads included | 80 per minute and 14,000 per day (see [Rate limits](configuration.md#rate-limits)), and a back-off after iFirma's own limit answer | customer: HTTP 429, `Retry-After: 60`, the same generic text; employee: HTTP 429, `Retry-After` of the refusing window, a text that names it |
 
-Together, the three customer download limits are:
+The last row sits above the others: every download that reaches iFirma is also one request of the module. The customer budget
+and the back-office budget are separate from it, so downloads cannot use up the requests that issuing documents, the status sync
+and the cron need. Every limit answer to a customer is the same text with `Retry-After: 60`, so the answer does not tell which
+window refused or when a back-off ends.
 
-| Limit | Scope | Cap |
-|---|---|---|
-| Per document | one document | once every 30 seconds |
-| Per customer | one customer, all documents | 10 per 60 seconds and 30 per calendar day |
-| All customers | the whole shop | 20 per calendar minute and 2,000 per calendar day |
+**What a customer's request uses.** `controllers/front/receipt.php` runs the checks in this order, and a request that fails one
+spends nothing of the later ones:
 
-The per-customer day cap counts the downloads that reached iFirma, on the customer's own documents, in the shop time
-zone; a new day starts a new count. It exists so one account cannot use up the shop-wide budget for everyone else.
-The 31st download of a day answers like every other limit (HTTP 429, `Retry-After: 60`, "Too many requests at the
-moment. Please try again shortly."), sends nothing to iFirma and uses no slot of the other two limits. It is checked
-after the login, token, owner and KSeF checks. A download refused by any limit is not counted. The count is kept on
-the customer's receipt rows (`download_day`, `download_count`).
+1. The access checks: login, token, owner, and the wait for KSeF acceptance. Their answers (redirect, 404) do not change.
+2. The customer's day cap (30). A request over it is refused here and uses no slot of anything below.
+3. The throttle claim: the 10-documents-per-60-seconds count of the customer, then the 30-second slot of the document, taken in one
+   statement.
+4. The budget of all customers (20 per minute, 2,000 per day): one unit of each window.
+5. The customer's day count: one unit.
+6. The request to iFirma, which first passes the module's request limit.
 
+What is given back: when the module's request limit (a cap or a back-off) refuses the request in step 6, nothing was sent, so the
+unit of step 4 and the day count of step 5 go back and only downloads that reached iFirma stay counted. The 30-second slot of the
+document (step 3) is not given back, and neither is it when step 4 refuses. A retry of the same document within 30 seconds
+therefore gets the per-document answer (no `Retry-After`), not the limit answer. A request that was sent and failed at iFirma
+(HTTP 502) keeps all its counts, because it used the limit. A download refused by any limit is never counted as a download.
 
-The back-office **Download PDF** needs the view level and has a budget of its own, separate from the customers': all
-employees together can send 30 downloads per calendar minute and 2,000 per calendar day. A download over either answers HTTP 429 with a `Retry-After`
-header (the seconds to the next minute) and the text "The PDF was not downloaded: the back-office download limit is
-reached. Try again in a moment."; nothing is sent to iFirma. Issuing documents is not affected. An employee without the
-view level still gets the access-denied answer first.
+**The per-customer day cap** counts the downloads of the customer's own documents that reached iFirma; a new day starts a new
+count. It exists so one account cannot use up the shop-wide budget for everyone else. The count is kept on the customer's receipt
+rows (`download_day`, `download_count`).
+
+**The back-office Download PDF** needs the view level and has a budget of its own, separate from the customers': all employees
+together can send 30 downloads per calendar minute and 2,000 per calendar day. A download over either answers HTTP 429 with a
+`Retry-After` header (the seconds to the next minute) and the text above; nothing is sent to iFirma. Issuing documents is not
+affected. An employee without the view level still gets the access-denied answer first. When the module's request limit refuses
+an employee's download, the answer names the window: "The PDF was not downloaded: the minute request limit is reached. Try again
+in a moment.", "... the day request limit is reached. Try again later." or "... iFirma asked the module to wait before the next
+request. Try again shortly."; `Retry-After` is the seconds to the next minute, to the end of the back-off, or, for the day limit, at
+most 3600.
 
 ## Delivery
 
@@ -422,7 +436,7 @@ The cron run delivers the documents that are due, the oldest due time first, at 
 
 **The limit does not count.** When the request limit or the cool-down after rejected credentials refuses a delivery before any request is sent, nothing is e-mailed, the attempt is not counted and the delivery stays due. The retry job stops at the first such refusal and goes on in the next run. The same holds for the first delivery of a just issued document: it shows Failed with the refusal, no attempt is counted and the cron delivers it later.
 
-**A lost outcome is never sent twice.** Before the cron sends anything it saves the attempt: the attempt is counted, the due time is cleared and the error reads "A delivery attempt started and its outcome was not recorded. Check whether the customer received the document before sending it again." A normal attempt then replaces that text with its result. If the process stops, or the result cannot be saved, after the e-mail left, the record stays Failed with that text, the cron never picks it up again and it needs attention: check with the customer or the mail log, then use **Send again** if the document did not arrive. If the attempt cannot be saved at all, nothing is sent and the cron tries again in the next run.
+**A lost outcome is never sent twice.** Before the cron sends anything it saves the attempt: the attempt is counted, the due time is cleared and the error reads "A delivery attempt started and its outcome was not recorded. Check whether the customer received the document before sending it again." A normal attempt then replaces that text with its result. If the process stops after the attempt was saved (before anything was sent, or after the e-mail left), or the result cannot be saved, the record stays Failed with that text, the e-mail may or may not have left, the cron never picks it up again and it needs attention: check with the customer or the mail log, then use **Send again** if the document did not arrive. If the attempt cannot be saved at all, nothing is sent and the cron tries again in the next run.
 
 **Send again.** **Send again** works as before, except that it is refused for 30 seconds after a delivery that was recorded as sent (see below), and a success ends the automatic retries of that document. A failed **Send again** leaves the attempts already used and the due time as they were. The cron only delivers a record that is still Failed when its turn comes, and a cron run and an employee cannot deliver the same document at the same moment, so the customer receives one e-mail. With the copy mode on, one copy is sent, with the attempt that succeeded.
 
@@ -432,9 +446,10 @@ The cron run delivers the documents that are due, the oldest due time first, at 
 
 | Line | Meaning |
 |---|---|
-| Attempt 1 of 3, next attempt at 2026-11-10 10:15 | one attempt was used; the next one is due at that time (shop time) |
+| Attempt 1 of 3, next attempt at 2026-11-10 10:15 | the number of attempts used so far (1 or 2) and the time the next one is due (shop time) |
+| Attempt 0 of 3, next attempt at 2026-11-10 10:15 | the first delivery of a just issued document was refused by the request limit before anything was sent, so no attempt is used and the cron delivers it at once |
 | No automatic attempt remains | the three attempts are used; use **Send again** |
-| No automatic attempt will be made | the failure is permanent or its outcome is unknown; use **Send again** |
+| No automatic attempt will be made | the failure is permanent, its outcome is unknown, or an attempt started and its outcome was not recorded (the error then reads "A delivery attempt started and its outcome was not recorded. ..."; the e-mail may or may not have left, also when the run stopped before anything was sent); check with the customer or the mail log, then use **Send again** if needed |
 | No automatic attempt is scheduled | a delivery that failed before the retry existed; use **Send again** |
 
 The error text and the line are escaped. A delivery that did not fail shows no such line.
