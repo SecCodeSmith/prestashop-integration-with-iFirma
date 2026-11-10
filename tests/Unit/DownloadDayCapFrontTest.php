@@ -113,6 +113,17 @@ class DownloadDayCapFrontTest extends TestCase
         return $total;
     }
 
+    public function testGivingBackWithoutACountedDownloadChangesNothing()
+    {
+        $executedBefore = count(Db::getInstance()->executed);
+
+        (new IfirmaDownloadDayCap(function () {
+            return mktime(10, 15, 20, 11, 10, 2026);
+        }))->giveBack(new IfirmaReceipt());
+
+        $this->assertCount($executedBefore, Db::getInstance()->executed);
+    }
+
     public function testOneCustomerSendingTenDownloadsAMinuteForTwoHundredMinutesIsStoppedAtThirty()
     {
         $receipts = $this->customerWithDocuments(self::A, 5);

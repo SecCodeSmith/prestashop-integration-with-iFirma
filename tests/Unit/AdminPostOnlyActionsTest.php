@@ -51,6 +51,18 @@ class IfirmaTestPostOnlyAdminController extends AdminIfirmaController
     }
 }
 
+/** The same controller with a response writer that returns, as a writer that does not end the request would. */
+class IfirmaTestReturningAdminController extends IfirmaTestPostOnlyAdminController
+{
+    /** @var array[] */
+    public $payloads = array();
+
+    protected function output(array $payload)
+    {
+        $this->payloads[] = $payload;
+    }
+}
+
 /**
  * Spec receipt-access-control, "State-changing back-office actions need POST": an action that changes state or sends
  * a request to iFirma runs only for a POST; a GET (or any other method) is answered with the failure envelope and
@@ -118,6 +130,21 @@ class AdminPostOnlyActionsTest extends TestCase
             'CustomerSearch' => array('CustomerSearch'),
             'CustomerCountRemote' => array('CustomerCountRemote'),
         );
+    }
+
+    /** In the shop the response writer ends the request; a refused action must not run even if it returned. */
+    public function testARefusedGetNeverRunsTheActionEvenWhenTheResponseWriterReturns()
+    {
+        $_SERVER['REQUEST_METHOD'] = 'GET';
+        Tools::$values = array('token' => 'admin-token-AdminIfirma', 'id_customer' => 5, 'id_order' => 15);
+        $controller = new IfirmaTestReturningAdminController();
+
+        $controller->ajaxProcessCreateReceipt();
+
+        $this->assertSame(array(405), $controller->statuses);
+        $this->assertCount(1, $controller->payloads);
+        $this->assertFalse($controller->payloads[0]['success']);
+        $this->assertSame(array(), $this->t->calls);
     }
 
     /** @return array array(the envelope, the status codes), the request sent with the method */
