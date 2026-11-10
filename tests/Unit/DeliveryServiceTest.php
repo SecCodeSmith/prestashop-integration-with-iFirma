@@ -920,11 +920,54 @@ class DeliveryServiceTest extends TestCase
 
         $r->delivery_status = 'failed';
         $r->delivery_error = 'boom';
-        $this->assertSame('Failed: boom', $this->svc->describeDelivery($r));
+        $this->assertSame('Failed: boom – No automatic attempt is scheduled', $this->svc->describeDelivery($r));
 
         $r->delivery_status = 'skipped';
         $r->source = 'external';
         $this->assertSame('Skipped (external)', $this->svc->describeDelivery($r));
+    }
+
+    private function failedReceipt($attempts, $retryAt)
+    {
+        $r = new IfirmaReceipt();
+        $r->delivery_status = 'failed';
+        $r->delivery_error = 'boom';
+        $r->delivery_attempts = $attempts;
+        $r->delivery_retry_at = $retryAt;
+
+        return $r;
+    }
+
+    public function testDescribeDeliveryNamesTheAttemptsUsedAndTheNextDueTime()
+    {
+        $this->assertSame(
+            'Failed: boom – Attempt 1 of 3, next attempt at 2026-11-10 10:15',
+            $this->svc->describeDelivery($this->failedReceipt(1, '2026-11-10 10:15:00'))
+        );
+    }
+
+    public function testDescribeDeliveryNamesUsedUpAttempts()
+    {
+        $this->assertSame(
+            'Failed: boom – No automatic attempt remains',
+            $this->svc->describeDelivery($this->failedReceipt(3, null))
+        );
+    }
+
+    public function testDescribeDeliveryNamesAFailureThatIsNotRetried()
+    {
+        $this->assertSame(
+            'Failed: boom – No automatic attempt will be made',
+            $this->svc->describeDelivery($this->failedReceipt(1, null))
+        );
+    }
+
+    public function testDescribeDeliveryLeavesTheErrorTextToTheCallerToEscape()
+    {
+        $r = $this->failedReceipt(0, null);
+        $r->delivery_error = '<script>alert(1)</script>';
+
+        $this->assertStringContainsString('<script>alert(1)</script>', $this->svc->describeDelivery($r));
     }
 
     public function testBareHttp403IsNotRetried()

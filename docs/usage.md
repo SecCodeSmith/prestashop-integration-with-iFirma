@@ -98,6 +98,7 @@ The back-office Orders list has an **iFirma** column, placed before the Actions 
 
 **Filtering by iFirma state.** The filter of the iFirma column is a choice list with ten choices, in this order: Issuance failed, Unknown outcome, Suspected duplicate, Held (data change request), Queued (iFirma limit), No document yet, Issued, not sent, Waiting for KSeF, Sent, Paid. It is the same order as the ascending sort. Choosing one lists only the orders in that state, and the total and the paging count the filtered orders. A delivery that failed is part of "Issued, not sent". Another value in the request is ignored and lists every order. The filter reads the local record only and makes no iFirma call; clear it with the grid's reset button.
 
+**Retry state in the tooltip.** When the delivery of an issued document failed, the tooltip adds one line under "Delivery failed" that tells where the automatic retry stands (see [Automatic retry of a failed delivery](#automatic-retry-of-a-failed-delivery)). The line is left out where the shop has not added the retry columns yet, so the Orders page always opens.
 
 **Issue from the list.** An employee with the issue level sees an **Issue** icon (a plus sign) in the iFirma cell of every order without an issued document. A click asks for confirmation, runs the same pipeline as **Create Receipt** for that order, duplicate guard included, and replaces the cell with the new state. The tooltip of the icon names the last state of the order's record when there is one: failed, unknown outcome, suspected duplicate or held. This is the only action of the column that calls iFirma, and only when clicked.
 
@@ -116,6 +117,8 @@ last change.
 
 **Filters:** status, source, delivery, KSeF, order reference, document number, issue date and the date of the
 last change. The status values are Created, Paid, Error, Unknown, Suspected duplicate and Held.
+
+**Delivery column.** The delivery cell shows the state in words. For a failed delivery it adds a second line, under the state, that tells where the automatic retry stands: "Attempt 1 of 3, next attempt at 2026-11-10 10:15", "No automatic attempt remains", "No automatic attempt will be made" or "No automatic attempt is scheduled" (a delivery that failed before the retry existed). See [Automatic retry of a failed delivery](#automatic-retry-of-a-failed-delivery). The text is escaped.
 
 **State sort order.** The status column sorts by state, not by the stored word. Ascending order equals the order of the constants in `IfirmaDocumentStateRank`: issuance failed (1), unknown outcome (2), suspected duplicate (3), held (4), queued (5), no record (6), issued and not sent (7), waiting for KSeF (8), sent (9), paid (10). Records in the same state are listed newest first. The sort is the same as the sort of the iFirma column of the Orders list.
 
@@ -389,6 +392,17 @@ The cron run delivers the documents that are due, the oldest due time first, at 
 **The limit does not count.** When the request limit or the cool-down after rejected credentials refuses a delivery before any request is sent, nothing is e-mailed, the attempt is not counted and the delivery stays due. The retry job stops at the first such refusal and goes on in the next run. The same holds for the first delivery of a just issued document: it shows Failed with the refusal, no attempt is counted and the cron delivers it later.
 
 **Send again.** **Send again** works as before, at any time, and a success ends the automatic retries of that document. A failed **Send again** leaves the attempts already used and the due time as they were. The cron only delivers a record that is still Failed when its turn comes, and a cron run and an employee cannot deliver the same document at the same moment, so the customer receives one e-mail. With the copy mode on, one copy is sent, with the attempt that succeeded.
+
+**What the employee sees.** The order panel, the Orders-list tooltip and the delivery column of the iFirma documents list show, next to the error of a failed delivery, one of these lines:
+
+| Line | Meaning |
+|---|---|
+| Attempt 1 of 3, next attempt at 2026-11-10 10:15 | one attempt was used; the next one is due at that time (shop time) |
+| No automatic attempt remains | the three attempts are used; use **Send again** |
+| No automatic attempt will be made | the failure is permanent or its outcome is unknown; use **Send again** |
+| No automatic attempt is scheduled | a delivery that failed before the retry existed; use **Send again** |
+
+The error text and the line are escaped. A delivery that did not fail shows no such line.
 
 ## KSeF (e-invoicing)
 

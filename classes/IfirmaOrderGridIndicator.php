@@ -29,6 +29,8 @@ class IfirmaOrderGridIndicator
     const FIELD_KSEF_NUMBER = 'ifirma_document_ksef_number';
     const FIELD_ERROR = 'ifirma_document_error';
     const FIELD_RANK = 'ifirma_document_rank';
+    const FIELD_DELIVERY_ATTEMPTS = 'ifirma_document_delivery_attempts';
+    const FIELD_DELIVERY_RETRY_AT = 'ifirma_document_delivery_retry_at';
     const ICON = 'receipt_long';
 
     /** The ORDER BY alias of the column's sort (the column id itself holds the HTML of the cell). */
@@ -96,29 +98,18 @@ class IfirmaOrderGridIndicator
     }
 
     /**
-     * The state of the newest record as a number, for the sort: the states that need action first, then no record, then
-     * the issued ones from "not sent" to "paid". A paid document wins over its delivery state.
-     *
-     * @param string $j      alias of the joined row
-     * @param string $issued the SQL condition of "issued"
-     * @return string a CASE expression
+     * @return string[] the two retry fields (attempts used, next due time) for QueryBuilder::addSelect(). Kept apart from
+     *                  selectSql() because the columns come from an upgrade: the caller adds them once the table has them,
+     *                  so a shop that did not add them yet still lists its orders.
      */
-    private static function rankSql($j, $issued)
+    public static function retrySelectSql()
     {
-        $rows = array(
-            "WHEN {$j}.id_ifirma_receipt IS NULL THEN " . self::RANK_NO_RECORD,
-            "WHEN {$issued} AND {$j}.status = 'paid' THEN " . self::RANK_PAID,
-            "WHEN {$issued} AND {$j}.delivery_status = 'awaiting_ksef' THEN " . self::RANK_AWAITING_KSEF,
-            "WHEN {$issued} AND {$j}.delivery_status = 'sent' THEN " . self::RANK_SENT,
-            "WHEN {$issued} THEN " . self::RANK_ISSUED,
-            "WHEN {$j}.status = 'error' THEN " . self::RANK_ERROR,
-            "WHEN {$j}.status = 'unknown' THEN " . self::RANK_UNKNOWN,
-            "WHEN {$j}.status = 'duplicate_suspected' THEN " . self::RANK_SUSPECTED,
-            "WHEN {$j}.status = 'held' THEN " . self::RANK_HELD,
-            "WHEN {$j}.status = 'queued' THEN " . self::RANK_QUEUED,
-        );
+        $j = self::JOIN_ALIAS;
 
-        return 'CASE ' . implode(' ', $rows) . ' ELSE ' . self::RANK_NO_RECORD . ' END';
+        return array(
+            "IFNULL({$j}.delivery_attempts, 0) AS " . self::FIELD_DELIVERY_ATTEMPTS,
+            "IFNULL({$j}.delivery_retry_at, '') AS " . self::FIELD_DELIVERY_RETRY_AT,
+        );
     }
 
     /**

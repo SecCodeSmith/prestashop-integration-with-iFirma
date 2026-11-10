@@ -148,6 +148,7 @@ Two plain JavaScript files in [`views/js/admin/`](../views/js/admin/) hold no te
 | [`IfirmaDeliveryService`](../classes/IfirmaDeliveryService.php) | Sends the document to the customer (shop mail or iFirma mail), with PDF retries and an optional copy. |
 | [`IfirmaDeliveryResult`](../classes/IfirmaDeliveryResult.php) | Immutable result of `deliver()` and `resend()`. |
 | [`IfirmaDeliveryRetryPolicy`](../classes/IfirmaDeliveryRetryPolicy.php) | Pure policy of the automatic delivery retry: three attempts in all, the second 15 minutes and the third 2 hours after the previous failure; a refusal by the rate guard counts no attempt, a permanent failure or an unknown outcome schedules none. |
+| [`IfirmaDeliveryRetryView`](../classes/IfirmaDeliveryRetryView.php) | Pure presenter: the one sentence that says where the retry of a failed delivery stands (attempt n of 3 and the next time, none remains, none will be made, none is scheduled). The order panel (through `describeDelivery()`), the Orders-list tooltip and the documents list use it, so the wording lives in one place. |
 | [`IfirmaDataRequestNotifier`](../classes/IfirmaDataRequestNotifier.php) | Sends the data-request e-mails. |
 
 **KSeF**

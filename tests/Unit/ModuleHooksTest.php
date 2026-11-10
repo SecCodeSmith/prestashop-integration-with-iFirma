@@ -489,6 +489,56 @@ class ModuleHooksTest extends TestCase
         $this->assertSame(array('field' => 'ifirma_document', 'sortable' => true, 'clickable' => true), $column->options);
     }
 
+    private function queryBuilderSpy()
+    {
+        return new class {
+            public $selects = array();
+            public $joins = array();
+
+            public function addSelect($s)
+            {
+                $this->selects[] = $s;
+
+                return $this;
+            }
+
+            public function leftJoin($fromAlias, $join, $alias, $condition = null)
+            {
+                $this->joins[] = array($fromAlias, $join, $alias, $condition);
+
+                return $this;
+            }
+        };
+    }
+
+    public function testQueryBuilderHookSelectsTheRetryFieldsOnlyAfterTheColumnsAreEnsured()
+    {
+        IfirmaSchema::resetEnsureCache();
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'delivery_/", '0');
+        $search = $this->queryBuilderSpy();
+
+        $this->module->hookActionOrderGridQueryBuilderModifier(array('search_query_builder' => $search));
+
+        $this->assertSame(array_merge(IfirmaOrderGridIndicator::selectSql(), IfirmaOrderGridIndicator::retrySelectSql()), $search->selects);
+        $this->assertContains(
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `delivery_attempts` INT(11) UNSIGNED NOT NULL DEFAULT 0',
+            Db::getInstance()->executed
+        );
+    }
+
+    public function testQueryBuilderHookSkipsTheRetryFieldsWhenTheColumnsCannotBeAdded()
+    {
+        IfirmaSchema::resetEnsureCache();
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'delivery_/", '0');
+        Db::getInstance()->whenExecute('/ADD COLUMN `delivery_retry_at`/', false);
+        $search = $this->queryBuilderSpy();
+
+        $this->module->hookActionOrderGridQueryBuilderModifier(array('search_query_builder' => $search));
+
+        $this->assertSame(IfirmaOrderGridIndicator::selectSql(), $search->selects, 'the Orders page keeps working without the columns');
+        IfirmaSchema::resetEnsureCache();
+    }
+
     public function testQueryBuilderHookAddsTheTwoSelectsToTheSearchQueryOnly()
     {
         $search = new class {
@@ -519,7 +569,7 @@ class ModuleHooksTest extends TestCase
 
         $join = IfirmaOrderGridIndicator::joinSql('o');
         $this->assertSame(array(array('o', $join['table'], $join['alias'], $join['condition'])), $search->joins);
-        $this->assertSame(IfirmaOrderGridIndicator::selectSql(), $search->selects);
+        $this->assertSame(array_merge(IfirmaOrderGridIndicator::selectSql(), IfirmaOrderGridIndicator::retrySelectSql()), $search->selects);
         $this->assertSame(array(), $count->selects);
         $this->assertSame(array(), $count->joins, 'the count query keeps its shape and its total');
     }

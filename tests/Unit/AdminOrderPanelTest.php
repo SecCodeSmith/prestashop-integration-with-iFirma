@@ -152,7 +152,37 @@ class AdminOrderPanelTest extends TestCase
         $v = $this->panel();
 
         $this->assertTrue($v['ifirma_is_external']);
-        $this->assertSame('Failed: no mailbox', $v['ifirma_delivery_text']);
+        $this->assertSame('Failed: no mailbox – No automatic attempt is scheduled', $v['ifirma_delivery_text']);
+    }
+
+    public function testTheFailedDeliveryTellsTheAttemptUsedAndTheNextDueTime()
+    {
+        $this->makeReceipt(array('delivery_status' => 'failed', 'delivery_error' => 'no mailbox', 'delivery_attempts' => 1, 'delivery_retry_at' => '2026-11-10 10:15:00'));
+
+        $v = $this->panel();
+
+        $this->assertSame('Failed: no mailbox – Attempt 1 of 3, next attempt at 2026-11-10 10:15', $v['ifirma_delivery_text']);
+    }
+
+    public function testTheFailedDeliveryWithUsedUpAttemptsSaysNoneRemains()
+    {
+        $this->makeReceipt(array('delivery_status' => 'failed', 'delivery_error' => 'no mailbox', 'delivery_attempts' => 3));
+
+        $v = $this->panel();
+
+        $this->assertSame('Failed: no mailbox – No automatic attempt remains', $v['ifirma_delivery_text']);
+    }
+
+    public function testMarkupInTheDeliveryErrorReachesTheTemplateOnlyThroughItsEscapedLine()
+    {
+        $this->makeReceipt(array('delivery_status' => 'failed', 'delivery_error' => '<script>alert(1)</script>'));
+        $tpl = file_get_contents(dirname(__DIR__, 2) . '/views/templates/hook/admin_order_panel.tpl');
+
+        $v = $this->panel();
+
+        $this->assertStringContainsString('<script>alert(1)</script>', $v['ifirma_delivery_text']);
+        $this->assertStringContainsString('{$ifirma_delivery_text|escape:\'html\':\'UTF-8\'}', $tpl);
+        $this->assertSame(1, substr_count($tpl, 'ifirma_delivery_text'), 'the line is printed in one place, escaped');
     }
 
     public function testAnUnconfiguredModuleStillRendersAndSaysSo()

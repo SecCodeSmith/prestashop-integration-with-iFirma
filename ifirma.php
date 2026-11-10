@@ -33,6 +33,7 @@ require_once __DIR__ . '/classes/IfirmaAdminOrderPanelView.php';
 require_once __DIR__ . '/classes/IfirmaCustomerContractorService.php';
 require_once __DIR__ . '/classes/IfirmaAdminActions.php';
 require_once __DIR__ . '/classes/IfirmaOrderGridIndicator.php';
+require_once __DIR__ . '/classes/IfirmaDeliveryRetryView.php';
 require_once __DIR__ . '/classes/IfirmaOrderGridStateFilter.php';
 require_once __DIR__ . '/classes/IfirmaPermission.php';
 require_once __DIR__ . '/classes/IfirmaIssueFeed.php';
@@ -1519,12 +1520,28 @@ class Ifirma extends Module
         }
         $join = IfirmaOrderGridIndicator::joinSql('o');
         $params['search_query_builder']->leftJoin('o', $join['table'], $join['alias'], $join['condition']);
-        foreach (IfirmaOrderGridIndicator::selectSql() as $select) {
+        foreach ($this->gridSelects() as $select) {
             $params['search_query_builder']->addSelect($select);
         }
         $criteria = isset($params['search_criteria']) ? $params['search_criteria'] : null;
         $this->filterByTheColumn($params['search_query_builder'], isset($params['count_query_builder']) ? $params['count_query_builder'] : null, $criteria);
         $this->sortByTheColumn($params['search_query_builder'], $criteria);
+    }
+
+    /**
+     * The retry fields come from an upgrade (the two columns of the receipt table): they are selected only once the
+     * columns are there, so a failed ALTER leaves the Orders page working and the tooltip without its retry line.
+     *
+     * @return string[] the select expressions of the Orders list
+     */
+    private function gridSelects()
+    {
+        $selects = IfirmaOrderGridIndicator::selectSql();
+        if (IfirmaSchema::ensureReceiptRetryColumns()) {
+            $selects = array_merge($selects, IfirmaOrderGridIndicator::retrySelectSql());
+        }
+
+        return $selects;
     }
 
     /**
@@ -1635,7 +1652,7 @@ class Ifirma extends Module
             'state_held' => $this->l('Held (data change request)'),
             'state_queued' => $this->l('Queued (iFirma limit)'),
             'click_to_issue' => $this->l('click to issue'),
-        ));
+        ) + IfirmaDeliveryRetryView::translatedWords($this));
     }
 
     /**

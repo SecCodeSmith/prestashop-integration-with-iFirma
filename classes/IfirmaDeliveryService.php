@@ -39,6 +39,7 @@ require_once dirname(__FILE__) . '/IfirmaDeliveryResult.php';
 require_once dirname(__FILE__) . '/IfirmaShopLink.php';
 require_once dirname(__FILE__) . '/IfirmaKsefDeliveryGate.php';
 require_once dirname(__FILE__) . '/IfirmaDeliveryRetryPolicy.php';
+require_once dirname(__FILE__) . '/IfirmaDeliveryRetryView.php';
 require_once dirname(__FILE__) . '/IfirmaNamedLock.php';
 require_once dirname(__FILE__) . '/IfirmaSchema.php';
 
@@ -51,6 +52,7 @@ class IfirmaDeliveryService
 
     const MAIL_TEMPLATE = 'receipt_issued';
     const TEXT_MAX = 1000;
+    const FAILURE_RETRY_SEPARATOR = ' – ';
     const EXTERNAL_REASON = 'external document - not auto-delivered';
 
     /** Total PDF download attempts in a shop-mail delivery, and the waits (seconds) between them. */
@@ -534,7 +536,7 @@ class IfirmaDeliveryService
                     $this->channelLabel((string) $receipt->delivery_channel)
                 );
             case IfirmaReceipt::DELIVERY_FAILED:
-                return sprintf($this->module->l('Failed: %s', 'ifirmadeliveryservice'), (string) $receipt->delivery_error);
+                return $this->describeFailure($receipt);
             case IfirmaReceipt::DELIVERY_AWAITING_KSEF:
                 return $this->module->l('Waiting for KSeF acceptance', 'ifirmadeliveryservice');
             case IfirmaReceipt::DELIVERY_SKIPPED:
@@ -546,6 +548,22 @@ class IfirmaDeliveryService
         }
 
         return $this->module->l('Not sent', 'ifirmadeliveryservice');
+    }
+
+    /**
+     * @param IfirmaReceipt $receipt a receipt whose delivery failed
+     * @return string the error, then where the automatic retry stands (both unescaped; the caller escapes)
+     */
+    private function describeFailure(IfirmaReceipt $receipt)
+    {
+        $failure = sprintf($this->module->l('Failed: %s', 'ifirmadeliveryservice'), (string) $receipt->delivery_error);
+        $retryView = new IfirmaDeliveryRetryView(IfirmaDeliveryRetryView::translatedWords($this->module));
+
+        return $failure . self::FAILURE_RETRY_SEPARATOR . $retryView->text(
+            $receipt->delivery_status,
+            $receipt->getDeliveryAttempts(),
+            $receipt->getDeliveryRetryAt()
+        );
     }
 
     /**

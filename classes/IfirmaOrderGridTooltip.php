@@ -14,6 +14,7 @@ if (!defined('_PS_VERSION_')) {
 }
 
 require_once dirname(__FILE__) . '/IfirmaKsefStatus.php';
+require_once dirname(__FILE__) . '/IfirmaDeliveryRetryView.php';
 
 /**
  * The lines of the tooltip of the iFirma cell in the Orders list. Pure: a grid record and a table of words in, lines
@@ -27,6 +28,9 @@ class IfirmaOrderGridTooltip
 {
     const ERROR_LIMIT = 100;
     const SEPARATOR = ' – ';
+    /** the grid record keys of the retry state; the same aliases as IfirmaOrderGridIndicator::FIELD_DELIVERY_ATTEMPTS / _RETRY_AT */
+    const FIELD_ATTEMPTS = 'ifirma_document_delivery_attempts';
+    const FIELD_RETRY_AT = 'ifirma_document_delivery_retry_at';
 
     /**
      * @return string[] key => English word; a key ending in _invoice or _receipt has one word for each kind so that
@@ -48,7 +52,7 @@ class IfirmaOrderGridTooltip
             'state_none' => 'No document yet', 'state_error' => 'Issuance failed', 'state_unknown' => 'Unknown outcome',
             'state_duplicate_suspected' => 'Suspected duplicate', 'state_held' => 'Held (data change request)',
             'state_queued' => 'Queued (iFirma limit)', 'click_to_issue' => 'click to issue',
-        );
+        ) + IfirmaDeliveryRetryView::defaultWords();
     }
 
     /**
@@ -94,6 +98,10 @@ class IfirmaOrderGridTooltip
             $lines[] = sprintf($words['delivery_sent_' . $kind], self::value($record, 'ifirma_document_sent_date'));
         } elseif ($delivery === 'failed') {
             $lines[] = $words['delivery_failed'];
+            $retryLine = self::retryLine($record, $words);
+            if ($retryLine !== '') {
+                $lines[] = $retryLine;
+            }
         } elseif (!$sent) {
             $lines[] = $words['delivery_none_' . $kind];
         }
@@ -106,6 +114,25 @@ class IfirmaOrderGridTooltip
         }
 
         return $lines;
+    }
+
+    /**
+     * @param array    $record
+     * @param string[] $words
+     * @return string '' when the record does not carry the retry fields (a shop whose table lacks the columns)
+     */
+    private static function retryLine(array $record, array $words)
+    {
+        if (!array_key_exists(self::FIELD_ATTEMPTS, $record)) {
+            return '';
+        }
+        $view = new IfirmaDeliveryRetryView($words);
+
+        return $view->text(
+            IfirmaDeliveryRetryView::DELIVERY_FAILED,
+            (int) self::value($record, self::FIELD_ATTEMPTS),
+            self::value($record, self::FIELD_RETRY_AT)
+        );
     }
 
     /**

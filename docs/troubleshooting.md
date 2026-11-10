@@ -205,6 +205,17 @@ customer's order page is silent: the page shows the last known state.
 
 **On the test stack:** the shop sends to the mock's SMTP sink, not to a real mail server. Open `http://localhost:8001/__mock/status` and read the Mail section, or call `GET /__mock/mail`. `tests/smoke/run.php` leaves the shop pointed at the sink, so mail from the shop keeps going there after a smoke run until its mail settings are changed back.
 
+### A delivery stays "failed"
+
+**Meaning:** the e-mail of an issued document could not be sent. The order panel, the Orders-list tooltip and the delivery column of the iFirma documents list show the error and one line that tells where the automatic retry stands (see [Automatic retry of a failed delivery](usage.md#automatic-retry-of-a-failed-delivery)):
+
+- **Attempt 1 of 3, next attempt at 10:15** (or attempt 2 of 3): nothing to do. The [cron endpoint](configuration.md#cron-jobs) sends the document again when the time has come. If the time has passed and the delivery is still failed, the cron is not called (call it every 1 to 5 minutes), the request limit is reached (a refusal by the limit uses no attempt, the delivery stays due) or the channel is set to `none`.
+- **No automatic attempt remains**: three attempts failed. Read the error, fix the cause (shop mail settings under Advanced Parameters > E-mail, the customer's address) and use **Send again**.
+- **No automatic attempt will be made**: the failure is permanent (no valid e-mail address of the customer, the document is missing in iFirma, the API key is missing or was rejected) or its outcome is unknown (with the channel `ifirma_mail`, the request to iFirma's mail service got no answer, so the e-mail may have been sent). Check with the customer or in iFirma, then use **Send again** if needed.
+- **No automatic attempt is scheduled**: the delivery failed before the module version 1.10.0, which introduced the retry. Old failures are not retried; use **Send again** (or the bulk **Send again** of the documents list, filtered by delivery Failed).
+
+**Why not retry everything:** a retry that could e-mail the same document twice is never made; that is why a failure with an unknown outcome waits for an employee.
+
 ### Guest did not receive the code
 
 **Meaning:** the guest request page answers "If the data matches an order, we have sent a code" whether or not a code was sent, so a missing e-mail has one of these causes: the reference or the e-mail did not match the order exactly (the e-mail is compared ignoring case, the reference as typed), the order already has an issued or adopted document, the data-change switch is off, or a limit refused the request (one code per order per 60 seconds, 5 codes per order per 24 hours, 20 codes per client address per hour). A code is valid for 15 minutes and is invalidated after 5 wrong attempts; the page then offers a new one.

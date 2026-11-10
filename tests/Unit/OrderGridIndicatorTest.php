@@ -110,6 +110,21 @@ class OrderGridIndicatorTest extends TestCase
         IfirmaOrderGridIndicator::joinSql('o; DROP');
     }
 
+    public function testTheRetryFieldsAreSelectedFromTheJoinedRowUnderTheirOwnAliases()
+    {
+        $this->assertSame(array(
+            "IFNULL(ifr.delivery_attempts, 0) AS ifirma_document_delivery_attempts",
+            "IFNULL(ifr.delivery_retry_at, '') AS ifirma_document_delivery_retry_at",
+        ), IfirmaOrderGridIndicator::retrySelectSql());
+        $this->assertSame(IfirmaOrderGridIndicator::FIELD_DELIVERY_ATTEMPTS, IfirmaOrderGridTooltip::FIELD_ATTEMPTS);
+        $this->assertSame(IfirmaOrderGridIndicator::FIELD_DELIVERY_RETRY_AT, IfirmaOrderGridTooltip::FIELD_RETRY_AT);
+    }
+
+    public function testTheRetryFieldsAreNotPartOfTheBaseSelectSoAShopWithoutTheColumnsStillLists()
+    {
+        $this->assertStringNotContainsString('delivery_attempts', implode(' ', IfirmaOrderGridIndicator::selectSql()));
+    }
+
     public function testTheSelectListHasEveryAliasOnce()
     {
         $aliases = array();

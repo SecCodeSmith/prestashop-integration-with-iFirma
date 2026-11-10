@@ -374,6 +374,10 @@ $_MODULE['<{ifirma}prestashop>ifirmadatarequestservice_c827633deb9a4f92f0e492854
 $_MODULE['<{ifirma}prestashop>ifirmadatarequestservice_d5d3515db68f680054af26f99760ce2c'] = 'Zatwierdzono automatycznie (tryb: bezpieczne pola).';
 $_MODULE['<{ifirma}prestashop>ifirmadatarequestservice_7be8236b3e5a8de69d1fb4cf7947f4d8'] = 'Twoja zmiana danych do faktury została zatwierdzona';
 $_MODULE['<{ifirma}prestashop>ifirmadatarequestservice_78d6c30ef0cea1978f11a71a52585bbe'] = 'Twoja zmiana danych do faktury została odrzucona';
+$_MODULE['<{ifirma}prestashop>ifirmadeliveryretryview_928ec8a591100ebcab026aff69b49499'] = 'Próba %1$d z %2$d, następna próba o %3$s';
+$_MODULE['<{ifirma}prestashop>ifirmadeliveryretryview_ef638c3285b1f8a032e5b041ac53e1ce'] = 'Nie pozostała żadna automatyczna próba';
+$_MODULE['<{ifirma}prestashop>ifirmadeliveryretryview_943d8590841e0161176fb297145ba64d'] = 'Nie zostanie podjęta żadna automatyczna próba';
+$_MODULE['<{ifirma}prestashop>ifirmadeliveryretryview_a74d5664b2656552e6e4764edcf286d2'] = 'Nie zaplanowano żadnej automatycznej próby';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_50ba6d2a6f0c7d3ae2d503878652c09f'] = 'Dokument nie został jeszcze wystawiony.';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_786e3dc02677d322e4182fca0e2d2c61'] = 'Wysyłka jest wyłączona (kanał: brak)';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_b9558cb395d75ad375e3130f2b8d5d64'] = 'Ten dokument jest właśnie wysyłany. Spróbuj ponownie za chwilę.';
@@ -383,11 +387,11 @@ $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_466eadd40b3c10580e3ab4e80611
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_d6d7c5a3f130174a472f0768c912a796'] = 'Paragon';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_d82d8bb01204172e9797dbc8ca6e5081'] = 'System pocztowy sklepu odmówił wysłania e-maila.';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_263a9e8ea1c2e2f662970d536c20516a'] = 'Wysłano %1$s kanałem: %2$s';
-$_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_d98139f37c01544fcdf222a3e2864c89'] = 'Niepowodzenie: %s';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_cc829246396605c9a7b0d64bc252c541'] = 'Czeka na przyjęcie przez KSeF';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_3660592986cc12ab045e41320f83f444'] = 'Pominięto (dokument zewnętrzny)';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_d9c8f187972e6320a34e9c40b4cba605'] = 'Pominięto';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_3c8d5a29d8493af7344222d7767eb978'] = 'Nie wysłano';
+$_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_d98139f37c01544fcdf222a3e2864c89'] = 'Niepowodzenie: %s';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_e80768ee1134a26a1ad88b9004f5eaf3'] = 'e-mail ze sklepu';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_f24e9aad3dac9bb9d4b43745d6c5cdb1'] = 'e-mail ze sklepu (zastępczo)';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_2309a0d972fc80d3b12aa7667a4fbcf8'] = 'e-mail z iFirma';
@@ -453,11 +457,6 @@ $_MODULE['<{ifirma}prestashop>adminifirmacontroller_effe06cc3bbfdd18fa0d95a403cd
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_7b2f31b90fe1c2cc33a52233c1925df3'] = 'W kolejce';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_e55f75a29310d7b60f7ac1d390c8ae42'] = 'Moduł';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_b206a1b4ea1097761f78e8876f6da779'] = 'Zewnętrzne';
-$_MODULE['<{ifirma}prestashop>adminifirmacontroller_3c8d5a29d8493af7344222d7767eb978'] = 'Nie wysłano';
-$_MODULE['<{ifirma}prestashop>adminifirmacontroller_7f8c0283f16925caed8e632086b81b9c'] = 'Wysłano';
-$_MODULE['<{ifirma}prestashop>adminifirmacontroller_d7c8c85bf79bbe1b7188497c32c3b0ca'] = 'Nieudane';
-$_MODULE['<{ifirma}prestashop>adminifirmacontroller_d9c8f187972e6320a34e9c40b4cba605'] = 'Pominięto';
-$_MODULE['<{ifirma}prestashop>adminifirmacontroller_b4901955540b07641095176788b2a54f'] = 'Czeka na KSeF';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_b718adec73e04ce3ec720dd11a06a308'] = 'ID';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_a240fa27925a635b08dc28c9e4f9216d'] = 'Zamówienie';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_ce26601dac0dea138b7295f02b7620a7'] = 'Klient';
@@ -473,6 +472,11 @@ $_MODULE['<{ifirma}prestashop>adminifirmacontroller_06df33001c1d7187fdd81ea1f5b2
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_91822c2f4d393235c6a85134c6867229'] = 'Ponów wystawienie';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_50ab1d847e175723e3f782f780d72b16'] = 'Wyślij ponownie';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_274188567e9395581d0479c94752405e'] = 'Odśwież z iFirma';
+$_MODULE['<{ifirma}prestashop>adminifirmacontroller_3c8d5a29d8493af7344222d7767eb978'] = 'Nie wysłano';
+$_MODULE['<{ifirma}prestashop>adminifirmacontroller_7f8c0283f16925caed8e632086b81b9c'] = 'Wysłano';
+$_MODULE['<{ifirma}prestashop>adminifirmacontroller_d7c8c85bf79bbe1b7188497c32c3b0ca'] = 'Nieudane';
+$_MODULE['<{ifirma}prestashop>adminifirmacontroller_d9c8f187972e6320a34e9c40b4cba605'] = 'Pominięto';
+$_MODULE['<{ifirma}prestashop>adminifirmacontroller_b4901955540b07641095176788b2a54f'] = 'Czeka na KSeF';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_a671411dbd4645094d8a9e0717fae643'] = 'Otwórz zamówienie';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_63a6a88c066880c5ac42394a22803ca6'] = 'Odśwież';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_2607298669ace2fc910321afeb9f8a84'] = 'Pobierz PDF';

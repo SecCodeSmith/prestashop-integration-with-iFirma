@@ -83,6 +83,7 @@ class ClassFileRequiresTest extends TestCase
             'the document state rank' => array('IfirmaDocumentStateRank'),
             'the order grid state filter' => array('IfirmaOrderGridStateFilter'),
             'the documents list sort' => array('IfirmaDocumentListSort'),
+            'the delivery retry view' => array('IfirmaDeliveryRetryView'),
             'the shop link' => array('IfirmaShopLink'),
             'the data request auto-accept criteria' => array('IfirmaDataRequestAutoAccept'),
             'the guest code service' => array('IfirmaGuestCodeService'),

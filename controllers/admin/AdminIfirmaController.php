@@ -23,6 +23,8 @@ require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaInput.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaIssueFeed.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDocumentListSort.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaOrderGridIndicator.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDeliveryRetryView.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaSchema.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaReceiptActions.php';
 
 class AdminIfirmaController extends ModuleAdminController
@@ -108,6 +110,8 @@ class AdminIfirmaController extends ModuleAdminController
      */
     public function init()
     {
+        // the list reads the retry columns of the receipt table; an upgrade that did not add them yet must not hide them
+        IfirmaSchema::ensureReceiptRetryColumns();
         parent::init();
 
         if ($this->attentionPresetActive()) {
@@ -242,14 +246,6 @@ class AdminIfirmaController extends ModuleAdminController
             IfirmaReceipt::SOURCE_MODULE => $this->module->l('Module', 'adminifirmacontroller'),
             IfirmaReceipt::SOURCE_EXTERNAL => $this->module->l('External', 'adminifirmacontroller'),
         );
-        $deliveries = array(
-            IfirmaReceipt::DELIVERY_NONE => $this->module->l('Not sent', 'adminifirmacontroller'),
-            IfirmaReceipt::DELIVERY_SENT => $this->module->l('Sent', 'adminifirmacontroller'),
-            IfirmaReceipt::DELIVERY_FAILED => $this->module->l('Failed', 'adminifirmacontroller'),
-            IfirmaReceipt::DELIVERY_SKIPPED => $this->module->l('Skipped', 'adminifirmacontroller'),
-            IfirmaReceipt::DELIVERY_AWAITING_KSEF => $this->module->l('Awaiting KSeF', 'adminifirmacontroller'),
-        );
-
         $this->fields_list = array(
             'id_ifirma_receipt' => array(
                 'title' => $this->module->l('ID', 'adminifirmacontroller'),
@@ -287,7 +283,8 @@ class AdminIfirmaController extends ModuleAdminController
             'delivery_status' => array(
                 'title' => $this->module->l('Delivery', 'adminifirmacontroller'),
                 'type' => 'select',
-                'list' => $deliveries,
+                'list' => $this->deliveryLabels(),
+                'callback' => 'renderDelivery',
                 'filter_key' => 'a!delivery_status',
                 'filter_type' => 'string',
             ),
@@ -358,6 +355,44 @@ class AdminIfirmaController extends ModuleAdminController
         $clause = parent::getOrderByClause($orderBy, $orderDirection);
 
         return IfirmaDocumentListSort::withTieBreak($clause, $this->_orderBy, $this->_orderWay);
+    }
+
+    /**
+     * @return string[] delivery status => the word for it
+     */
+    private function deliveryLabels()
+    {
+        return array(
+            IfirmaReceipt::DELIVERY_NONE => $this->module->l('Not sent', 'adminifirmacontroller'),
+            IfirmaReceipt::DELIVERY_SENT => $this->module->l('Sent', 'adminifirmacontroller'),
+            IfirmaReceipt::DELIVERY_FAILED => $this->module->l('Failed', 'adminifirmacontroller'),
+            IfirmaReceipt::DELIVERY_SKIPPED => $this->module->l('Skipped', 'adminifirmacontroller'),
+            IfirmaReceipt::DELIVERY_AWAITING_KSEF => $this->module->l('Awaiting KSeF', 'adminifirmacontroller'),
+        );
+    }
+
+    /**
+     * List callback: the delivery state in words and, for a failed delivery, where the automatic retry stands. The
+     * state of another version of the module is shown as it is. Both texts are escaped here (the list prints the result as HTML).
+     *
+     * @param mixed $value the delivery status
+     * @param array $row   the record (delivery_attempts and delivery_retry_at are missing until the columns exist)
+     * @return string
+     */
+    public function renderDelivery($value, $row = array())
+    {
+        $status = IfirmaInput::scalar($value);
+        $labels = $this->deliveryLabels();
+        $cell = htmlspecialchars(isset($labels[$status]) ? $labels[$status] : $status, ENT_QUOTES, 'UTF-8');
+        $row = is_array($row) ? $row : array();
+        $retryView = new IfirmaDeliveryRetryView(IfirmaDeliveryRetryView::translatedWords($this->module));
+        $retry = $retryView->text(
+            $status,
+            isset($row['delivery_attempts']) ? (int) $row['delivery_attempts'] : 0,
+            isset($row['delivery_retry_at']) ? IfirmaInput::scalar($row['delivery_retry_at']) : ''
+        );
+
+        return $retry === '' ? $cell : $cell . '<br><small class="text-muted">' . htmlspecialchars($retry, ENT_QUOTES, 'UTF-8') . '</small>';
     }
 
     /**

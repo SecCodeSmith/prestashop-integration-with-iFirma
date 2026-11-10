@@ -302,7 +302,7 @@ class AdminActionsTest extends TestCase
         $this->assertFalse($r['success']);
         $this->assertSame('The shop mail system refused to send the e-mail.', $r['message']);
         $this->assertSame('failed', $r['data']['receipt']['delivery_status']);
-        $this->assertSame('Failed: The shop mail system refused to send the e-mail.', $r['data']['delivery']);
+        $this->assertSame('Failed: The shop mail system refused to send the e-mail. – No automatic attempt is scheduled', $r['data']['delivery']);
     }
 
     public function testResendWithChannelNoneReportsFailure()
