@@ -130,7 +130,7 @@ Every request the module sends to iFirma SHALL count toward its minute limit and
 #### Scenario: PDF download refused at the cap
 - **GIVEN** the day count has reached the day cap
 - **WHEN** a PDF download is about to start
-- **THEN** it is refused, nothing is sent and the count does not change
+- **THEN** it is refused, nothing is sent and the day count does not change
 
 ### Requirement: A refused request is reported and not retried in place
 When the limit refuses a request, the caller SHALL learn that it was refused and which window refused it: the minute, the day or the back-off. The module SHALL NOT wait for the window and SHALL NOT send the request again within the same shop request. A refusal SHALL NOT be reported as a success, as an empty result or as an iFirma error.
