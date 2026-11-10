@@ -15,11 +15,14 @@ class Mail
     public static $sent = [];
     /** @var bool value returned by Send() */
     public static $result = true;
+    /** @var Throwable|null thrown by Send(), as the core does when the mail transport fails */
+    public static $throw = null;
 
     public static function reset()
     {
         self::$sent = [];
         self::$result = true;
+        self::$throw = null;
     }
 
     public static function Send(
@@ -40,6 +43,9 @@ class Mail
         $replyTo = null,
         $replyToName = null
     ) {
+        if (self::$throw !== null) {
+            throw self::$throw;
+        }
         self::$sent[] = [
             'idLang' => $idLang, 'template' => $template, 'subject' => $subject,
             'templateVars' => $templateVars, 'to' => $to, 'toName' => $toName,

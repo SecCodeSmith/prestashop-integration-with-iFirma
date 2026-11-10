@@ -192,6 +192,7 @@ return array(
     'Delivery is disabled (channel none)' => 'Wysyłka jest wyłączona (kanał: brak)',
     'iFirma did not confirm the e-mail' => 'iFirma nie potwierdziła wysłania e-maila',
     'The customer has no e-mail address.' => 'Klient nie ma adresu e-mail.',
+    'Another delivery of this document is in progress. Try again in a moment.' => 'Ten dokument jest właśnie wysyłany. Spróbuj ponownie za chwilę.',
     'Invoice' => 'Faktura',
     'Receipt' => 'Paragon',
     'The shop mail system refused to send the e-mail.' => 'System pocztowy sklepu odmówił wysłania e-maila.',

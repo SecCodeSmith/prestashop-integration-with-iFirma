@@ -21,6 +21,7 @@ require_once dirname(__FILE__) . '/IfirmaIssueQueueJob.php';
 require_once dirname(__FILE__) . '/IfirmaStatusSyncJob.php';
 require_once dirname(__FILE__) . '/IfirmaKsefRetryJob.php';
 require_once dirname(__FILE__) . '/IfirmaAwaitingDeliveryJob.php';
+require_once dirname(__FILE__) . '/IfirmaDeliveryRetryJob.php';
 
 /**
  * Runs the jobs of the cron endpoint one after the other, under a run lock so two cron requests never overlap.
@@ -54,7 +55,7 @@ class IfirmaCronRunner
 
     /**
      * The runner of the cron endpoint, with the jobs in the order they run: the limit read, the queue, KSeF, the status
-     * sync and the delivery.
+     * sync, the delivery of accepted documents and the retry of failed deliveries.
      *
      * @param Module $module
      * @return IfirmaCronRunner
@@ -73,6 +74,9 @@ class IfirmaCronRunner
             new IfirmaKsefRetryJob(IfirmaKsefService::build($module)),
             new IfirmaStatusSyncJob(IfirmaStatusSyncService::build($module)),
             new IfirmaAwaitingDeliveryJob(IfirmaDeliveryService::build($module)),
+            new IfirmaDeliveryRetryJob(IfirmaDeliveryService::build($module), function () use ($client) {
+                return $client->isAuthBlocked();
+            }),
         ));
     }
 

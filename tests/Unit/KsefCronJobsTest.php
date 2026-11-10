@@ -14,6 +14,7 @@ use PHPUnit\Framework\TestCase;
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaKsefRetryJob.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaAwaitingDeliveryJob.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaStatusSyncJob.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaCronRunner.php';
 
 /**
  * The two cron jobs of KSeF-confirmed delivery: the deferred KSeF submissions and the deliveries after acceptance.
@@ -44,7 +45,9 @@ class KsefCronJobsTest extends TestCase
         $module = new Module();
         $this->ksef = new IfirmaKsefService($this->client, $module);
         $service = new IfirmaReceiptService($this->client, $module);
-        $this->delivery = new IfirmaDeliveryService($this->client, $service, $module, null, function () {
+        $this->delivery = new IfirmaDeliveryService($this->client, $service, $module, function () {
+            return mktime(10, 15, 20, 11, 1, 2026);
+        }, function () {
         });
 
         $c = new Customer();
@@ -316,16 +319,66 @@ class KsefCronJobsTest extends TestCase
         $this->assertSame('awaiting_ksef', $this->row(52)['delivery_status']);
     }
 
-    public function testADeliveryThatFailsAfterAcceptanceIsRecordedAndNotRetried()
+    /**
+     * Scenario "Delivery failure after acceptance" (receipt-delivery spec): it replaces "recorded as failed and not
+     * retried". The awaiting job still tries a document once; the retry job takes it from there.
+     */
+    public function testADeliveryThatFailsAfterAcceptanceIsRecordedAsFailedWithOneAttemptUsedAndRetriedUnderTheAutomaticRetryRules()
     {
         $this->invoice(53, 1, array('ksef_number' => self::NUMBER));
         $this->t->queue('GET', '#fakturakraj/753\.pdf#', array('status' => 0, 'error' => 'timeout'));
 
         $report = $this->deliveryJob()->run($this->context());
 
-        $this->assertSame('failed', $this->row(53)['delivery_status']);
+        $row = $this->row(53);
+        $this->assertSame('failed', $row['delivery_status']);
+        $this->assertSame(1, $row['delivery_attempts']);
+        $this->assertSame(date('Y-m-d H:i:s', mktime(10, 15, 20, 11, 1, 2026) + 900), $row['delivery_retry_at']);
         $this->assertSame(array('handled' => 1, 'succeeded' => 0, 'failed' => 1, 'left' => 0), $report->block());
-        $this->assertSame(0, $this->deliveryJob()->run($this->context())->block()['handled'], 'the cron does not retry a failed delivery');
+        $this->assertSame(0, $this->deliveryJob()->run($this->context())->block()['handled'], 'the awaiting job does not try a failed delivery again');
+    }
+
+    public function testTheDeliveryJobTakesTheOrderLockWithoutWaitingAndReleasesIt()
+    {
+        $this->invoice(58, 1, array('ksef_number' => self::NUMBER));
+        $this->t->queue('GET', '#fakturakraj/758\.pdf#', array('body' => "%PDF-1.4\nbody\n%%EOF"));
+
+        $this->deliveryJob()->run($this->context());
+
+        $locks = array_values(array_filter(Db::getInstance()->queries, function ($q) {
+            return strpos($q, '_LOCK(') !== false;
+        }));
+        $this->assertSame(array("SELECT GET_LOCK('ifirma_order_58', 0)", "SELECT RELEASE_LOCK('ifirma_order_58')"), $locks);
+    }
+
+    public function testADocumentWhoseOrderLockIsBusyIsNotDeliveredByTheDeliveryJob()
+    {
+        $this->invoice(59, 1, array('ksef_number' => self::NUMBER));
+        Db::getInstance()->whenGetValue("/^SELECT GET_LOCK\('ifirma_order_59'/", 0);
+
+        $report = $this->deliveryJob()->run($this->context());
+
+        $this->assertCount(0, Mail::$sent);
+        $this->assertSame('awaiting_ksef', $this->row(59)['delivery_status']);
+        $this->assertSame(0, $report->block()['handled']);
+    }
+
+    public function testAnEmployeeResendThatDeliveredTheDocumentBeforeTheLockIsNotRepeatedByTheDeliveryJob()
+    {
+        $invoice = $this->invoice(61, 1, array('ksef_number' => self::NUMBER));
+        Db::getInstance()->whenGetValue('/^SELECT GET_LOCK\(/', function () use ($invoice) {
+            $employee = new IfirmaReceipt((int) $invoice->id);
+            $employee->recordDelivery(IfirmaReceipt::DELIVERY_SENT, 'shop_mail', '');
+            $employee->save();
+
+            return 1;
+        });
+
+        $report = $this->deliveryJob()->run($this->context());
+
+        $this->assertCount(0, Mail::$sent);
+        $this->assertSame(array(), $this->t->calls);
+        $this->assertSame(0, $report->block()['handled']);
     }
 
     public function testTheDeliveryJobStopsWhenTheRateGuardBlocks()

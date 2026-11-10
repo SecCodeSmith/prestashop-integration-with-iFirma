@@ -88,6 +88,8 @@ class IfirmaReceiptTest extends TestCase
             'delivery_channel' => 'sentinel_channel',
             'delivered_at' => '2026-01-03 10:00:00',
             'delivery_error' => 'earlier delivery error',
+            'delivery_attempts' => 2,
+            'delivery_retry_at' => '2026-01-03 12:00:00',
             'remote_paid_amount' => 5.5,
             'remote_sent' => true,
             'remote_draft' => true,

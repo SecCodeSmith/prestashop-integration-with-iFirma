@@ -376,6 +376,7 @@ $_MODULE['<{ifirma}prestashop>ifirmadatarequestservice_7be8236b3e5a8de69d1fb4cf7
 $_MODULE['<{ifirma}prestashop>ifirmadatarequestservice_78d6c30ef0cea1978f11a71a52585bbe'] = 'Twoja zmiana danych do faktury została odrzucona';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_50ba6d2a6f0c7d3ae2d503878652c09f'] = 'Dokument nie został jeszcze wystawiony.';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_786e3dc02677d322e4182fca0e2d2c61'] = 'Wysyłka jest wyłączona (kanał: brak)';
+$_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_b9558cb395d75ad375e3130f2b8d5d64'] = 'Ten dokument jest właśnie wysyłany. Spróbuj ponownie za chwilę.';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_a971fddd37f9e43b928577b185cece39'] = 'iFirma nie potwierdziła wysłania e-maila';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_3641c76a16e4948031800d0b421d1c86'] = 'Klient nie ma adresu e-mail.';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_466eadd40b3c10580e3ab4e8061161ce'] = 'Faktura';

@@ -305,6 +305,32 @@ class CronRunnerTest extends TestCase
         $this->assertSame('queue', IfirmaCronJobReport::counts('queue', 0, 0, 0, 0)->getName());
     }
 
+    public function testTheBuiltRunnerRetriesFailedDeliveriesAfterTheDeliveryOfAcceptedDocuments()
+    {
+        $runner = IfirmaCronRunner::build(new Module());
+        $jobs = new ReflectionProperty(IfirmaCronRunner::class, 'jobs');
+        $jobs->setAccessible(true);
+
+        $names = array_map(function ($job) {
+            return $job->name();
+        }, $jobs->getValue($runner));
+
+        $this->assertSame(array('delivery', 'delivery_retry'), array_slice($names, -2));
+    }
+
+    public function testTheBuiltRetryJobChecksTheCredentialPauseBeforeEveryRetry()
+    {
+        Configuration::updateValue('IFIRMA_AUTH_FAILURE', time() . '|Invalid signature');
+        $runner = IfirmaCronRunner::build(new Module());
+        $jobs = new ReflectionProperty(IfirmaCronRunner::class, 'jobs');
+        $jobs->setAccessible(true);
+        $retryJob = array_slice($jobs->getValue($runner), -1)[0];
+        $probe = new ReflectionProperty(IfirmaDeliveryRetryJob::class, 'authBlocked');
+        $probe->setAccessible(true);
+
+        $this->assertTrue(call_user_func($probe->getValue($retryJob)));
+    }
+
     public function testTheBuiltRunnerChecksTheCredentialPauseBeforeEveryQueuedOrder()
     {
         Configuration::updateValue('IFIRMA_AUTH_FAILURE', time() . '|Invalid signature');

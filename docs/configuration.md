@@ -201,6 +201,10 @@ The answer keeps the keys of the status sync at its top level, unchanged (`recei
 (the sync's own count, when it was the one, is kept), and `rate_limited_window` then says which window: `minute`, `day` or
 `backoff`. A job that did not run because an earlier one was rate limited reports zeros and its `left`.
 
+### The cron endpoint and the delivery retry
+
+The `delivery_retry` job is the last job of a run. It sends again the deliveries that failed for a temporary reason and are due (the second attempt 15 minutes after the first failure, the third 2 hours after the second), oldest due time first, at most `IFIRMA_CRON_MAX_ITEMS` per run, and stops at the first refusal by the rate guard or the credentials cool-down (a refusal uses no attempt). Its summary is the `delivery_retry` block of the cron answer, with the same keys as the other jobs (`handled`, `succeeded`, `failed`, `left`). **Without the cron endpoint no failed delivery is retried automatically**: call it every 1 to 5 minutes (see [Cron jobs](#cron-jobs)). There is no new setting: the retry uses the channel and the limits already configured, and the schedule (three attempts, 15 minutes and 2 hours) is fixed. See [Automatic retry of a failed delivery](usage.md#automatic-retry-of-a-failed-delivery) for the rules.
+
 ## Rate limits
 
 iFirma allows 100 requests per minute and 15,000 per day. The module keeps its own counters for both

@@ -368,6 +368,28 @@ With `shop_mail`, a copy of each delivery e-mail (with the PDF) can be sent as a
 
 > Warning: with the default channel, documents start being e-mailed to customers on the next trigger. Select `none` first if you do not want that.
 
+### Automatic retry of a failed delivery
+
+A delivery that failed for a temporary reason is sent again by the [cron endpoint](configuration.md#cron-jobs); nobody has to click. Without the cron job nothing is retried automatically and **Send again** remains the only way.
+
+**What is retried.** A delivery that failed because the shop mail system refused the e-mail, because iFirma did not have the PDF ready after the download attempts of that run, or for another temporary reason (an HTTP 5xx answer, an iFirma code that is not on the permanent list). A retry uses the channel configured at that moment and records its outcome like any delivery. A KSeF invoice that was accepted and then failed to be e-mailed is retried the same way.
+
+**The schedule.** A document gets at most three automatic attempts, the first one (at issuance, or after KSeF acceptance) included:
+
+| Attempt | Not earlier than |
+|---|---|
+| 1 | at issuance |
+| 2 | 15 minutes after the first failure |
+| 3 | 2 hours after the second failure |
+
+The cron run delivers the documents that are due, the oldest due time first, at most `IFIRMA_CRON_MAX_ITEMS` per run (the others wait for the next run). The delivery retry is the last job of a run. Because the cron is called every 1 to 5 minutes, an attempt starts a little after its due time. After the third failure the record stays Failed with the last error and the cron never tries it again.
+
+**What is never retried.** A permanent failure: the customer has no valid e-mail address, the document is missing in iFirma, the API key is missing, or iFirma rejected the login or refused the request as invalid. A failure whose outcome is unknown: with the channel `ifirma_mail`, a send request that reached iFirma and got no answer, a gateway error or an unreadable answer (the e-mail may have gone out, so a retry could send it twice). Such a record stays Failed and needs attention: use **Send again** after you checked. With the channel set to `none` the cron sends nothing for a record that waits for a retry. A delivery that failed before the module version that introduced the retry (1.10.0) is not retried either.
+
+**The limit does not count.** When the request limit or the cool-down after rejected credentials refuses a delivery before any request is sent, nothing is e-mailed, the attempt is not counted and the delivery stays due. The retry job stops at the first such refusal and goes on in the next run. The same holds for the first delivery of a just issued document: it shows Failed with the refusal, no attempt is counted and the cron delivers it later.
+
+**Send again.** **Send again** works as before, at any time, and a success ends the automatic retries of that document. A failed **Send again** leaves the attempts already used and the due time as they were. The cron only delivers a record that is still Failed when its turn comes, and a cron run and an employee cannot deliver the same document at the same moment, so the customer receives one e-mail. With the copy mode on, one copy is sent, with the attempt that succeeded.
+
 ## KSeF (e-invoicing)
 
 From 2026, B2B invoices must be submitted to the National e-Invoicing System (KSeF). iFirma can submit them for you, and since April 2026 it can also submit API-issued invoices on its own, at a time set in its account settings, and it refuses to e-mail an invoice that belongs in KSeF. Two settings decide what the module does, and they are independent:
@@ -387,7 +409,7 @@ From 2026, B2B invoices must be submitted to the National e-Invoicing System (KS
 
 - the customer's order page shows no download link and the download answers "not found";
 - a rejected submission (`BLAD`, `ODRZUCONA`) keeps the delivery waiting and is not delivered automatically, and a wait longer than 48 hours needs attention (notification tab and documents-list preset);
-- an e-mail that fails after acceptance is recorded as failed and the cron does not retry it; use **Send again**;
+- an e-mail that fails after acceptance is recorded as failed and the cron retries it under the [automatic retry rules](#automatic-retry-of-a-failed-delivery) when the failure is temporary; use **Send again** when it is not;
 - **Send again** delivers at once on the employee's decision and ends the wait (the panel warns that the document is not yet accepted in KSeF); the cron then sends no second e-mail.
 
 Receipts, invoices to private buyers in `b2b` mode, every document in mode `off`, and every document when the delivery channel is `none` are delivered (or recorded as skipped) at issuance as before and never wait.

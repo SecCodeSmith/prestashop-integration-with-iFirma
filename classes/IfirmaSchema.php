@@ -68,6 +68,20 @@ class IfirmaSchema
     }
 
     /**
+     * Columns added to the receipt table in 1.10.0: how many automatic delivery attempts were used and when the
+     * next one is due. A row that exists before the upgrade keeps a NULL due time, so it is never retried.
+     *
+     * @return array column name => DDL fragment
+     */
+    public static function newReceiptColumnsFor1100()
+    {
+        return array(
+            'delivery_attempts' => 'INT(11) UNSIGNED NOT NULL DEFAULT 0',
+            'delivery_retry_at' => 'DATETIME NULL',
+        );
+    }
+
+    /**
      * @return array column name => DDL fragment, in table order
      */
     public static function receiptColumns()
@@ -90,7 +104,12 @@ class IfirmaSchema
             'date_upd' => 'DATETIME NOT NULL',
         );
 
-        return array_merge($columns, self::newReceiptColumnsFor110(), self::newReceiptColumnsFor150());
+        return array_merge(
+            $columns,
+            self::newReceiptColumnsFor110(),
+            self::newReceiptColumnsFor150(),
+            self::newReceiptColumnsFor1100()
+        );
     }
 
     /**
@@ -376,6 +395,35 @@ class IfirmaSchema
         return $ok;
     }
 
+    /** @var bool the retry columns were already ensured in this request */
+    private static $receiptRetryEnsured = false;
+
+    /**
+     * Adds the delivery_attempts and delivery_retry_at columns to the receipt table when missing. Idempotent; at
+     * most once per request. No row is written: existing rows get attempts 0 and no due time.
+     *
+     * @return bool
+     */
+    public static function ensureReceiptRetryColumns()
+    {
+        if (self::$receiptRetryEnsured) {
+            return true;
+        }
+        $table = _DB_PREFIX_ . 'ifirma_receipt';
+        $ok = true;
+        foreach (self::newReceiptColumnsFor1100() as $column => $definition) {
+            if (self::columnExists($table, $column)) {
+                continue;
+            }
+            if (!Db::getInstance()->execute('ALTER TABLE `' . $table . '` ADD COLUMN `' . $column . '` ' . $definition)) {
+                $ok = false;
+            }
+        }
+        self::$receiptRetryEnsured = $ok;
+
+        return $ok;
+    }
+
     /** @var bool the auto_mode column was already ensured in this request */
     private static $dataRequestAutoModeEnsured = false;
 
@@ -434,6 +482,7 @@ class IfirmaSchema
         self::$guestCodeEnsured = false;
         self::$receiptKsefEnsured = false;
         self::$receiptDownloadEnsured = false;
+        self::$receiptRetryEnsured = false;
         self::$dataRequestAutoModeEnsured = false;
         self::$receiptDateIndexEnsured = false;
     }
