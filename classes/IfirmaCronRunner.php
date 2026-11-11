@@ -83,7 +83,7 @@ class IfirmaCronRunner
     /**
      * @return array the cron answer: the status sync summary at the top level, a block per other job,
      *               rate_limited (0 or 1), rate_limited_window and the usage block (the module's requests of the
-     *               current minute and day and the day's count per kind) and time_budget_exhausted (0 or 1: the run
+     *               last 60 seconds and the current day and the day's count per kind) and time_budget_exhausted (0 or 1: the run
      *               stopped starting records because its time budget was used up); or array('skipped' => ...) when another run
      *               is busy
      */

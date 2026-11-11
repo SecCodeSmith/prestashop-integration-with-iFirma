@@ -276,7 +276,7 @@ class CustomerRemoteCountTest extends TestCase
         // requests, api-usage-accounting "Status check counted"); nothing else is written
         $this->assertSame(
             array(
-                'IFIRMA_RATE_WINDOW' => date('YmdHi', $this->now) . ':2',
+                'IFIRMA_RATE_WINDOW' => $this->now . '=2',
                 'IFIRMA_RATE_DAY_WINDOW' => date('Ymd', $this->now) . ':2',
                 'IFIRMA_USAGE_STATUS' => date('Y-m-d', $this->now) . ':2',
             ),
@@ -710,7 +710,7 @@ class CustomerRemoteCountTest extends TestCase
 
         $this->assertSame($this->nothing(1, array(
             'ok' => false,
-            'error' => 'iFirma rate limit guard: 80 requests in the current minute (cap 80). Retry shortly.',
+            'error' => 'iFirma rate limit guard: 80 requests in the last 60 seconds (cap 80). Retry shortly.',
             'complete' => false,
             'period_from' => '',
             'period_to' => '',
@@ -730,7 +730,7 @@ class CustomerRemoteCountTest extends TestCase
 
         $this->assertSame($this->nothing(3, array(
             'ok' => false,
-            'error' => 'iFirma rate limit guard: 2 requests in the current minute (cap 2). Retry shortly.',
+            'error' => 'iFirma rate limit guard: 2 requests in the last 60 seconds (cap 2). Retry shortly.',
             'complete' => false,
             'period_from' => '',
             'period_to' => '',

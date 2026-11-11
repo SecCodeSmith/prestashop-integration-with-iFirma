@@ -109,7 +109,7 @@ One authenticated cron request SHALL first read the day limit from iFirma (speci
 - **THEN** the status-sync keys stay at the top level of the JSON, as before the other jobs existed
 - **AND** the blocks `queue`, `ksef`, `delivery` and `delivery_retry` each report the records handled, succeeded, failed and left for the next run
 - **AND** the block `limit` reports the requests used, granted and remaining of the day, each empty when no reading is available
-- **AND** the JSON reports `rate_limited` (0 or 1), `rate_limited_window`, `usage` (the module's requests of the current minute and day and the day's count per kind) and `time_budget_exhausted` (0 or 1)
+- **AND** the JSON reports `rate_limited` (0 or 1), `rate_limited_window`, `usage` (the module's requests of the last 60 seconds and of the day and the day's count per kind) and `time_budget_exhausted` (0 or 1)
 
 #### Scenario: Day limit read first
 - **GIVEN** the `abonent` key is not set
@@ -155,10 +155,10 @@ One cron run SHALL NOT start a record or a job once 45 seconds have passed since
 - **THEN** every job runs as before and the summary reports `time_budget_exhausted` 0
 
 ### Requirement: Customer page syncs have their own request budget
-All syncs started by customers' order pages together SHALL use at most 10 iFirma requests per calendar minute and 1,000 per calendar day (shop timezone). A sync beyond that SHALL send no request, record nothing and render the last known state, exactly like a refusal by the request limit. The budget SHALL count only the syncs that reached iFirma, and it SHALL be separate from the limit that issuance, the cron and the downloads use, so page views cannot stop issuance.
+All syncs started by customers' order pages together SHALL use at most 10 iFirma requests in any 60 seconds and 1,000 per calendar day (shop timezone). A sync beyond that SHALL send no request, record nothing and render the last known state, exactly like a refusal by the request limit. The budget SHALL count only the syncs that reached iFirma, and it SHALL be separate from the limit that issuance, the cron and the downloads use, so page views cannot stop issuance.
 
 #### Scenario: Minute budget used up
-- **GIVEN** 10 customer page syncs were sent in the current minute
+- **GIVEN** 10 customer page syncs were sent in the last 60 seconds
 - **WHEN** another customer opens an order page whose last sync is 20 minutes old
 - **THEN** no request is sent and the page shows the last known state without an error
 - **AND** the last sync time, the sync error and the time of the last attempt of the record are unchanged
@@ -178,7 +178,9 @@ All syncs started by customers' order pages together SHALL use at most 10 iFirma
 - **WHEN** a customer opens a stale order page
 - **THEN** the budget counts of the minute and the day are unchanged
 
-#### Scenario: New minute
-- **GIVEN** the minute budget was used up in the previous calendar minute and the day budget is not
-- **WHEN** a customer opens a stale order page
+#### Scenario: Syncs leave the budget after 60 seconds
+- **GIVEN** 10 customer page syncs were sent at 10:00:59 and the day budget is not used up
+- **WHEN** a customer opens a stale order page at 10:01:00
+- **THEN** no request is sent
+- **WHEN** a customer opens a stale order page at 10:02:00
 - **THEN** the list call is made

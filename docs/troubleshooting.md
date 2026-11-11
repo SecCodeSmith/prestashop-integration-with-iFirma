@@ -88,12 +88,15 @@ minute), the per-day cap (default 14,000 requests a day) or a running back-off a
 refused is queued and the cron issues it later; the records the run did not reach keep their previous state and are not
 errors. The records already handled keep their outcome.
 
-**What to do:** read the hint at the end of the message. `Run it again in a minute.` is shown for the minute cap,
+**What to do:** read the hint at the end of the message. `Run it again in a minute.` is shown for the minute cap (the cap counts the
+last 60 seconds, so the wait is up to 61 seconds),
 `Run it again tomorrow.` when the day cap was reached, and `Run it again after 13:15.` (the time, with the date when it
 is not today) when iFirma asked the module to wait. Then select the records that were not attempted in
 the [documents list](usage.md#ifirma-documents-list) and run the action again; queued orders need no new click, because the
 cron issues them. The cap is shared with every other client of the same iFirma account, so a busy account may need the
 bulk runs at quiet times.
+
+A server clock that is set back does not empty the count: the requests are counted from the new time. A clock that jumps forward by more than a minute does lose the count, because the module has no other time source.
 
 ### Rate limited by iFirma
 
@@ -119,7 +122,7 @@ recognised (it shows up as a technical problem, `Kod` 100), please report its HT
 **Meaning:** iFirma's limit (100 requests a minute, 15,000 a day) is shared by every program that uses the account's API,
 and the module counts every request it sends, status checks and PDF downloads included.
 
-**What to do:** open the **Module requests** box on the settings page. It shows the requests of the current minute and of today
+**What to do:** open the **Module requests** box on the settings page. It shows the requests of the last 60 seconds and of today
 next to the caps and today's count per kind ([Module requests](configuration.md#module-requests)). A high `status` count
 means the status sync or the documents list ran a lot; a high `pdf` count means many downloads or deliveries. If the day count
 is higher than the kinds add up to, the row **Other clients of the account** shows what other programs used. Click **Check the
@@ -178,13 +181,13 @@ which lists every download limit). The document itself is fine. This answer has 
 **What to do:** wait a few seconds and reload. If customers hit the limit routinely, look for something that downloads the
 PDF repeatedly, such as a link preview or a script. A download can also be refused with "Too many requests at the moment.
 Please try again shortly." when the customer has already downloaded 30 documents today, or when all customers together have
-used the customer download budget (20 per minute, 2,000 per day); it works again in the next minute or the next day.
+used the customer download budget (20 in any 60 seconds, 2,000 per day); it works again once those downloads are older than 60 seconds, or on the next day.
 
 ### HTTP 429 on a PDF download because of the module's request limit
 
 **Message for the customer:** "Too many requests at the moment. Please try again shortly." The answer is HTTP 429 with a
 `Retry-After` header. For a customer the value is always 60, whichever limit refused, so the answer does not reveal the window.
-For an employee it is exact: the seconds to the next minute for the minute limit (1 to 60), the seconds to the end of a back-off,
+For an employee it is exact: the seconds until the module's last 60 seconds have room again for the minute limit (1 to 61), the seconds to the end of a back-off,
 and for the day limit at most 3600.
 
 **Message for an employee (back office download):** one of "The PDF was not downloaded: the minute request limit is
@@ -215,8 +218,8 @@ exceeded").
 **Meaning:** **Refresh from iFirma** was refused by the request limit, so no list call was made. The stored state, the last
 sync time and the sync error of the document are unchanged and nothing was recorded as an error. The same refusal on the
 customer's order page is silent: the page shows the last known state. The page is also silent when the budget of the
-customer page syncs is used up (10 calls per calendar minute and 1,000 per calendar day for all customers together):
-no call is made, nothing is recorded, and the next page view after the minute or the day has passed tries again.
+customer page syncs is used up (10 calls in any 60 seconds and 1,000 per calendar day for all customers together):
+no call is made, nothing is recorded, and the next page view after those calls are older than 60 seconds, or after the day has passed, tries again.
 A customer's order pages start one list call per interval, so the page of a second order, of another issue date, opened
 within the interval shows the last known state until the cron reads it. A document that the customer's page could not find
 on the first page of a day with more than 100 documents, and any document other than the one opened that is not among the

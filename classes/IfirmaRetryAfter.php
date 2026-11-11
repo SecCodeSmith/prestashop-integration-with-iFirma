@@ -25,20 +25,19 @@ class IfirmaRetryAfter
 
     const MINIMUM_SECONDS = 1;
 
-    const SECONDS_PER_MINUTE = 60;
-
     /**
      * @param string $window       one of the IfirmaRateDecision::WINDOW_* constants
      * @param int    $now          unix time
      * @param int    $backoffUntil unix time the stored back-off ends, 0 when none runs
+     * @param int    $minuteFreeAt unix time the last 60 seconds have room again (IfirmaRateGuard::minuteFreeAt())
      * @return int whole seconds, at least one
      */
-    public static function seconds($window, $now, $backoffUntil)
+    public static function seconds($window, $now, $backoffUntil, $minuteFreeAt = 0)
     {
         $now = (int) $now;
         switch ($window) {
             case IfirmaRateDecision::WINDOW_MINUTE:
-                $seconds = self::SECONDS_PER_MINUTE - ($now % self::SECONDS_PER_MINUTE);
+                $seconds = (int) $minuteFreeAt - $now;
                 break;
             case IfirmaRateDecision::WINDOW_BACKOFF:
                 $seconds = (int) $backoffUntil - $now;

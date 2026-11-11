@@ -1064,7 +1064,7 @@ class DuplicateGuardCheckTest extends TestCase
         $res = $this->guard->check($this->order());
 
         $this->assertSame(IfirmaGuardResult::OUTCOME_SUSPECTED, $res->outcome);
-        $this->assertSame('iFirma rate limit guard: 1 requests in the current minute (cap 1). Retry shortly.', $res->error);
+        $this->assertSame('iFirma rate limit guard: 1 requests in the last 60 seconds (cap 1). Retry shortly.', $res->error);
         $this->assertFalse($res->rateLimited);
         $this->assertCount(1, $this->t->calls);
         $this->assertSame(array(''), array_column($res->candidates, '_sale_date'));

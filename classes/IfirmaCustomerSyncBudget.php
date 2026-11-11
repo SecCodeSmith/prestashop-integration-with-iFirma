@@ -29,13 +29,15 @@ class IfirmaCustomerSyncBudget extends IfirmaRequestBudget
 
     /**
      * @param callable|null $clock
-     * @return IfirmaCustomerSyncBudget 10 syncs per minute and 1,000 per day for all customers together
+     * @return IfirmaCustomerSyncBudget 10 syncs in any 60 seconds and 1,000 per day for all customers together
      */
     public static function create($clock = null)
     {
-        return new self(array(
-            new IfirmaRateWindow(IfirmaRateDecision::WINDOW_MINUTE, self::MINUTE_KEY, self::MINUTE_BUCKET_FORMAT, self::MINUTE_CAP),
+        return new self(
+            self::MINUTE_KEY,
+            self::MINUTE_CAP,
             new IfirmaRateWindow(IfirmaRateDecision::WINDOW_DAY, self::DAY_KEY, self::DAY_BUCKET_FORMAT, self::DAY_CAP),
-        ), $clock);
+            $clock
+        );
     }
 }

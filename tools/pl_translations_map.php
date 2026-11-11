@@ -626,7 +626,7 @@ return array(
     'To read the remaining iFirma limit, enter the abonent API key and save.' => 'Aby odczytać pozostały limit iFirma, wpisz klucz API abonent i zapisz ustawienia.',
     'Module requests' => 'Zapytania modułu',
     'Requests this module sent to iFirma, counted by the module itself. Opening this page sends none.' => 'Zapytania, które ten moduł wysłał do iFirma, liczone przez sam moduł. Otwarcie tej strony nie wysyła żadnego.',
-    'Current minute' => 'Bieżąca minuta',
+    'Last 60 seconds' => 'Ostatnie 60 sekund',
     'Today' => 'Dzisiaj',
     '%1$d of %2$d' => '%1$d z %2$d',
     'Today by kind of request' => 'Dzisiaj według rodzaju zapytania',

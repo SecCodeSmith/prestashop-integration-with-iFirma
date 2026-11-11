@@ -74,7 +74,7 @@ class AdminDownloadRefusalTest extends TestCase
     public function testTheMinuteCapAnswersTheLimitAnswerNamingTheMinuteLimit()
     {
         $this->makeReceipt();
-        Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi') . ':80');
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', (time() - 1) . '=80');
 
         $controller = $this->download();
 
@@ -82,7 +82,7 @@ class AdminDownloadRefusalTest extends TestCase
         $this->assertCount(1, $controller->limits);
         list($seconds, $text) = $controller->limits[0];
         $this->assertGreaterThanOrEqual(1, $seconds);
-        $this->assertLessThanOrEqual(60, $seconds);
+        $this->assertLessThanOrEqual(61, $seconds);
         $this->assertSame('The PDF was not downloaded: the minute request limit is reached. Try again in a moment.', $text);
         $this->assertSame(array(), $this->t->calls, 'no request is sent to iFirma');
     }

@@ -96,6 +96,7 @@ class ClassFileRequiresTest extends TestCase
             'the download budget' => array('IfirmaDownloadBudget'),
             'the download day cap' => array('IfirmaDownloadDayCap'),
             'the window counter' => array('IfirmaWindowCounter'),
+            'the rolling window counter' => array('IfirmaRollingWindowCounter'),
         );
     }
 

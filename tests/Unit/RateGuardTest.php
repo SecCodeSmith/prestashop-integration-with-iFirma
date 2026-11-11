@@ -46,29 +46,29 @@ class RateGuardTest extends TestCase
 
     public function testUnderTheCapAdmitsAndCountsBothWindows()
     {
-        Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->minute() . ':5');
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->now . '=5');
         Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', $this->day() . ':100');
 
         $decision = $this->guard->admit();
 
         $this->assertTrue($decision->isAllowed());
-        $this->assertSame($this->minute() . ':6', Configuration::get('IFIRMA_RATE_WINDOW'));
+        $this->assertSame($this->now . '=6', Configuration::get('IFIRMA_RATE_WINDOW'));
         $this->assertSame($this->day() . ':101', Configuration::get('IFIRMA_RATE_DAY_WINDOW'));
     }
 
     public function testMinuteCapReachedNamesTheMinuteWindow()
     {
-        Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->minute() . ':80');
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->now . '=80');
 
         $decision = $this->guard->admit();
 
         $this->assertFalse($decision->isAllowed());
         $this->assertSame(IfirmaRateDecision::WINDOW_MINUTE, $decision->getWindow());
         $this->assertSame(
-            'iFirma rate limit guard: 80 requests in the current minute (cap 80). Retry shortly.',
+            'iFirma rate limit guard: 80 requests in the last 60 seconds (cap 80). Retry shortly.',
             $decision->getMessage()
         );
-        $this->assertSame($this->minute() . ':80', Configuration::get('IFIRMA_RATE_WINDOW'));
+        $this->assertSame($this->now . '=80', Configuration::get('IFIRMA_RATE_WINDOW'));
     }
 
     public function testDayCapReachedNamesTheDayWindow()
@@ -87,12 +87,12 @@ class RateGuardTest extends TestCase
         $this->assertSame($this->day() . ':500', Configuration::get('IFIRMA_RATE_DAY_WINDOW'));
     }
 
-    public function testNewMinuteRestartsTheMinuteCounter()
+    public function testRequestsOlderThanSixtySecondsAreNotCounted()
     {
-        Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi', $this->now - 60) . ':80');
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', ($this->now - 61) . '=80');
 
         $this->assertTrue($this->guard->admit()->isAllowed());
-        $this->assertSame($this->minute() . ':1', Configuration::get('IFIRMA_RATE_WINDOW'));
+        $this->assertSame($this->now . '=1', Configuration::get('IFIRMA_RATE_WINDOW'));
     }
 
     public function testNewDayRestartsTheDayCounter()
@@ -118,17 +118,17 @@ class RateGuardTest extends TestCase
 
     public function testADayRefusalLeavesTheMinuteSlotUsed()
     {
-        Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->minute() . ':5');
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->now . '=5');
         Configuration::updateValue('IFIRMA_RATE_MAX_PER_DAY', 500);
         Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', $this->day() . ':500');
 
         $this->assertSame(IfirmaRateDecision::WINDOW_DAY, $this->guard->admit()->getWindow());
-        $this->assertSame($this->minute() . ':6', Configuration::get('IFIRMA_RATE_WINDOW'));
+        $this->assertSame($this->now . '=6', Configuration::get('IFIRMA_RATE_WINDOW'));
     }
 
     public function testTwoRequestsAtTheCapMinusOneAdmitExactlyOne()
     {
-        Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->minute() . ':79');
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->now . '=79');
         $self = $this;
         $otherRequest = new IfirmaRateGuard(function () use ($self) {
             return $self->now;
@@ -140,20 +140,25 @@ class RateGuardTest extends TestCase
         $this->assertTrue($first->isAllowed());
         $this->assertFalse($second->isAllowed());
         $this->assertSame(IfirmaRateDecision::WINDOW_MINUTE, $second->getWindow());
-        $this->assertSame($this->minute() . ':80', Configuration::get('IFIRMA_RATE_WINDOW'));
+        $this->assertSame($this->now . '=80', Configuration::get('IFIRMA_RATE_WINDOW'));
     }
 
     public function testEachWindowIsOneAtomicStatementCarryingItsBucketAndCap()
     {
         Configuration::updateValue('IFIRMA_RATE_MAX_PER_MIN', 7);
         Configuration::updateValue('IFIRMA_RATE_MAX_PER_DAY', 900);
-        Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->minute() . ':2');
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', ($this->now - 5) . '=2');
         Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', $this->day() . ':2');
 
         $this->guard->admit();
 
         $d = $this->day();
-        $this->assertCount(1, Db::getInstance()->rateQueries);
+        $this->assertCount(2, Db::getInstance()->rateQueries, 'one read and one compare-and-set');
+        $this->assertSame(
+            "UPDATE `ps_configuration` SET `value` = '" . ($this->now - 5) . "=2," . $this->now . "=1' "
+            . "WHERE `name` = 'IFIRMA_RATE_WINDOW' AND `value` = '" . ($this->now - 5) . "=2'",
+            Db::getInstance()->rateQueries[1]
+        );
         $this->assertSame(
             "UPDATE `ps_configuration` SET `value` = IF(SUBSTRING_INDEX(`value`, ':', 1) = '" . $d . "', "
             . "CONCAT('" . $d . ":', SUBSTRING_INDEX(`value`, ':', -1) + 1), '" . $d . ":1') "
@@ -238,7 +243,7 @@ class RateGuardTest extends TestCase
     public function testNothingBlocksAnIdleGuard()
     {
         $this->assertSame(IfirmaRateDecision::WINDOW_NONE, $this->guard->blockedBy());
-        $this->assertSame(array(), Db::getInstance()->rateQueries, 'asking counts nothing');
+        $this->assertSame(array(), preg_grep('/^UPDATE/', Db::getInstance()->rateQueries), 'asking counts nothing');
     }
 
     public function testAFullMinuteIsTheBlockingWindow()
@@ -266,7 +271,7 @@ class RateGuardTest extends TestCase
 
     public function testACounterOfAnEarlierBucketBlocksNothing()
     {
-        Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi', $this->now - 60) . ':80');
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi', $this->now - 120) . ':80');
         Configuration::updateValue('IFIRMA_RATE_MAX_PER_DAY', 500);
         Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', date('Ymd', $this->now - 86400) . ':500');
 

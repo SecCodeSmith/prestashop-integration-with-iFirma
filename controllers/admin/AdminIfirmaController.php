@@ -1250,7 +1250,7 @@ class AdminIfirmaController extends ModuleAdminController
 
         $budget = $this->employeeBudget();
         if (!$budget->take()) {
-            $this->refusedByRateLimit($budget->secondsToNextMinute(), $this->module->l('The PDF was not downloaded: the back-office download limit is reached. Try again in a moment.', 'adminifirmacontroller'));
+            $this->refusedByRateLimit($budget->secondsUntilRoom(), $this->module->l('The PDF was not downloaded: the back-office download limit is reached. Try again in a moment.', 'adminifirmacontroller'));
             return;
         }
 

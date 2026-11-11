@@ -48,10 +48,10 @@ The sum of today's kind counts SHALL equal the number of requests the module cou
 - **THEN** the kind counts are `document` 2, `status` 3, `pdf` 1 and the module's day count is 6
 
 ### Requirement: Usage shown on the configuration page
-The configuration page SHALL show the module's own requests of the current minute and of today next to their caps, and today's count per kind. It SHALL send no request to show them and SHALL show them whether or not the `abonent` key is set. Kinds with a count of zero SHALL be shown as zero.
+The configuration page SHALL show the module's own requests of the last 60 seconds and of today next to their caps, and today's count per kind. It SHALL send no request to show them and SHALL show them whether or not the `abonent` key is set. Kinds with a count of zero SHALL be shown as zero.
 
 #### Scenario: Usage box
-- **GIVEN** the caps are 80 per minute and 14,000 per day, and the module sent 6 requests this minute and 250 today, 40 of them PDF downloads
+- **GIVEN** the caps are 80 per minute and 14,000 per day, and the module sent 6 requests in the last 60 seconds and 250 today, 40 of them PDF downloads
 - **WHEN** an employee opens the configuration page
 - **THEN** the page shows 6 of 80 for the minute, 250 of 14,000 for the day and 40 for PDF downloads
 - **AND** no request is sent to iFirma
@@ -69,7 +69,7 @@ The configuration page SHALL show the module's own requests of the current minut
 - **THEN** the page states until what time the module sends nothing
 
 ### Requirement: Usage in the cron summary
-The JSON summary of a cron run SHALL carry a `usage` block with the module's requests of the current minute, of today, and today's count per kind, read after the run's jobs. The block SHALL be present when the run was refused by the limit.
+The JSON summary of a cron run SHALL carry a `usage` block with the module's requests of the last 60 seconds, of today, and today's count per kind, read after the run's jobs. The block SHALL be present when the run was refused by the limit.
 
 #### Scenario: Summary block
 - **WHEN** a cron run finishes after 4 status requests on a day with no earlier request

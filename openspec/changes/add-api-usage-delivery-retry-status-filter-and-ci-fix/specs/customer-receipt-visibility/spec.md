@@ -49,7 +49,7 @@ When the module's request limit refuses the PDF download of a customer who may d
 - **THEN** the customer gets the existing "temporarily unavailable" answer, not 429, and no request is sent
 
 ### Requirement: Customer downloads have their own request budget
-All customer-initiated PDF downloads together SHALL use at most 20 iFirma requests per calendar minute and 2,000 per calendar day (shop timezone), whatever the number of customers, orders or documents. A download beyond that budget SHALL be answered like a download refused by the request limit (HTTP 429, `Retry-After: 60`, the same generic message) and SHALL send no request. Issuing documents, status sync and the cron SHALL NOT be refused because of customer downloads.
+All customer-initiated PDF downloads together SHALL use at most 20 iFirma requests in any 60 seconds and 2,000 per calendar day (shop timezone), whatever the number of customers, orders or documents. A download beyond that budget SHALL be answered like a download refused by the request limit (HTTP 429, `Retry-After: 60`, the same generic message) and SHALL send no request. Issuing documents, status sync and the cron SHALL NOT be refused because of customer downloads.
 
 #### Scenario: Many accounts cannot use up the shared limit
 - **GIVEN** 8 customers, each with 5 issued documents, who download in a loop for one minute
@@ -58,7 +58,7 @@ All customer-initiated PDF downloads together SHALL use at most 20 iFirma reques
 - **AND** an order that reaches the trigger status in the same minute gets its document issued
 
 #### Scenario: Minute budget used up
-- **GIVEN** 20 customer downloads were sent in the current minute
+- **GIVEN** 20 customer downloads were sent in the last 60 seconds
 - **WHEN** the owner of an order requests their PDF
 - **THEN** the answer is HTTP 429 with `Retry-After: 60` and the generic "try again shortly" message, and no request is sent
 
@@ -67,9 +67,11 @@ All customer-initiated PDF downloads together SHALL use at most 20 iFirma reques
 - **WHEN** a customer requests a PDF
 - **THEN** the answer is HTTP 429 and no request is sent, and the module's own day count for other requests is unchanged
 
-#### Scenario: Next minute
-- **GIVEN** the minute budget was used up
-- **WHEN** a customer requests a PDF in the next minute and the day budget allows it
+#### Scenario: Downloads leave the budget after 60 seconds
+- **GIVEN** 20 customer downloads were sent at 10:00:59 and the day budget is not used up
+- **WHEN** a customer requests a PDF at 10:01:00
+- **THEN** the answer is HTTP 429 and no request is sent
+- **WHEN** a customer requests a PDF at 10:02:00
 - **THEN** the PDF is returned
 
 #### Scenario: Budget checked after the access checks

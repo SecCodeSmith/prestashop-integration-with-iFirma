@@ -107,9 +107,10 @@ Two plain JavaScript files in [`views/js/admin/`](../views/js/admin/) hold no te
 | [`IfirmaHttpOutput`](../classes/IfirmaHttpOutput.php) | Sends a PDF as the response (headers in one place). |
 | [`IfirmaRequestKind`](../classes/IfirmaRequestKind.php) | Derives the kind of a request (`document`, `status`, `pdf`, `email`, `ksef`, `payment`, `contractor`, `limit`, `other`) from the verb and the path, so a caller cannot mislabel it. Used by `IfirmaApiClient` and `IfirmaApiUsage`. |
 | [`IfirmaApiUsage`](../classes/IfirmaApiUsage.php) | Statistics only: counts the requests sent per kind and day in `IFIRMA_USAGE_<KIND>` rows and reads the minute and day totals from the guard. Used by `IfirmaApiClient` (writes), `IfirmaCronRunner` (the `usage` block) and the configuration page (reads). |
-| [`IfirmaRetryAfter`](../classes/IfirmaRetryAfter.php) | Computes the `Retry-After` seconds of a refusal by the local request limit (to the next minute, to the end of a back-off, at most 3600 for the day window). Used by `IfirmaApiClient`. |
+| [`IfirmaRetryAfter`](../classes/IfirmaRetryAfter.php) | Computes the `Retry-After` seconds of a refusal by the local request limit (until the 60-second window has room again, to the end of a back-off, at most 3600 for the day window). Used by `IfirmaApiClient`. |
 | [`IfirmaRateLimitedException`](../classes/IfirmaRateLimitedException.php) | Typed exception for a request refused by the rate limit before it was sent, carrying the window that refused and the seconds to wait. Thrown by `IfirmaReceiptService`; caught by `IfirmaIssuancePipeline`, the admin controller and the receipt front controller. |
 | [`IfirmaWindowCounter`](../classes/IfirmaWindowCounter.php) | Takes and gives back slots of one counting window in an atomic UPDATE of a `Configuration` row. Used by `IfirmaRateGuard` and `IfirmaDownloadBudget`. |
+| [`IfirmaRollingWindowCounter`](../classes/IfirmaRollingWindowCounter.php) | Counts requests per second in one `Configuration` row and answers for the last 60 seconds, so the minute cap holds for every 60 seconds; each change is a compare-and-set UPDATE that is retried a few times and refuses at the cap when it keeps losing. Reads a counter of an earlier version as requests of the last second of its calendar minute. Used by `IfirmaRateGuard`. |
 | [`IfirmaRemoteLimit`](../classes/IfirmaRemoteLimit.php) | Keeps the last reading of the day limit from iFirma (the `abonent` key) next to the local counters and reuses it for ten minutes. Used by `IfirmaRateGuard`, `IfirmaRemoteLimitJob` and `IfirmaLimitCheckAction`. |
 | [`IfirmaLimitReading`](../classes/IfirmaLimitReading.php) | Immutable value: one reading of the day limit (day, used, granted, time). Used by `IfirmaRemoteLimit`, `IfirmaLimitCheck` and `IfirmaRemoteLimitPresenter`. |
 | [`IfirmaLimitCheck`](../classes/IfirmaLimitCheck.php) | Immutable outcome of an employee's limit check: a reading, a refusal by the module's own limits (nothing sent) or no usable answer. Used by `IfirmaRemoteLimit`, `IfirmaLimitCheckAction` and the presenter. |
@@ -214,7 +215,7 @@ Two plain JavaScript files in [`views/js/admin/`](../views/js/admin/) hold no te
 | [`IfirmaInput`](../classes/IfirmaInput.php) | Reads one request value safely: `scalar()` gives `''` for an array or an object, `decimal()` parses an amount (or null). |
 | [`IfirmaDownloadThrottle`](../classes/IfirmaDownloadThrottle.php) | The customer PDF limits: one fetch per document every 30 seconds, ten documents per customer per 60 seconds (HTTP 429), and the constant of the per-customer day cap. Used by `controllers/front/receipt.php`. |
 | [`IfirmaDownloadDayCap`](../classes/IfirmaDownloadDayCap.php) | The most downloads one customer can send to iFirma per calendar day (30), counted on the customer's receipt rows (`download_day`, `download_count`); the count is taken before the request and given back when it was refused locally. Used by `controllers/front/receipt.php`. |
-| [`IfirmaDownloadBudget`](../classes/IfirmaDownloadBudget.php) | A named budget of PDF downloads per calendar minute and day: all customers together (20 and 2,000) and all employees together (30 and 2,000), apart from the request guard so downloads cannot use up the requests issuance needs. Used by `controllers/front/receipt.php` and the admin controller. |
+| [`IfirmaDownloadBudget`](../classes/IfirmaDownloadBudget.php) | A named budget of PDF downloads in any 60 seconds and per calendar day: all customers together (20 and 2,000) and all employees together (30 and 2,000), apart from the request guard so downloads cannot use up the requests issuance needs. Used by `controllers/front/receipt.php` and the admin controller. |
 
 **Status sync and the cron jobs**
 
@@ -319,7 +320,7 @@ Configuration keys (defaults in `IfirmaSchema`; the settings walk-through is in 
 | KSeF | `IFIRMA_KSEF_MODE` |
 | Duplicate guard | `IFIRMA_DUPLICATE_CHECK`, `IFIRMA_DUPLICATE_WINDOW_DAYS`, `IFIRMA_DUPLICATE_AMOUNT_TOLERANCE` |
 | Status and cron | `IFIRMA_SYNC_INTERVAL_MIN`, `IFIRMA_CRON_TOKEN`, `IFIRMA_CRON_MAX_CALLS`, `IFIRMA_CRON_MAX_ITEMS`, `IFIRMA_NOTIFY_EMAIL` |
-| Rate limiting | `IFIRMA_RATE_MAX_PER_MIN`, `IFIRMA_RATE_MAX_PER_DAY`, `IFIRMA_RATE_WINDOW`, `IFIRMA_RATE_DAY_WINDOW` (each counter is incremented by one atomic statement; `IfirmaRateGuard` checks the minute, then the day) |
+| Rate limiting | `IFIRMA_RATE_MAX_PER_MIN`, `IFIRMA_RATE_MAX_PER_DAY`, `IFIRMA_RATE_WINDOW`, `IFIRMA_RATE_DAY_WINDOW` (the day counter is incremented by one atomic statement, the minute counter by a compare-and-set statement over the last 60 seconds; `IfirmaRateGuard` checks the minute, then the day) |
 | Internal state | `IFIRMA_AUTH_FAILURE` (the pause mark after a rejected key, `<unix time>|<message>`), `IFIRMA_SEEN_<id_employee>` (the notification seen mark) |
 
 ## API surface

@@ -199,7 +199,7 @@ class CustomerPageSyncCapTest extends TestCase
         $this->assertFalse($this->open($viewed));
 
         $this->assertSame(array(), $this->t->calls);
-        $this->assertSame(date('YmdHi', $this->now) . ':0', $this->minuteCounter());
+        $this->assertSame('', $this->minuteCounter());
         $this->assertSame($this->staleTime(), $this->stored($viewed)->last_sync_at);
         $this->assertNull($this->storedSyncAttempt($viewed));
     }
@@ -409,7 +409,7 @@ class CustomerPageSyncCapTest extends TestCase
         $this->assertFalse($this->open($id));
 
         $this->assertSame(array(), $this->t->calls);
-        $this->assertSame(date('YmdHi', $this->now) . ':0', $this->minuteCounter());
+        $this->assertSame('', $this->minuteCounter());
     }
 
     public function testARequestThatLosesTheClaimToAParallelRequestSendsNothingAndGivesTheBudgetBack()
@@ -424,7 +424,7 @@ class CustomerPageSyncCapTest extends TestCase
         $this->assertSame(array(), $this->t->calls);
         $this->assertSame(date('Y-m-d H:i:s', $this->now - 1), $this->storedSyncAttempt($id));
         $this->assertSame($this->staleTime(), $this->stored($id)->last_sync_at);
-        $this->assertSame(date('YmdHi', $this->now) . ':0', $this->minuteCounter());
+        $this->assertSame('', $this->minuteCounter());
     }
 
     public function testTheAttemptTimeOfTheViewedRecordDoesNotMakeItNotDue()
@@ -482,7 +482,7 @@ class CustomerPageSyncCapTest extends TestCase
         $this->assertFalse($svc->opportunisticSync(new IfirmaReceipt($id)));
 
         $this->assertSame(array(), $this->t->calls);
-        $this->assertSame(date('YmdHi', $this->now) . ':0', $this->minuteCounter());
+        $this->assertSame('', $this->minuteCounter());
         $this->assertNull($this->storedSyncAttempt($id));
         $this->assertSame(array(), IfirmaTestState::writes('ifirma_receipt'));
     }
@@ -497,12 +497,12 @@ class CustomerPageSyncCapTest extends TestCase
         $this->assertFalse($this->open($id));
 
         $this->assertSame(array(), $this->t->calls);
-        $this->assertSame(date('YmdHi', $this->now) . ':0', $this->minuteCounter());
+        $this->assertSame('', $this->minuteCounter());
     }
 
     public function testABudgetThatCannotBeReadSendsNothing()
     {
-        $budget = new CustomerPageSyncCapUnreadableBudget(array());
+        $budget = new CustomerPageSyncCapUnreadableBudget(IfirmaCustomerSyncBudget::MINUTE_KEY, IfirmaCustomerSyncBudget::MINUTE_CAP);
         $svc = new IfirmaStatusSyncService($this->client, function () {
             return $this->now;
         }, $budget);
@@ -523,7 +523,7 @@ class CustomerPageSyncCapTest extends TestCase
 
         $this->assertFalse($this->open($id));
 
-        $this->assertSame(date('YmdHi', $this->now) . ':1', $this->minuteCounter());
+        $this->assertSame($this->now . '=1', $this->minuteCounter());
         $this->assertSame(date('Y-m-d H:i:s', $this->now), $this->storedSyncAttempt($id));
     }
 
@@ -566,7 +566,7 @@ class CustomerPageSyncCapTest extends TestCase
 
         $this->open($id);
 
-        $this->assertSame(date('YmdHi', $this->now) . ':0', $this->minuteCounter());
+        $this->assertSame('', $this->minuteCounter());
         $this->assertSame(date('Ymd', $this->now) . ':0', $this->dayCounter());
     }
 
@@ -584,7 +584,7 @@ class CustomerPageSyncCapTest extends TestCase
 
         $this->assertSame(array(), IfirmaTestState::writes('ifirma_receipt'));
         $this->assertSame(date('Y-m-d H:i:s', $this->now), $this->storedSyncAttempt($id));
-        $this->assertSame(date('YmdHi', $this->now) . ':1', $this->minuteCounter());
+        $this->assertSame($this->now . '=1', $this->minuteCounter());
     }
 
     // ---- The request budget of the customer page syncs --------------------------------------------------------
@@ -592,7 +592,7 @@ class CustomerPageSyncCapTest extends TestCase
     public function testUsedUpMinuteBudgetOfCustomerSyncsSendsNothing()
     {
         $id = $this->staleReceipt(300);
-        Configuration::updateValue('IFIRMA_SYNC_CUSTOMER_MINUTE', date('YmdHi', $this->now) . ':10');
+        Configuration::updateValue('IFIRMA_SYNC_CUSTOMER_MINUTE', $this->now . '=10');
         $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row(300))));
 
         $this->assertFalse($this->open($id));
@@ -604,14 +604,14 @@ class CustomerPageSyncCapTest extends TestCase
         $this->assertNull($this->storedSyncAttempt($id));
     }
 
-    public function testASyncRefusedByTheMinuteBudgetCanBeTriedAgainInTheNextMinute()
+    public function testASyncRefusedByTheMinuteBudgetCanBeTriedAgainOnceTheSyncsAreOlderThanSixtySeconds()
     {
         $id = $this->staleReceipt(300);
-        Configuration::updateValue('IFIRMA_SYNC_CUSTOMER_MINUTE', date('YmdHi', $this->now) . ':10');
+        Configuration::updateValue('IFIRMA_SYNC_CUSTOMER_MINUTE', $this->now . '=10');
         $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row(300))));
         $this->open($id);
 
-        $this->now += 60;
+        $this->now += 61;
 
         $this->assertTrue($this->open($id));
         $this->assertCount(1, $this->listCalls());
@@ -632,14 +632,14 @@ class CustomerPageSyncCapTest extends TestCase
         }
 
         $this->assertCount(10, $this->listCalls());
-        $this->assertSame(date('YmdHi', $this->now) . ':10', $this->minuteCounter());
+        $this->assertSame($this->now . '=10', $this->minuteCounter());
     }
 
     public function testUsedUpDayBudgetOfCustomerSyncsSendsNothingEvenInANewMinute()
     {
         $id = $this->staleReceipt(300);
         Configuration::updateValue('IFIRMA_SYNC_CUSTOMER_DAY', date('Ymd', $this->now) . ':1000');
-        Configuration::updateValue('IFIRMA_SYNC_CUSTOMER_MINUTE', date('YmdHi', $this->now - 60) . ':3');
+        Configuration::updateValue('IFIRMA_SYNC_CUSTOMER_MINUTE', ($this->now - 61) . '=3');
 
         $this->assertFalse($this->open($id));
 
@@ -650,14 +650,14 @@ class CustomerPageSyncCapTest extends TestCase
     public function testNewMinuteStartsANewCountWhenTheDayBudgetIsNotUsedUp()
     {
         $id = $this->staleReceipt(300);
-        Configuration::updateValue('IFIRMA_SYNC_CUSTOMER_MINUTE', date('YmdHi', $this->now - 60) . ':10');
+        Configuration::updateValue('IFIRMA_SYNC_CUSTOMER_MINUTE', ($this->now - 61) . '=10');
         Configuration::updateValue('IFIRMA_SYNC_CUSTOMER_DAY', date('Ymd', $this->now) . ':500');
         $this->t->queue('GET', '#faktury\.json#', $this->listBody(array($this->row(300))));
 
         $this->assertTrue($this->open($id));
 
         $this->assertCount(1, $this->listCalls());
-        $this->assertSame(date('YmdHi', $this->now) . ':1', $this->minuteCounter());
+        $this->assertSame($this->now . '=1', $this->minuteCounter());
         $this->assertSame(date('Ymd', $this->now) . ':501', $this->dayCounter());
     }
 
@@ -672,13 +672,13 @@ class CustomerPageSyncCapTest extends TestCase
         $this->open($first);
         $this->open($second);
 
-        $this->assertSame(date('YmdHi', $this->now) . ':2', $this->minuteCounter());
+        $this->assertSame($this->now . '=2', $this->minuteCounter());
     }
 
     public function testTheBudgetOfCustomerSyncsDoesNotTouchTheRequestLimitOfIssuance()
     {
         $id = $this->staleReceipt(300);
-        Configuration::updateValue('IFIRMA_SYNC_CUSTOMER_MINUTE', date('YmdHi', $this->now) . ':10');
+        Configuration::updateValue('IFIRMA_SYNC_CUSTOMER_MINUTE', $this->now . '=10');
         $this->open($id);
         $this->t->queue('GET', '#faktury\.json#', $this->listBody(array()));
 
@@ -767,7 +767,7 @@ class CustomerPageSyncCapTest extends TestCase
         }
 
         $this->assertFalse($budget->take());
-        $this->assertSame(date('YmdHi', $this->now) . ':10', $this->minuteCounter());
+        $this->assertSame($this->now . '=10', $this->minuteCounter());
         $this->assertSame(date('Ymd', $this->now) . ':10', $this->dayCounter());
     }
 }

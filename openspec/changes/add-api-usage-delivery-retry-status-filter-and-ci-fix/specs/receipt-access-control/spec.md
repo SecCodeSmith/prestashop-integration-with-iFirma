@@ -103,12 +103,24 @@ Every back-office action of the module that changes state in the shop or in iFir
 - **THEN** nothing is retried, sent or refreshed
 
 ### Requirement: Employee PDF downloads have their own request budget
-All back-office PDF downloads together SHALL use at most 30 iFirma requests per calendar minute. A download beyond that SHALL be answered with HTTP 429, a `Retry-After` header and a message that says the download limit of the back office is reached, and SHALL send no request. The budget SHALL NOT refuse issuing documents, status sync or the cron.
+All back-office PDF downloads together SHALL use at most 30 iFirma requests in any 60 seconds and 2,000 per calendar day (shop timezone). A download beyond that SHALL be answered with HTTP 429, a `Retry-After` header and a message that says the download limit of the back office is reached, and SHALL send no request. The budget SHALL NOT refuse issuing documents, status sync or the cron.
 
 #### Scenario: Budget used up
-- **GIVEN** 30 back-office PDF downloads were sent in the current minute
+- **GIVEN** 30 back-office PDF downloads were sent in the last 60 seconds
 - **WHEN** an employee with the view level downloads another PDF
-- **THEN** the answer is HTTP 429 with a `Retry-After` header and no request is sent
+- **THEN** the answer is HTTP 429 with a `Retry-After` header of the seconds until the budget has room again (1 to 61) and no request is sent
+
+#### Scenario: Day budget used up
+- **GIVEN** 2,000 back-office PDF downloads were sent today and none in the last 60 seconds
+- **WHEN** an employee with the view level downloads another PDF at 10:00:00
+- **THEN** the answer is HTTP 429 with a `Retry-After` header of one hour, not of one second, and no request is sent
+
+#### Scenario: Downloads at the turn of a minute
+- **GIVEN** 30 back-office PDF downloads were sent at 10:00:59
+- **WHEN** an employee downloads another PDF at 10:01:00
+- **THEN** the answer is HTTP 429 and no request is sent
+- **WHEN** an employee downloads another PDF at 10:02:00
+- **THEN** the PDF is returned
 
 #### Scenario: Issuance not affected
 - **GIVEN** the back-office download budget is used up

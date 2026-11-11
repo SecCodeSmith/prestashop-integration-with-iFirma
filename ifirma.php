@@ -776,7 +776,7 @@ class Ifirma extends Module
         return array(
             'title' => $this->l('Module requests'),
             'intro' => $this->l('Requests this module sent to iFirma, counted by the module itself. Opening this page sends none.'),
-            'window_minute' => $this->l('Current minute'),
+            'window_minute' => $this->l('Last 60 seconds'),
             'window_day' => $this->l('Today'),
             'of' => $this->l('%1$d of %2$d'),
             'by_kind' => $this->l('Today by kind of request'),

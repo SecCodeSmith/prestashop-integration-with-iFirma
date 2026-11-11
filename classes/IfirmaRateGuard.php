@@ -16,15 +16,18 @@ if (!defined('_PS_VERSION_')) {
 require_once dirname(__FILE__) . '/IfirmaRateWindow.php';
 require_once dirname(__FILE__) . '/IfirmaRateDecision.php';
 require_once dirname(__FILE__) . '/IfirmaWindowCounter.php';
+require_once dirname(__FILE__) . '/IfirmaRollingWindowCounter.php';
 require_once dirname(__FILE__) . '/IfirmaRemoteLimit.php';
 
 /**
- * Admission control for requests to iFirma: a per-minute and a per-day window, checked in that order
- * (iFirma allows 100 requests per minute and 15,000 per day per account).
+ * Admission control for requests to iFirma: a window of the last 60 seconds and a per-day window, checked in that
+ * order (iFirma allows 100 requests per minute and 15,000 per day per account).
  *
- * Each window is one atomic UPDATE on its Configuration row, so concurrent requests cannot lose
- * increments and exceed a cap. A request refused by the day window has already used a minute slot;
- * that only makes the guard more conservative, so it is not given back (a second write could race).
+ * The 60 seconds are rolling, not a calendar minute, so a burst around the turn of a minute cannot double the cap.
+ * The day window changes its Configuration row in one atomic statement, the minute window by
+ * compare-and-set, so concurrent requests cannot lose increments and exceed a cap. A request refused by the day
+ * window has already used a minute slot; that only makes the guard more conservative, so it is not given back (a
+ * second write could race).
  */
 class IfirmaRateGuard
 {
@@ -46,14 +49,19 @@ class IfirmaRateGuard
     /** @var IfirmaWindowCounter */
     private $counter;
 
+    /** @var IfirmaRollingWindowCounter */
+    private $rolling;
+
     /**
-     * @param callable|null            $clock
-     * @param IfirmaWindowCounter|null $counter
+     * @param callable|null                   $clock
+     * @param IfirmaWindowCounter|null        $counter
+     * @param IfirmaRollingWindowCounter|null $rolling
      */
-    public function __construct($clock = null, IfirmaWindowCounter $counter = null)
+    public function __construct($clock = null, IfirmaWindowCounter $counter = null, IfirmaRollingWindowCounter $rolling = null)
     {
         $this->clock = $clock;
         $this->counter = $counter !== null ? $counter : new IfirmaWindowCounter();
+        $this->rolling = $rolling !== null ? $rolling : new IfirmaRollingWindowCounter();
     }
 
     /**
@@ -73,11 +81,23 @@ class IfirmaRateGuard
             );
         }
 
-        foreach ($this->windows() as $window) {
-            $count = $this->counter->take($window, $now);
-            if ($count !== null) {
-                return IfirmaRateDecision::refuse($window->getName(), $this->refusalMessage($window, $count));
-            }
+        $minuteCap = $this->minuteCap();
+        $minuteCount = $this->rolling->take(self::MINUTE_COUNTER_KEY, $minuteCap, $now);
+        if ($minuteCount !== null) {
+            return IfirmaRateDecision::refuse(
+                IfirmaRateDecision::WINDOW_MINUTE,
+                sprintf(
+                    'iFirma rate limit guard: %d requests in the last 60 seconds (cap %d). Retry shortly.',
+                    $minuteCount,
+                    $minuteCap
+                )
+            );
+        }
+
+        $day = $this->dayWindow();
+        $dayCount = $this->counter->take($day, $now);
+        if ($dayCount !== null) {
+            return IfirmaRateDecision::refuse($day->getName(), $this->dayRefusalMessage($day, $dayCount));
         }
 
         return IfirmaRateDecision::allow();
@@ -95,11 +115,13 @@ class IfirmaRateGuard
         if ($this->backoffEnd($now) > 0) {
             return IfirmaRateDecision::WINDOW_BACKOFF;
         }
-        foreach ($this->windows() as $window) {
-            $parts = explode(':', (string) Configuration::get($window->getCounterKey()), 2);
-            if (count($parts) === 2 && $parts[0] === $window->bucketAt($now) && (int) $parts[1] >= $window->getCap()) {
-                return $window->getName();
-            }
+        if ($this->rolling->count(self::MINUTE_COUNTER_KEY, $now) >= $this->minuteCap()) {
+            return IfirmaRateDecision::WINDOW_MINUTE;
+        }
+        $day = $this->dayWindow();
+        $parts = explode(':', (string) Configuration::get($day->getCounterKey()), 2);
+        if (count($parts) === 2 && $parts[0] === $day->bucketAt($now) && (int) $parts[1] >= $day->getCap()) {
+            return $day->getName();
         }
 
         return IfirmaRateDecision::WINDOW_NONE;
@@ -109,17 +131,29 @@ class IfirmaRateGuard
      * What the windows count right now, read from the database (a counter raised by another statement in this
      * request is seen), without counting a request.
      *
-     * @return array window name => array('used' => int, 'cap' => int); a window of an earlier minute or day reads 0
+     * @return array window name => array('used' => int, 'cap' => int); the minute window counts the last 60
+     *               seconds, a day window of an earlier day reads 0
      */
     public function windowUsage()
     {
         $now = $this->now();
-        $usage = array();
-        foreach ($this->windows() as $window) {
-            $usage[$window->getName()] = array('used' => $this->storedCount($window, $now), 'cap' => $window->getCap());
-        }
+        $day = $this->dayWindow();
 
-        return $usage;
+        return array(
+            IfirmaRateDecision::WINDOW_MINUTE => array(
+                'used' => $this->rolling->count(self::MINUTE_COUNTER_KEY, $now),
+                'cap' => $this->minuteCap(),
+            ),
+            $day->getName() => array('used' => $this->storedCount($day, $now), 'cap' => $day->getCap()),
+        );
+    }
+
+    /**
+     * @return int the unix time at which the last 60 seconds have room for a request again (now when they have)
+     */
+    public function minuteFreeAt()
+    {
+        return $this->rolling->freeAt(self::MINUTE_COUNTER_KEY, $this->minuteCap(), $this->now());
     }
 
     /**
@@ -182,24 +216,19 @@ class IfirmaRateGuard
     }
 
     /**
-     * @return IfirmaRateWindow[] in the order they are checked
+     * @return IfirmaRateWindow the calendar-day window
      */
-    private function windows()
+    private function dayWindow()
     {
-        return array(
-            new IfirmaRateWindow(
-                IfirmaRateDecision::WINDOW_MINUTE,
-                self::MINUTE_COUNTER_KEY,
-                'YmdHi',
-                $this->capOf('IFIRMA_RATE_MAX_PER_MIN', self::DEFAULT_MINUTE_CAP)
-            ),
-            new IfirmaRateWindow(
-                IfirmaRateDecision::WINDOW_DAY,
-                self::DAY_COUNTER_KEY,
-                'Ymd',
-                $this->dayCap()
-            ),
-        );
+        return new IfirmaRateWindow(IfirmaRateDecision::WINDOW_DAY, self::DAY_COUNTER_KEY, 'Ymd', $this->dayCap());
+    }
+
+    /**
+     * @return int
+     */
+    private function minuteCap()
+    {
+        return $this->capOf('IFIRMA_RATE_MAX_PER_MIN', self::DEFAULT_MINUTE_CAP);
     }
 
     /**
@@ -240,18 +269,10 @@ class IfirmaRateGuard
      * @param int              $count
      * @return string
      */
-    private function refusalMessage(IfirmaRateWindow $window, $count)
+    private function dayRefusalMessage(IfirmaRateWindow $window, $count)
     {
-        if ($window->getName() === IfirmaRateDecision::WINDOW_DAY) {
-            return sprintf(
-                'iFirma rate limit guard: %d requests today (cap %d). Retry tomorrow.',
-                $count,
-                $window->getCap()
-            );
-        }
-
         return sprintf(
-            'iFirma rate limit guard: %d requests in the current minute (cap %d). Retry shortly.',
+            'iFirma rate limit guard: %d requests today (cap %d). Retry tomorrow.',
             $count,
             $window->getCap()
         );

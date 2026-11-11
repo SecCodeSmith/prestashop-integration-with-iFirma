@@ -270,7 +270,7 @@ class DeliveryServiceTest extends TestCase
 
         $this->svc->deliver($this->receipt());
 
-        $this->assertSame(date('YmdHi', $now) . ':2', Configuration::get('IFIRMA_RATE_WINDOW'));
+        $this->assertSame($now . '=2', Configuration::get('IFIRMA_RATE_WINDOW'));
         $this->assertSame(date('Ymd', $now) . ':2', Configuration::get('IFIRMA_RATE_DAY_WINDOW'));
     }
 

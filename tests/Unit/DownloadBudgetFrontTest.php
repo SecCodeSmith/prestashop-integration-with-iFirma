@@ -113,7 +113,7 @@ class DownloadBudgetFrontTest extends TestCase
     /** @return string */
     private function minute()
     {
-        return date('YmdHi', IfirmaTestBudgetReceiptController::$now);
+        return (string) IfirmaTestBudgetReceiptController::$now;
     }
 
     /** What the visitor sees: 'streamed', '404', '429', '429-limit' or '502'. */
@@ -198,13 +198,13 @@ class DownloadBudgetFrontTest extends TestCase
 
         $this->assertSame('429-limit', $this->download($tokens[20], self::FIRST_CUSTOMER));
         $this->assertCount($before, $this->t->calls, 'the refused download sends nothing');
-        $this->assertSame($this->minute() . ':20', Configuration::get('IFIRMA_DL_CUSTOMER_MINUTE'));
+        $this->assertSame($this->minute() . '=20', Configuration::get('IFIRMA_DL_CUSTOMER_MINUTE'));
     }
 
     public function testTheRefusedDownloadIsToldTheSameWaitAsEveryOtherLimit()
     {
         $tokens = $this->customerWithDocuments(self::FIRST_CUSTOMER, 1);
-        Configuration::updateValue('IFIRMA_DL_CUSTOMER_MINUTE', $this->minute() . ':20');
+        Configuration::updateValue('IFIRMA_DL_CUSTOMER_MINUTE', $this->minute() . '=20');
         $controller = new IfirmaTestBudgetReceiptController();
         Context::getContext()->customer = Customer::$instances[self::FIRST_CUSTOMER];
         Context::getContext()->customer->logged = true;
@@ -235,20 +235,22 @@ class DownloadBudgetFrontTest extends TestCase
     {
         $tokens = $this->customerWithDocuments(self::FIRST_CUSTOMER, 1);
         Configuration::updateValue('IFIRMA_DL_CUSTOMER_DAY', '20261110:2000');
-        Configuration::updateValue('IFIRMA_DL_CUSTOMER_MINUTE', $this->minute() . ':7');
+        Configuration::updateValue('IFIRMA_DL_CUSTOMER_MINUTE', $this->minute() . '=7');
 
         $this->download($tokens[0], self::FIRST_CUSTOMER);
 
-        $this->assertSame($this->minute() . ':7', Configuration::get('IFIRMA_DL_CUSTOMER_MINUTE'));
+        $this->assertSame($this->minute() . '=7', Configuration::get('IFIRMA_DL_CUSTOMER_MINUTE'));
     }
 
-    public function testTheNextMinuteStartsANewBudget()
+    public function testTheBudgetIsFreeAgainOnceTheDownloadsAreOlderThanSixtySeconds()
     {
         $tokens = $this->customerWithDocuments(self::FIRST_CUSTOMER, 1);
-        Configuration::updateValue('IFIRMA_DL_CUSTOMER_MINUTE', $this->minute() . ':20');
+        Configuration::updateValue('IFIRMA_DL_CUSTOMER_MINUTE', $this->minute() . '=20');
         $this->assertSame('429-limit', $this->download($tokens[0], self::FIRST_CUSTOMER));
 
         IfirmaTestBudgetReceiptController::$now += 60;
+        $this->assertSame('429-limit', $this->download($tokens[0], self::FIRST_CUSTOMER), 'exactly 60 seconds old is still counted');
+        IfirmaTestBudgetReceiptController::$now += 1;
 
         $this->assertSame('streamed', $this->download($tokens[0], self::FIRST_CUSTOMER));
     }
@@ -257,7 +259,7 @@ class DownloadBudgetFrontTest extends TestCase
     {
         $tokens = $this->customerWithDocuments(self::FIRST_CUSTOMER, 1);
         $this->customerWithDocuments(self::FIRST_CUSTOMER + 1, 1);
-        Configuration::updateValue('IFIRMA_DL_CUSTOMER_MINUTE', $this->minute() . ':20');
+        Configuration::updateValue('IFIRMA_DL_CUSTOMER_MINUTE', $this->minute() . '=20');
 
         $this->assertSame('404', $this->download($tokens[0], self::FIRST_CUSTOMER + 1));
     }
@@ -265,7 +267,7 @@ class DownloadBudgetFrontTest extends TestCase
     public function testAWrongTokenIsNotFoundEvenWhenTheBudgetIsUsedUp()
     {
         $this->customerWithDocuments(self::FIRST_CUSTOMER, 1);
-        Configuration::updateValue('IFIRMA_DL_CUSTOMER_MINUTE', $this->minute() . ':20');
+        Configuration::updateValue('IFIRMA_DL_CUSTOMER_MINUTE', $this->minute() . '=20');
 
         $this->assertSame('404', $this->download('nosuchtoken', self::FIRST_CUSTOMER));
     }
@@ -277,7 +279,7 @@ class DownloadBudgetFrontTest extends TestCase
             'id_customer' => self::FIRST_CUSTOMER, 'security_token' => 'waiting1',
             'delivery_status' => 'awaiting_ksef', 'ksef_status' => 'WYSLANA', 'ksef_number' => '',
         ));
-        Configuration::updateValue('IFIRMA_DL_CUSTOMER_MINUTE', $this->minute() . ':20');
+        Configuration::updateValue('IFIRMA_DL_CUSTOMER_MINUTE', $this->minute() . '=20');
 
         $this->assertSame('404', $this->download('waiting1', self::FIRST_CUSTOMER));
     }
@@ -286,41 +288,41 @@ class DownloadBudgetFrontTest extends TestCase
     {
         $tokens = $this->customerWithDocuments(self::FIRST_CUSTOMER, 1);
         Db::getInstance()->whenExecute('/UPDATE `\w*ifirma_receipt`\s+SET last_download_at/', 0);
-        Configuration::updateValue('IFIRMA_DL_CUSTOMER_MINUTE', $this->minute() . ':3');
+        Configuration::updateValue('IFIRMA_DL_CUSTOMER_MINUTE', $this->minute() . '=3');
 
         $this->assertSame('429', $this->download($tokens[0], self::FIRST_CUSTOMER));
-        $this->assertSame($this->minute() . ':3', Configuration::get('IFIRMA_DL_CUSTOMER_MINUTE'));
+        $this->assertSame($this->minute() . '=3', Configuration::get('IFIRMA_DL_CUSTOMER_MINUTE'));
     }
 
     public function testADownloadRefusedByTheBudgetItselfUsesNoMoreBudget()
     {
         $tokens = $this->customerWithDocuments(self::FIRST_CUSTOMER, 1);
-        Configuration::updateValue('IFIRMA_DL_CUSTOMER_MINUTE', $this->minute() . ':20');
+        Configuration::updateValue('IFIRMA_DL_CUSTOMER_MINUTE', $this->minute() . '=20');
 
         $this->download($tokens[0], self::FIRST_CUSTOMER);
         $this->download($tokens[0], self::FIRST_CUSTOMER);
 
-        $this->assertSame($this->minute() . ':20', Configuration::get('IFIRMA_DL_CUSTOMER_MINUTE'));
+        $this->assertSame($this->minute() . '=20', Configuration::get('IFIRMA_DL_CUSTOMER_MINUTE'));
     }
 
     public function testADownloadThatTheSharedGuardRefusesGivesItsUnitBack()
     {
         $tokens = $this->customerWithDocuments(self::FIRST_CUSTOMER, 1);
-        Configuration::updateValue('IFIRMA_DL_CUSTOMER_MINUTE', $this->minute() . ':3');
+        Configuration::updateValue('IFIRMA_DL_CUSTOMER_MINUTE', $this->minute() . '=3');
         Configuration::updateValue('IFIRMA_RATE_BACKOFF_UNTIL', (string) (time() + 5000));
 
         $this->assertSame('429-limit', $this->download($tokens[0], self::FIRST_CUSTOMER));
         $this->assertSame(array(), $this->t->calls);
-        $this->assertSame($this->minute() . ':3', Configuration::get('IFIRMA_DL_CUSTOMER_MINUTE'), 'nothing reached iFirma, so nothing was spent');
+        $this->assertSame($this->minute() . '=3', Configuration::get('IFIRMA_DL_CUSTOMER_MINUTE'), 'nothing reached iFirma, so nothing was spent');
     }
 
     public function testADownloadThatReachesIfirmaSpendsOneUnit()
     {
         $tokens = $this->customerWithDocuments(self::FIRST_CUSTOMER, 1);
-        Configuration::updateValue('IFIRMA_DL_CUSTOMER_MINUTE', $this->minute() . ':3');
+        Configuration::updateValue('IFIRMA_DL_CUSTOMER_MINUTE', $this->minute() . '=3');
 
         $this->assertSame('streamed', $this->download($tokens[0], self::FIRST_CUSTOMER));
-        $this->assertSame($this->minute() . ':4', Configuration::get('IFIRMA_DL_CUSTOMER_MINUTE'));
+        $this->assertSame($this->minute() . '=4', Configuration::get('IFIRMA_DL_CUSTOMER_MINUTE'));
         $this->assertSame('20261110:1', Configuration::get('IFIRMA_DL_CUSTOMER_DAY'));
     }
 }

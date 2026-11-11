@@ -14,7 +14,7 @@ if (!defined('_PS_VERSION_')) {
 }
 
 /**
- * The "Module requests" box of the configuration page: the module's own requests of the current minute and of today
+ * The "Module requests" box of the configuration page: the module's own requests of the last 60 seconds and of today
  * next to their caps, today's count per kind, the requests of other clients of the account that iFirma's own figure
  * implies, and the time a running back-off ends. It only formats what it is given and sends no request.
  *

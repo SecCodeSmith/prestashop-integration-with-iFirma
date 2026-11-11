@@ -50,9 +50,9 @@ class PdfDownloadRefusalTest extends TestCase
         $this->fail('expected IfirmaRateLimitedException');
     }
 
-    public function testTheMinuteCapRefusesWithTheSecondsToTheNextMinute()
+    public function testTheMinuteCapRefusesWithTheSecondsUntilTheOldestRequestsAreSixtyOneSecondsOld()
     {
-        Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi', $this->now) . ':80');
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', ($this->now - 21) . '=80');
 
         $e = $this->refusal($this->service());
 

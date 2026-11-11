@@ -967,10 +967,6 @@ function smokeUsageAndRefusalChecks($module, $actions)
     if (!assertTrue($second instanceof Order && Validate::isLoadedObject($second), 'usage: second order created')) {
         return;
     }
-    if (time() % 60 >= 35) {
-        // the counts below must all fall into one minute of the guard
-        sleepToNextMinute();
-    }
     $previousCap = smokeSetting('IFIRMA_RATE_MAX_PER_MIN', 0);
     try {
         smokeClearUsageCounters();
@@ -998,9 +994,9 @@ function smokeUsageAndRefusalChecks($module, $actions)
         assertSame(2, array_sum($byKind), 'usage: the module counted nothing else', json_encode($byKind));
         assertSame(2, mockCallCount(), 'usage: the mock counted exactly 2 calls');
 
-        // The minute cap is the number of requests already sent this minute
+        // The minute cap is the number of requests already sent in the last 60 seconds
         $summary = $usage->summary();
-        assertSame(2, $summary['minute'], 'usage: the guard counted both requests in this minute');
+        assertSame(2, $summary['minute'], 'usage: the guard counted both requests in the last 60 seconds');
         smokeWriteSetting('IFIRMA_RATE_MAX_PER_MIN', (string) $summary['minute']);
 
         // Download at the cap: the owner gets 429 with Retry-After, and the mock is not called
@@ -1035,6 +1031,18 @@ function smokeUsageAndRefusalChecks($module, $actions)
         assertSame(IfirmaRequestKind::all(), $kinds, 'usage: the cron answer carries the usage block with all nine kinds');
         assertSame(9, count($kinds), 'usage: there are nine kinds');
         assertSame(2, mockCallCount(), 'usage: the cron run at the cap reached the mock with no call');
+
+        // The cap holds for every 60 seconds, not per calendar minute: requests 50 seconds old still fill it, requests
+        // 70 seconds old no longer do (margins of 10 seconds keep the check from depending on the speed of the run)
+        smokeWriteSetting('IFIRMA_RATE_WINDOW', (time() - 50) . '=' . (int) smokeReadSetting('IFIRMA_RATE_MAX_PER_MIN'));
+        $r = $actions->refreshStatus((int) $first->id);
+        assertSame(false, $r['success'], 'rolling window: a status refresh is refused while the requests are younger than 60 seconds');
+        assertSame('The status was not refreshed: the minute request limit is reached. Try again in a moment.', (string) $r['message'], 'rolling window: the refusal names the minute limit');
+        assertSame(2, mockCallCount(), 'rolling window: the refused refresh reached the mock with no call');
+        smokeWriteSetting('IFIRMA_RATE_WINDOW', (time() - 70) . '=' . (int) smokeReadSetting('IFIRMA_RATE_MAX_PER_MIN'));
+        $r = $actions->refreshStatus((int) $first->id);
+        assertTrue($r['success'], 'rolling window: a status refresh passes once the requests are older than 60 seconds', $r['message']);
+        assertSame(3, mockCallCount(), 'rolling window: the refresh reached the mock with one call');
     } finally {
         smokeRestoreSetting('IFIRMA_RATE_MAX_PER_MIN', $previousCap);
         smokeClearRateWindow();
@@ -1128,10 +1136,7 @@ function smokeCustomerPageSyncChecks($module)
         assertSame($beforeOtherDate['last_sync_at'], smokeSyncRow($otherDate)['last_sync_at'], 'customer page sync: the record of the other issue date is unchanged');
 
         smokeMakeSyncStale($records);
-        if (time() % 60 >= 50) {
-            sleepToNextMinute(); // the full counter is the current minute's
-        }
-        $full = date(IfirmaCustomerSyncBudget::MINUTE_BUCKET_FORMAT) . ':' . IfirmaCustomerSyncBudget::MINUTE_CAP;
+        $full = time() . '=' . IfirmaCustomerSyncBudget::MINUTE_CAP;
         smokeWriteSetting($minuteKey, $full);
         $before = smokeSyncRow($records[0]);
         $calls = mockCallCount();
@@ -1550,15 +1555,12 @@ function smokeBulkMarkSentChecks(IfirmaBulkRunner $runner, Order $order, array &
     assertSame($mailsBefore, count(mailbox()), 'bulk mark sent: the sink received no new message');
     assertSame($callsBefore, mockCallCount(), 'bulk mark sent: the mock received no new request');
 
-    // the module's per-minute counter is full: a send-kind run would be stopped, marking as sent is not
+    // the module's counter of the last 60 seconds is full: a send-kind run would be stopped, marking as sent is not
     $failedC = smokeSeedDeliveryRecord($order, '10/2026', IfirmaReceipt::DELIVERY_FAILED);
     $failedD = smokeSeedDeliveryRecord($order, '11/2026', IfirmaReceipt::DELIVERY_FAILED);
     $made = array_merge($made, array($failedC, $failedD));
-    if (time() % 60 >= 55) {
-        sleepToNextMinute();
-    }
     $cap = (int) IfirmaRateGuard::DEFAULT_MINUTE_CAP;
-    smokeWriteSetting(IfirmaRateGuard::MINUTE_COUNTER_KEY, date('YmdHi') . ':' . $cap);
+    smokeWriteSetting(IfirmaRateGuard::MINUTE_COUNTER_KEY, time() . '=' . $cap);
     try {
         $run = $runner->run(IfirmaBulkRunner::KIND_MARK_SENT, array((int) $failedC->id, (int) $failedD->id), 1, array('final' => true));
         $rows = smokeBulkOutcomes($run);
@@ -2132,7 +2134,7 @@ function smokeCustomerBudgetChecks($actions)
     }
     $record = smokeIssuedRecordFor($order);
     $windows = array(
-        'minute' => array(IfirmaDownloadBudget::CUSTOMER_MINUTE_KEY, IfirmaDownloadBudget::MINUTE_BUCKET_FORMAT, IfirmaDownloadBudget::CUSTOMER_MINUTE_CAP),
+        'minute' => array(IfirmaDownloadBudget::CUSTOMER_MINUTE_KEY, '', IfirmaDownloadBudget::CUSTOMER_MINUTE_CAP),
         'day' => array(IfirmaDownloadBudget::CUSTOMER_DAY_KEY, IfirmaDownloadBudget::DAY_BUCKET_FORMAT, IfirmaDownloadBudget::CUSTOMER_DAY_CAP),
     );
     $previous = array();
@@ -2149,10 +2151,7 @@ function smokeCustomerBudgetChecks($actions)
             skip('customer budget: the download over HTTP', 'the owner could not be logged in over HTTP with the demo password (HTTP ' . $probe['code'] . '); the budget is asserted through its class');
         }
         foreach ($windows as $name => $spec) {
-            if (time() % 60 >= 50) {
-                sleepToNextMinute(); // the full counter is the current minute's
-            }
-            $full = date($spec[1]) . ':' . $spec[2];
+            $full = $name === 'minute' ? time() . '=' . $spec[2] : date($spec[1]) . ':' . $spec[2];
             smokeWriteSetting($spec[0], $full);
             smokeClearDownloadStamp($record);
             $calls = mockCallCount();
@@ -2176,7 +2175,7 @@ function smokeCustomerBudgetChecks($actions)
             $again = smokeDownloadAs($order, $record);
             assertSame(200, $again['code'], 'customer budget: the owner download works again once the counters are cleared');
             assertSame($calls + 1, mockCallCount(), 'customer budget: that download sent exactly one request');
-            assertTrue(preg_match('/^\d{12}:1$/', (string) smokeStoredValue(IfirmaDownloadBudget::CUSTOMER_MINUTE_KEY)) === 1, 'customer budget: the download took one unit of the minute counter', (string) smokeStoredValue(IfirmaDownloadBudget::CUSTOMER_MINUTE_KEY));
+            assertTrue(preg_match('/^\d+=1$/', (string) smokeStoredValue(IfirmaDownloadBudget::CUSTOMER_MINUTE_KEY)) === 1, 'customer budget: the download took one unit of the minute counter', (string) smokeStoredValue(IfirmaDownloadBudget::CUSTOMER_MINUTE_KEY));
         }
     } finally {
         foreach ($previous as $key => $value) {
@@ -2291,8 +2290,8 @@ function smokeEmployeeDownloadBudgetChecks($dispatch)
         return;
     }
     $windows = array(
-        'minute' => array(IfirmaDownloadBudget::EMPLOYEE_MINUTE_KEY, IfirmaDownloadBudget::MINUTE_BUCKET_FORMAT, IfirmaDownloadBudget::EMPLOYEE_MINUTE_CAP),
-        'day' => array(IfirmaDownloadBudget::EMPLOYEE_DAY_KEY, IfirmaDownloadBudget::DAY_BUCKET_FORMAT, IfirmaDownloadBudget::EMPLOYEE_DAY_CAP),
+        'minute' => array(IfirmaDownloadBudget::EMPLOYEE_MINUTE_KEY, '', IfirmaDownloadBudget::EMPLOYEE_MINUTE_CAP, 61),
+        'day' => array(IfirmaDownloadBudget::EMPLOYEE_DAY_KEY, IfirmaDownloadBudget::DAY_BUCKET_FORMAT, IfirmaDownloadBudget::EMPLOYEE_DAY_CAP, IfirmaRetryAfter::DAY_WINDOW_CAP_SECONDS),
     );
     $previous = array();
     foreach ($windows as $spec) {
@@ -2304,15 +2303,12 @@ function smokeEmployeeDownloadBudgetChecks($dispatch)
         $record = smokeIssuedRecordFor($order);
         $_POST['id_order'] = $_GET['id_order'] = (string) (int) $order->id;
         foreach ($windows as $name => $spec) {
-            if (time() % 60 >= 50) {
-                sleepToNextMinute();
-            }
-            $full = date($spec[1]) . ':' . $spec[2];
+            $full = $name === 'minute' ? time() . '=' . $spec[2] : date($spec[1]) . ':' . $spec[2];
             smokeWriteSetting($spec[0], $full);
             $calls = mockCallCount();
             $label = 'employee budget (' . $name . ')';
             $out = $dispatch('ajaxProcessDownloadPdf');
-            assertTrue($out['kind'] === 'limit' && $out['seconds'] >= 1 && $out['seconds'] <= 60, $label . ': the download answers 429 with a Retry-After between 1 and 60', json_encode($out));
+            assertTrue($out['kind'] === 'limit' && $out['seconds'] >= 1 && $out['seconds'] <= $spec[3], $label . ': the download answers 429 with a Retry-After between 1 and ' . $spec[3], json_encode($out));
             assertSame('The PDF was not downloaded: the back-office download limit is reached. Try again in a moment.', isset($out['text']) ? (string) $out['text'] : null, $label . ': the answer is the back-office message');
             assertSame($calls, mockCallCount(), $label . ': the refused download reached the mock with no call');
             assertSame($full, smokeStoredValue($spec[0]), $label . ': the refused download left the counter unchanged');
@@ -3200,12 +3196,19 @@ function cronOverHttp()
     return array('code' => $answer['code'], 'data' => is_array($data) ? $data : null, 'raw' => $answer['body']);
 }
 
-/** Sleeps until one second into the next calendar minute, so every window of the guard starts fresh. */
-function sleepToNextMinute()
+/** Waits until the requests the module counted in the last 60 seconds are all older than that (at most 61 seconds). */
+function sleepUntilTheMinuteWindowIsEmpty()
 {
-    $wait = 61 - (time() % 60);
-    smokeOut('INFO', 'waiting ' . $wait . ' s for the next minute');
-    sleep($wait);
+    require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaRateGuard.php';
+    $guard = new IfirmaRateGuard();
+    $usage = $guard->windowUsage();
+    if ($usage[IfirmaRateDecision::WINDOW_MINUTE]['used'] > 0) {
+        smokeOut('INFO', 'waiting for the module\'s requests of the last 60 seconds to age out');
+    }
+    for ($second = 0; $second < 62 && $usage[IfirmaRateDecision::WINDOW_MINUTE]['used'] > 0; $second++) {
+        sleep(1);
+        $usage = $guard->windowUsage();
+    }
 }
 
 /**
@@ -3248,7 +3251,8 @@ function queuedCount()
 }
 
 /**
- * Runs the cron once a minute until nothing is queued or the deadline passes.
+ * Runs the cron, each time after the module's requests of the last 60 seconds have aged out, until nothing is queued or
+ * the deadline passes.
  *
  * @param int $deadline unix time
  * @return int cron runs it took
@@ -3257,7 +3261,7 @@ function drainQueue($module, $deadline)
 {
     $runs = 0;
     while (queuedCount() > 0 && time() < $deadline) {
-        sleepToNextMinute();
+        sleepUntilTheMinuteWindowIsEmpty();
         $summary = runCron($module);
         $runs++;
         smokeOut('INFO', 'cron run ' . $runs . ': ' . json_encode(isset($summary['queue']) ? $summary['queue'] : $summary));

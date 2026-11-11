@@ -16,11 +16,11 @@ if (!defined('_PS_VERSION_')) {
 require_once dirname(__FILE__) . '/IfirmaRequestBudget.php';
 
 /**
- * A named budget of PDF downloads per calendar minute and, optionally, per calendar day. It is independent of the
+ * A named budget of PDF downloads in any 60 seconds and, optionally, per calendar day. It is independent of the
  * rate guard: downloads by customers or employees count here first, so they cannot use up the request limit that
  * issuance, the status sync and the cron share.
  *
- * Counters are Configuration rows (see IfirmaWindowCounter). A unit is taken before the request is sent and given
+ * Counters are Configuration rows (see IfirmaRollingWindowCounter and IfirmaWindowCounter). A unit is taken before the request is sent and given
  * back when the request was refused locally, so the count equals the downloads that reached iFirma.
  */
 class IfirmaDownloadBudget extends IfirmaRequestBudget
@@ -37,25 +37,29 @@ class IfirmaDownloadBudget extends IfirmaRequestBudget
 
     /**
      * @param callable|null $clock
-     * @return IfirmaDownloadBudget 20 downloads per minute and 2,000 per day for all customers together
+     * @return IfirmaDownloadBudget 20 downloads in any 60 seconds and 2,000 per day for all customers together
      */
     public static function forCustomers($clock = null)
     {
-        return new self(array(
-            new IfirmaRateWindow(IfirmaRateDecision::WINDOW_MINUTE, self::CUSTOMER_MINUTE_KEY, self::MINUTE_BUCKET_FORMAT, self::CUSTOMER_MINUTE_CAP),
+        return new self(
+            self::CUSTOMER_MINUTE_KEY,
+            self::CUSTOMER_MINUTE_CAP,
             new IfirmaRateWindow(IfirmaRateDecision::WINDOW_DAY, self::CUSTOMER_DAY_KEY, self::DAY_BUCKET_FORMAT, self::CUSTOMER_DAY_CAP),
-        ), $clock);
+            $clock
+        );
     }
 
     /**
      * @param callable|null $clock
-     * @return IfirmaDownloadBudget 30 per minute and 2,000 per day for all employees together
+     * @return IfirmaDownloadBudget 30 in any 60 seconds and 2,000 per day for all employees together
      */
     public static function forEmployees($clock = null)
     {
-        return new self(array(
-            new IfirmaRateWindow(IfirmaRateDecision::WINDOW_MINUTE, self::EMPLOYEE_MINUTE_KEY, self::MINUTE_BUCKET_FORMAT, self::EMPLOYEE_MINUTE_CAP),
+        return new self(
+            self::EMPLOYEE_MINUTE_KEY,
+            self::EMPLOYEE_MINUTE_CAP,
             new IfirmaRateWindow(IfirmaRateDecision::WINDOW_DAY, self::EMPLOYEE_DAY_KEY, self::DAY_BUCKET_FORMAT, self::EMPLOYEE_DAY_CAP),
-        ), $clock);
+            $clock
+        );
     }
 }
