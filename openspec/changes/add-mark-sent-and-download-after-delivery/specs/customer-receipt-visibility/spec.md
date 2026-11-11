@@ -18,11 +18,11 @@ In the issued state the block SHALL show the document number (or the iFirma id w
 - **THEN** the block shows the iFirma id in place of the number
 
 #### Scenario: Adopted external document
-- **WHEN** the document was adopted from iFirma rather than created by the module, and iFirma reports it as sent
+- **WHEN** the document was adopted from iFirma rather than created by the module, and an employee sent it or marked it as sent
 - **THEN** the block renders the same fields and download link as for a module-created document that was sent
 
 #### Scenario: Adopted external document that was not sent
-- **WHEN** the document was adopted from iFirma, its delivery was skipped and iFirma does not report it as sent
+- **WHEN** the document was adopted from iFirma and its delivery was skipped, whether or not iFirma reports it as sent
 - **THEN** the block shows the number, the issue date and "not yet sent", and no download link
 
 #### Scenario: Awaiting KSeF acceptance
@@ -55,22 +55,26 @@ The customer account page SHALL list the customer's issued documents (number, st
 ## ADDED Requirements
 
 ### Requirement: What counts as sent to the customer
-A document SHALL count as sent to the customer when it is not awaiting KSeF acceptance and either its delivery state is "sent" (delivered by the module through any channel, or marked as sent by an employee) or iFirma reports it as sent. The order page, the account page and the download SHALL use this one rule, on stored fields only.
+A document SHALL count as sent to the customer when its delivery state is "sent": the module delivered it through any channel, or an employee marked it as sent. A document awaiting KSeF acceptance SHALL NOT count as sent, and iFirma's own sent flag SHALL NOT count. The order page, the account page and the download SHALL use this one rule, on stored fields only.
 
 #### Scenario: Delivered by the module
 - **WHEN** a document's delivery state is "sent"
 - **THEN** it counts as sent to the customer
 
-#### Scenario: Reported as sent by iFirma
-- **WHEN** a document's delivery by the module failed and iFirma reports it as sent
+#### Scenario: Marked as sent by an employee
+- **WHEN** an employee marked a document as sent
 - **THEN** it counts as sent to the customer
+
+#### Scenario: iFirma's flag alone is not enough
+- **WHEN** a document's delivery by the module failed or was skipped and iFirma reports it as sent
+- **THEN** it does not count as sent to the customer
 
 #### Scenario: Awaiting KSeF acceptance
 - **WHEN** a document awaits KSeF acceptance, whatever iFirma reports
 - **THEN** it does not count as sent to the customer
 
 #### Scenario: Failed, skipped or never delivered
-- **WHEN** a document's delivery state is "failed", "skipped" or empty and iFirma does not report it as sent
+- **WHEN** a document's delivery state is "failed", "skipped" or empty
 - **THEN** it does not count as sent to the customer
 
 ### Requirement: Download only after the document was sent
@@ -111,10 +115,10 @@ The customer PDF download SHALL be refused with "not found" unless the document 
 - **WHEN** an employee marks it as sent and the owner then requests the download
 - **THEN** the PDF is returned
 
-#### Scenario: Sent by iFirma
+#### Scenario: Flagged as sent by iFirma only
 - **GIVEN** a document whose delivery by the module failed and that iFirma reports as sent
 - **WHEN** its owner requests the download
-- **THEN** the PDF is returned
+- **THEN** the answer is "not found" and no PDF bytes are returned
 
 #### Scenario: The refusal reveals nothing
 - **WHEN** the download of a document that was not sent is refused
