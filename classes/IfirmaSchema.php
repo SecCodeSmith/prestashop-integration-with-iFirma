@@ -96,6 +96,20 @@ class IfirmaSchema
     }
 
     /**
+     * Columns added to the receipt table in 1.10.0 for the customer page sync: when an order page of the customer last
+     * started a status refresh. It is kept on the customer's anchor record, the issued one with the smallest id, and
+     * is empty on the customer's other records.
+     *
+     * @return array column name => DDL fragment
+     */
+    public static function newReceiptSyncAttemptColumnsFor1100()
+    {
+        return array(
+            'sync_attempt_at' => 'DATETIME NULL',
+        );
+    }
+
+    /**
      * @return array column name => DDL fragment, in table order
      */
     public static function receiptColumns()
@@ -123,7 +137,8 @@ class IfirmaSchema
             self::newReceiptColumnsFor110(),
             self::newReceiptColumnsFor150(),
             self::newReceiptColumnsFor1100(),
-            self::newReceiptDownloadCountColumnsFor1100()
+            self::newReceiptDownloadCountColumnsFor1100(),
+            self::newReceiptSyncAttemptColumnsFor1100()
         );
     }
 
@@ -468,6 +483,35 @@ class IfirmaSchema
         return $ok;
     }
 
+    /** @var bool the sync attempt column was already ensured in this request */
+    private static $receiptSyncAttemptEnsured = false;
+
+    /**
+     * Adds the sync_attempt_at column to the receipt table when missing. Idempotent; at most once per request. No
+     * row is written: existing rows get no attempt time, so they count as never tried.
+     *
+     * @return bool
+     */
+    public static function ensureReceiptSyncAttemptColumn()
+    {
+        if (self::$receiptSyncAttemptEnsured) {
+            return true;
+        }
+        $table = _DB_PREFIX_ . 'ifirma_receipt';
+        $ok = true;
+        foreach (self::newReceiptSyncAttemptColumnsFor1100() as $column => $definition) {
+            if (self::columnExists($table, $column)) {
+                continue;
+            }
+            if (!Db::getInstance()->execute('ALTER TABLE `' . $table . '` ADD COLUMN `' . $column . '` ' . $definition)) {
+                $ok = false;
+            }
+        }
+        self::$receiptSyncAttemptEnsured = $ok;
+
+        return $ok;
+    }
+
     /** @var bool the auto_mode column was already ensured in this request */
     private static $dataRequestAutoModeEnsured = false;
 
@@ -528,6 +572,7 @@ class IfirmaSchema
         self::$receiptDownloadEnsured = false;
         self::$receiptRetryEnsured = false;
         self::$receiptDownloadCountEnsured = false;
+        self::$receiptSyncAttemptEnsured = false;
         self::$dataRequestAutoModeEnsured = false;
         self::$receiptDateIndexEnsured = false;
     }
@@ -584,6 +629,8 @@ class IfirmaSchema
             'IFIRMA_DL_CUSTOMER_DAY' => '',
             'IFIRMA_DL_EMPLOYEE_MINUTE' => '',
             'IFIRMA_DL_EMPLOYEE_DAY' => '',
+            'IFIRMA_SYNC_CUSTOMER_MINUTE' => '',
+            'IFIRMA_SYNC_CUSTOMER_DAY' => '',
             'IFIRMA_USAGE_DOCUMENT' => '',
             'IFIRMA_USAGE_STATUS' => '',
             'IFIRMA_USAGE_PDF' => '',

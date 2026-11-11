@@ -1042,6 +1042,115 @@ function smokeUsageAndRefusalChecks($module, $actions)
     }
 }
 
+/**
+ * Makes the records look last synced 20 minutes ago, and the customer look as if no order page had started a
+ * refresh (the attempt time sits on one record of the customer, so it is cleared on all of them).
+ */
+function smokeMakeSyncStale(array $records)
+{
+    $ids = array();
+    $customers = array();
+    foreach ($records as $record) {
+        $ids[] = (int) $record->id;
+        $customers[(int) $record->id_customer] = (int) $record->id_customer;
+    }
+    $db = Db::getInstance();
+    $db->execute(
+        'UPDATE `' . _DB_PREFIX_ . 'ifirma_receipt` SET last_sync_at = \'' . pSQL(date('Y-m-d H:i:s', time() - 20 * 60)) . '\'
+         WHERE id_ifirma_receipt IN (' . implode(',', $ids) . ')'
+    );
+    $db->execute('UPDATE `' . _DB_PREFIX_ . 'ifirma_receipt` SET sync_attempt_at = NULL WHERE id_customer IN (' . implode(',', $customers) . ')');
+    Cache::clean('objectmodel_IfirmaReceipt_*');
+}
+
+/** @return int how many records of the customer hold an attempt time of a customer page sync */
+function smokeCountSyncAttempts($idCustomer)
+{
+    return (int) Db::getInstance()->getValue('SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'ifirma_receipt` WHERE id_customer = ' . (int) $idCustomer . ' AND sync_attempt_at IS NOT NULL', false);
+}
+
+/** @return array last_sync_at and sync_attempt_at of the record, read from the database */
+function smokeSyncRow(IfirmaReceipt $record)
+{
+    $row = Db::getInstance()->getRow('SELECT last_sync_at, sync_attempt_at FROM `' . _DB_PREFIX_ . 'ifirma_receipt` WHERE id_ifirma_receipt = ' . (int) $record->id, false);
+
+    return is_array($row) ? $row : array();
+}
+
+/**
+ * Scenario D, part 4: the sync a customer's order page starts. One list call per customer and interval refreshes every
+ * stale document of the viewed document's issue date; a document of another issue date waits for the cron; with the
+ * minute budget of the customer page syncs used up a stale page sends nothing.
+ */
+function smokeCustomerPageSyncChecks($module)
+{
+    require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaCustomerSyncBudget.php';
+    $first = freshScenario('D. Customer page sync');
+    if (!$first) {
+        return;
+    }
+    $second = createOrder();
+    if (!assertTrue($second instanceof Order && Validate::isLoadedObject($second), 'customer page sync: second order created')) {
+        return;
+    }
+    $minuteKey = IfirmaCustomerSyncBudget::MINUTE_KEY;
+    $previous = smokeReadSetting($minuteKey);
+    $context = Context::getContext();
+    $previousCustomer = $context->customer;
+    $third = createOrder();
+    if (!assertTrue($third instanceof Order && Validate::isLoadedObject($third), 'customer page sync: third order created')) {
+        return;
+    }
+    $records = array(smokeIssuedRecordFor($first), smokeIssuedRecordFor($second));
+    $otherDate = smokeIssuedRecordFor($third);
+    Db::getInstance()->execute('UPDATE `' . _DB_PREFIX_ . 'ifirma_receipt` SET issue_date = \'2020-01-02\' WHERE id_ifirma_receipt = ' . (int) $otherDate->id);
+    $records[] = $otherDate;
+    try {
+        $owner = new Customer((int) $first->id_customer);
+        $owner->logged = 1;
+        $context->customer = $owner;
+
+        smokeMakeSyncStale($records);
+        $calls = mockCallCount();
+        $module->hookDisplayOrderDetail(array('order' => $first));
+        assertSame($calls + 1, mockCallCount(), 'customer page sync: opening the first order page sent exactly one list call');
+        $refreshedAfter = time() - 120;
+        foreach (array_slice($records, 0, 2) as $i => $record) {
+            $row = smokeSyncRow($record);
+            assertTrue(isset($row['last_sync_at']) && strtotime((string) $row['last_sync_at']) > $refreshedAfter, 'customer page sync: document ' . ($i + 1) . ' of the customer was refreshed by that one call', json_encode($row));
+        }
+        $calls = mockCallCount();
+        $module->hookDisplayOrderDetail(array('order' => $second));
+        assertSame($calls, mockCallCount(), 'customer page sync: opening the second order page sent no call');
+        $beforeOtherDate = smokeSyncRow($otherDate);
+        $module->hookDisplayOrderDetail(array('order' => $third));
+        assertSame($calls, mockCallCount(), 'customer page sync: the order page of another issue date, inside the interval, sent no call');
+        assertSame($beforeOtherDate['last_sync_at'], smokeSyncRow($otherDate)['last_sync_at'], 'customer page sync: the record of the other issue date is unchanged');
+
+        smokeMakeSyncStale($records);
+        if (time() % 60 >= 50) {
+            sleepToNextMinute(); // the full counter is the current minute's
+        }
+        $full = date(IfirmaCustomerSyncBudget::MINUTE_BUCKET_FORMAT) . ':' . IfirmaCustomerSyncBudget::MINUTE_CAP;
+        smokeWriteSetting($minuteKey, $full);
+        $before = smokeSyncRow($records[0]);
+        $calls = mockCallCount();
+        $module->hookDisplayOrderDetail(array('order' => $first));
+        assertSame($calls, mockCallCount(), 'customer page sync: with the minute budget used up the stale page sent nothing');
+        $after = smokeSyncRow($records[0]);
+        assertSame($before['last_sync_at'], $after['last_sync_at'], 'customer page sync: the last sync time of the record is unchanged');
+        assertSame(0, smokeCountSyncAttempts((int) $first->id_customer), 'customer page sync: no attempt was recorded');
+        assertSame($full, smokeStoredValue($minuteKey), 'customer page sync: the refused page spent nothing of the budget');
+    } finally {
+        $context->customer = $previousCustomer;
+        smokeRestoreSetting($minuteKey, $previous);
+        foreach ($records as $record) {
+            $record->delete();
+        }
+        mockReset();
+    }
+}
+
 function scenarioD($module, $actions)
 {
     $order = freshScenario('D. Status sync and cron');
@@ -1081,6 +1190,7 @@ function scenarioD($module, $actions)
 
     smokeUsageAndRefusalChecks($module, $actions);
     smokeCustomerBudgetChecks($actions);
+    smokeCustomerPageSyncChecks($module);
 
     // Real front controller through the web server (skipped when it is not reachable from here).
     $base = rtrim(getenv('PS_LOCAL_URL') ? getenv('PS_LOCAL_URL') : 'http://localhost', '/')
@@ -2309,7 +2419,7 @@ function scenarioM($module)
  */
 function smokeIsCounterKey($key)
 {
-    return preg_match('/^IFIRMA_(RATE_(WINDOW|DAY_WINDOW|BACKOFF_UNTIL)|USAGE_[A-Z]+|DL_(CUSTOMER|EMPLOYEE)_(MINUTE|DAY))$/', (string) $key) === 1;
+    return preg_match('/^IFIRMA_(RATE_(WINDOW|DAY_WINDOW|BACKOFF_UNTIL)|USAGE_[A-Z]+|DL_(CUSTOMER|EMPLOYEE)_(MINUTE|DAY)|SYNC_CUSTOMER_(MINUTE|DAY))$/', (string) $key) === 1;
 }
 
 /** @return string|false the value of a Configuration row read from the database, false when the row does not exist */
