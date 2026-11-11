@@ -157,6 +157,22 @@ class AdminListDefinitionTest extends TestCase
         }
     }
 
+    public function testTheMarkAsSentBulkEntryIsOfferedToTheManageLevelOnly()
+    {
+        $this->holding(array(IfirmaPermission::ROLE_READ, IfirmaPermission::ROLE_UPDATE));
+        $manager = $this->controller();
+        $manager->init();
+
+        $this->holding(array(IfirmaPermission::ROLE_READ, IfirmaPermission::ROLE_CREATE));
+        $issuer = $this->controller();
+        $issuer->init();
+
+        $this->assertArrayHasKey('markSent', $manager->bulk_actions);
+        $this->assertSame('Mark as sent', $manager->bulk_actions['markSent']['text']);
+        $this->assertArrayNotHasKey('markSent', $issuer->bulk_actions);
+        $this->assertSame(array('retryIssuance', 'resend', 'refresh'), array_keys($issuer->bulk_actions));
+    }
+
     public function testTheNumberFallsBackToTheIdentifierAndTheErrorIsShortened()
     {
         $c = $this->controller();
@@ -241,6 +257,7 @@ class AdminListDefinitionTest extends TestCase
             'bulk retry' => array('bulkretryIssuance', null, true),
             'bulk resend' => array('bulkresend', 'list', true),
             'bulk refresh' => array('bulkrefresh', null, true),
+            'bulk mark sent' => array('bulkmarkSent', null, true),
             'save' => array('save', 'list', false),
             'new' => array('new', 'add', false),
             'delete' => array('delete', null, false),
@@ -378,7 +395,7 @@ class AdminListDefinitionTest extends TestCase
 
     public function testTheNativeBulkSubmitsOnlyExplainThatJavascriptIsNeeded()
     {
-        foreach (array('processBulkRetryIssuance', 'processBulkResend', 'processBulkRefresh') as $method) {
+        foreach (array('processBulkRetryIssuance', 'processBulkResend', 'processBulkRefresh', 'processBulkMarkSent') as $method) {
             $c = $this->controller();
             $c->$method();
             $this->assertSame(array('The bulk actions of this page need JavaScript.'), $c->errors, $method);

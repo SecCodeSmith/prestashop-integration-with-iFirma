@@ -39,6 +39,7 @@ class IfirmaBulkRunner
     const KIND_RETRY = 'retry';
     const KIND_RESEND = 'resend';
     const KIND_REFRESH = 'refresh';
+    const KIND_MARK_SENT = 'mark_sent';
 
     const OUTCOME_ISSUED = 'issued';
     const OUTCOME_ADOPTED = 'adopted';
@@ -97,6 +98,7 @@ class IfirmaBulkRunner
             case self::KIND_RESEND:
                 return 5;
             case self::KIND_REFRESH:
+            case self::KIND_MARK_SENT:
                 return 25;
         }
 
@@ -108,7 +110,7 @@ class IfirmaBulkRunner
      */
     public static function kinds()
     {
-        return array(self::KIND_ISSUE, self::KIND_RETRY, self::KIND_RESEND, self::KIND_REFRESH);
+        return array(self::KIND_ISSUE, self::KIND_RETRY, self::KIND_RESEND, self::KIND_REFRESH, self::KIND_MARK_SENT);
     }
 
     /**
@@ -264,6 +266,13 @@ class IfirmaBulkRunner
                 return;
             }
 
+            if ($kind === self::KIND_MARK_SENT) {
+                // a local state change that sends nothing: neither the rate guard nor the authentication pause applies
+                $this->markSentOne($id, $idEmployee, $state);
+
+                continue;
+            }
+
             if ($kind === self::KIND_RESEND) {
                 $stop = $this->resendOne($id, $state);
             } else {
@@ -407,6 +416,31 @@ class IfirmaBulkRunner
         $state['results'][$id] = $this->result($id, $idOrder, self::OUTCOME_FAILED, $message, $receipt);
 
         return '';
+    }
+
+    /**
+     * @param int   $id receipt id
+     * @param int   $idEmployee
+     * @param array $state
+     */
+    private function markSentOne($id, $idEmployee, array &$state)
+    {
+        $receipt = $this->loadReceipt($id);
+        if ($receipt === null) {
+            $state['results'][$id] = $this->result($id, 0, self::OUTCOME_SKIPPED, $this->module->l('The document was not found.', 'ifirmabulkrunner'), null);
+
+            return;
+        }
+
+        $res = $this->delivery()->markSent($receipt, $idEmployee);
+        $sent = $res->getStatus() === 'sent';
+        $state['results'][$id] = $this->result(
+            $id,
+            (int) $receipt->id_order,
+            $sent ? self::OUTCOME_SENT : self::OUTCOME_SKIPPED,
+            $sent ? $this->module->l('Marked as sent.', 'ifirmabulkrunner') : (string) $res->getMessage(),
+            IfirmaReceipt::loadFresh((int) $receipt->id)
+        );
     }
 
     /**

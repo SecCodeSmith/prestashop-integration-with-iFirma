@@ -1485,6 +1485,98 @@ function dropRolelessEmployee(array $pair)
     }
 }
 
+/**
+ * Seeds an issued record of the order with the given delivery state (the document is not in the mock: marking as sent
+ * never calls iFirma).
+ *
+ * @return IfirmaReceipt
+ */
+function smokeSeedDeliveryRecord(Order $order, $number, $deliveryStatus)
+{
+    return seedReceipt($order->id, $order->id_customer, IfirmaReceipt::STATUS_CREATED, array(
+        'ifirma_id' => '9993' . substr(preg_replace('/\D/', '', $number) . '00', 0, 2),
+        'ifirma_number' => $number,
+        'issue_date' => date('Y-m-d'),
+        'delivery_status' => $deliveryStatus,
+        'delivery_channel' => 'shop_mail',
+        'delivery_error' => $deliveryStatus === IfirmaReceipt::DELIVERY_FAILED ? 'smoke failure' : '',
+    ));
+}
+
+/** @return array id => array(outcome, message) of one bulk result */
+function smokeBulkOutcomes(array $run)
+{
+    $rows = array();
+    foreach ($run['results'] as $row) {
+        $rows[(int) $row['id']] = array($row['outcome'], (string) $row['message']);
+    }
+
+    return $rows;
+}
+
+/**
+ * Scenario J, part 2: the bulk kind mark_sent. Two failed deliveries are marked, an already recorded one and a record
+ * that is not issued are skipped; no mail and no request to iFirma; a full minute counter does not stop the run.
+ *
+ * @param IfirmaBulkRunner $runner
+ * @param Order            $order  an order the records are seeded on
+ * @param array            $made   records to delete at the end (appended to)
+ */
+function smokeBulkMarkSentChecks(IfirmaBulkRunner $runner, Order $order, array &$made)
+{
+    $failedA = smokeSeedDeliveryRecord($order, '7/2026', IfirmaReceipt::DELIVERY_FAILED);
+    $failedB = smokeSeedDeliveryRecord($order, '8/2026', IfirmaReceipt::DELIVERY_FAILED);
+    $alreadySent = smokeSeedDeliveryRecord($order, '9/2026', IfirmaReceipt::DELIVERY_SENT);
+    $notIssued = seedReceipt($order->id, $order->id_customer, IfirmaReceipt::STATUS_ERROR, array('last_error' => 'smoke not issued'));
+    $made = array_merge($made, array($failedA, $failedB, $alreadySent, $notIssued));
+    $alreadySentAt = (string) $alreadySent->delivered_at;
+
+    $mailsBefore = count(mailbox());
+    $callsBefore = mockCallCount();
+    $run = $runner->run(IfirmaBulkRunner::KIND_MARK_SENT, array((int) $failedA->id, (int) $failedB->id, (int) $alreadySent->id, (int) $notIssued->id), 1, array('final' => true));
+    $rows = smokeBulkOutcomes($run);
+    foreach (array($failedA, $failedB) as $rec) {
+        assertSame(array('sent', 'Marked as sent.'), isset($rows[(int) $rec->id]) ? $rows[(int) $rec->id] : null, 'bulk mark sent: failed record ' . $rec->id . ' ends sent');
+        $fresh = new IfirmaReceipt((int) $rec->id);
+        assertSame(array('sent', 'manual', ''), array((string) $fresh->delivery_status, (string) $fresh->delivery_channel, (string) $fresh->delivery_error), 'bulk mark sent: record ' . $rec->id . ' is sent through the manual channel');
+    }
+    $skipped = isset($rows[(int) $alreadySent->id]) ? $rows[(int) $alreadySent->id] : null;
+    assertSame(array('skipped', 'This document is already recorded as sent.'), $skipped, 'bulk mark sent: the already recorded record is skipped with its reason');
+    $skipped = isset($rows[(int) $notIssued->id]) ? $rows[(int) $notIssued->id] : null;
+    assertSame(array('skipped', 'The document has not been issued yet.'), $skipped, 'bulk mark sent: the record that is not issued is skipped with its reason');
+    $counts = array_count_values(array_map(function ($row) {
+        return $row[0];
+    }, $rows));
+    assertSame(array(2, 2), array(isset($counts['sent']) ? $counts['sent'] : 0, isset($counts['skipped']) ? $counts['skipped'] : 0), 'bulk mark sent: the summary counts are 2 marked and 2 skipped');
+    assertSame('', $run['stopped'], 'bulk mark sent: the run was not stopped');
+    $untouched = new IfirmaReceipt((int) $alreadySent->id);
+    assertSame(array('shop_mail', $alreadySentAt), array((string) $untouched->delivery_channel, (string) $untouched->delivered_at), 'bulk mark sent: the skipped sent record is unchanged');
+    assertSame('error', (string) (new IfirmaReceipt((int) $notIssued->id))->status, 'bulk mark sent: the record that is not issued is unchanged');
+    assertSame($mailsBefore, count(mailbox()), 'bulk mark sent: the sink received no new message');
+    assertSame($callsBefore, mockCallCount(), 'bulk mark sent: the mock received no new request');
+
+    // the module's counter of the last 60 seconds is full: a send-kind run would be stopped, marking as sent is not
+    $failedC = smokeSeedDeliveryRecord($order, '10/2026', IfirmaReceipt::DELIVERY_FAILED);
+    $failedD = smokeSeedDeliveryRecord($order, '11/2026', IfirmaReceipt::DELIVERY_FAILED);
+    $made = array_merge($made, array($failedC, $failedD));
+    $cap = (int) IfirmaRateGuard::DEFAULT_MINUTE_CAP;
+    smokeWriteSetting(IfirmaRateGuard::MINUTE_COUNTER_KEY, time() . '=' . $cap);
+    try {
+        $run = $runner->run(IfirmaBulkRunner::KIND_MARK_SENT, array((int) $failedC->id, (int) $failedD->id), 1, array('final' => true));
+        $rows = smokeBulkOutcomes($run);
+        assertSame(array('sent', 'sent'), array(
+            isset($rows[(int) $failedC->id]) ? $rows[(int) $failedC->id][0] : null,
+            isset($rows[(int) $failedD->id]) ? $rows[(int) $failedD->id][0] : null,
+        ), 'bulk mark sent: both failed records are marked although the minute limit is reached');
+        assertSame('', $run['stopped'], 'bulk mark sent: the full minute counter does not stop the run');
+        assertSame(0, count($run['remaining']), 'bulk mark sent: nothing is left over with the minute limit reached');
+        assertSame(array('sent', 'manual'), array((string) (new IfirmaReceipt((int) $failedC->id))->delivery_status, (string) (new IfirmaReceipt((int) $failedD->id))->delivery_channel), 'bulk mark sent: the records are sent through the manual channel with the limit reached');
+        assertSame($callsBefore, mockCallCount(), 'bulk mark sent: the run with the limit reached sent no request either');
+    } finally {
+        smokeClearRateWindow();
+    }
+}
+
 function scenarioJ($module)
 {
     $order1 = freshScenario('J. Bulk runner: retry, resend, refresh');
@@ -1563,6 +1655,8 @@ function scenarioJ($module)
         foreach ($ids as $id) {
             assertSame('refreshed', isset($outcomes[$id]) ? $outcomes[$id] : null, 'refresh of record ' . $id);
         }
+
+        smokeBulkMarkSentChecks($runner, $order3, $made);
     } finally {
         foreach ($made as $rec) {
             $rec->delete();
@@ -1650,6 +1744,48 @@ function smokeManualResendQuietTimeChecks($actions, Order $order)
     assertTrue($r['success'], 'quiet time: a resend 31 seconds after the delivery succeeds', $r['message']);
     assertSame($before + 1, deliveryMailCountFor($order), 'quiet time: the resend after the quiet time added exactly one e-mail');
     assertTrue((string) receiptOf($order)->delivered_at > $aged, 'quiet time: delivered_at is renewed by the later resend', $aged . ' -> ' . receiptOf($order)->delivered_at);
+}
+
+/**
+ * Scenario N, part 6: "Mark as sent" records a delivery that happened outside the module. It is a state change only:
+ * no e-mail, no request to iFirma, no later cron retry; a second mark is refused and changes nothing.
+ */
+function smokeMarkSentChecks($module, $actions)
+{
+    $order = smokeOrderWithFailedDelivery($module, 'mark sent');
+    if (!$order) {
+        return;
+    }
+    mailReject(false);
+    $receipt = receiptOf($order);
+    assertSame('failed', $receipt ? (string) $receipt->delivery_status : null, 'mark sent: the document starts with a failed delivery');
+    $mailsBefore = count(mailbox());
+    $callsBefore = mockCallCount();
+
+    $r = $actions->markSent((int) $order->id, 1);
+    assertTrue($r['success'], 'mark sent: the employee marks the failed delivery as sent', $r['message']);
+    $receipt = receiptOf($order);
+    assertSame('sent', (string) $receipt->delivery_status, 'mark sent: the delivery state is sent');
+    assertSame('manual', (string) $receipt->delivery_channel, 'mark sent: the channel is manual');
+    assertTrue((string) $receipt->delivered_at !== '' && strpos((string) $receipt->delivered_at, '0000') !== 0, 'mark sent: a delivery time is set', (string) $receipt->delivered_at);
+    assertSame('', (string) $receipt->delivery_error, 'mark sent: the delivery error is empty');
+    assertSame(null, $receipt->getDeliveryRetryAt(), 'mark sent: no retry time is left');
+    assertSame($mailsBefore, count(mailbox()), 'mark sent: the sink received no new message');
+    assertSame($callsBefore, mockCallCount(), 'mark sent: the mock received no new request');
+
+    smokeMakeRetryDue($order);
+    smokeCronRetryBlock($module);
+    assertSame(0, deliveryMailCountFor($order), 'mark sent: a cron run afterwards sends no e-mail for the document');
+    assertSame('sent', (string) receiptOf($order)->delivery_status, 'mark sent: the cron leaves the delivery state sent');
+
+    $deliveredAt = (string) receiptOf($order)->delivered_at;
+    $r = $actions->markSent((int) $order->id, 1);
+    assertSame(false, $r['success'], 'mark sent: a second mark is refused');
+    assertSame('This document is already recorded as sent.', (string) $r['message'], 'mark sent: the refusal says the document is already recorded as sent');
+    $receipt = receiptOf($order);
+    assertSame($deliveredAt, (string) $receipt->delivered_at, 'mark sent: the refused second mark leaves delivered_at unchanged');
+    assertSame('manual', (string) $receipt->delivery_channel, 'mark sent: the refused second mark leaves the channel manual');
+    assertSame($mailsBefore, count(mailbox()), 'mark sent: the refused second mark sent no message');
 }
 
 function scenarioN($module, $actions)
@@ -1764,6 +1900,7 @@ function scenarioN($module, $actions)
         assertSame($before + 1, count(mailbox()), 'recovery: one new message in the sink');
 
         smokeAutomaticRetryChecks($module, $actions);
+        smokeMarkSentChecks($module, $actions);
     } finally {
         mailReject(false);
         Configuration::updateValue('IFIRMA_SEND_COPY_MODE', $originalCopyMode === false ? 'none' : $originalCopyMode);
@@ -2111,7 +2248,7 @@ function smokeCustomerDayCapChecks(Order $order)
  * Scenario L, part 2: a state-changing action sent with GET is refused with 405 and changes nothing; the read-only feed
  * still answers GET.
  */
-function smokePostOnlyChecks($dispatch)
+function smokePostOnlyChecks($dispatch, IfirmaReceipt $markRecord = null)
 {
     $order = createOrder();
     if (!assertTrue($order instanceof Order && Validate::isLoadedObject($order), 'post only: an order without a document created')) {
@@ -2128,6 +2265,13 @@ function smokePostOnlyChecks($dispatch)
         assertSame($calls, mockCallCount(), 'post only: the refused GET reached the mock with no call');
         $out = $dispatch('ajaxProcessIssueFeed');
         assertTrue($out['kind'] === 'json' && $out['payload']['success'] === true && !$out['statuses'], 'the read-only IssueFeed still answers GET', json_encode($out));
+        if ($markRecord) {
+            $_POST['id_order'] = $_GET['id_order'] = (string) (int) $markRecord->id_order;
+            $out = $dispatch('ajaxProcessMarkSent');
+            assertTrue($out['kind'] === 'json' && $out['payload']['success'] === false && $out['statuses'] === array(405) && !$out['called'], 'MarkSent sent with GET answers the 405 failure envelope', json_encode($out));
+            Cache::clean('objectmodel_IfirmaReceipt_*');
+            assertSame('failed', (string) IfirmaReceipt::getByOrder((int) $markRecord->id_order)->delivery_status, 'post only: the refused MarkSent GET left the delivery state failed');
+        }
     } finally {
         $_SERVER['REQUEST_METHOD'] = 'POST';
         $_POST['id_order'] = $_GET['id_order'] = '1';
@@ -2206,6 +2350,7 @@ function scenarioL($module)
             public function __construct(array &$log) { $this->log = &$log; }
             public function createReceipt($o, $e) { $this->log[] = "createReceipt"; return array("success" => true, "message" => "recorded", "data" => array()); }
             public function resend($o) { $this->log[] = "resend"; return array("success" => true, "message" => "recorded", "data" => array()); }
+            public function markSent($o, $e) { $this->log[] = "markSent"; return array("success" => true, "message" => "recorded", "data" => array()); }
         }');
     }
 
@@ -2274,10 +2419,35 @@ function scenarioL($module)
         $out = $dispatch('ajaxProcessResendDocument');
         assertTrue($out['kind'] === 'json' && $out['payload']['success'] === false && $out['statuses'] === array(403) && !$out['called'],
             'ResendDocument with READ + CREATE is still 403', json_encode($out));
+        // a seeded record of an order id no shop order has: the recording actions never load an order
+        $markOrderId = 990001;
+        $markRecord = null;
+        {
+            $markRecord = seedReceipt($markOrderId, 99999, IfirmaReceipt::STATUS_CREATED, array(
+                'ifirma_id' => '999300', 'ifirma_number' => 'SMOKE/MS', 'delivery_status' => IfirmaReceipt::DELIVERY_FAILED,
+            ));
+            $_POST['id_order'] = $_GET['id_order'] = (string) $markOrderId;
+            $out = $dispatch('ajaxProcessMarkSent');
+            assertTrue($out['kind'] === 'json' && $out['payload']['success'] === false && $out['statuses'] === array(403) && !$out['called'],
+                'MarkSent with READ + CREATE (no manage level) answers the 403 failure envelope', json_encode($out));
+            Cache::clean('objectmodel_IfirmaReceipt_*');
+            assertSame('failed', (string) IfirmaReceipt::getByOrder($markOrderId)->delivery_status, 'MarkSent without the manage level leaves the delivery state failed');
 
-        smokePostOnlyChecks($dispatch);
+            $db->execute('INSERT IGNORE INTO `' . _DB_PREFIX_ . 'access` (id_profile, id_authorization_role) SELECT ' . $profileId . ", id_authorization_role FROM `" . _DB_PREFIX_
+                . "authorization_role` WHERE slug = 'ROLE_MOD_TAB_ADMINIFIRMA_UPDATE'");
+            assertTrue(IfirmaPermission::canManage($pair['employee']), 'MarkSent: the profile now holds the manage level');
+            $out = $dispatch('ajaxProcessMarkSent');
+            assertTrue($out['kind'] === 'json' && $out['payload']['success'] === true && $out['called'] === array('markSent') && !$out['statuses'],
+                'MarkSent with the manage level is dispatched (no 403)', json_encode($out));
+            $_POST['id_order'] = $_GET['id_order'] = '1';
+        }
+
+        smokePostOnlyChecks($dispatch, $markRecord);
         smokeEmployeeDownloadBudgetChecks($dispatch);
     } finally {
+        if (isset($markRecord) && $markRecord) {
+            $markRecord->delete();
+        }
         $context->employee = $original;
         unset($_SERVER['REQUEST_METHOD'], $_GET['token'], $_POST['token'], $_POST['id_order'], $_GET['id_order']);
         dropRolelessEmployee($pair);

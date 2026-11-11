@@ -283,6 +283,7 @@ $_MODULE['<{ifirma}prestashop>ifirma_278d7c978a1d366d5c8abe1beef1f3cd'] = 'Wysta
 $_MODULE['<{ifirma}prestashop>ifirma_fa54f495b3411da1c58dc51f2a373c71'] = 'Ponowić wystawienie zaznaczonych dokumentów (%d)?';
 $_MODULE['<{ifirma}prestashop>ifirma_d607ed18f04121de2a2b9b9621011a8c'] = 'Wysłać ponownie zaznaczone dokumenty (%d)?';
 $_MODULE['<{ifirma}prestashop>ifirma_11fc051d4c31415e484b2deee8fa4ed8'] = 'Odświeżyć zaznaczone dokumenty (%d) z iFirma?';
+$_MODULE['<{ifirma}prestashop>ifirma_ba67d5251eee282afeb1712a2479164e'] = 'Zapisać %d zaznaczonych dokumentów jako wysłane? Klient nic nie otrzyma.';
 $_MODULE['<{ifirma}prestashop>ifirma_3fff95713d5b3e23e0ab0e657683600b'] = 'Zaznacz co najmniej jeden wiersz.';
 $_MODULE['<{ifirma}prestashop>ifirma_f4ef5943e7096eabd0e637b7fbde7e0f'] = 'W toku… %1$d z %2$d';
 $_MODULE['<{ifirma}prestashop>ifirma_8c71401ce3a1b58162be146de9e2258a'] = 'Zatrzymano: ogranicznik zapytań odrzucił żądanie. Uruchom ponownie za minutę dla pozostałych wierszy.';
@@ -306,6 +307,7 @@ $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_8c3ed5d27c935cbcaad0c4280274948f'
 $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_c686c343c2e880d641819659669c808b'] = 'Dokument został już wystawiony.';
 $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_50ba6d2a6f0c7d3ae2d503878652c09f'] = 'Dokument nie został jeszcze wystawiony.';
 $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_38d34a47e9b9399792d5d8cc0191f066'] = 'Dokument został wysłany.';
+$_MODULE['<{ifirma}prestashop>ifirmabulkrunner_a805f73081345f17c8b674f15b9a7b3d'] = 'Oznaczono jako wysłany.';
 $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_89d63871e8355a56d84d843743ecc740'] = 'Dokumentu nie ma już w iFirma.';
 $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_efb56ed22b73c2e76fffc3cd65ec8341'] = 'Odświeżono z iFirma.';
 $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_5d3438ed5c149e85d6b53246e385cba7'] = 'nie podjęto próby (odrzucone dane logowania)';
@@ -385,13 +387,17 @@ $_MODULE['<{ifirma}prestashop>ifirmadeliveryretryview_a74d5664b2656552e6e4764edc
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_50ba6d2a6f0c7d3ae2d503878652c09f'] = 'Dokument nie został jeszcze wystawiony.';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_786e3dc02677d322e4182fca0e2d2c61'] = 'Wysyłka jest wyłączona (kanał: brak)';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_66f7b32591e77c6ef6e44636bd4fcddd'] = 'Nie udało się zapisać próby wysyłki, więc nic nie wysłano.';
-$_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_b9558cb395d75ad375e3130f2b8d5d64'] = 'Ten dokument jest właśnie wysyłany. Spróbuj ponownie za chwilę.';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_0d2ca9eb2db96bdd432ef34f920e16e0'] = 'Ten dokument został wysłany przed chwilą. Poczekaj przed ponownym wysłaniem.';
+$_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_2194ba61723a6078c9c8135174fd64d5'] = 'Nie udało się zapisać stanu wysyłki.';
+$_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_89d63871e8355a56d84d843743ecc740'] = 'Dokumentu nie ma już w iFirma.';
+$_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_45c59f90d34a6da2c4f74ab497d0ed59'] = 'Ten dokument jest już zapisany jako wysłany.';
+$_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_b9558cb395d75ad375e3130f2b8d5d64'] = 'Ten dokument jest właśnie wysyłany. Spróbuj ponownie za chwilę.';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_a971fddd37f9e43b928577b185cece39'] = 'iFirma nie potwierdziła wysłania e-maila';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_3641c76a16e4948031800d0b421d1c86'] = 'Klient nie ma adresu e-mail.';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_466eadd40b3c10580e3ab4e8061161ce'] = 'Faktura';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_d6d7c5a3f130174a472f0768c912a796'] = 'Paragon';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_d82d8bb01204172e9797dbc8ca6e5081'] = 'System pocztowy sklepu odmówił wysłania e-maila.';
+$_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_ae6de6c72d61068c44bf1d103df87b96'] = 'Oznaczono jako wysłany %s przez pracownika';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_263a9e8ea1c2e2f662970d536c20516a'] = 'Wysłano %1$s kanałem: %2$s';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_cc829246396605c9a7b0d64bc252c541'] = 'Czeka na przyjęcie przez KSeF';
 $_MODULE['<{ifirma}prestashop>ifirmadeliveryservice_3660592986cc12ab045e41320f83f444'] = 'Pominięto (dokument zewnętrzny)';
@@ -436,6 +442,7 @@ $_MODULE['<{ifirma}prestashop>ifirmaadminactions_211c1684698a1286eba79811a1c4472
 $_MODULE['<{ifirma}prestashop>ifirmaadminactions_21fd1db84f2f1d08979aa9590f15e49c'] = 'Płatność zarejestrowana w iFirma.';
 $_MODULE['<{ifirma}prestashop>ifirmaadminactions_b84b5694f77ffa5203a88d34f5d846c6'] = 'Dokument wysłany.';
 $_MODULE['<{ifirma}prestashop>ifirmaadminactions_092f4229a1766ebe8a4f2e2facaeb599'] = 'Nie udało się wysłać dokumentu.';
+$_MODULE['<{ifirma}prestashop>ifirmaadminactions_1aa793631b7f89466b95d4eb152f1c63'] = 'Dokument oznaczono jako wysłany.';
 $_MODULE['<{ifirma}prestashop>ifirmaadminactions_3c4ae1b3d1bce8ed0cc3fc218bedd2f3'] = 'Dokument wysłano do KSeF.';
 $_MODULE['<{ifirma}prestashop>ifirmaadminactions_91a4f450a6ebb80ca9edadef616f1d49'] = 'Nie udało się wysłać dokumentu do KSeF.';
 $_MODULE['<{ifirma}prestashop>ifirmaadminactions_8279a8362f6c5762152cadc5a639bc3e'] = 'Odświeżenie z iFirma nie powiodło się: %s';
@@ -454,6 +461,7 @@ $_MODULE['<{ifirma}prestashop>ifirmareceiptservice_c11be15fbd702c8bdf02411c45af2
 $_MODULE['<{ifirma}prestashop>ifirmareceiptservice_60604ada21f339e6739b70433e9d1f38'] = 'To zamówienie nie ma jeszcze wystawionego dokumentu iFirma.';
 $_MODULE['<{ifirma}prestashop>ifirmareceiptservice_8cf044793ae5dad0b66f6ecac7d709b0'] = 'iFirma odrzuciła płatność: %s';
 $_MODULE['<{ifirma}prestashop>ifirmareceiptservice_4485430543be3d17e57d1ebdbc222555'] = 'Nie udało się pobrać pliku PDF: %s';
+$_MODULE['<{ifirma}prestashop>adminifirmacontroller_eeb041f03998f8bed207810b9d3ae0d1'] = 'Oznacz jako wysłany';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_007369b5553da96aa957ea39082d7ea1'] = 'Ta akcja nie jest dostępna na tej stronie.';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_0eceeb45861f9585dd7a97a3e36f85c6'] = 'Utworzony';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_e0010a0a1a3259ab5c06a19bad532851'] = 'Opłacony';
@@ -656,6 +664,7 @@ $_MODULE['<{ifirma}prestashop>admin_order_panel_2607298669ace2fc910321afeb9f8a84
 $_MODULE['<{ifirma}prestashop>admin_order_panel_4c5dbc47a213a7810e8472998fa8ad52'] = 'Aktualizuj status w iFirma (zarejestruj płatność)';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_22f82794f750faffa79b21e2022f7654'] = 'Jeszcze nie przyjęta w KSeF.';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_50ab1d847e175723e3f782f780d72b16'] = 'Wyślij ponownie';
+$_MODULE['<{ifirma}prestashop>admin_order_panel_eeb041f03998f8bed207810b9d3ae0d1'] = 'Oznacz jako wysłany';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_274188567e9395581d0479c94752405e'] = 'Odśwież z iFirma';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_0e1fd8360209585b971a1c146b933664'] = 'Wyślij do KSeF';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_f4db88c63a0b1b50fd4b89d4a7d18675'] = 'Zarejestruj kontrahenta w iFirma';
@@ -677,6 +686,8 @@ $_MODULE['<{ifirma}prestashop>admin_order_panel_9dbd0898f95dd779308adb747242363c
 $_MODULE['<{ifirma}prestashop>admin_order_panel_fbd7ad6b3fccef0325526247b0f54486'] = 'Powiązywanie…';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_805a5e568de319f7ed3bddc6a5866d68'] = 'Aktualizowanie…';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_4d01e82dfb57dcdc8e8c997db4a66219'] = 'Wysyłanie…';
+$_MODULE['<{ifirma}prestashop>admin_order_panel_59104422a0923c508fd56764b36658d0'] = 'Oznaczyć ten dokument jako wysłany bez jego wysyłania?';
+$_MODULE['<{ifirma}prestashop>admin_order_panel_eedf6b8bfc83284c3294ec4b38188e8a'] = 'Zapisywanie…';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_5c123dffc87233456030f3762f15c3f2'] = 'Odświeżanie…';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_b9064b2da77e4f05bcc1fe7a1ddafebf'] = 'Wysyłki do KSeF nie można cofnąć. Wysłać dokument teraz?';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_b8c2d429cc1bb2eea308fb2f553c6c61'] = 'Rejestrowanie…';

@@ -196,6 +196,41 @@ class AdminOrderPanelTest extends TestCase
         $this->assertLessThan(500, strpos($tpl, 'id="ifirma-resend"') - $warningAt, 'and right next to it');
     }
 
+    public function testThePanelOfAFailedDocumentOffersMarkAsSentThroughAnEscapedGuardedButton()
+    {
+        $this->makeReceipt(array('delivery_status' => 'failed', 'delivery_error' => 'no mailbox'));
+        $tpl = $this->panelTemplate();
+
+        $v = $this->panel();
+
+        $this->assertTrue($v['ifirma_can_mark_sent']);
+        $this->assertSame('{if $ifirma_can_mark_sent}', $this->guardOf($tpl, 'id="ifirma-mark-sent"'));
+        $this->assertStringContainsString('data-id-order="{$ifirma_id_order|intval}"', substr($tpl, strpos($tpl, 'id="ifirma-mark-sent"'), 200));
+        $this->assertStringContainsString("{l s='Mark as sent' mod='ifirma'}", $tpl);
+        $this->assertStringContainsString("'MarkSent'", $tpl);
+    }
+
+    public function testTheScriptConfirmsBeforeMarkingAndRepeatsTheKsefWarningForAWaitingDocument()
+    {
+        $tpl = $this->panelTemplate();
+        $handler = substr($tpl, strpos($tpl, "'#ifirma-mark-sent'"), 900);
+
+        $this->assertStringContainsString("{l s='Mark this document as sent without sending it?' mod='ifirma' js=1}", $handler);
+        $this->assertStringContainsString("{l s='Not yet accepted in KSeF.' mod='ifirma' js=1}", $handler);
+        $this->assertStringContainsString('window.confirm(', $handler);
+        $this->assertStringNotContainsString('var confirm', $tpl);
+    }
+
+    public function testThePanelOfADocumentMarkedAsSentShowsTheManualDeliveryTextAndNoButton()
+    {
+        $this->makeReceipt(array('delivery_status' => 'sent', 'delivery_channel' => 'manual', 'delivered_at' => '2026-11-11 09:30:00'));
+
+        $v = $this->panel();
+
+        $this->assertSame('Marked as sent on 2026-11-11 09:30:00 by an employee', $v['ifirma_delivery_text']);
+        $this->assertFalse($v['ifirma_can_mark_sent']);
+    }
+
     public function testAnAcceptedDocumentRaisesNoWaitingFlag()
     {
         $this->makeReceipt(array('delivery_status' => 'sent', 'ksef_status' => 'PRZYJETA', 'ksef_number' => '5260001122-20261101-ABC-01'));

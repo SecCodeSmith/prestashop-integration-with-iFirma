@@ -280,6 +280,9 @@ class AdminActionsAnswersTest extends TestCase
             'resend' => array(function (IfirmaAdminActions $a, $idOrder) {
                 return $a->resend($idOrder);
             }),
+            'markSent' => array(function (IfirmaAdminActions $a, $idOrder) {
+                return $a->markSent($idOrder, 3);
+            }),
             'sendToKsef' => array(function (IfirmaAdminActions $a, $idOrder) {
                 return $a->sendToKsef($idOrder);
             }),

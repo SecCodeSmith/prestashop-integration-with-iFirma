@@ -153,7 +153,7 @@ The module has three permission levels. They are the View, Add and Edit permissi
 |---|---|---|
 | View | View | See the iFirma panel on the order page and on the customer page, the iFirma column of the Orders list, the [iFirma documents list](usage.md#ifirma-documents-list) and the iFirma tab of the notification bell, and download a document PDF. Check, search and count a customer's contractor. |
 | Issue | Add | Create Receipt, Issue anyway, Link this document (a duplicate candidate) and Register contractor in iFirma. On the Orders list: the Issue action of a cell and the bulk Issue iFirma documents. On the documents list: Retry issuance and its bulk action. |
-| Manage | Edit | Update status in iFirma, Send again, Send to KSeF, Refresh from iFirma, and Approve or Reject a data-change request. On the documents list: Send again, Refresh and their bulk actions. |
+| Manage | Edit | Update status in iFirma, Send again, Mark as sent, Send to KSeF, Refresh from iFirma, and Approve or Reject a data-change request. On the documents list: Send again, Refresh and their bulk actions. |
 
 Defaults: the SuperAdmin profile and the profile of the employee who installed the module hold all
 three levels (PrestaShop grants them when the tab is created). Every other profile has none until you

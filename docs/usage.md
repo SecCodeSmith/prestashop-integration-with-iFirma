@@ -141,6 +141,7 @@ header goes back to the full list.
 | Open order | every row | the back-office access to the order |
 | Retry issuance | a record that is not issued | issue |
 | Send again | an issued record | manage |
+| Mark as sent (order panel only) | an issued record that is not recorded as sent | manage |
 | Refresh | an issued record | manage |
 | Download PDF | an issued record | view |
 
@@ -148,13 +149,16 @@ header goes back to the full list.
 finds is adopted, and nothing is bypassed. A held record stops at the hold step, and the message names the
 pending data-change request.
 
-**Bulk actions.** The selected rows are handled by one of three bulk actions:
+**Bulk actions.** The selected rows are handled by one of four bulk actions:
 
 | Bulk action | Level | Applies to | Records per request |
 |---|---|---|---|
 | Retry issuance | issue | records that are not issued; issued records are skipped | 3 |
 | Send again | manage | issued records, through the configured delivery channel; other records are skipped | 5 |
 | Refresh from iFirma | manage | issued records, one list call per issue date; other records are skipped | 25 |
+| Mark as sent | manage | issued records that are not yet recorded as sent; every other record is skipped with its reason | 25 |
+
+**Mark as sent** in bulk works like the [button in the order panel](#mark-as-sent): it records the delivery state "sent" through the channel "manual" and sends nothing, neither an e-mail nor a request to iFirma. For that reason the request limit and the credentials pause do not stop it: every selected record is handled. A record that is already recorded as sent, is not issued or is missing in iFirma is skipped, and the summary names the reason. The entry is offered to employees with the manage level only. The log entry of the run holds your employee id and the counts of marked and skipped records.
 
 The server checks the level for the whole run before anything happens. An employee without it gets HTTP 403 with
 a message, and nothing is changed or sent.
@@ -433,6 +437,16 @@ With `shop_mail`, a copy of each delivery e-mail (with the PDF) can be sent as a
 ### Automatic retry of a failed delivery
 
 A delivery that failed for a temporary reason is sent again by the [cron endpoint](configuration.md#cron-jobs); nobody has to click. Without the cron job nothing is retried automatically and **Send again** remains the only way.
+
+### Mark as sent
+
+Use **Mark as sent** in the order panel when the customer got the document in a way the module did not record, for example you e-mailed the PDF yourself or handed it over in person. The button is offered to employees with the manage level, for an issued document that is not yet recorded as sent.
+
+- It records the delivery state "sent" through the channel "manual" at the current time, and the panel then reads "Marked as sent on <time> by an employee".
+- It sends nothing: no e-mail to the customer and no request to iFirma. iFirma's own "sent" flag does not change.
+- It ends a wait for KSeF acceptance and cancels a pending automatic retry, so the cron sends no e-mail for that document afterwards.
+- The panel asks you to confirm first, and repeats "Not yet accepted in KSeF." for a document that is still waiting.
+- It is refused for a document that is not issued, is missing in iFirma or is already recorded as sent. Each use writes one line to the PrestaShop log with the record id and your employee id.
 
 **What is retried.** A delivery that failed because the shop mail system refused the e-mail, because iFirma did not have the PDF ready after the download attempts of that run, or for another temporary reason (an HTTP 5xx answer, an iFirma code that is not on the permanent list). A retry uses the channel configured at that moment and records its outcome like any delivery. A KSeF invoice that was accepted and then failed to be e-mailed is retried the same way.
 

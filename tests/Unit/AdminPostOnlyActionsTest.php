@@ -106,6 +106,7 @@ class AdminPostOnlyActionsTest extends TestCase
             'IssueFromList' => array('IssueFromList', array()),
             'UpdateStatus' => array('UpdateStatus', array()),
             'ResendDocument' => array('ResendDocument', array()),
+            'MarkSent' => array('MarkSent', array()),
             'SendToKsef' => array('SendToKsef', array()),
             'RefreshStatus' => array('RefreshStatus', array()),
             'ApproveRequest' => array('ApproveRequest', array('id_request' => 1)),
@@ -118,6 +119,7 @@ class AdminPostOnlyActionsTest extends TestCase
             'BulkRun retry' => array('BulkRun', array('kind' => 'retry', 'ids' => array(1))),
             'BulkRun resend' => array('BulkRun', array('kind' => 'resend', 'ids' => array(1))),
             'BulkRun refresh' => array('BulkRun', array('kind' => 'refresh', 'ids' => array(1))),
+            'BulkRun mark_sent' => array('BulkRun', array('kind' => 'mark_sent', 'ids' => array(1))),
         );
     }
 
