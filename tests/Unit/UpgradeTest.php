@@ -778,6 +778,40 @@ class UpgradeTest extends TestCase
         $this->assertFalse(upgrade_module_1_10_0(new Module()));
     }
 
+    public function testUpgrade1100AddsTheKeptPdfCopyDaysWithTheDefaultWhenMissing()
+    {
+        $this->startFrom($this->expectedSchema());
+        $this->assertFalse(Configuration::hasKey('IFIRMA_PDF_COPY_DAYS'));
+
+        $this->assertTrue(upgrade_module_1_10_0(new Module()));
+
+        $this->assertSame(30, Configuration::get('IFIRMA_PDF_COPY_DAYS'));
+    }
+
+    public function testUpgrade1100KeepsTheKeptPdfCopyDaysTheMerchantSet()
+    {
+        foreach (array(0, 90) as $days) {
+            $this->startFrom($this->expectedSchema());
+            Configuration::updateValue('IFIRMA_PDF_COPY_DAYS', $days);
+
+            $this->assertTrue(upgrade_module_1_10_0(new Module()));
+
+            $this->assertSame($days, Configuration::get('IFIRMA_PDF_COPY_DAYS'));
+        }
+    }
+
+    public function testUpgrade1100WritesTheKeptPdfCopyDaysOnlyOnce()
+    {
+        $this->startFrom($this->expectedSchema());
+        $this->assertTrue(upgrade_module_1_10_0(new Module()));
+        Configuration::$writes = array();
+
+        $this->assertTrue(upgrade_module_1_10_0(new Module()));
+
+        $this->assertSame(array(), Configuration::$writes);
+        $this->assertSame(30, Configuration::get('IFIRMA_PDF_COPY_DAYS'));
+    }
+
     // ---- helpers: the database each path runs on ----------------------------------------------------
 
     /** What the module's own column lists say a complete install has. */
