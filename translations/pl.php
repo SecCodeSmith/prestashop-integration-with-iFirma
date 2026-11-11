@@ -283,6 +283,7 @@ $_MODULE['<{ifirma}prestashop>ifirma_278d7c978a1d366d5c8abe1beef1f3cd'] = 'Wysta
 $_MODULE['<{ifirma}prestashop>ifirma_fa54f495b3411da1c58dc51f2a373c71'] = 'Ponowić wystawienie zaznaczonych dokumentów (%d)?';
 $_MODULE['<{ifirma}prestashop>ifirma_d607ed18f04121de2a2b9b9621011a8c'] = 'Wysłać ponownie zaznaczone dokumenty (%d)?';
 $_MODULE['<{ifirma}prestashop>ifirma_11fc051d4c31415e484b2deee8fa4ed8'] = 'Odświeżyć zaznaczone dokumenty (%d) z iFirma?';
+$_MODULE['<{ifirma}prestashop>ifirma_ba67d5251eee282afeb1712a2479164e'] = 'Zapisać %d zaznaczonych dokumentów jako wysłane? Klient nic nie otrzyma.';
 $_MODULE['<{ifirma}prestashop>ifirma_3fff95713d5b3e23e0ab0e657683600b'] = 'Zaznacz co najmniej jeden wiersz.';
 $_MODULE['<{ifirma}prestashop>ifirma_f4ef5943e7096eabd0e637b7fbde7e0f'] = 'W toku… %1$d z %2$d';
 $_MODULE['<{ifirma}prestashop>ifirma_8c71401ce3a1b58162be146de9e2258a'] = 'Zatrzymano: ogranicznik zapytań odrzucił żądanie. Uruchom ponownie za minutę dla pozostałych wierszy.';
@@ -306,6 +307,7 @@ $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_8c3ed5d27c935cbcaad0c4280274948f'
 $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_c686c343c2e880d641819659669c808b'] = 'Dokument został już wystawiony.';
 $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_50ba6d2a6f0c7d3ae2d503878652c09f'] = 'Dokument nie został jeszcze wystawiony.';
 $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_38d34a47e9b9399792d5d8cc0191f066'] = 'Dokument został wysłany.';
+$_MODULE['<{ifirma}prestashop>ifirmabulkrunner_a805f73081345f17c8b674f15b9a7b3d'] = 'Oznaczono jako wysłany.';
 $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_89d63871e8355a56d84d843743ecc740'] = 'Dokumentu nie ma już w iFirma.';
 $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_efb56ed22b73c2e76fffc3cd65ec8341'] = 'Odświeżono z iFirma.';
 $_MODULE['<{ifirma}prestashop>ifirmabulkrunner_5d3438ed5c149e85d6b53246e385cba7'] = 'nie podjęto próby (odrzucone dane logowania)';
@@ -459,6 +461,7 @@ $_MODULE['<{ifirma}prestashop>ifirmareceiptservice_c11be15fbd702c8bdf02411c45af2
 $_MODULE['<{ifirma}prestashop>ifirmareceiptservice_60604ada21f339e6739b70433e9d1f38'] = 'To zamówienie nie ma jeszcze wystawionego dokumentu iFirma.';
 $_MODULE['<{ifirma}prestashop>ifirmareceiptservice_8cf044793ae5dad0b66f6ecac7d709b0'] = 'iFirma odrzuciła płatność: %s';
 $_MODULE['<{ifirma}prestashop>ifirmareceiptservice_4485430543be3d17e57d1ebdbc222555'] = 'Nie udało się pobrać pliku PDF: %s';
+$_MODULE['<{ifirma}prestashop>adminifirmacontroller_eeb041f03998f8bed207810b9d3ae0d1'] = 'Oznacz jako wysłany';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_007369b5553da96aa957ea39082d7ea1'] = 'Ta akcja nie jest dostępna na tej stronie.';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_0eceeb45861f9585dd7a97a3e36f85c6'] = 'Utworzony';
 $_MODULE['<{ifirma}prestashop>adminifirmacontroller_e0010a0a1a3259ab5c06a19bad532851'] = 'Opłacony';

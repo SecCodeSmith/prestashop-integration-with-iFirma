@@ -1843,6 +1843,7 @@ class Ifirma extends Module
             'confirm_bulk_retry' => $this->l('Retry the issuance of the %d selected documents?'),
             'confirm_bulk_resend' => $this->l('Send the %d selected documents again?'),
             'confirm_bulk_refresh' => $this->l('Refresh the %d selected documents from iFirma?'),
+            'confirm_bulk_mark_sent' => $this->l('Record the %d selected documents as sent? Nothing is sent to the customer.'),
             'nothing_selected' => $this->l('Select at least one row.'),
             'running' => $this->l('Running… %1$d of %2$d'),
             'stopped_rate_limited' => $this->l('Stopped: the rate guard refused a request. Run again in a minute for the remaining rows.'),

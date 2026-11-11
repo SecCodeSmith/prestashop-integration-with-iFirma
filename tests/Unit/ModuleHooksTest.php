@@ -2090,7 +2090,7 @@ class ModuleHooksTest extends TestCase
         $this->assertSame('https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma', $admin['ajaxUrl']);
         $this->assertSame('AdminOrders', $admin['controller']);
         $this->assertSame(array(true, true, false), array($admin['canView'], $admin['canIssue'], $admin['canManage']));
-        $this->assertSame(array('issue' => 3, 'retry' => 3, 'resend' => 5, 'refresh' => 25), $admin['batchSizes']);
+        $this->assertSame(array('issue' => 3, 'retry' => 3, 'resend' => 5, 'refresh' => 25, 'mark_sent' => 25), $admin['batchSizes']);
         $this->assertSame(120000, $admin['pollInterval']);
         $this->assertStringContainsString('controller=AdminIfirma', $admin['listUrl']);
 
@@ -2098,7 +2098,7 @@ class ModuleHooksTest extends TestCase
         $this->assertSame(
             array(
                 'tab_title', 'no_issues', 'see_all', 'issue_action', 'issuing', 'confirm_issue', 'confirm_bulk_issue',
-                'confirm_bulk_retry', 'confirm_bulk_resend', 'confirm_bulk_refresh', 'nothing_selected', 'running',
+                'confirm_bulk_retry', 'confirm_bulk_resend', 'confirm_bulk_refresh', 'confirm_bulk_mark_sent', 'nothing_selected', 'running',
                 'stopped_rate_limited', 'stopped_auth_blocked', 'request_failed', 'summary_title', 'col_order',
                 'col_outcome', 'col_message', 'close', 'outcomes', 'kinds',
             ),

@@ -153,7 +153,7 @@ class BulkRunnerTest extends TestCase
         $this->assertSame(3, IfirmaBulkRunner::batchSize('retry'));
         $this->assertSame(5, IfirmaBulkRunner::batchSize('resend'));
         $this->assertSame(25, IfirmaBulkRunner::batchSize('refresh'));
-        $this->assertSame(array('issue', 'retry', 'resend', 'refresh'), IfirmaBulkRunner::kinds());
+        $this->assertSame(array('issue', 'retry', 'resend', 'refresh', 'mark_sent'), IfirmaBulkRunner::kinds());
     }
 
     public function testAnUnknownKindThrows()
