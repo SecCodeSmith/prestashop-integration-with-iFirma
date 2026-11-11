@@ -70,7 +70,7 @@ class IfirmaRemoteDocumentCollector
      *
      * @param string $identifier   contractor identifier of the customer (the kontrahent filter)
      * @param string $nip          NIP of the customer, '' for none (the nipKontrahenta filter)
-     * @param int    $now          unix timestamp of today
+     * @param int    $now          unix timestamp of today; its day is taken in the shop's time zone
      * @param mixed  $registeredAt date_add of the customer: no window starts before its day; a missing or
      *                             unreadable date, or one more than ten years back, counts as ten years back
      * @return array ok, error, docs, calls, complete, period_from, period_to
@@ -86,8 +86,7 @@ class IfirmaRemoteDocumentCollector
         $this->rows = array();
         $this->calls = 0;
         $this->kontrahentKnown = true;
-        $today = new DateTime('@' . $now);
-        $today->setTime(0, 0, 0);
+        $today = self::shopDay($now);
         $earliest = self::earliest($today, $registeredAt);
 
         $coveredFrom = '';
@@ -114,8 +113,25 @@ class IfirmaRemoteDocumentCollector
     }
 
     /**
-     * @param DateTime $today
-     * @param mixed    $registeredAt date_add of the customer
+     * The day a document issued at $now carries. IfirmaPayloadBuilder stamps DataWystawienia with date(),
+     * the day of the shop's time zone (PHP's default one, which PrestaShop sets from PS_TIMEZONE); a
+     * window that ended on the UTC day missed the documents of the shop's first hours after midnight.
+     *
+     * @param int $now unix timestamp
+     * @return DateTime midnight of that day in the shop's time zone
+     */
+    private static function shopDay($now)
+    {
+        $day = new DateTime('@' . $now);
+        $day->setTimezone(new DateTimeZone(date_default_timezone_get()));
+        $day->setTime(0, 0, 0);
+
+        return $day;
+    }
+
+    /**
+     * @param DateTime $today        midnight of today in the shop's time zone
+     * @param mixed    $registeredAt date_add of the customer, a date of the shop's time zone as well
      * @return DateTime the first day to read: the day of registration, but no more than MAX_YEARS back
      *                  and not after today
      */
@@ -124,7 +140,7 @@ class IfirmaRemoteDocumentCollector
         $earliest = clone $today;
         $earliest->modify('-' . self::MAX_YEARS . ' years');
         if (preg_match('/^(\d{4}-\d{2}-\d{2})/', (string) $registeredAt, $m)) {
-            $registered = DateTime::createFromFormat('Y-m-d H:i:s', $m[1] . ' 00:00:00', new DateTimeZone('UTC'));
+            $registered = DateTime::createFromFormat('Y-m-d H:i:s', $m[1] . ' 00:00:00', $today->getTimezone());
             if ($registered && $registered > $earliest) {
                 $earliest = $registered;
             }

@@ -50,6 +50,7 @@ Assumptions recorded for review:
 - `order-list-receipt-indicator`: the column is filterable by state.
 - `receipt-documents-list`: the state column sorts by the action rank; the row shows the retry schedule of a failed delivery.
 - `email-e2e-verification`: the smoke run proves the automatic retry after a rejected mail.
+- `customer-contractor-panel`: the document count from iFirma takes today and the registration day in the shop's time zone (it took the UTC day, so the smoke run failed in the hour after the shop's midnight and a real count missed that hour's documents).
 - `receipt-access-control`: the configuration page enforces the module's Configure permission itself, and its state-changing actions need POST and a valid token.
 
 ## Impact

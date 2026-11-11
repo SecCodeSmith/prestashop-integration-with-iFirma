@@ -517,7 +517,8 @@ Buttons:
 - **Count in iFirma** - lists the customer's documents with `faktury.json`, filtered by the shown
   contractor identifier (`kontrahent`) and, when an invoice address has a 10-digit NIP, by
   `nipKontrahenta`. The list is read in yearly windows (each at most 365 days, newest first) from the
-  customer's registration date, going back at most 10 years, up to today. Each document is counted
+  customer's registration date, going back at most 10 years, up to today. Both days are days of the
+  shop's time zone, the zone the module dates its documents in. Each document is counted
   once (by FakturaId); paid means `Zaplacono` >= `Brutto`. At most 20 list calls are made per click.
   When that limit is reached the panel says "At least N document(s)" and shows the period actually
   covered.
