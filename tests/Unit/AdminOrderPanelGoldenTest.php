@@ -534,6 +534,7 @@ class AdminOrderPanelGoldenTest extends TestCase
             'ifirma_token',
             'ifirma_can_issue',
             'ifirma_can_manage',
+            'ifirma_can_mark_sent',
         ), $keys);
     }
 }

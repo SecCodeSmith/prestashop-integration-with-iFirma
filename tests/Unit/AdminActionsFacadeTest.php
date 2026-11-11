@@ -85,6 +85,7 @@ class AdminActionsFacadeTest extends TestCase
             'linkCandidate($idOrder, $fakturaId, $idEmployee)',
             'updateStatus($idOrder, $amount = null)',
             'resend($idOrder)',
+            'markSent($idOrder, $idEmployee)',
             'sendToKsef($idOrder)',
             'refreshStatus($idOrder)',
             'registerContractor($idOrder)',
@@ -179,7 +180,7 @@ class AdminActionsFacadeTest extends TestCase
             $domains = array_merge($domains, $found[1]);
         }
 
-        $this->assertSame(52, $calls);
+        $this->assertSame(54, $calls, 'two more texts for Mark as sent');
         $this->assertSame(array('ifirmaadminactions'), array_values(array_unique($domains)));
     }
 

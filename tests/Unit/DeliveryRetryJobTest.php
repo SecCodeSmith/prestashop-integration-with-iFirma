@@ -557,6 +557,32 @@ class DeliveryRetryJobTest extends TestCase
         $this->assertSame(1, $report->block()['succeeded']);
     }
 
+    public function testADocumentMarkedAsSentIsNotRetriedWhenItsRetryWasDue()
+    {
+        $id = $this->failed(130, 1, $this->dueIn(-60));
+        $this->delivery->markSent(new IfirmaReceipt($id), 7);
+
+        $report = $this->job()->run($this->context());
+
+        $this->assertSame(array('handled' => 0, 'succeeded' => 0, 'failed' => 0, 'left' => 0), $report->block());
+        $this->assertCount(0, Mail::$sent);
+        $this->assertCount(0, $this->t->calls);
+        $this->assertSame('manual', $this->row($id)['delivery_channel']);
+    }
+
+    public function testADocumentMarkedAsSentWhileAwaitingKsefIsNotDeliveredWhenKsefAccepts()
+    {
+        $id = $this->failed(131, 0, null, array('delivery_status' => 'awaiting_ksef', 'ksef_number' => '5260001122-20261101-ABC-01'));
+        $this->delivery->markSent(new IfirmaReceipt($id), 7);
+        Db::getInstance()->whenGetValue("/FROM `ps_ifirma_receipt` WHERE delivery_status = 'awaiting_ksef' AND \(ksef_number != /", 0);
+
+        $report = (new IfirmaAwaitingDeliveryJob($this->delivery))->run($this->context());
+
+        $this->assertSame(0, $report->block()['handled']);
+        $this->assertCount(0, Mail::$sent);
+        $this->assertSame('sent', $this->row($id)['delivery_status']);
+    }
+
     private function steppingContext($budget)
     {
         return new IfirmaCronContext(10, function () {

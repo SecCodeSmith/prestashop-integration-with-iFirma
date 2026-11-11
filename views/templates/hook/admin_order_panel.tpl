@@ -285,6 +285,15 @@
                     </button>
                     {/if}
 
+                    {if $ifirma_can_mark_sent}
+                    <button type="button" class="btn btn-default"
+                            id="ifirma-mark-sent"
+                            data-id-order="{$ifirma_id_order|intval}"
+                            data-ksef-waiting="{if $ifirma_ksef_waiting}1{else}0{/if}">
+                        <i class="icon-check"></i> {l s='Mark as sent' mod='ifirma'}
+                    </button>
+                    {/if}
+
                     {if $ifirma_can_manage}
                     <button type="button" class="btn btn-default"
                             id="ifirma-refresh"
@@ -459,7 +468,7 @@
     /**
      * POSTs an action; reloadOnSuccess reloads the page so the panel is rendered from fresh data.
      */
-    function run($btn, action, payload, busyLabel, reloadOnSuccess) {
+    function run($btn, action, payload, busyLabel, reloadOnSuccess, onSuccess) {
         busy($btn, true, busyLabel);
         $.ajax({
             url: ifirmaAjaxUrl + '&action=' + action + '&ajax=1',
@@ -469,6 +478,9 @@
         }).done(function (resp) {
             if (resp && resp.success) {
                 showAlert('success', resp.message);
+                if (onSuccess) {
+                    onSuccess(resp);
+                }
                 if (reloadOnSuccess) {
                     reloadSoon();
                 } else {
@@ -521,6 +533,24 @@
         e.preventDefault();
         var $btn = $(this);
         run($btn, 'ResendDocument', { id_order: $btn.data('id-order') }, "{l s='Sending…' mod='ifirma' js=1}", true);
+    });
+
+    $(document).on('click', '#ifirma-mark-sent', function (e) {
+        e.preventDefault();
+        var $btn = $(this);
+        var question = "{l s='Mark this document as sent without sending it?' mod='ifirma' js=1}";
+        if ($btn.data('ksef-waiting') === 1 || $btn.data('ksef-waiting') === '1') {
+            question = "{l s='Not yet accepted in KSeF.' mod='ifirma' js=1}" + "\n" + question;
+        }
+        if (!window.confirm(question)) {
+            return;
+        }
+        run($btn, 'MarkSent', { id_order: $btn.data('id-order') }, "{l s='Saving…' mod='ifirma' js=1}", false, function (resp) {
+            if (resp.data && resp.data.delivery) {
+                $('#ifirma-delivery').text(resp.data.delivery);
+            }
+            $btn.remove();
+        });
     });
 
     $(document).on('click', '#ifirma-refresh', function (e) {

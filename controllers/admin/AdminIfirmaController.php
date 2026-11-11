@@ -50,6 +50,7 @@ class AdminIfirmaController extends ModuleAdminController
         'IssueFromList' => self::LEVEL_ISSUE,
         'UpdateStatus' => self::LEVEL_MANAGE,
         'ResendDocument' => self::LEVEL_MANAGE,
+        'MarkSent' => self::LEVEL_MANAGE,
         'SendToKsef' => self::LEVEL_MANAGE,
         'RefreshStatus' => self::LEVEL_MANAGE,
         'ApproveRequest' => self::LEVEL_MANAGE,
@@ -794,6 +795,13 @@ class AdminIfirmaController extends ModuleAdminController
     {
         $this->handle('ResendDocument', function () {
             $this->respond($this->actions()->resend($this->orderId()));
+        });
+    }
+
+    public function ajaxProcessMarkSent()
+    {
+        $this->handle('MarkSent', function () {
+            $this->respond($this->actions()->markSent($this->orderId(), $this->employeeId()));
         });
     }
 

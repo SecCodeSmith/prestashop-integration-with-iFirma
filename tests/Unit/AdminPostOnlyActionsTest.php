@@ -106,6 +106,7 @@ class AdminPostOnlyActionsTest extends TestCase
             'IssueFromList' => array('IssueFromList', array()),
             'UpdateStatus' => array('UpdateStatus', array()),
             'ResendDocument' => array('ResendDocument', array()),
+            'MarkSent' => array('MarkSent', array()),
             'SendToKsef' => array('SendToKsef', array()),
             'RefreshStatus' => array('RefreshStatus', array()),
             'ApproveRequest' => array('ApproveRequest', array('id_request' => 1)),

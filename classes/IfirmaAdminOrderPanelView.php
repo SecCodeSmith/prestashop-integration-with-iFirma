@@ -109,7 +109,17 @@ class IfirmaAdminOrderPanelView
             'ifirma_token' => $module['token'],
             'ifirma_can_issue' => !empty($module['can_issue']),
             'ifirma_can_manage' => !empty($module['can_manage']),
+            'ifirma_can_mark_sent' => !empty($module['can_manage']) && $this->offersMarkAsSent($receipt),
         );
+    }
+
+    /**
+     * @param IfirmaReceipt|null $receipt
+     * @return bool true for an issued document that is not recorded as sent
+     */
+    private function offersMarkAsSent($receipt)
+    {
+        return (bool) ($receipt && $receipt->isIssued() && $receipt->delivery_status !== IfirmaReceipt::DELIVERY_SENT);
     }
 
     /**

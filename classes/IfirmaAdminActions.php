@@ -105,6 +105,16 @@ class IfirmaAdminActions
     }
 
     /**
+     * @param int $idOrder
+     * @param int $idEmployee
+     * @return array
+     */
+    public function markSent($idOrder, $idEmployee)
+    {
+        return $this->receipts->markSent($idOrder, $idEmployee);
+    }
+
+    /**
      * Submits the issued document to KSeF regardless of the configured mode (manual button).
      *
      * @param int $idOrder

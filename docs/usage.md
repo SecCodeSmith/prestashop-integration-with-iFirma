@@ -141,6 +141,7 @@ header goes back to the full list.
 | Open order | every row | the back-office access to the order |
 | Retry issuance | a record that is not issued | issue |
 | Send again | an issued record | manage |
+| Mark as sent (order panel only) | an issued record that is not recorded as sent | manage |
 | Refresh | an issued record | manage |
 | Download PDF | an issued record | view |
 
@@ -433,6 +434,16 @@ With `shop_mail`, a copy of each delivery e-mail (with the PDF) can be sent as a
 ### Automatic retry of a failed delivery
 
 A delivery that failed for a temporary reason is sent again by the [cron endpoint](configuration.md#cron-jobs); nobody has to click. Without the cron job nothing is retried automatically and **Send again** remains the only way.
+
+### Mark as sent
+
+Use **Mark as sent** in the order panel when the customer got the document in a way the module did not record, for example you e-mailed the PDF yourself or handed it over in person. The button is offered to employees with the manage level, for an issued document that is not yet recorded as sent.
+
+- It records the delivery state "sent" through the channel "manual" at the current time, and the panel then reads "Marked as sent on <time> by an employee".
+- It sends nothing: no e-mail to the customer and no request to iFirma. iFirma's own "sent" flag does not change.
+- It ends a wait for KSeF acceptance and cancels a pending automatic retry, so the cron sends no e-mail for that document afterwards.
+- The panel asks you to confirm first, and repeats "Not yet accepted in KSeF." for a document that is still waiting.
+- It is refused for a document that is not issued, is missing in iFirma or is already recorded as sent. Each use writes one line to the PrestaShop log with the record id and your employee id.
 
 **What is retried.** A delivery that failed because the shop mail system refused the e-mail, because iFirma did not have the PDF ready after the download attempts of that run, or for another temporary reason (an HTTP 5xx answer, an iFirma code that is not on the permanent list). A retry uses the channel configured at that moment and records its outcome like any delivery. A KSeF invoice that was accepted and then failed to be e-mailed is retried the same way.
 
