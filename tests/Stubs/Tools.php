@@ -79,6 +79,11 @@ class Tools
         return mb_strtoupper((string) $str, 'utf-8');
     }
 
+    public static function strtolower($str)
+    {
+        return mb_strtolower((string) $str, 'utf-8');
+    }
+
     public static function displayPrice($price, $currency = null)
     {
         return number_format((float) $price, 2, '.', '') . ' PLN';

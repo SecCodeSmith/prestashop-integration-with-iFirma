@@ -16,7 +16,7 @@ center ("Guide technical validation", "Validation process for your addons").
 | 2 | `index.php` in every folder | met | checker rule "folder without index.php" |
 | 3 | `config.xml` with name, display name, version, author, tab | met | checker rule "config.xml lacks" |
 | 4 | Declared PrestaShop compatibility (`ps_versions_compliancy` 8.0.0 - 9.99.99) | met | checker; smoke matrix 8.0.5, 8.1.7, 8.2.2, 9.0.3, 9.1.4 (`smoke.yml`) |
-| 5 | Compatible with the latest PrestaShop version | met | 9.1.4 in the smoke matrix; re-run when a newer one ships |
+| 5 | Compatible with the latest PrestaShop version | met | 9.1.4 in the smoke matrix, where each job first checks that the shop reports the version it names (until 2026-11-10 the stack ignored the matrix tag and every job ran one image, so the matrix was not evidence per version); re-run when a newer one ships |
 | 6 | `_PS_VERSION_` guard in every PHP file | fixed | `IfirmaDownloadThrottle.php` lacked it; `ShippedCodeMarketplaceRulesTest` |
 | 7 | No `@` error suppression, no `eval`, `base64_decode`, debug output or `die` | fixed | `@iconv` and `die()` removed; test above and the checker |
 | 8 | Self-contained: nothing downloaded or executed after installation | met | checker rule "remote content loaded" |

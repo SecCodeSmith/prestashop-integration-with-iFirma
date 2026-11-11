@@ -616,7 +616,8 @@ class IfirmaReceiptService
      * @param IfirmaReceipt $receipt
      * @param bool          $duplicate
      * @return string
-     * @throws Exception
+     * @throws IfirmaRateLimitedException when the request limit refused the download before it was sent
+     * @throws Exception                  on any other failure
      */
     public function fetchPdf(IfirmaReceipt $receipt, $duplicate = false)
     {
@@ -632,7 +633,12 @@ class IfirmaReceiptService
         $pdf = $this->client->getBinary($endpoint, 'faktura');
 
         if ($pdf === false) {
-            throw new Exception($this->l('Could not download the PDF: %s', $this->client->getLastError()));
+            $message = $this->l('Could not download the PDF: %s', $this->client->getLastError());
+            if ($this->client->refusedBeforeSendingByRateLimit()) {
+                throw new IfirmaRateLimitedException($message, $this->client->rateLimitWindow(), $this->client->retryAfterSeconds());
+            }
+
+            throw new Exception($message);
         }
 
         return $pdf;

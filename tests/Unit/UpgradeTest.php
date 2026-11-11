@@ -60,6 +60,7 @@ class UpgradeTest extends TestCase
         require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.5.0.php';
         require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.6.0.php';
         require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.8.0.php';
+        require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.10.0.php';
     }
 
     protected function tearDown(): void
@@ -312,13 +313,14 @@ class UpgradeTest extends TestCase
         $this->assertTrue(upgrade_module_1_4_0($module));
         $this->assertTrue(upgrade_module_1_5_0($module));
         $this->assertTrue(upgrade_module_1_6_0($module));
+        $this->assertTrue(upgrade_module_1_10_0($module));
 
         $this->assertEndsWithTheContractorMapAndTheKsefColumns();
         $sent = $this->sentQueries();
         $alters = array_values(array_filter($sent, function ($sql) {
             return strpos($sql, 'ALTER TABLE') === 0 && strpos($sql, 'ADD COLUMN') !== false;
         }));
-        $this->assertCount(21, $alters, 'the 20 receipt columns of 1.1.0 and last_download_at of 1.5.0, nothing else is added');
+        $this->assertCount(25, $alters, 'the 20 receipt columns of 1.1.0, last_download_at of 1.5.0 and the two retry and the two download count columns of 1.10.0, nothing else is added');
         $this->assertContains('ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `last_download_at` DATETIME NULL', $alters);
         $keys = array_values(array_filter($sent, function ($sql) {
             return strpos($sql, 'ALTER TABLE') === 0 && strpos($sql, 'ADD KEY') !== false;
@@ -679,6 +681,80 @@ class UpgradeTest extends TestCase
         $this->assertSame(array(), Db::getInstance()->executed, 'no statement, so no receipt row changes');
     }
 
+    // ---- upgrade-1.10.0.php: the automatic delivery retry columns -------------------------------------
+
+    /** The receipt table of a 1.9.x shop: no retry columns yet. */
+    private function schemaOf19x()
+    {
+        $schema = $this->expectedSchema();
+        unset(
+            $schema[self::RECEIPT]['delivery_attempts'],
+            $schema[self::RECEIPT]['delivery_retry_at'],
+            $schema[self::RECEIPT]['download_day'],
+            $schema[self::RECEIPT]['download_count']
+        );
+
+        return $schema;
+    }
+
+    public function testUpgrade1100AddsTheRetryAndTheDownloadCountColumns()
+    {
+        $this->startFrom($this->schemaOf19x());
+
+        $this->assertTrue(upgrade_module_1_10_0(new Module()));
+
+        $this->assertSame(array(
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `delivery_attempts` INT(11) UNSIGNED NOT NULL DEFAULT 0',
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `delivery_retry_at` DATETIME NULL',
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `download_day` DATE NULL',
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `download_count` INT(11) UNSIGNED NOT NULL DEFAULT 0',
+        ), $this->alterStatementsOf($this->sentQueries()));
+        $this->assertSame($this->expectedSchema()[self::RECEIPT], $this->schema[self::RECEIPT]);
+    }
+
+    public function testUpgrade1100WritesNoRowSoOldFailuresKeepANullDueTime()
+    {
+        $this->startFrom($this->schemaOf19x());
+
+        $this->assertTrue(upgrade_module_1_10_0(new Module()));
+
+        $this->assertSame(array(), Db::getInstance()->updates);
+        $this->assertSame(array(), Db::getInstance()->inserts);
+        $this->assertSame(array(), Db::getInstance()->deletes);
+        foreach ($this->sentQueries() as $sql) {
+            $this->assertDoesNotMatchRegularExpression('/^(UPDATE|INSERT|DELETE)/', $sql);
+        }
+    }
+
+    public function testUpgrade1100IsIdempotent()
+    {
+        $this->startFrom($this->schemaOf19x());
+        $this->assertTrue(upgrade_module_1_10_0(new Module()));
+        $after = $this->schema;
+        IfirmaSchema::resetEnsureCache();
+
+        $this->assertTrue(upgrade_module_1_10_0(new Module()));
+
+        $this->assertSame($after, $this->schema);
+        $this->assertCount(4, $this->alterStatementsOf($this->sentQueries()), 'the second run adds nothing');
+    }
+
+    public function testUpgrade1100ReportsAFailedAlter()
+    {
+        Db::getInstance()->whenExecute('/ADD COLUMN `delivery_retry_at`/', false);
+        $this->startFrom($this->schemaOf19x());
+
+        $this->assertFalse(upgrade_module_1_10_0(new Module()));
+    }
+
+    public function testUpgrade1100ReportsAFailedDownloadCountAlter()
+    {
+        Db::getInstance()->whenExecute('/ADD COLUMN `download_count`/', false);
+        $this->startFrom($this->schemaOf19x());
+
+        $this->assertFalse(upgrade_module_1_10_0(new Module()));
+    }
+
     // ---- helpers: the database each path runs on ----------------------------------------------------
 
     /** What the module's own column lists say a complete install has. */
@@ -698,7 +774,9 @@ class UpgradeTest extends TestCase
         return array(self::RECEIPT => array_diff_key(
             IfirmaSchema::receiptColumns(),
             IfirmaSchema::newReceiptColumnsFor110(),
-            IfirmaSchema::newReceiptColumnsFor150()
+            IfirmaSchema::newReceiptColumnsFor150(),
+            IfirmaSchema::newReceiptColumnsFor1100(),
+            IfirmaSchema::newReceiptDownloadCountColumnsFor1100()
         ));
     }
 

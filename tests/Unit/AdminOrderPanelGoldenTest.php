@@ -265,6 +265,15 @@ class AdminOrderPanelGoldenTest extends TestCase
             'payloads stored with the record' => array(array(), static function (self $t) {
                 $t->receipt(array('request_payload' => '{"SposobZaplaty":"PRZ"}', 'response_payload' => '{"response":{"Kod":0,"Identyfikator":"77"}}'));
             }),
+            'failed delivery with a retry due' => array(array(), static function (self $t) {
+                $t->receipt(array('delivery_status' => 'failed', 'delivery_error' => 'no mailbox', 'delivery_attempts' => 1, 'delivery_retry_at' => '2026-11-02 10:15:00'));
+            }),
+            'failed delivery with the attempts used up' => array(array(), static function (self $t) {
+                $t->receipt(array('delivery_status' => 'failed', 'delivery_error' => 'no mailbox', 'delivery_attempts' => 3, 'delivery_retry_at' => null));
+            }),
+            'failed delivery from before the automatic retry' => array(array(), static function (self $t) {
+                $t->receipt(array('delivery_status' => 'failed', 'delivery_error' => 'no mailbox', 'delivery_attempts' => 0, 'delivery_retry_at' => null));
+            }),
             'duplicate resolved by an employee' => array(array(), static function (self $t) {
                 $t->receipt(array('status' => 'created', 'source' => 'external', 'duplicate_candidates' => json_encode(array(
                     'candidates' => array($t->candidate()),

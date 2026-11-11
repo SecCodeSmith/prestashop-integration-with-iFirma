@@ -286,7 +286,7 @@ class RemoteLimitTest extends TestCase
         $jobs = new ReflectionProperty(IfirmaCronRunner::class, 'jobs');
         $jobs->setAccessible(true);
 
-        $this->assertSame(array('limit', 'queue', 'ksef', 'sync', 'delivery'), array_map(function ($job) {
+        $this->assertSame(array('limit', 'queue', 'ksef', 'sync', 'delivery', 'delivery_retry'), array_map(function ($job) {
             return $job->name();
         }, $jobs->getValue($runner)));
     }

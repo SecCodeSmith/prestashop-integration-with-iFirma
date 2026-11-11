@@ -124,6 +124,9 @@ that last step fails, start CI by hand: Actions -> *CI* -> *Run workflow* on tag
 Tool tests (no PHP needed): `python -m unittest discover -s tests/tools -p "test_*.py"` and
 `node --test tests/tools/*.test.mjs`. The zip is written by `scripts/zip-writer.mjs`, not by a dependency: every
 `archiver` release carries an unfixable `minimatch` advisory, so it was replaced on 2026-11-09.
+`node --test tests/js/*.test.mjs` runs the shipped back-office script `views/js/admin/ifirma-bulk.js` unchanged against a
+small hand-written DOM fake: it covers the Orders-grid cell click (only the Issue action is stopped) and the batch
+continuation of a bulk run. It needs no browser and no dependency.
 
 ### Security scanning
 
@@ -138,7 +141,12 @@ workflow actions. A high or critical finding fails the run and is fixed in its o
 
 There is no silent ignore list. Accepted risks are recorded with a reason and a review date: the two gitleaks
 false-positive paths in `.gitleaks.toml` (graphify cache hashes, fake `IFIRMA_KEY_*` test values; accepted
-2026-11-09, review by 2027-05-09) and the licence exception in `docs/third-party-licenses.md`. Known report-only
+2026-11-09, review by 2027-05-09), the one gitleaks fingerprint in `.gitleaksignore` (a made-up token value in
+`tests/Unit/SmokeOutputMaskTest.php` as first committed in `ddb7283`; the value was replaced, but that commit stays
+in the history the scan reads; accepted 2026-11-11, review by 2027-05-11) and the licence exception in
+`docs/third-party-licenses.md`. A fingerprint names one line of one commit, so any other finding still fails the
+run. Test values must be placeholders no scanner reads as a key (`changeme`, `xxxxxxxxxxxx6789`), because a
+random-looking value stays reported for as long as its commit exists. Known report-only
 finding: the mock image runs as root (Trivy AVD-DS-0002, `test-stack/ifirma-mock/Dockerfile`); it is a local test
 service that never ships, to be fixed in the test-stack repository, review by 2027-05-09.
 
@@ -148,8 +156,20 @@ Licences: [third-party-licenses.md](third-party-licenses.md). PrestaShop Addons:
 
 The test stack image is pinned (`PS_IMAGE_TAG`, default `9.1.4-apache`). `.github/workflows/smoke.yml` (weekly and on
 demand) boots the stack for PrestaShop 8.0.5, 8.1.7, 8.2.2, 9.0.3 and 9.1.4 and runs the smoke scenarios against the
-mock, except scenario R, which takes 8 to 10 minutes and is run alone with `SMOKE_ONLY=R`. Locally:
+mock, except scenario R, which takes 8 to 10 minutes: the workflow skips it on purpose with `SMOKE_SKIP=R` (everything
+else runs, including `A2`) and it is run alone with `SMOKE_ONLY=R`. Locally:
 `PS_IMAGE_TAG=8.2.2-apache docker compose -f test-stack/docker-compose.yml up -d --build`.
+
+Each job waits until the shop's first-boot install has finished and the front page answers 200 (20 minute limit, the
+shop log is printed on failure), then checks that the shop reports the version of its matrix tag, and only then runs
+the scenarios. Where the evidence is: the job summary lists the failed checks (`[FAIL]` lines) and the totals, and the
+artifact `smoke-output-<tag>` holds the full output of each job, also for a green run; keys and tokens are masked to
+their last four characters. Scenario selection by name (`SMOKE_ONLY=A,A2,B`, `SMOKE_SKIP=R`) and the check floor
+(`tests/smoke/check-floor.json`, the minimum number of executed checks per scenario, and how to raise it) are described
+in [tests/smoke/README.md](../tests/smoke/README.md).
+
+Rule: a red smoke run is fixed at its cause, with a unit test that reproduces the defect first. No check is removed,
+skipped or loosened, and no scenario or matrix entry is dropped, to turn a run green.
 
 ### Dev dependencies and PrestaShop
 
@@ -176,7 +196,11 @@ Since 1.8.0 two more cover the queue and KSeF-confirmed delivery (they need mock
 | `R` | Burst issuance under the limits | 50 orders in a row each end with exactly one document; the module's cap queues the surplus and the cron drains it once a minute without the mock ever refusing a call; the mock's minute and day limits and the module's own day cap queue the orders, start the back-off and drain afterwards. About 8 to 10 minutes; run it alone. |
 | `S` | KSeF-confirmed delivery | The module submits once, delivery waits and the customer's download answers "not found" until KSeF accepts, then one cron run delivers once; iFirma's own submission and the submitter `ifirma` mean no send call; a rejection keeps the delivery waiting; documents that do not go to KSeF are delivered at issuance. |
 
-Run one scenario with `SMOKE_ONLY=<letter>`, for example `SMOKE_ONLY=O`. Scenario `N` (e-mails) also checks the inline logo and the shop link of the module's e-mails.
+Run one scenario with `SMOKE_ONLY=<letter>`, for example `SMOKE_ONLY=O`, or several by name with `SMOKE_ONLY=A,A2,B`. Scenario `N` (e-mails) also checks the inline logo and the shop link of the module's e-mails, and, in the 1.10.0 release, the automatic delivery retry end to end against the mail sink (the due time is moved in the database, nothing waits). Scenario `D` has a second section that checks the module's request counts against the mock's, and the refusals by the module's own minute cap (429 with `Retry-After` for the owner's download, "The status was not refreshed:" for the employee's refresh, no call reaching the mock).
+
+**What a scenario may assume.** Every scenario starts on a freshly reset mock, with no record of an earlier scenario waiting for KSeF or queued, and with the module's rate counters at zero. The counters are raised with raw SQL by the module, so a scenario writes and reads them only through `smokeWriteSetting()`, `smokeReadSetting()` and `smokeClearRateWindow()` (`Configuration::updateValue()` of an unchanged cached value writes nothing). The sink is read per document (`deliveryMailCountFor()`): a document number alone is ambiguous after a mock reset. Details and the reasons are in [tests/smoke/README.md](../tests/smoke/README.md), "What a scenario may assume at its start".
+
+**The check floor.** `tests/smoke/check-floor.json` is the smallest number of checks each scenario executes on any supported shop. A run that finds fewer, a scenario without an entry, or no floor file at all, is red. It is raised or created from a green run with `SMOKE_WRITE_FLOOR=1`, taking the minimum over the shops (fresh 8.1.7 and 9.1.4 and the development shops); R's entry comes from R's own run.
 
 **Shared form partial.** The invoice-data fields of the customer form live in `views/templates/front/_datarequest_fields.tpl`. Both `datarequest.tpl` (logged-in customers) and `guestrequest.tpl` (guests) include it, so the field list, the messages and the pre-filling cannot drift apart.
 

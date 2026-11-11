@@ -94,7 +94,11 @@ button cannot be replaced by a hand-made request.
 
 The back-office Orders list has an **iFirma** column, placed before the Actions column. An order whose newest module record is an issued document (it has an iFirma identifier and is not in `error`) shows a receipt icon: green when the document is paid, blue otherwise. Hover the icon for a multi-line tooltip in the employee's language. The first line names the kind and the state: "Faktura wystawiona", "Faktura wysłana", "Faktura opłacona", "Faktura czeka na KSeF" or the "Paragon ..." forms, then the number (the iFirma identifier until a number is stored). Then come the delivery line (sent to the customer on a date, not sent yet, or delivery failed), "unpaid" when the document is not paid, and a KSeF line when the document has a KSeF state (accepted with the KSeF number, sent and awaiting confirmation, error, rejected). An order without an issued document shows its state in words and the hint to click ("No document yet - click to issue", "Issuance failed: <the first 100 characters of the error> - click to issue", "Queued (iFirma limit)", "Unknown outcome", "Suspected duplicate", "Held (data change request)"), and the **Issue** action when the employee has the issue level (see below); an employee without it sees an empty cell. All values are escaped.
 
-**Sorting.** The column is sortable, not filterable. Ascending order is: issuance failed, unknown outcome, suspected duplicate, held, queued, no record, issued and not sent (a failed delivery included), waiting for KSeF, sent, paid; descending reverses it, and orders in the same state are listed newest first. The sort reads the local record only and makes no iFirma call, and it does not change paging or totals. A click on the cell opens the order like the rest of the row.
+**Sorting and filtering.** The column is sortable and filterable by state (a choice list with the ten states below; the count and the paging follow the filter, and an unexpected value is ignored). The documents list sorts its state column in the same order, newest first within a state. Ascending order is: issuance failed, unknown outcome, suspected duplicate, held, queued, no record, issued and not sent (a failed delivery included), waiting for KSeF, sent, paid; descending reverses it, and orders in the same state are listed newest first. The sort reads the local record only and makes no iFirma call, and it does not change paging or totals. A click on the cell opens the order like the rest of the row.
+
+**Filtering by iFirma state.** The filter of the iFirma column is a choice list with ten choices, in this order: Issuance failed, Unknown outcome, Suspected duplicate, Held (data change request), Queued (iFirma limit), No document yet, Issued, not sent, Waiting for KSeF, Sent, Paid. It is the same order as the ascending sort. Choosing one lists only the orders in that state, and the total and the paging count the filtered orders. A delivery that failed is part of "Issued, not sent". Another value in the request is ignored and lists every order. The filter reads the local record only and makes no iFirma call; clear it with the grid's reset button.
+
+**Retry state in the tooltip.** When the delivery of an issued document failed, the tooltip adds one line under "Delivery failed" that tells where the automatic retry stands (see [Automatic retry of a failed delivery](#automatic-retry-of-a-failed-delivery)). The line is left out where the shop has not added the retry columns yet, so the Orders page always opens.
 
 **Issue from the list.** An employee with the issue level sees an **Issue** icon (a plus sign) in the iFirma cell of every order without an issued document. A click asks for confirmation, runs the same pipeline as **Create Receipt** for that order, duplicate guard included, and replaces the cell with the new state. The tooltip of the icon names the last state of the order's record when there is one: failed, unknown outcome, suspected duplicate or held. This is the only action of the column that calls iFirma, and only when clicked.
 
@@ -113,6 +117,10 @@ last change.
 
 **Filters:** status, source, delivery, KSeF, order reference, document number, issue date and the date of the
 last change. The status values are Created, Paid, Error, Unknown, Suspected duplicate and Held.
+
+**Delivery column.** The delivery cell shows the state in words. For a failed delivery it adds a second line, under the state, that tells where the automatic retry stands: "Attempt 1 of 3, next attempt at 2026-11-10 10:15", "No automatic attempt remains", "No automatic attempt will be made" or "No automatic attempt is scheduled" (a delivery that failed before the retry existed). See [Automatic retry of a failed delivery](#automatic-retry-of-a-failed-delivery). The text is escaped.
+
+**State sort order.** The status column sorts by state, not by the stored word. Ascending order equals the order of the constants in `IfirmaDocumentStateRank`: issuance failed (1), unknown outcome (2), suspected duplicate (3), held (4), queued (5), no record (6), issued and not sent (7), waiting for KSeF (8), sent (9), paid (10). Records in the same state are listed newest first. The sort is the same as the sort of the iFirma column of the Orders list.
 
 **Needs attention.** The **Needs attention** button in the page header shows only the records with one of these
 problems:
@@ -157,13 +165,15 @@ has used 20 seconds, and the records left over go into the next request. Nothing
 
 The run stops in one of two cases:
 
-- the module's per-minute rate guard refuses a request (see [Rate limits](configuration.md#rate-limits));
+- the module's rate guard refuses a request: the per-minute cap, the per-day cap, or a running back-off after iFirma's
+  own limit answer (see [Rate limits](configuration.md#rate-limits));
 - iFirma rejected the credentials, so the 15-minute pause applies (see [Troubleshooting](troubleshooting.md)).
 
 The records that were not yet attempted are then reported as **Not attempted**, with the message
-`not attempted (rate limited)` or `not attempted (credentials rejected)`, and the run asks you to run it again
-in a minute in the first case. Records already handled keep their outcome, and the records that were not reached
-keep their previous state.
+`not attempted (rate limited)` or `not attempted (credentials rejected)`. In the first case the message ends with the
+hint `Run it again tomorrow.` when the day cap was reached, with `Run it again after <time>.` when iFirma asked the
+module to wait (the time that wait ends), and with `Run it again in a minute.` for the minute cap. In an issue or retry run the order whose request was refused is queued, so the cron issues it
+later. Records already handled keep their outcome, and the records that were not reached keep their previous state.
 
 **Summary.** When the run ends, a dialog lists every selected record with its order or ID, its outcome and its
 message, and shows the totals per outcome. The outcomes are Issued, Adopted (the guard found the existing
@@ -199,15 +209,23 @@ Three ways to sync:
 
    For shops without friendly URLs use
    `index.php?fc=module&module=ifirma&controller=cron&token=<IFIRMA_CRON_TOKEN>`.
-   A wrong or missing token returns HTTP 403. Crontab example:
+   A wrong or missing token returns HTTP 403. Call it every 1 to 5 minutes (the queue and the delivery retry work only
+   when it is called; the configuration page prints the same `*/5` example). Crontab example:
 
    ```
-   */15 * * * * curl -fsS "https://<shop>/module/ifirma/cron?token=<IFIRMA_CRON_TOKEN>" >/dev/null
+   */5 * * * * curl -fsS "https://<shop>/module/ifirma/cron?token=<IFIRMA_CRON_TOKEN>" >/dev/null
    ```
 
    A run makes at most `IFIRMA_CRON_MAX_CALLS` list calls (default 40); remaining dates
-   wait for the next run. It returns a JSON summary (receipts checked, updated, marked
-   paid, marked missing, errors, rate limited, calls, orders held by pending data requests).
+   wait for the next run. The status sync is one of six jobs of a run (the day-limit read, the queue, KSeF retry,
+   the status sync, the delivery of accepted documents and the delivery retry); see [Cron jobs](configuration.md#cron-jobs).
+   It returns a JSON summary: the keys of the status sync at the top level (receipts checked, updated, marked
+   paid, marked missing, errors, rate limited, calls, orders held by pending data requests) and one block per other job.
+   The summary also carries a `usage` block with the module's own requests, read after the jobs:
+   `{"minute": 6, "day": 250, "by_kind": {"document": 2, "status": 200, "pdf": 40, "email": 0, "ksef": 0,
+   "payment": 0, "contractor": 8, "limit": 0, "other": 0}}` - the requests of the current minute, of today and
+   today's count per kind (all nine kinds, zeros included). The block is also there when the run was refused by the
+   limit. See [Module requests](configuration.md#module-requests).
 
 **Rate limits:** see [Rate limits](configuration.md#rate-limits).
 
@@ -324,10 +342,52 @@ Customer texts are translatable (`translations/pl.php` ships Polish).
 
 ### Download limits
 
-The customer download (`controllers/front/receipt.php`) fetches the PDF from iFirma on every request, so it is
-limited: a document can be fetched once every 30 seconds, and a customer can download at most ten documents in any
-60 seconds. A request over one of these limits gets HTTP 429 with the text "Please wait a moment before downloading
-the document again." The back-office **Download PDF** is not limited; it needs the view level instead.
+A PDF download fetches the document from iFirma every time, so it passes several limits. None of the caps is a setting. The
+calendar minute and the calendar day are those of the shop's time zone. All limits together:
+
+| Limit | Applies to | Cap | Answer over the cap |
+|---|---|---|---|
+| Per document | a customer, one document | once every 30 seconds | HTTP 429, "Please wait a moment before downloading the document again.", no `Retry-After` |
+| Per customer, short | a customer, all documents | 10 documents in any 60 seconds | the same answer |
+| Per customer, day | a customer, all documents | 30 per calendar day | HTTP 429, `Retry-After: 60`, "Too many requests at the moment. Please try again shortly." |
+| All customers | every customer together | 20 per calendar minute and 2,000 per calendar day | the same answer as the per-customer day cap |
+| Back office | every employee together | 30 per calendar minute and 2,000 per calendar day | HTTP 429, `Retry-After` with the seconds to the next minute, "The PDF was not downloaded: the back-office download limit is reached. Try again in a moment." |
+| The module's request limit | every request to iFirma, downloads included | 80 per minute and 14,000 per day (see [Rate limits](configuration.md#rate-limits)), and a back-off after iFirma's own limit answer | customer: HTTP 429, `Retry-After: 60`, the same generic text; employee: HTTP 429, `Retry-After` of the refusing window, a text that names it |
+
+The last row sits above the others: every download that reaches iFirma is also one request of the module. The customer budget
+and the back-office budget are separate from it, so downloads cannot use up the requests that issuing documents, the status sync
+and the cron need. Every limit answer to a customer is the same text with `Retry-After: 60`, so the answer does not tell which
+window refused or when a back-off ends.
+
+**What a customer's request uses.** `controllers/front/receipt.php` runs the checks in this order, and a request that fails one
+spends nothing of the later ones:
+
+1. The access checks: login, token, owner, and the wait for KSeF acceptance. Their answers (redirect, 404) do not change.
+2. The customer's day cap (30). A request over it is refused here and uses no slot of anything below.
+3. The throttle claim: the 10-documents-per-60-seconds count of the customer, then the 30-second slot of the document, taken in one
+   statement.
+4. The budget of all customers (20 per minute, 2,000 per day): one unit of each window.
+5. The customer's day count: one unit.
+6. The request to iFirma, which first passes the module's request limit.
+
+What is given back: when the module's request limit (a cap or a back-off) refuses the request in step 6, nothing was sent, so the
+unit of step 4 and the day count of step 5 go back and only downloads that reached iFirma stay counted. The 30-second slot of the
+document (step 3) is not given back, and neither is it when step 4 refuses. A retry of the same document within 30 seconds
+therefore gets the per-document answer (no `Retry-After`), not the limit answer. A request that was sent and failed at iFirma
+(HTTP 502) keeps all its counts, because it used the limit. A download refused by any limit is never counted as a download.
+
+**The per-customer day cap** counts the downloads of the customer's own documents that reached iFirma; a new day starts a new
+count. It exists so one account cannot use up the shop-wide budget for everyone else. The count is kept on the customer's receipt
+rows (`download_day`, `download_count`).
+
+**The back-office Download PDF** needs the view level and has a budget of its own, separate from the customers': all employees
+together can send 30 downloads per calendar minute and 2,000 per calendar day. A download over either answers HTTP 429 with a
+`Retry-After` header (the seconds to the next minute) and the text above; nothing is sent to iFirma. Issuing documents is not
+affected. An employee without the view level still gets the access-denied answer first. When the module's request limit refuses
+an employee's download, the answer names the window: "The PDF was not downloaded: the minute request limit is reached. Try again
+in a moment.", "... the day request limit is reached. Try again later." or "... iFirma asked the module to wait before the next
+request. Try again shortly."; `Retry-After` is the seconds to the next minute, to the end of the back-off, or, for the day limit, at
+most 3600.
 
 ## Delivery
 
@@ -358,6 +418,44 @@ With `shop_mail`, a copy of each delivery e-mail (with the PDF) can be sent as a
 
 > Warning: with the default channel, documents start being e-mailed to customers on the next trigger. Select `none` first if you do not want that.
 
+### Automatic retry of a failed delivery
+
+A delivery that failed for a temporary reason is sent again by the [cron endpoint](configuration.md#cron-jobs); nobody has to click. Without the cron job nothing is retried automatically and **Send again** remains the only way.
+
+**What is retried.** A delivery that failed because the shop mail system refused the e-mail, because iFirma did not have the PDF ready after the download attempts of that run, or for another temporary reason (an HTTP 5xx answer, an iFirma code that is not on the permanent list). A retry uses the channel configured at that moment and records its outcome like any delivery. A KSeF invoice that was accepted and then failed to be e-mailed is retried the same way.
+
+**The schedule.** A document gets at most three automatic attempts, the first one (at issuance, or after KSeF acceptance) included:
+
+| Attempt | Not earlier than |
+|---|---|
+| 1 | at issuance |
+| 2 | 15 minutes after the first failure |
+| 3 | 2 hours after the second failure |
+
+The cron run delivers the documents that are due, the oldest due time first, at most `IFIRMA_CRON_MAX_ITEMS` per run (the others wait for the next run). The delivery retry is the last job of a run. Because the cron is called every 1 to 5 minutes, an attempt starts a little after its due time. After the third failure the record stays Failed with the last error and the cron never tries it again.
+
+**What is never retried.** A permanent failure: the customer has no valid e-mail address, the document is missing in iFirma, the API key is missing, or iFirma rejected the login or refused the request as invalid. A failure whose outcome is unknown: with the channel `ifirma_mail`, a send request that reached iFirma and got no answer, a gateway error or an unreadable answer (the e-mail may have gone out, so a retry could send it twice). Such a record stays Failed and needs attention: use **Send again** after you checked. With the channel set to `none` the cron sends nothing for a record that waits for a retry. A delivery that failed before the module version that introduced the retry (1.10.0) is not retried either.
+
+**The limit does not count.** When the request limit or the cool-down after rejected credentials refuses a delivery before any request is sent, nothing is e-mailed, the attempt is not counted and the delivery stays due. The retry job stops at the first such refusal and goes on in the next run. The same holds for the first delivery of a just issued document: it shows Failed with the refusal, no attempt is counted and the cron delivers it later.
+
+**A lost outcome is never sent twice.** Before the cron sends anything it saves the attempt: the attempt is counted, the due time is cleared and the error reads "A delivery attempt started and its outcome was not recorded. Check whether the customer received the document before sending it again." A normal attempt then replaces that text with its result. If the process stops after the attempt was saved (before anything was sent, or after the e-mail left), or the result cannot be saved, the record stays Failed with that text, the e-mail may or may not have left, the cron never picks it up again and it needs attention: check with the customer or the mail log, then use **Send again** if the document did not arrive. If the attempt cannot be saved at all, nothing is sent and the cron tries again in the next run.
+
+**Send again.** **Send again** works as before, except that it is refused for 30 seconds after a delivery that was recorded as sent (see below), and a success ends the automatic retries of that document. A failed **Send again** leaves the attempts already used and the due time as they were. The cron only delivers a record that is still Failed when its turn comes, and a cron run and an employee cannot deliver the same document at the same moment, so the customer receives one e-mail. With the copy mode on, one copy is sent, with the attempt that succeeded.
+
+**A second Send again right after a delivery is refused.** When the delivery of a document was recorded as sent less than 30 seconds ago (by the cron, at issuance or by an earlier Send again), **Send again** sends nothing, changes nothing and says "This document was sent a moment ago. Wait before sending it again."; this stops a double click or a repeated bulk run from e-mailing the customer twice. In a bulk resend such a document is reported as skipped with that message, and the run goes on with the next one. After 30 seconds **Send again** works as before, and a document whose delivery failed can be sent again at once. The automatic retry and the delivery at issuance are not affected.
+
+**What the employee sees.** The order panel, the Orders-list tooltip and the delivery column of the iFirma documents list show, next to the error of a failed delivery, one of these lines:
+
+| Line | Meaning |
+|---|---|
+| Attempt 1 of 3, next attempt at 2026-11-10 10:15 | the number of attempts used so far (1 or 2) and the time the next one is due (shop time) |
+| Attempt 0 of 3, next attempt at 2026-11-10 10:15 | the first delivery of a just issued document was refused by the request limit before anything was sent, so no attempt is used and the cron delivers it at once |
+| No automatic attempt remains | the three attempts are used; use **Send again** |
+| No automatic attempt will be made | the failure is permanent, its outcome is unknown, or an attempt started and its outcome was not recorded (the error then reads "A delivery attempt started and its outcome was not recorded. ..."; the e-mail may or may not have left, also when the run stopped before anything was sent); check with the customer or the mail log, then use **Send again** if needed |
+| No automatic attempt is scheduled | a delivery that failed before the retry existed; use **Send again** |
+
+The error text and the line are escaped. A delivery that did not fail shows no such line.
+
 ## KSeF (e-invoicing)
 
 From 2026, B2B invoices must be submitted to the National e-Invoicing System (KSeF). iFirma can submit them for you, and since April 2026 it can also submit API-issued invoices on its own, at a time set in its account settings, and it refuses to e-mail an invoice that belongs in KSeF. Two settings decide what the module does, and they are independent:
@@ -377,7 +475,7 @@ From 2026, B2B invoices must be submitted to the National e-Invoicing System (KS
 
 - the customer's order page shows no download link and the download answers "not found";
 - a rejected submission (`BLAD`, `ODRZUCONA`) keeps the delivery waiting and is not delivered automatically, and a wait longer than 48 hours needs attention (notification tab and documents-list preset);
-- an e-mail that fails after acceptance is recorded as failed and the cron does not retry it; use **Send again**;
+- an e-mail that fails after acceptance is recorded as failed and the cron retries it under the [automatic retry rules](#automatic-retry-of-a-failed-delivery) when the failure is temporary; use **Send again** when it is not;
 - **Send again** delivers at once on the employee's decision and ends the wait (the panel warns that the document is not yet accepted in KSeF); the cron then sends no second e-mail.
 
 Receipts, invoices to private buyers in `b2b` mode, every document in mode `off`, and every document when the delivery channel is `none` are delivered (or recorded as skipped) at issuance as before and never wait.
@@ -419,7 +517,8 @@ Buttons:
 - **Count in iFirma** - lists the customer's documents with `faktury.json`, filtered by the shown
   contractor identifier (`kontrahent`) and, when an invoice address has a 10-digit NIP, by
   `nipKontrahenta`. The list is read in yearly windows (each at most 365 days, newest first) from the
-  customer's registration date, going back at most 10 years, up to today. Each document is counted
+  customer's registration date, going back at most 10 years, up to today. Both days are days of the
+  shop's time zone, the zone the module dates its documents in. Each document is counted
   once (by FakturaId); paid means `Zaplacono` >= `Brutto`. At most 20 list calls are made per click.
   When that limit is reached the panel says "At least N document(s)" and shows the period actually
   covered.
@@ -437,7 +536,7 @@ Buttons:
 - **Unlink** - removes the stored link only; nothing changes in iFirma.
 - **Register in iFirma** - the same registration as the order panel's "Register contractor in iFirma",
   using the customer's latest order. It is unavailable without an order or when contractor sync is
-  disabled.
+  disabled, and for an employee without the Issue level of the module (the panel then says so).
 
 The panel is shown only to an employee with the View level of the module's
 [permissions](configuration.md#permissions). Link, Unlink and Register still require the employee's edit

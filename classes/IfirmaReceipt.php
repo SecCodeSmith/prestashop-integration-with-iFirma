@@ -8,6 +8,9 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
+require_once dirname(__FILE__) . '/IfirmaDeliveryRetryPolicy.php';
+require_once dirname(__FILE__) . '/IfirmaSchema.php';
+
 class IfirmaReceipt extends ObjectModel
 {
     /** @var int */
@@ -76,6 +79,12 @@ class IfirmaReceipt extends ObjectModel
     /** @var string|null */
     public $delivery_error;
 
+    /** @var int automatic delivery attempts used so far (a manual resend does not count) */
+    public $delivery_attempts = 0;
+
+    /** @var string|null when the next automatic delivery attempt is due; null when none is scheduled */
+    public $delivery_retry_at;
+
     /** @var float|null */
     public $remote_paid_amount;
 
@@ -109,6 +118,12 @@ class IfirmaReceipt extends ObjectModel
     /** @var string|null when the customer last downloaded the document (download throttle) */
     public $last_download_at;
 
+    /** @var string|null the day (Y-m-d) download_count was counted on */
+    public $download_day;
+
+    /** @var int PDF downloads of this document that reached iFirma on download_day */
+    public $download_count = 0;
+
     /** @var string|null */
     public $sync_error;
 
@@ -138,6 +153,9 @@ class IfirmaReceipt extends ObjectModel
     /** The document goes to KSeF and is delivered to the customer once KSeF has accepted it. */
     const DELIVERY_AWAITING_KSEF = 'awaiting_ksef';
 
+    /** A due time at or before this is a database's stand-in for an empty value, not a schedule. */
+    const EARLIEST_DUE = '2000-01-01 00:00:00';
+
     public static $definition = array(
         'table' => 'ifirma_receipt',
         'primary' => 'id_ifirma_receipt',
@@ -163,6 +181,8 @@ class IfirmaReceipt extends ObjectModel
             'delivery_channel' => array('type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'size' => 32),
             'delivered_at' => array('type' => self::TYPE_DATE, 'validate' => 'isDate', 'allow_null' => true),
             'delivery_error' => array('type' => self::TYPE_HTML),
+            'delivery_attempts' => array('type' => self::TYPE_INT, 'validate' => 'isUnsignedInt'),
+            'delivery_retry_at' => array('type' => self::TYPE_DATE, 'validate' => 'isDate', 'allow_null' => true),
             'remote_paid_amount' => array('type' => self::TYPE_FLOAT, 'validate' => 'isPrice', 'allow_null' => true),
             'remote_sent' => array('type' => self::TYPE_BOOL, 'validate' => 'isBool'),
             'remote_draft' => array('type' => self::TYPE_BOOL, 'validate' => 'isBool'),
@@ -174,11 +194,171 @@ class IfirmaReceipt extends ObjectModel
             'linked_document' => array('type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'size' => 128),
             'last_sync_at' => array('type' => self::TYPE_DATE, 'validate' => 'isDate', 'allow_null' => true),
             'last_download_at' => array('type' => self::TYPE_DATE, 'validate' => 'isDateFormat', 'allow_null' => true),
+            'download_day' => array('type' => self::TYPE_DATE, 'validate' => 'isDateFormat', 'allow_null' => true),
+            'download_count' => array('type' => self::TYPE_INT, 'validate' => 'isUnsignedInt'),
             'sync_error' => array('type' => self::TYPE_HTML),
             'duplicate_candidates' => array('type' => self::TYPE_HTML),
             'id_data_request' => array('type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'allow_null' => true),
         ),
     );
+
+    /** The columns of a delivery's recorded state: a save writes only the ones its object changed. */
+    const DELIVERY_COLUMNS = array('delivery_status', 'delivery_channel', 'delivered_at', 'delivery_error', 'delivery_attempts', 'delivery_retry_at');
+
+    /**
+     * The columns of the PDF download accounting (the throttle's last download time and the daily count). Other requests
+     * change them with their own atomic statements, so a whole-row save must never write an object's old value back.
+     */
+    const DOWNLOAD_COLUMNS = array('last_download_at', 'download_day', 'download_count');
+
+    /** @var array|null the guarded columns (stateGuardedColumns()) as they were when this object was loaded or last saved; null when unknown */
+    private $storedDeliveryState = null;
+
+    /**
+     * @return string[] the columns a save writes only when its object changed them: the delivery state and the download accounting
+     */
+    private static function stateGuardedColumns()
+    {
+        return array_merge(self::DELIVERY_COLUMNS, self::DOWNLOAD_COLUMNS);
+    }
+
+    /**
+     * @param int|null $id
+     * @param int|null $id_lang
+     * @param int|null $id_shop
+     * @param mixed    $translator
+     */
+    public function __construct($id = null, $id_lang = null, $id_shop = null, $translator = null)
+    {
+        parent::__construct($id, $id_lang, $id_shop, $translator);
+        if ($id) {
+            $this->rememberStoredDeliveryState();
+        }
+    }
+
+    /**
+     * @param array    $data
+     * @param int|null $id_lang
+     */
+    public function hydrate(array $data, $id_lang = null)
+    {
+        parent::hydrate($data, $id_lang);
+        $this->rememberStoredDeliveryState();
+    }
+
+    /**
+     * Every write of a receipt carries the retry columns, so they are ensured first: a shop whose files were deployed
+     * before the upgrade script ran would otherwise fail every insert. At most one check per request. A failed ALTER
+     * does not stop the write, which then reports its own error.
+     *
+     * @param bool $auto_date
+     * @param bool $null_values
+     * @return bool
+     */
+    public function add($auto_date = true, $null_values = false)
+    {
+        IfirmaSchema::ensureReceiptRetryColumns();
+        IfirmaSchema::ensureReceiptDownloadCountColumns();
+        $saved = parent::add($auto_date, $null_values);
+        if ($saved) {
+            $this->rememberStoredDeliveryState();
+        }
+
+        return $saved;
+    }
+
+    /**
+     * Leaves out of the UPDATE every delivery column this object did not change since it was loaded: a writer that
+     * loaded the record, waited on iFirma and saves a sync field must not write the old delivery state back over what
+     * a delivery recorded meanwhile (which would make the cron send the e-mail again, or erase its claim). A column
+     * that equals its loaded value is never written, not even by a caller's own partial update: a writer of delivery
+     * state must hold the order lock and read the state fresh first (adoptDeliveryState()).
+     *
+     * @param bool $null_values
+     * @return bool
+     */
+    public function update($null_values = false)
+    {
+        IfirmaSchema::ensureReceiptRetryColumns();
+        IfirmaSchema::ensureReceiptDownloadCountColumns();
+        $callerFields = $this->update_fields;
+        $unchanged = $this->unchangedDeliveryColumns();
+        if ($unchanged !== array()) {
+            $fields = $callerFields !== null ? $callerFields : array_fill_keys(array_keys(self::$definition['fields']), true);
+            foreach ($unchanged as $column) {
+                unset($fields[$column]);
+            }
+            $this->setFieldsToUpdate($fields);
+        }
+        try {
+            $saved = parent::update($null_values);
+        } finally {
+            $this->setFieldsToUpdate($callerFields);
+        }
+        if ($saved) {
+            $this->rememberStoredDeliveryState();
+        }
+
+        return $saved;
+    }
+
+    /**
+     * Makes this object mirror the delivery state another, freshly loaded object holds, and counts that state as stored:
+     * what the object records afterwards is compared with it.
+     *
+     * @param IfirmaReceipt $stored
+     */
+    public function adoptDeliveryState(IfirmaReceipt $stored)
+    {
+        foreach (self::DELIVERY_COLUMNS as $column) {
+            $this->$column = $stored->$column;
+        }
+        $this->rememberStoredDeliveryState();
+    }
+
+    private function rememberStoredDeliveryState()
+    {
+        $state = array();
+        foreach (self::stateGuardedColumns() as $column) {
+            $state[$column] = $this->$column === null ? null : (string) $this->$column;
+        }
+        $this->storedDeliveryState = $state;
+    }
+
+    /**
+     * @return string[] the delivery columns whose value is what was stored; none when the stored state is unknown
+     */
+    private function unchangedDeliveryColumns()
+    {
+        if ($this->storedDeliveryState === null) {
+            return array();
+        }
+        $unchanged = array();
+        foreach (self::stateGuardedColumns() as $column) {
+            $now = $this->$column === null ? null : (string) $this->$column;
+            if ($now === $this->storedDeliveryState[$column]) {
+                $unchanged[] = $column;
+            }
+        }
+
+        return $unchanged;
+    }
+
+    /**
+     * Loads a record without the per-request object cache, for a read under a lock: another request may have changed
+     * the row since this request first loaded it.
+     *
+     * @param int $id
+     * @return IfirmaReceipt
+     */
+    public static function loadFresh($id)
+    {
+        if (class_exists('Cache')) {
+            Cache::clean('objectmodel_' . __CLASS__ . '_' . (int) $id . '_*');
+        }
+
+        return new self((int) $id);
+    }
 
     /**
      * @param int $idOrder
@@ -361,6 +541,41 @@ class IfirmaReceipt extends ObjectModel
     }
 
     /**
+     * Failed deliveries whose automatic retry is due, the earliest due time first. A row without a due time (every
+     * failure from before the retry existed, and every failure whose retries are spent) is never selected.
+     *
+     * @param int $limit at most this many records, and at least one
+     * @param int $now   unix time: what counts as due
+     * @return IfirmaReceipt[]
+     */
+    public static function findDeliveriesDueForRetry($limit, $now)
+    {
+        return self::findWhere(self::deliveryDueCondition($now), $limit, 'delivery_retry_at ASC, id_ifirma_receipt ASC');
+    }
+
+    /**
+     * @param int $now unix time
+     * @return int how many failed deliveries are due for their automatic retry
+     */
+    public static function countDeliveriesDueForRetry($now)
+    {
+        return self::countWhere(self::deliveryDueCondition($now));
+    }
+
+    /**
+     * The zero date bound keeps a due time that a database stored for an empty value out of the selection.
+     *
+     * @param int $now unix time
+     * @return string
+     */
+    private static function deliveryDueCondition($now)
+    {
+        return 'delivery_status = \'' . self::DELIVERY_FAILED . '\' AND ifirma_id != \'\' AND delivery_retry_at IS NOT NULL'
+            . ' AND delivery_retry_at > \'' . self::EARLIEST_DUE . '\''
+            . ' AND delivery_retry_at <= \'' . pSQL(date('Y-m-d H:i:s', (int) $now)) . '\'';
+    }
+
+    /**
      * @return string
      */
     private static function awaitingSubmissionCondition()
@@ -381,13 +596,14 @@ class IfirmaReceipt extends ObjectModel
     /**
      * @param string $condition a fixed SQL condition built from constants
      * @param int    $limit
+     * @param string $order     a fixed ORDER BY list of columns
      * @return IfirmaReceipt[]
      */
-    private static function findWhere($condition, $limit)
+    private static function findWhere($condition, $limit, $order = 'date_add ASC, id_ifirma_receipt ASC')
     {
         $rows = Db::getInstance()->executeS(
             'SELECT id_ifirma_receipt FROM `' . _DB_PREFIX_ . 'ifirma_receipt` WHERE ' . $condition
-            . ' ORDER BY date_add ASC, id_ifirma_receipt ASC LIMIT ' . max(1, (int) $limit)
+            . ' ORDER BY ' . $order . ' LIMIT ' . max(1, (int) $limit)
         );
 
         $records = array();
@@ -627,14 +843,58 @@ class IfirmaReceipt extends ObjectModel
      * part of it: a send stamps it, a disabled channel clears it and the other outcomes keep it,
      * so the caller decides.
      *
-     * @param string $status  one of the DELIVERY_* constants
-     * @param string $channel
-     * @param string $error   '' when there is none
+     * The automatic retry state is stored in the same call, so it is saved in the same write: with $attempts the
+     * attempts used and the due time are set (a null $retryAt ends the schedule: sent, skipped, spent or never
+     * retried); without it both stay as they were, which is what a failed manual resend wants.
+     *
+     * @param string   $status  one of the DELIVERY_* constants
+     * @param string   $channel
+     * @param string   $error   '' when there is none
+     * @param int|null $attempts automatic attempts used after this outcome; null leaves the retry state untouched
+     * @param int|null $retryAt  unix time the next attempt is due, null for none; read only together with $attempts
      */
-    public function recordDelivery($status, $channel, $error)
+    public function recordDelivery($status, $channel, $error, $attempts = null, $retryAt = null)
     {
         $this->delivery_status = $status;
         $this->delivery_channel = $channel;
         $this->delivery_error = $error;
+        if ($attempts !== null) {
+            $this->delivery_attempts = (int) $attempts;
+            $this->delivery_retry_at = $retryAt === null ? null : date('Y-m-d H:i:s', (int) $retryAt);
+        }
+    }
+
+    /**
+     * @return int automatic delivery attempts used so far
+     */
+    public function getDeliveryAttempts()
+    {
+        return (int) $this->delivery_attempts;
+    }
+
+    /**
+     * @return int how many automatic attempts a document gets in all
+     */
+    public static function maxDeliveryAttempts()
+    {
+        return IfirmaDeliveryRetryPolicy::MAX_ATTEMPTS;
+    }
+
+    /**
+     * @return string|null 'Y-m-d H:i:s' when the next automatic attempt is scheduled; null otherwise
+     */
+    public function getDeliveryRetryAt()
+    {
+        $due = (string) $this->delivery_retry_at;
+
+        return $due !== '' && $due > self::EARLIEST_DUE ? $due : null;
+    }
+
+    /**
+     * @return bool true when a failed delivery waits for its next automatic attempt
+     */
+    public function hasDeliveryRetryScheduled()
+    {
+        return $this->delivery_status === self::DELIVERY_FAILED && $this->getDeliveryRetryAt() !== null;
     }
 }

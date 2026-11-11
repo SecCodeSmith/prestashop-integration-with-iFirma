@@ -442,7 +442,8 @@ class SchemaTest extends TestCase
     {
         $sql = IfirmaSchema::receiptCreateSql();
 
-        $this->assertStringContainsString("    `last_download_at` DATETIME NULL,\n    PRIMARY KEY", $sql);
+        $this->assertStringContainsString("    `last_download_at` DATETIME NULL,\n    `delivery_attempts`", $sql);
+        $this->assertStringContainsString("    `delivery_retry_at` DATETIME NULL,\n    `download_day` DATE NULL,\n    `download_count` INT(11) UNSIGNED NOT NULL DEFAULT 0,\n    PRIMARY KEY", $sql);
         $this->assertStringContainsString("    KEY `idx_date_upd` (`date_upd`)\n) ENGINE=", $sql);
         $this->assertStringContainsString("    KEY `idx_token` (`security_token`),\n    KEY `idx_date_upd`", $sql);
     }
@@ -452,6 +453,106 @@ class SchemaTest extends TestCase
         $this->assertSame(array('last_download_at' => 'DATETIME NULL'), IfirmaSchema::newReceiptColumnsFor150());
         $this->assertArrayHasKey('last_download_at', IfirmaSchema::receiptColumns());
         $this->assertArrayNotHasKey('last_download_at', IfirmaSchema::newReceiptColumnsFor110());
+    }
+
+    public function testTheRetryColumnsAreDefinedWithoutAnAutomaticScheduleForOldRows()
+    {
+        $this->assertSame(array(
+            'delivery_attempts' => 'INT(11) UNSIGNED NOT NULL DEFAULT 0',
+            'delivery_retry_at' => 'DATETIME NULL',
+        ), IfirmaSchema::newReceiptColumnsFor1100());
+        $this->assertArrayHasKey('delivery_attempts', IfirmaSchema::receiptColumns());
+        $this->assertArrayHasKey('delivery_retry_at', IfirmaSchema::receiptColumns());
+        $this->assertArrayHasKey('delivery_attempts', IfirmaReceipt::$definition['fields']);
+        $this->assertArrayHasKey('delivery_retry_at', IfirmaReceipt::$definition['fields']);
+        $this->assertArrayNotHasKey('delivery_retry_at', IfirmaSchema::newReceiptColumnsFor110());
+    }
+
+    public function testEnsureReceiptRetryColumnsAddsBothColumnsOnce()
+    {
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'delivery_/", '0');
+
+        $this->assertTrue(IfirmaSchema::ensureReceiptRetryColumns());
+        $this->assertTrue(IfirmaSchema::ensureReceiptRetryColumns());
+
+        $this->assertSame(array(
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `delivery_attempts` INT(11) UNSIGNED NOT NULL DEFAULT 0',
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `delivery_retry_at` DATETIME NULL',
+        ), $this->addColumnStatements());
+    }
+
+    public function testEnsureReceiptRetryColumnsSkipsAnExistingColumn()
+    {
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'delivery_attempts'/", '1');
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'delivery_retry_at'/", '0');
+
+        $this->assertTrue(IfirmaSchema::ensureReceiptRetryColumns());
+
+        $this->assertSame(array(
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `delivery_retry_at` DATETIME NULL',
+        ), $this->addColumnStatements());
+    }
+
+    public function testEnsureReceiptRetryColumnsDoesNotRememberAFailure()
+    {
+        $db = Db::getInstance();
+        $db->whenGetValue("/COLUMN_NAME = 'delivery_/", '0');
+        $db->whenExecute('/ADD COLUMN `delivery_retry_at`/', false);
+
+        $this->assertFalse(IfirmaSchema::ensureReceiptRetryColumns());
+
+        $db->whenExecute('/ADD COLUMN `delivery_retry_at`/', true);
+        $this->assertTrue(IfirmaSchema::ensureReceiptRetryColumns());
+    }
+
+    public function testTheDownloadCountColumnsAreDefinedForTheTableAndTheModel()
+    {
+        $this->assertSame(
+            array('download_day' => 'DATE NULL', 'download_count' => 'INT(11) UNSIGNED NOT NULL DEFAULT 0'),
+            IfirmaSchema::newReceiptDownloadCountColumnsFor1100()
+        );
+        $this->assertArrayHasKey('download_day', IfirmaSchema::receiptColumns());
+        $this->assertArrayHasKey('download_count', IfirmaSchema::receiptColumns());
+        $this->assertArrayHasKey('download_day', IfirmaReceipt::$definition['fields']);
+        $this->assertArrayHasKey('download_count', IfirmaReceipt::$definition['fields']);
+        $this->assertArrayNotHasKey('download_day', IfirmaSchema::newReceiptColumnsFor1100());
+    }
+
+    public function testEnsureReceiptDownloadCountColumnsAddsBothColumnsOnce()
+    {
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'download_/", '0');
+
+        $this->assertTrue(IfirmaSchema::ensureReceiptDownloadCountColumns());
+        $this->assertTrue(IfirmaSchema::ensureReceiptDownloadCountColumns());
+
+        $this->assertSame(array(
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `download_day` DATE NULL',
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `download_count` INT(11) UNSIGNED NOT NULL DEFAULT 0',
+        ), $this->addColumnStatements());
+    }
+
+    public function testEnsureReceiptDownloadCountColumnsSkipsAnExistingColumn()
+    {
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'download_day'/", '1');
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'download_count'/", '0');
+
+        $this->assertTrue(IfirmaSchema::ensureReceiptDownloadCountColumns());
+
+        $this->assertSame(array(
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `download_count` INT(11) UNSIGNED NOT NULL DEFAULT 0',
+        ), $this->addColumnStatements());
+    }
+
+    public function testEnsureReceiptDownloadCountColumnsDoesNotRememberAFailure()
+    {
+        $db = Db::getInstance();
+        $db->whenGetValue("/COLUMN_NAME = 'download_/", '0');
+        $db->whenExecute('/ADD COLUMN `download_count`/', false);
+
+        $this->assertFalse(IfirmaSchema::ensureReceiptDownloadCountColumns());
+
+        $db->whenExecute('/ADD COLUMN `download_count`/', true);
+        $this->assertTrue(IfirmaSchema::ensureReceiptDownloadCountColumns());
     }
 
     public function testIndexExistsAsksInformationSchemaAboutTheNamedIndex()

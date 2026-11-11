@@ -176,10 +176,110 @@ class OrderGridTooltipTest extends TestCase
         $this->assertStringStartsWith('Held', $held[0]);
     }
 
+    public function testAHeldOrderInPolishNamesTheHeldStateWithItsShippedTranslation()
+    {
+        $held = 'Wstrzymana (wniosek o zmianę danych)';
+        $lines = IfirmaOrderGridTooltip::lines(
+            array('ifirma_document_number' => '', 'ifirma_document_state' => 'held'),
+            array_merge(self::POLISH, array('state_held' => $held, 'click_to_issue' => 'kliknij, aby wystawić'))
+        );
+
+        $this->assertSame(array($held . ' – kliknij, aby wystawić'), $lines);
+        $this->assertStringContainsString("= '" . $held . "';", file_get_contents(dirname(__DIR__, 2) . '/translations/pl.php'));
+    }
+
     public function testAStateWithoutAWordFallsBackToTheRawState()
     {
         $lines = IfirmaOrderGridTooltip::lines(array('ifirma_document_number' => '', 'ifirma_document_state' => 'weird'), array());
 
         $this->assertSame("weird – click to issue", $lines[0]);
+    }
+
+    public function testAFailedDeliveryWithARetryDueNamesTheAttemptAndTheTime()
+    {
+        $lines = IfirmaOrderGridTooltip::lines($this->record(array(
+            'ifirma_document_delivery' => 'failed',
+            'ifirma_document_delivery_attempts' => '1',
+            'ifirma_document_delivery_retry_at' => '2026-11-10 10:15:00',
+        )), array());
+
+        $this->assertSame(array(
+            'Invoice issued: FV 12/2026', 'Delivery failed', 'Attempt 1 of 3, next attempt at 2026-11-10 10:15', 'Unpaid',
+        ), $lines);
+    }
+
+    public function testAFailedDeliveryWithUsedUpAttemptsSaysNoneRemains()
+    {
+        $lines = IfirmaOrderGridTooltip::lines($this->record(array(
+            'ifirma_document_delivery' => 'failed',
+            'ifirma_document_delivery_attempts' => '3',
+            'ifirma_document_delivery_retry_at' => '',
+        )), array());
+
+        $this->assertContains('No automatic attempt remains', $lines);
+    }
+
+    public function testAnOldFailureSaysNothingIsScheduled()
+    {
+        $lines = IfirmaOrderGridTooltip::lines($this->record(array(
+            'ifirma_document_delivery' => 'failed',
+            'ifirma_document_delivery_attempts' => '0',
+            'ifirma_document_delivery_retry_at' => '0000-00-00 00:00:00',
+        )), array());
+
+        $this->assertContains('No automatic attempt is scheduled', $lines);
+    }
+
+    public function testTheRetryLineIsInThePolishWordsOfTheModule()
+    {
+        $lines = IfirmaOrderGridTooltip::lines($this->record(array(
+            'ifirma_document_delivery' => 'failed',
+            'ifirma_document_delivery_attempts' => '3',
+            'ifirma_document_delivery_retry_at' => '',
+        )), array('retry_exhausted' => 'Brak kolejnych prób'));
+
+        $this->assertContains('Brak kolejnych prób', $lines);
+    }
+
+    public function testWithoutTheRetryFieldsThereIsNoRetryLine()
+    {
+        $lines = IfirmaOrderGridTooltip::lines($this->record(array('ifirma_document_delivery' => 'failed')), array());
+
+        $this->assertSame(array('Invoice issued: FV 12/2026', 'Delivery failed', 'Unpaid'), $lines);
+    }
+
+    public function testADeliveryThatDidNotFailHasNoRetryLineWhateverTheFieldsHold()
+    {
+        $lines = IfirmaOrderGridTooltip::lines($this->record(array(
+            'ifirma_document_delivery' => 'sent', 'ifirma_document_sent_date' => '2026-11-09',
+            'ifirma_document_delivery_attempts' => '2', 'ifirma_document_delivery_retry_at' => '2026-11-10 10:15:00',
+        )), array());
+
+        $this->assertSame(array('Invoice sent: FV 12/2026', 'Sent to the customer: 2026-11-09', 'Unpaid'), $lines);
+    }
+
+    public function testTheTooltipCellShowsMarkupInTheRetryStateAsEscapedText()
+    {
+        $cell = IfirmaOrderGridIndicator::cell($this->record(array(
+            'ifirma_document_delivery' => 'failed',
+            'ifirma_document_delivery_attempts' => '1',
+            'ifirma_document_delivery_retry_at' => '2026-11-10 10:15:00',
+            'ifirma_document_error' => '<script>alert(1)</script>',
+        )), array('retry_scheduled' => '<b>%1$d/%2$d %3$s</b>'));
+
+        $this->assertStringNotContainsString('<script>', $cell);
+        $this->assertStringNotContainsString('<b>', $cell);
+        $this->assertStringContainsString('&lt;b&gt;1/3 2026-11-10 10:15&lt;/b&gt;', $cell);
+    }
+
+    public function testTheErrorOfAnUnissuedRecordIsShownAsEscapedText()
+    {
+        $anchor = IfirmaOrderGridIndicator::cell(array(
+            'id_order' => 5, 'ifirma_document_number' => '', 'ifirma_document_state' => 'error',
+            'ifirma_document_error' => '<script>alert(1)</script>',
+        ), array(), true);
+
+        $this->assertStringNotContainsString('<script>', $anchor);
+        $this->assertStringContainsString('&lt;script&gt;alert(1)&lt;/script&gt;', $anchor);
     }
 }

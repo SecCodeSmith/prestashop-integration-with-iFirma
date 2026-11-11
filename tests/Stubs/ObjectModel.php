@@ -22,6 +22,33 @@ class ObjectModel
 
     public $id;
 
+    /** @var array|null the fields an update is limited to (core: setFieldsToUpdate()), null for all of them */
+    protected $update_fields = null;
+
+    public function setFieldsToUpdate(?array $fields)
+    {
+        $this->update_fields = $fields;
+    }
+
+    public function getFieldsToUpdate(): ?array
+    {
+        return $this->update_fields;
+    }
+
+    /** As the core: copies the keys of a row that are properties of the object. */
+    public function hydrate(array $data, $idLang = null)
+    {
+        $def = static::$definition;
+        if (isset($data[$def['primary']])) {
+            $this->id = (int) $data[$def['primary']];
+        }
+        foreach ($data as $key => $value) {
+            if (property_exists($this, $key)) {
+                $this->$key = $value;
+            }
+        }
+    }
+
     /** @var array table => id => field array */
     public static $registry = [];
 
@@ -86,6 +113,9 @@ class ObjectModel
         $def = static::$definition;
         if (isset($def['fields']['date_upd']) && property_exists($this, 'date_upd')) {
             $this->date_upd = date('Y-m-d H:i:s');
+            if (is_array($this->update_fields) && count($this->update_fields)) {
+                $this->update_fields['date_upd'] = true;
+            }
         }
         $this->store('update');
 
@@ -103,11 +133,21 @@ class ObjectModel
     protected function store($op)
     {
         $def = static::$definition;
-        $row = [];
+        // as the core's formatFields(): an update limited to some fields writes only those, the rest of the row stays
+        $limited = $op === 'update' && is_array($this->update_fields);
+        $row = $limited && isset(self::$registry[$def['table']][$this->id]) ? self::$registry[$def['table']][$this->id] : [];
+        $columns = [];
         foreach (array_keys($def['fields']) as $field) {
+            if ($limited && empty($this->update_fields[$field])) {
+                if (!array_key_exists($field, $row)) {
+                    $row[$field] = null;
+                }
+                continue;
+            }
+            $columns[] = $field;
             $row[$field] = property_exists($this, $field) ? $this->$field : null;
         }
         self::$registry[$def['table']][$this->id] = $row;
-        self::$writeLog[] = ['op' => $op, 'table' => $def['table'], 'id' => $this->id, 'row' => $row];
+        self::$writeLog[] = ['op' => $op, 'table' => $def['table'], 'id' => $this->id, 'row' => $row, 'columns' => $columns];
     }
 }

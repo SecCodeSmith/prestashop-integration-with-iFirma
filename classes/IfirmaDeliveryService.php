@@ -19,9 +19,13 @@
  * Contract:
  *  - deliver(receipt, order, options) -> IfirmaDeliveryResult (isSent(), getStatus() sent|failed|skipped|
  *    disabled, getChannel(), getMessage()); options: manual (bool), channel (override).
- *    Never throws; records the outcome on the receipt.
+ *    Never throws; records the outcome on the receipt. Option claim_attempt (the cron jobs): the attempt is counted and
+ *    saved before anything is sent, and nothing is sent when that save fails. Option single_pdf_attempt (the retry job):
+ *    one PDF download and no waits, so a slow iFirma cannot hold a cron run.
  *  - resend(receipt, order) = deliver() with manual => true.
- *  - sendViaIfirma() / sendViaShopMail() -> array(ok, message).
+ *  - sendViaIfirma() / sendViaShopMail() -> array(ok, message), and on a failure the failure class (temporary,
+ *    permanent, unknown_outcome, refused) that decides whether the cron tries again: see IfirmaDeliveryRetryPolicy.
+ *    An automatic failure stores the attempts used and the due time of the next one; a manual resend leaves both.
  *  - describeDelivery(receipt) -> short human string for the admin panel.
  */
 
@@ -36,6 +40,10 @@ require_once dirname(__FILE__) . '/IfirmaPayloadBuilder.php';
 require_once dirname(__FILE__) . '/IfirmaDeliveryResult.php';
 require_once dirname(__FILE__) . '/IfirmaShopLink.php';
 require_once dirname(__FILE__) . '/IfirmaKsefDeliveryGate.php';
+require_once dirname(__FILE__) . '/IfirmaDeliveryRetryPolicy.php';
+require_once dirname(__FILE__) . '/IfirmaDeliveryRetryView.php';
+require_once dirname(__FILE__) . '/IfirmaNamedLock.php';
+require_once dirname(__FILE__) . '/IfirmaSchema.php';
 
 class IfirmaDeliveryService
 {
@@ -46,7 +54,14 @@ class IfirmaDeliveryService
 
     const MAIL_TEMPLATE = 'receipt_issued';
     const TEXT_MAX = 1000;
+    const FAILURE_RETRY_SEPARATOR = ' – ';
     const EXTERNAL_REASON = 'external document - not auto-delivered';
+
+    /** deliver() option: a cron job claims the attempt in the database before it sends anything. */
+    const OPTION_CLAIM_ATTEMPT = 'claim_attempt';
+
+    /** deliver() option: download the PDF once and never sleep for it; a PDF that is not ready is a temporary failure. */
+    const OPTION_SINGLE_PDF_ATTEMPT = 'single_pdf_attempt';
 
     /** Total PDF download attempts in a shop-mail delivery, and the waits (seconds) between them. */
     const PDF_ATTEMPTS = 3;
@@ -54,6 +69,15 @@ class IfirmaDeliveryService
 
     /** iFirma answer codes that a retry cannot fix (authentication, configuration). */
     const PDF_PERMANENT_KODS = array(400, 401, 402, 403, 499, 500);
+
+    /** The order's lock, the name the issuance pipeline, the queue job and the delivery retry job take. */
+    const ORDER_LOCK_PREFIX = 'ifirma_order_';
+
+    /** Seconds a manual resend waits for a delivery of the same document that is already running. */
+    const RESEND_LOCK_WAIT = 5;
+
+    /** Seconds after a recorded delivery during which a manual resend is refused. */
+    const RESEND_QUIET_SECONDS = 30;
 
     const COPY_NONE = 'none';
     const COPY_SHOP = 'shop';
@@ -80,15 +104,26 @@ class IfirmaDeliveryService
     /** @var callable|null receives the seconds to wait */
     private $sleeper;
 
+    /** @var IfirmaDeliveryRetryPolicy */
+    private $retryPolicy;
+
     /**
-     * @param IfirmaApiClient      $client
-     * @param IfirmaReceiptService $service
-     * @param Module               $module
-     * @param callable|null        $clock
-     * @param callable|null        $sleeper receives seconds; defaults to sleep()
+     * @param IfirmaApiClient                $client
+     * @param IfirmaReceiptService           $service
+     * @param Module                         $module
+     * @param callable|null                  $clock
+     * @param callable|null                  $sleeper     receives seconds; defaults to sleep()
+     * @param IfirmaDeliveryRetryPolicy|null $retryPolicy when the next automatic attempt is due
      */
-    public function __construct(IfirmaApiClient $client, IfirmaReceiptService $service, Module $module, $clock = null, $sleeper = null)
-    {
+    public function __construct(
+        IfirmaApiClient $client,
+        IfirmaReceiptService $service,
+        Module $module,
+        $clock = null,
+        $sleeper = null,
+        ?IfirmaDeliveryRetryPolicy $retryPolicy = null
+    ) {
+        $this->retryPolicy = $retryPolicy !== null ? $retryPolicy : new IfirmaDeliveryRetryPolicy();
         $this->sleeper = $sleeper;
         $this->client = $client;
         $this->service = $service;
@@ -102,6 +137,8 @@ class IfirmaDeliveryService
      */
     public static function build(Module $module)
     {
+        // a missing retry column makes every save of the record fail, and a delivery whose outcome cannot be saved is repeated
+        IfirmaSchema::ensureReceiptRetryColumns();
         $client = IfirmaApiClient::fromConfiguration();
 
         return new self($client, new IfirmaReceiptService($client, $module), $module);
@@ -163,7 +200,7 @@ class IfirmaDeliveryService
             if ($manual) {
                 return $this->result(false, 'disabled', $channel, $this->module->l('Delivery is disabled (channel none)', 'ifirmadeliveryservice'));
             }
-            $receipt->recordDelivery(IfirmaReceipt::DELIVERY_SKIPPED, self::CHANNEL_NONE, '');
+            $receipt->recordDelivery(IfirmaReceipt::DELIVERY_SKIPPED, self::CHANNEL_NONE, '', $receipt->getDeliveryAttempts(), null);
             $receipt->delivered_at = null;
             $this->persist($receipt);
 
@@ -171,10 +208,15 @@ class IfirmaDeliveryService
         }
 
         if (!$manual && $receipt->source === IfirmaReceipt::SOURCE_EXTERNAL) {
-            $receipt->recordDelivery(IfirmaReceipt::DELIVERY_SKIPPED, $channel, self::EXTERNAL_REASON);
+            $receipt->recordDelivery(IfirmaReceipt::DELIVERY_SKIPPED, $channel, self::EXTERNAL_REASON, $receipt->getDeliveryAttempts(), null);
             $this->persist($receipt);
 
             return $this->result(true, 'skipped', $channel, self::EXTERNAL_REASON);
+        }
+
+        $claimed = !$manual && !empty($options[self::OPTION_CLAIM_ATTEMPT]);
+        if ($claimed && !$this->claimAttempt($receipt, $channel)) {
+            return $this->result(false, 'failed', $channel, $this->module->l('The delivery attempt could not be recorded, so nothing was sent.', 'ifirmadeliveryservice'));
         }
 
         $effective = $channel;
@@ -189,14 +231,14 @@ class IfirmaDeliveryService
                 if ($channel === self::CHANNEL_IFIRMA_MAIL) {
                     $effective = self::CHANNEL_SHOP_MAIL_FALLBACK;
                 }
-                $res = $this->sendViaShopMail($receipt, $order);
+                $res = $this->sendViaShopMail($receipt, $order, !empty($options[self::OPTION_SINGLE_PDF_ATTEMPT]));
             }
         } catch (Exception $e) {
-            $res = array('ok' => false, 'message' => $e->getMessage());
+            $res = $this->failed($e->getMessage(), IfirmaDeliveryRetryPolicy::FAILURE_TEMPORARY);
         }
 
         if (!empty($res['ok'])) {
-            $receipt->recordDelivery(IfirmaReceipt::DELIVERY_SENT, $effective, '');
+            $receipt->recordDelivery(IfirmaReceipt::DELIVERY_SENT, $effective, '', $receipt->getDeliveryAttempts(), null);
             $receipt->delivered_at = date('Y-m-d H:i:s', $this->now());
             $this->persist($receipt);
 
@@ -216,11 +258,116 @@ class IfirmaDeliveryService
             // a failed resend must not open the download of a document KSeF has not accepted: it keeps waiting
             $receipt->delivery_error = $message;
         } else {
-            $receipt->recordDelivery(IfirmaReceipt::DELIVERY_FAILED, $effective, $message);
+            $this->recordFailure($receipt, $effective, $message, $this->failureClassOf($receipt, $res), $manual, $claimed);
         }
         $this->persist($receipt);
 
         return $this->result(false, 'failed', $effective, $message);
+    }
+
+    /**
+     * Records a failed delivery. An automatic attempt applies the retry policy in the same write; a manual resend
+     * leaves the automatic attempts and the due time alone, so an employee's click neither burns nor resets them.
+     *
+     * @param IfirmaReceipt $receipt
+     * @param string        $channel
+     * @param string        $message
+     * @param string        $failure one of the IfirmaDeliveryRetryPolicy::FAILURE_* constants
+     * @param bool          $manual
+     * @param bool          $claimed true when the attempt is already counted in the receipt (see claimAttempt())
+     */
+    private function recordFailure(IfirmaReceipt $receipt, $channel, $message, $failure, $manual, $claimed)
+    {
+        if ($manual) {
+            $receipt->recordDelivery(IfirmaReceipt::DELIVERY_FAILED, $channel, $message);
+
+            return;
+        }
+        $used = $receipt->getDeliveryAttempts() - ($claimed ? 1 : 0);
+        $receipt->recordDelivery(
+            IfirmaReceipt::DELIVERY_FAILED,
+            $channel,
+            $message,
+            $this->retryPolicy->attemptsAfter($used, $failure),
+            $this->retryPolicy->dueAfter($used, $failure, $this->now())
+        );
+    }
+
+    /**
+     * @param IfirmaReceipt $receipt
+     * @param array         $res     the failed result of a send
+     * @return string one of the IfirmaDeliveryRetryPolicy::FAILURE_* constants
+     */
+    private function failureClassOf(IfirmaReceipt $receipt, array $res)
+    {
+        $failure = isset($res['failure']) ? (string) $res['failure'] : IfirmaDeliveryRetryPolicy::FAILURE_TEMPORARY;
+        // a document iFirma no longer has cannot be sent however often it is tried
+        if ($failure === IfirmaDeliveryRetryPolicy::FAILURE_TEMPORARY && !empty($receipt->remote_missing)) {
+            return IfirmaDeliveryRetryPolicy::FAILURE_PERMANENT;
+        }
+
+        return $failure;
+    }
+
+    /**
+     * @param string $message
+     * @param string $failure one of the IfirmaDeliveryRetryPolicy::FAILURE_* constants
+     * @return array array('ok' => false, 'message' => string, 'failure' => string)
+     */
+    private function failed($message, $failure)
+    {
+        return array('ok' => false, 'message' => $message, 'failure' => $failure);
+    }
+
+    /**
+     * Why the last client call failed, from what the client reports. A call the client refused itself (rate guard,
+     * credentials cool-down) was never sent and uses no attempt; one that was never sent for another reason
+     * (a missing key) needs the merchant; a rejected login or an invalid request will not get better; a send that
+     * went out and got no answer may have been delivered; anything else (a download that is not ready, HTTP 5xx,
+     * a Kod that is not on the permanent list) may pass.
+     *
+     * @param bool $mailRequest true for the POST that makes iFirma send the e-mail, whose lost answer is unknown
+     * @return string one of the IfirmaDeliveryRetryPolicy::FAILURE_* constants
+     */
+    private function clientFailureClass($mailRequest)
+    {
+        if ($this->localRefusal() !== '') {
+            return IfirmaDeliveryRetryPolicy::FAILURE_REFUSED;
+        }
+        if (!$this->client->lastRequestWasSent()) {
+            return IfirmaDeliveryRetryPolicy::FAILURE_PERMANENT;
+        }
+        $httpCode = (int) $this->client->getLastHttpCode();
+        // a send that went out and was answered by a gateway error or an unreadable 2xx may have been delivered
+        if ($mailRequest && ($httpCode === 0 || $httpCode >= 500 || ($httpCode < 400 && $this->client->getLastKod() === null))) {
+            return IfirmaDeliveryRetryPolicy::FAILURE_UNKNOWN_OUTCOME;
+        }
+        if (in_array((int) $this->client->getLastKod(), self::PDF_PERMANENT_KODS, true) || in_array($httpCode, array(401, 403), true)) {
+            return IfirmaDeliveryRetryPolicy::FAILURE_PERMANENT;
+        }
+
+        return IfirmaDeliveryRetryPolicy::FAILURE_TEMPORARY;
+    }
+
+    /**
+     * @param mixed $customer
+     * @return bool
+     */
+    private function hasDeliverableAddress($customer)
+    {
+        return is_object($customer) && Validate::isEmail((string) $customer->email);
+    }
+
+    /**
+     * Brings the delivery fields of the caller's object up to date with the stored row, so the delivery that follows
+     * neither repeats a delivery that ended meanwhile nor writes an outdated retry schedule back.
+     *
+     * @param IfirmaReceipt $target
+     * @param IfirmaReceipt $stored
+     */
+    private function adoptDeliveryState(IfirmaReceipt $target, IfirmaReceipt $stored)
+    {
+        $target->adoptDeliveryState($stored);
     }
 
     /**
@@ -244,7 +391,57 @@ class IfirmaDeliveryService
      */
     public function resend(IfirmaReceipt $receipt, ?Order $order = null)
     {
-        return $this->deliver($receipt, $order, array('manual' => true));
+        // the cron retry delivers under this lock: an employee and the cron never send the same document at once
+        $lock = self::ORDER_LOCK_PREFIX . (int) $receipt->id_order;
+        if (!IfirmaNamedLock::acquire($lock, self::RESEND_LOCK_WAIT)) {
+            return $this->result(
+                false,
+                'failed',
+                $this->getChannel(),
+                $this->module->l('Another delivery of this document is in progress. Try again in a moment.', 'ifirmadeliveryservice')
+            );
+        }
+        try {
+            // the caller loaded the record before the lock: a delivery that ended meanwhile must not be overwritten
+            if (!empty($receipt->id)) {
+                $this->adoptDeliveryState($receipt, IfirmaReceipt::loadFresh((int) $receipt->id));
+            }
+            if ($this->deliveredMomentAgo($receipt)) {
+                return new IfirmaDeliveryResult(
+                    false,
+                    'failed',
+                    $this->getChannel(),
+                    $this->module->l('This document was sent a moment ago. Wait before sending it again.', 'ifirmadeliveryservice'),
+                    IfirmaDeliveryResult::REFUSAL_JUST_SENT
+                );
+            }
+
+            return $this->deliver($receipt, $order, array('manual' => true));
+        } finally {
+            IfirmaNamedLock::release($lock);
+        }
+    }
+
+    /**
+     * A double click, a bulk run started twice and a cron delivery that just ended must not e-mail the customer
+     * again; a delivery that failed has no such delay. A delivery time in the future (a clock stepped back) is
+     * not "a moment ago", so it can never block a resend for long.
+     *
+     * @param IfirmaReceipt $receipt the record with the freshly adopted delivery state
+     * @return bool
+     */
+    private function deliveredMomentAgo(IfirmaReceipt $receipt)
+    {
+        if ($receipt->delivery_status !== IfirmaReceipt::DELIVERY_SENT) {
+            return false;
+        }
+        $deliveredAt = strtotime((string) $receipt->delivered_at);
+        if ($deliveredAt === false) {
+            return false;
+        }
+        $age = $this->now() - $deliveredAt;
+
+        return $age >= 0 && $age < self::RESEND_QUIET_SECONDS;
     }
 
     /**
@@ -257,9 +454,12 @@ class IfirmaDeliveryService
     public function sendViaIfirma(IfirmaReceipt $receipt, Order $order)
     {
         $customer = $order->getCustomer();
+        if (!$this->hasDeliverableAddress($customer)) {
+            return $this->failed($this->noAddressMessage(), IfirmaDeliveryRetryPolicy::FAILURE_PERMANENT);
+        }
         $body = array(
             'Tekst' => IfirmaPayloadBuilder::truncate((string) Configuration::get('IFIRMA_SEND_TEXT'), self::TEXT_MAX),
-            'SkrzynkaEmailOdbiorcy' => is_object($customer) ? (string) $customer->email : '',
+            'SkrzynkaEmailOdbiorcy' => (string) $customer->email,
         );
 
         $response = $this->client->send($receipt->document_type, $receipt->ifirma_id, $body);
@@ -272,10 +472,18 @@ class IfirmaDeliveryService
 
         $error = (string) $this->client->getLastError();
 
-        return array(
-            'ok' => false,
-            'message' => $error !== '' ? $error : $this->module->l('iFirma did not confirm the e-mail', 'ifirmadeliveryservice'),
+        return $this->failed(
+            $error !== '' ? $error : $this->module->l('iFirma did not confirm the e-mail', 'ifirmadeliveryservice'),
+            $this->clientFailureClass(true)
         );
+    }
+
+    /**
+     * @return string
+     */
+    private function noAddressMessage()
+    {
+        return $this->module->l('The customer has no e-mail address.', 'ifirmadeliveryservice');
     }
 
     /**
@@ -283,19 +491,20 @@ class IfirmaDeliveryService
      *
      * @param IfirmaReceipt $receipt
      * @param Order         $order
+     * @param bool          $singlePdfAttempt download the PDF once, without the waits between attempts
      * @return array array('ok' => bool, 'message' => string)
      */
-    public function sendViaShopMail(IfirmaReceipt $receipt, Order $order)
+    public function sendViaShopMail(IfirmaReceipt $receipt, Order $order, $singlePdfAttempt = false)
     {
         try {
-            $pdf = $this->fetchPdfWithRetry($receipt);
+            $pdf = $singlePdfAttempt ? $this->service->fetchPdf($receipt) : $this->fetchPdfWithRetry($receipt);
         } catch (Exception $e) {
-            return array('ok' => false, 'message' => $e->getMessage());
+            return $this->failed($e->getMessage(), $this->clientFailureClass(false));
         }
 
         $customer = $order->getCustomer();
-        if (!is_object($customer) || (string) $customer->email === '') {
-            return array('ok' => false, 'message' => $this->module->l('The customer has no e-mail address.', 'ifirmadeliveryservice'));
+        if (!$this->hasDeliverableAddress($customer)) {
+            return $this->failed($this->noAddressMessage(), IfirmaDeliveryRetryPolicy::FAILURE_PERMANENT);
         }
 
         $copy = $this->copyRecipient($order, $customer);
@@ -345,11 +554,14 @@ class IfirmaDeliveryService
                 $copy
             );
         } catch (Exception $e) {
-            return array('ok' => false, 'message' => $e->getMessage());
+            return $this->failed($e->getMessage(), IfirmaDeliveryRetryPolicy::FAILURE_TEMPORARY);
         }
 
         if (!$sent) {
-            return array('ok' => false, 'message' => $this->module->l('The shop mail system refused to send the e-mail.', 'ifirmadeliveryservice'));
+            return $this->failed(
+                $this->module->l('The shop mail system refused to send the e-mail.', 'ifirmadeliveryservice'),
+                IfirmaDeliveryRetryPolicy::FAILURE_TEMPORARY
+            );
         }
 
         return array('ok' => true, 'message' => '');
@@ -371,7 +583,7 @@ class IfirmaDeliveryService
                     $this->channelLabel((string) $receipt->delivery_channel)
                 );
             case IfirmaReceipt::DELIVERY_FAILED:
-                return sprintf($this->module->l('Failed: %s', 'ifirmadeliveryservice'), (string) $receipt->delivery_error);
+                return $this->describeFailure($receipt);
             case IfirmaReceipt::DELIVERY_AWAITING_KSEF:
                 return $this->module->l('Waiting for KSeF acceptance', 'ifirmadeliveryservice');
             case IfirmaReceipt::DELIVERY_SKIPPED:
@@ -383,6 +595,22 @@ class IfirmaDeliveryService
         }
 
         return $this->module->l('Not sent', 'ifirmadeliveryservice');
+    }
+
+    /**
+     * @param IfirmaReceipt $receipt a receipt whose delivery failed
+     * @return string the error, then where the automatic retry stands (both unescaped; the caller escapes)
+     */
+    private function describeFailure(IfirmaReceipt $receipt)
+    {
+        $failure = sprintf($this->module->l('Failed: %s', 'ifirmadeliveryservice'), (string) $receipt->delivery_error);
+        $retryView = new IfirmaDeliveryRetryView(IfirmaDeliveryRetryView::translatedWords($this->module));
+
+        return $failure . self::FAILURE_RETRY_SEPARATOR . $retryView->text(
+            $receipt->delivery_status,
+            $receipt->getDeliveryAttempts(),
+            $receipt->getDeliveryRetryAt()
+        );
     }
 
     /**
@@ -545,16 +773,54 @@ class IfirmaDeliveryService
     }
 
     /**
+     * Writes the attempt to the database before anything is sent: counts it, clears the due time and says in the error
+     * that the outcome is not recorded yet. A process that dies, or an outcome that cannot be saved, after the e-mail
+     * left then leaves a failed delivery that no job selects again and that needs attention, instead of one the next
+     * run sends a second time. A failure that sent nothing gives the attempt back (see recordFailure()).
+     *
      * @param IfirmaReceipt $receipt
+     * @param string        $channel
+     * @return bool false when the claim could not be saved: nothing may be sent and the receipt is as it was
+     */
+    private function claimAttempt(IfirmaReceipt $receipt, $channel)
+    {
+        $before = array();
+        foreach (IfirmaReceipt::DELIVERY_COLUMNS as $field) {
+            $before[$field] = $receipt->$field;
+        }
+        $receipt->recordDelivery(
+            IfirmaReceipt::DELIVERY_FAILED,
+            $channel,
+            $this->module->l('A delivery attempt started and its outcome was not recorded. Check whether the customer received the document before sending it again.', 'ifirmadeliveryservice'),
+            $receipt->getDeliveryAttempts() + 1,
+            null
+        );
+        if ($this->persist($receipt)) {
+            return true;
+        }
+        foreach ($before as $field => $value) {
+            $receipt->$field = $value;
+        }
+
+        return false;
+    }
+
+    /**
+     * @param IfirmaReceipt $receipt
+     * @return bool whether the receipt was saved; a failed save is logged and never thrown at the caller
      */
     private function persist(IfirmaReceipt $receipt)
     {
         try {
-            $receipt->save();
+            if ($receipt->save()) {
+                return true;
+            }
         } catch (Exception $e) {
             // Recording must never break the caller.
-            return;
         }
+        PrestaShopLogger::addLog(sprintf('iFirma: the delivery outcome of order #%d could not be saved', (int) $receipt->id_order), 3);
+
+        return false;
     }
 
     /**

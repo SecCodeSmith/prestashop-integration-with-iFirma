@@ -36,6 +36,7 @@ class IfirmaTestState
         Mail::reset();
         PrestaShopLogger::reset();
         HelperForm::reset();
+        \PrestaShop\PrestaShop\Adapter\SymfonyContainer::reset();
         Context::reset();
         // a request is a POST unless the test says otherwise (the customer forms change state on POST only)
         $_SERVER['REQUEST_METHOD'] = 'POST';

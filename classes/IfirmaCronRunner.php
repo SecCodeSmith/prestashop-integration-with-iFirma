@@ -15,11 +15,13 @@ if (!defined('_PS_VERSION_')) {
 
 require_once dirname(__FILE__) . '/IfirmaCronJob.php';
 require_once dirname(__FILE__) . '/IfirmaNamedLock.php';
+require_once dirname(__FILE__) . '/IfirmaApiUsage.php';
 require_once dirname(__FILE__) . '/IfirmaRemoteLimitJob.php';
 require_once dirname(__FILE__) . '/IfirmaIssueQueueJob.php';
 require_once dirname(__FILE__) . '/IfirmaStatusSyncJob.php';
 require_once dirname(__FILE__) . '/IfirmaKsefRetryJob.php';
 require_once dirname(__FILE__) . '/IfirmaAwaitingDeliveryJob.php';
+require_once dirname(__FILE__) . '/IfirmaDeliveryRetryJob.php';
 
 /**
  * Runs the jobs of the cron endpoint one after the other, under a run lock so two cron requests never overlap.
@@ -36,19 +38,24 @@ class IfirmaCronRunner
     /** @var callable|null */
     private $clock;
 
+    /** @var object answers summary() with the usage block of the cron answer */
+    private $usage;
+
     /**
      * @param IfirmaCronJob[] $jobs  in the order they run
      * @param callable|null   $clock
+     * @param object|null     $usage reader with summary(): array('minute', 'day', 'by_kind'); by default IfirmaApiUsage
      */
-    public function __construct(array $jobs, $clock = null)
+    public function __construct(array $jobs, $clock = null, $usage = null)
     {
         $this->jobs = $jobs;
         $this->clock = $clock;
+        $this->usage = $usage !== null ? $usage : new IfirmaApiUsage($clock);
     }
 
     /**
      * The runner of the cron endpoint, with the jobs in the order they run: the limit read, the queue, KSeF, the status
-     * sync and the delivery.
+     * sync, the delivery of accepted documents and the retry of failed deliveries.
      *
      * @param Module $module
      * @return IfirmaCronRunner
@@ -67,12 +74,18 @@ class IfirmaCronRunner
             new IfirmaKsefRetryJob(IfirmaKsefService::build($module)),
             new IfirmaStatusSyncJob(IfirmaStatusSyncService::build($module)),
             new IfirmaAwaitingDeliveryJob(IfirmaDeliveryService::build($module)),
+            new IfirmaDeliveryRetryJob(IfirmaDeliveryService::build($module), function () use ($client) {
+                return $client->isAuthBlocked();
+            }),
         ));
     }
 
     /**
      * @return array the cron answer: the status sync summary at the top level, a block per other job,
-     *               rate_limited (0 or 1) and rate_limited_window; or array('skipped' => ...) when another run is busy
+     *               rate_limited (0 or 1), rate_limited_window and the usage block (the module's requests of the
+     *               current minute and day and the day's count per kind) and time_budget_exhausted (0 or 1: the run
+     *               stopped starting records because its time budget was used up); or array('skipped' => ...) when another run
+     *               is busy
      */
     public function run()
     {
@@ -97,7 +110,7 @@ class IfirmaCronRunner
         $limited = false;
 
         foreach ($this->jobs as $job) {
-            $report = $limited ? $job->skip($context) : $job->run($context);
+            $report = ($limited || !$context->allowsAnotherItem()) ? $job->skip($context) : $job->run($context);
             if ($report->topLevel() !== null) {
                 $summary = array_merge($summary, $report->topLevel());
             } else {
@@ -111,6 +124,8 @@ class IfirmaCronRunner
 
         $summary['rate_limited'] = max(isset($summary['rate_limited']) ? (int) $summary['rate_limited'] : 0, $limited ? 1 : 0);
         $summary['rate_limited_window'] = $window;
+        $summary['time_budget_exhausted'] = $context->timeBudgetWasUsedUp() ? 1 : 0;
+        $summary['usage'] = $this->usage->summary();
 
         return $summary;
     }

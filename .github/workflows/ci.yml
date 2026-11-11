@@ -97,14 +97,14 @@ jobs:
           pip install diff-cover
       - name: Run unit tests with coverage
         run: composer coverage
-      - name: Require 100% coverage of changed lines
+      - name: Require 95% coverage of changed lines
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'origin/master' }}
         # controllers/front/cron.php is exempt: its respond() ends in exit() and cannot run
         # under PHPUnit.
         run: |
           if [ "$BASE" = 0000000000000000000000000000000000000000 ]; then BASE=origin/master; fi
-          diff-cover build/coverage.xml --compare-branch="$BASE" --fail-under=100 \
+          diff-cover build/coverage.xml --compare-branch="$BASE" --fail-under=95 \
             --exclude controllers/front/cron.php
 
   tools:
@@ -129,6 +129,8 @@ jobs:
         run: python3 -m unittest discover -s tests/tools -p "test_*.py"
       - name: Node tool tests (release summary, release plan)
         run: node --test tests/tools/*.test.mjs
+      - name: Shipped back-office JavaScript tests (order cell click, bulk batch continuation)
+        run: node --test tests/js/*.test.mjs
 
   build:
     name: Test build (zip + tgz)

@@ -10,6 +10,9 @@ if (!defined('_PS_VERSION_')) {
 
 require_once dirname(__FILE__) . '/IfirmaHttpTransport.php';
 require_once dirname(__FILE__) . '/IfirmaRateGuard.php';
+require_once dirname(__FILE__) . '/IfirmaRequestKind.php';
+require_once dirname(__FILE__) . '/IfirmaRetryAfter.php';
+require_once dirname(__FILE__) . '/IfirmaApiUsage.php';
 
 class IfirmaApiClient
 {
@@ -58,6 +61,9 @@ class IfirmaApiClient
     /** @var IfirmaRateGuard */
     private $rateGuard;
 
+    /** @var IfirmaApiUsage counts every request that is sent, per kind */
+    private $usage;
+
     /** @var callable|null runs once, right before the next request that passes the guards is sent */
     private $beforeSend = null;
 
@@ -77,8 +83,9 @@ class IfirmaApiClient
      * @param int         $timeout
      * @param object|null $transport object with request($method, $url, array $headers, $body, $timeout)
      * @param IfirmaRateGuard|null $rateGuard admission control; by default one on this client's clock
+     * @param IfirmaApiUsage|null  $usage     statistics of the sent requests; by default one on this client's clock
      */
-    public function __construct($user, array $keys, $baseUrl = self::BASE_URL, $timeout = 30, $transport = null, $rateGuard = null)
+    public function __construct($user, array $keys, $baseUrl = self::BASE_URL, $timeout = 30, $transport = null, $rateGuard = null, $usage = null)
     {
         $this->user = trim((string) $user);
         $this->keys = $keys;
@@ -87,6 +94,7 @@ class IfirmaApiClient
         $this->timeout = (int) $timeout;
         $this->transport = $transport !== null ? $transport : self::$defaultTransport;
         $this->rateGuard = $rateGuard !== null ? $rateGuard : $this->guardOnOwnClock();
+        $this->usage = $usage !== null ? $usage : $this->usageOnOwnClock();
     }
 
     /**
@@ -416,7 +424,19 @@ class IfirmaApiClient
             return null;
         }
 
-        return array('used' => (int) $node['LimitWykorzystany'], 'granted' => (int) $node['LimitPrzyznany']);
+        return array('used' => self::limitFigure($node['LimitWykorzystany']), 'granted' => self::limitFigure($node['LimitPrzyznany']));
+    }
+
+    /**
+     * A plain digit string becomes an integer; anything else (a float such as 1e30, a sign, text) is handed on as it
+     * came, because a cast would turn it into some other number. The reader of the answer decides what is usable.
+     *
+     * @param mixed $figure
+     * @return mixed
+     */
+    private static function limitFigure($figure)
+    {
+        return is_string($figure) && ctype_digit($figure) ? (int) $figure : $figure;
     }
 
     /**
@@ -473,6 +493,29 @@ class IfirmaApiClient
     public function rateLimitWindow()
     {
         return $this->rateLimitWindow;
+    }
+
+    /**
+     * @return bool true when the last call was refused before it was sent, by the minute cap, the day cap or a
+     *              running back-off; false for iFirma's own limit answer (that request was sent) and for the
+     *              credentials cool-down (not a rate limit)
+     */
+    public function refusedBeforeSendingByRateLimit()
+    {
+        return $this->rateLimited && $this->rateLimitWindow !== IfirmaRateDecision::WINDOW_SERVER;
+    }
+
+    /**
+     * @return int seconds until the window that refused the last call lets requests pass again, 0 when the last
+     *             call was not refused before it was sent
+     */
+    public function retryAfterSeconds()
+    {
+        if (!$this->refusedBeforeSendingByRateLimit()) {
+            return 0;
+        }
+
+        return IfirmaRetryAfter::seconds($this->rateLimitWindow, $this->now(), $this->rateGuard->backoffUntil());
     }
 
     /**
@@ -560,6 +603,18 @@ class IfirmaApiClient
         $client = $this;
 
         return new IfirmaRateGuard(function () use ($client) {
+            return $client->now();
+        });
+    }
+
+    /**
+     * @return IfirmaApiUsage usage statistics that read this client's clock at every request, so setClock() reaches them
+     */
+    private function usageOnOwnClock()
+    {
+        $client = $this;
+
+        return new IfirmaApiUsage(function () use ($client) {
             return $client->now();
         });
     }
@@ -774,6 +829,7 @@ class IfirmaApiClient
         }
 
         $this->requestCount++;
+        $this->usage->record(IfirmaRequestKind::of($method, ltrim((string) $endpoint, '/')));
         $this->requestSent = true;
         $result = $this->getTransport()->request(
             $method,

@@ -416,6 +416,44 @@ class StatusSyncServiceTest extends TestCase
         $this->assertSame(IfirmaReceipt::STATUS_PAID, (new IfirmaReceipt((int) $r->id))->status);
     }
 
+    public function testOpportunisticSyncRefusedByTheLimitReturnsFalseMakesNoCallAndWritesNothing()
+    {
+        Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', date('Ymd', $this->now) . ':14000');
+        $r = $this->receipt(36, '2026-10-30', array('last_sync_at' => date('Y-m-d H:i:s', $this->now - 20 * 60), 'sync_error' => ''));
+        IfirmaTestState::clearWrites();
+
+        $this->assertFalse($this->svc->opportunisticSync($r));
+
+        $this->assertSame(array(), $this->t->calls);
+        $this->assertSame(array(), IfirmaTestState::writes('ifirma_receipt'));
+        $stored = new IfirmaReceipt((int) $r->id);
+        $this->assertSame(date('Y-m-d H:i:s', $this->now - 20 * 60), $stored->last_sync_at);
+        $this->assertSame('', (string) $stored->sync_error);
+    }
+
+    public function testOpportunisticSyncRefusedByTheBackoffReturnsFalse()
+    {
+        Configuration::updateValue('IFIRMA_RATE_BACKOFF_UNTIL', (string) ($this->now + 40));
+        $r = $this->receipt(37, '2026-10-30', array('last_sync_at' => date('Y-m-d H:i:s', $this->now - 20 * 60)));
+
+        $this->assertFalse($this->svc->opportunisticSync($r));
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testOpportunisticSyncThatIfirmaRefusesWithItsLimitAnswerReturnsFalseAndWritesNothing()
+    {
+        $r = $this->receipt(38, '2026-10-30', array('last_sync_at' => date('Y-m-d H:i:s', $this->now - 20 * 60), 'sync_error' => ''));
+        IfirmaTestState::clearWrites();
+        $this->t->queue('GET', '#faktury\.json#', array(
+            'status' => 429,
+            'body' => '{"response":{"Kod":100,"Informacja":"Przekroczono limit zapytan"}}',
+            'headers' => array('Retry-After' => '20'),
+        ));
+
+        $this->assertFalse($this->svc->opportunisticSync($r));
+        $this->assertSame(array(), IfirmaTestState::writes('ifirma_receipt'));
+    }
+
     public function testOpportunisticRecentMakesNoCall()
     {
         $r = $this->receipt(31, '2026-10-30', array('last_sync_at' => date('Y-m-d H:i:s', $this->now - 5 * 60)));

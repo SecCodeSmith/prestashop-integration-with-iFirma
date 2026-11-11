@@ -68,6 +68,34 @@ class IfirmaSchema
     }
 
     /**
+     * Columns added to the receipt table in 1.10.0: how many automatic delivery attempts were used and when the
+     * next one is due. A row that exists before the upgrade keeps a NULL due time, so it is never retried.
+     *
+     * @return array column name => DDL fragment
+     */
+    public static function newReceiptColumnsFor1100()
+    {
+        return array(
+            'delivery_attempts' => 'INT(11) UNSIGNED NOT NULL DEFAULT 0',
+            'delivery_retry_at' => 'DATETIME NULL',
+        );
+    }
+
+    /**
+     * Columns added to the receipt table in 1.10.0 for the per-customer daily download cap: the day the downloads
+     * below were counted on and how many PDF downloads of the document reached iFirma that day.
+     *
+     * @return array column name => DDL fragment
+     */
+    public static function newReceiptDownloadCountColumnsFor1100()
+    {
+        return array(
+            'download_day' => 'DATE NULL',
+            'download_count' => 'INT(11) UNSIGNED NOT NULL DEFAULT 0',
+        );
+    }
+
+    /**
      * @return array column name => DDL fragment, in table order
      */
     public static function receiptColumns()
@@ -90,7 +118,13 @@ class IfirmaSchema
             'date_upd' => 'DATETIME NOT NULL',
         );
 
-        return array_merge($columns, self::newReceiptColumnsFor110(), self::newReceiptColumnsFor150());
+        return array_merge(
+            $columns,
+            self::newReceiptColumnsFor110(),
+            self::newReceiptColumnsFor150(),
+            self::newReceiptColumnsFor1100(),
+            self::newReceiptDownloadCountColumnsFor1100()
+        );
     }
 
     /**
@@ -376,6 +410,64 @@ class IfirmaSchema
         return $ok;
     }
 
+    /** @var bool the retry columns were already ensured in this request */
+    private static $receiptRetryEnsured = false;
+
+    /**
+     * Adds the delivery_attempts and delivery_retry_at columns to the receipt table when missing. Idempotent; at
+     * most once per request. No row is written: existing rows get attempts 0 and no due time.
+     *
+     * @return bool
+     */
+    public static function ensureReceiptRetryColumns()
+    {
+        if (self::$receiptRetryEnsured) {
+            return true;
+        }
+        $table = _DB_PREFIX_ . 'ifirma_receipt';
+        $ok = true;
+        foreach (self::newReceiptColumnsFor1100() as $column => $definition) {
+            if (self::columnExists($table, $column)) {
+                continue;
+            }
+            if (!Db::getInstance()->execute('ALTER TABLE `' . $table . '` ADD COLUMN `' . $column . '` ' . $definition)) {
+                $ok = false;
+            }
+        }
+        self::$receiptRetryEnsured = $ok;
+
+        return $ok;
+    }
+
+    /** @var bool the download count columns were already ensured in this request */
+    private static $receiptDownloadCountEnsured = false;
+
+    /**
+     * Adds the download_day and download_count columns to the receipt table when missing. Idempotent; at most once
+     * per request. No row is written: existing rows get count 0 and no day.
+     *
+     * @return bool
+     */
+    public static function ensureReceiptDownloadCountColumns()
+    {
+        if (self::$receiptDownloadCountEnsured) {
+            return true;
+        }
+        $table = _DB_PREFIX_ . 'ifirma_receipt';
+        $ok = true;
+        foreach (self::newReceiptDownloadCountColumnsFor1100() as $column => $definition) {
+            if (self::columnExists($table, $column)) {
+                continue;
+            }
+            if (!Db::getInstance()->execute('ALTER TABLE `' . $table . '` ADD COLUMN `' . $column . '` ' . $definition)) {
+                $ok = false;
+            }
+        }
+        self::$receiptDownloadCountEnsured = $ok;
+
+        return $ok;
+    }
+
     /** @var bool the auto_mode column was already ensured in this request */
     private static $dataRequestAutoModeEnsured = false;
 
@@ -434,6 +526,8 @@ class IfirmaSchema
         self::$guestCodeEnsured = false;
         self::$receiptKsefEnsured = false;
         self::$receiptDownloadEnsured = false;
+        self::$receiptRetryEnsured = false;
+        self::$receiptDownloadCountEnsured = false;
         self::$dataRequestAutoModeEnsured = false;
         self::$receiptDateIndexEnsured = false;
     }
@@ -486,6 +580,19 @@ class IfirmaSchema
             'IFIRMA_RATE_WINDOW' => '',
             'IFIRMA_RATE_DAY_WINDOW' => '',
             'IFIRMA_RATE_BACKOFF_UNTIL' => '',
+            'IFIRMA_DL_CUSTOMER_MINUTE' => '',
+            'IFIRMA_DL_CUSTOMER_DAY' => '',
+            'IFIRMA_DL_EMPLOYEE_MINUTE' => '',
+            'IFIRMA_DL_EMPLOYEE_DAY' => '',
+            'IFIRMA_USAGE_DOCUMENT' => '',
+            'IFIRMA_USAGE_STATUS' => '',
+            'IFIRMA_USAGE_PDF' => '',
+            'IFIRMA_USAGE_EMAIL' => '',
+            'IFIRMA_USAGE_KSEF' => '',
+            'IFIRMA_USAGE_PAYMENT' => '',
+            'IFIRMA_USAGE_CONTRACTOR' => '',
+            'IFIRMA_USAGE_LIMIT' => '',
+            'IFIRMA_USAGE_OTHER' => '',
             'IFIRMA_REMOTE_LIMIT' => '',
             'IFIRMA_AUTH_FAILURE' => '',
         );

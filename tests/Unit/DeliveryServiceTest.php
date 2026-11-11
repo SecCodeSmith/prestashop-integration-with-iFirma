@@ -259,6 +259,21 @@ class DeliveryServiceTest extends TestCase
         $this->assertSame('sent', $this->row()['delivery_status']);
     }
 
+    public function testAPdfThatIsNotReadyAtFirstRaisesTheMinuteAndTheDayCountByTwo()
+    {
+        $now = 1800000000;
+        $this->client->setClock(function () use ($now) {
+            return $now;
+        });
+        $this->t->queue('GET', '#\.pdf#', $this->notFound());
+        $this->pdfOk();
+
+        $this->svc->deliver($this->receipt());
+
+        $this->assertSame(date('YmdHi', $now) . ':2', Configuration::get('IFIRMA_RATE_WINDOW'));
+        $this->assertSame(date('Ymd', $now) . ':2', Configuration::get('IFIRMA_RATE_DAY_WINDOW'));
+    }
+
     public function testPdfNeverReadyFailsAfterThreeAttempts()
     {
         for ($i = 0; $i < 3; $i++) {
@@ -920,11 +935,54 @@ class DeliveryServiceTest extends TestCase
 
         $r->delivery_status = 'failed';
         $r->delivery_error = 'boom';
-        $this->assertSame('Failed: boom', $this->svc->describeDelivery($r));
+        $this->assertSame('Failed: boom – No automatic attempt is scheduled', $this->svc->describeDelivery($r));
 
         $r->delivery_status = 'skipped';
         $r->source = 'external';
         $this->assertSame('Skipped (external)', $this->svc->describeDelivery($r));
+    }
+
+    private function failedReceipt($attempts, $retryAt)
+    {
+        $r = new IfirmaReceipt();
+        $r->delivery_status = 'failed';
+        $r->delivery_error = 'boom';
+        $r->delivery_attempts = $attempts;
+        $r->delivery_retry_at = $retryAt;
+
+        return $r;
+    }
+
+    public function testDescribeDeliveryNamesTheAttemptsUsedAndTheNextDueTime()
+    {
+        $this->assertSame(
+            'Failed: boom – Attempt 1 of 3, next attempt at 2026-11-10 10:15',
+            $this->svc->describeDelivery($this->failedReceipt(1, '2026-11-10 10:15:00'))
+        );
+    }
+
+    public function testDescribeDeliveryNamesUsedUpAttempts()
+    {
+        $this->assertSame(
+            'Failed: boom – No automatic attempt remains',
+            $this->svc->describeDelivery($this->failedReceipt(3, null))
+        );
+    }
+
+    public function testDescribeDeliveryNamesAFailureThatIsNotRetried()
+    {
+        $this->assertSame(
+            'Failed: boom – No automatic attempt will be made',
+            $this->svc->describeDelivery($this->failedReceipt(1, null))
+        );
+    }
+
+    public function testDescribeDeliveryLeavesTheErrorTextToTheCallerToEscape()
+    {
+        $r = $this->failedReceipt(0, null);
+        $r->delivery_error = '<script>alert(1)</script>';
+
+        $this->assertStringContainsString('<script>alert(1)</script>', $this->svc->describeDelivery($r));
     }
 
     public function testBareHttp403IsNotRetried()
@@ -1007,5 +1065,482 @@ class DeliveryServiceTest extends TestCase
         $r = $this->seeded(array('delivery_status' => 'awaiting_ksef'), 'fakturakraj');
 
         $this->assertSame('Waiting for KSeF acceptance', $this->svc->describeDelivery($r));
+    }
+
+    // ---- automatic retry: failure classes, attempts and the due time (receipt-delivery spec) ----------------
+
+    const CLOCK = 1800000000;
+
+    private function due($seconds)
+    {
+        return date('Y-m-d H:i:s', self::CLOCK + $seconds);
+    }
+
+    /** A failed delivery that already used $attempts automatic attempts and waits until $due. */
+    private function failedAfter($attempts, $due, $type = 'fakturaparagon')
+    {
+        return $this->seeded(array(
+            'delivery_status' => 'failed', 'delivery_error' => 'earlier', 'delivery_attempts' => $attempts, 'delivery_retry_at' => $due,
+        ), $type);
+    }
+
+    private function rateGuardAtItsCap()
+    {
+        $now = mktime(10, 15, 20, 11, 1, 2026);
+        $this->client->setClock(function () use ($now) {
+            return $now;
+        });
+        Configuration::updateValue('IFIRMA_RATE_MAX_PER_MIN', '3');
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi', $now) . ':3');
+    }
+
+    public function testTheFirstAutomaticFailureCountsOneAttemptAndSchedulesTheRetryInFifteenMinutes()
+    {
+        Mail::$result = false;
+        $this->pdfOk();
+
+        $this->svc->deliver($this->receipt());
+
+        $row = $this->row();
+        $this->assertSame('failed', $row['delivery_status']);
+        $this->assertSame(1, $row['delivery_attempts']);
+        $this->assertSame($this->due(900), $row['delivery_retry_at']);
+    }
+
+    public function testTheSecondAutomaticFailureSchedulesTheRetryInTwoHours()
+    {
+        Mail::$result = false;
+        $this->pdfOk();
+        $r = $this->failedAfter(1, $this->due(-60));
+
+        $this->svc->deliver($r);
+
+        $row = $this->row();
+        $this->assertSame(2, $row['delivery_attempts']);
+        $this->assertSame($this->due(7200), $row['delivery_retry_at']);
+    }
+
+    public function testTheThirdAutomaticFailureEndsTheRetries()
+    {
+        Mail::$result = false;
+        $this->pdfOk();
+        $r = $this->failedAfter(2, $this->due(-60));
+
+        $this->svc->deliver($r);
+
+        $row = $this->row();
+        $this->assertSame('failed', $row['delivery_status']);
+        $this->assertSame(3, $row['delivery_attempts']);
+        $this->assertNull($row['delivery_retry_at']);
+    }
+
+    public function testAPdfThatIsNotReadyAfterTheAttemptsOfTheRunIsATemporaryFailure()
+    {
+        for ($i = 0; $i < 3; $i++) {
+            $this->t->queue('GET', '#\.pdf#', $this->notFound());
+        }
+
+        $this->svc->deliver($this->receipt());
+
+        $row = $this->row();
+        $this->assertSame(1, $row['delivery_attempts']);
+        $this->assertSame($this->due(900), $row['delivery_retry_at']);
+    }
+
+    public function testARejectedLoginOnThePdfDownloadIsPermanent()
+    {
+        $this->t->queue('GET', '#\.pdf#', $this->kod(403, 'Brak uprawnien'));
+
+        $this->svc->deliver($this->receipt());
+
+        $row = $this->row();
+        $this->assertSame(1, $row['delivery_attempts']);
+        $this->assertNull($row['delivery_retry_at']);
+    }
+
+    public function testAnHttpServerErrorOnThePdfDownloadIsTemporary()
+    {
+        for ($i = 0; $i < 3; $i++) {
+            $this->t->queue('GET', '#\.pdf#', array('status' => 503, 'body' => ''));
+        }
+
+        $this->svc->deliver($this->receipt());
+
+        $this->assertSame($this->due(900), $this->row()['delivery_retry_at']);
+    }
+
+    public function testACustomerWithoutAnEmailAddressIsPermanent()
+    {
+        $this->pdfOk();
+        $r = $this->receipt();
+        $order = $this->registerOrder(15, 2);
+        $order->id_customer = 999;
+
+        $this->svc->deliver($r, $order);
+
+        $row = $this->row();
+        $this->assertSame(1, $row['delivery_attempts']);
+        $this->assertNull($row['delivery_retry_at']);
+    }
+
+    public function testACustomerWithAMalformedEmailAddressIsPermanentAndSendsNothing()
+    {
+        $c = new Customer();
+        $c->id = 6;
+        $c->email = 'not-an-address';
+        Customer::register($c);
+        $order = $this->registerOrder(15, 2);
+        $order->id_customer = 6;
+        $this->pdfOk();
+
+        $this->svc->deliver($this->receipt(), $order);
+
+        $this->assertCount(0, Mail::$sent);
+        $this->assertNull($this->row()['delivery_retry_at']);
+    }
+
+    public function testIfirmaMailWithoutACustomerAddressSendsNoRequestAndIsPermanent()
+    {
+        Configuration::updateValue('IFIRMA_SEND_CHANNEL', 'ifirma_mail');
+        $order = $this->registerOrder(15, 2);
+        $order->id_customer = 999;
+
+        $this->svc->deliver($this->receipt('fakturakraj'), $order);
+
+        $this->assertSame(array(), $this->t->calls);
+        $row = $this->row();
+        $this->assertSame('failed', $row['delivery_status']);
+        $this->assertNull($row['delivery_retry_at']);
+    }
+
+    public function testAnUnexpectedExceptionWhileSendingIsTemporary()
+    {
+        $r = $this->seeded(array());
+        $order = new class extends Order {
+            public function getCustomer()
+            {
+                throw new RuntimeException('customer lookup failed');
+            }
+        };
+        $order->id = 15;
+
+        $this->svc->deliver($r, $order);
+
+        $this->assertSame($this->due(900), $this->row()['delivery_retry_at']);
+    }
+
+    public function testARefusalByTheRateGuardCountsNoAttemptAndIsDueAtOnce()
+    {
+        $this->rateGuardAtItsCap();
+        $r = $this->failedAfter(1, $this->due(-60));
+
+        $this->svc->deliver($r);
+
+        $row = $this->row();
+        $this->assertSame(0, $this->pdfCalls());
+        $this->assertSame(1, $row['delivery_attempts'], 'the attempt count of the refused delivery stays');
+        $this->assertSame($this->due(0), $row['delivery_retry_at']);
+        $this->assertStringContainsString('rate limit guard', $row['delivery_error']);
+    }
+
+    public function testTheFirstDeliveryRefusedByTheLimitAtIssuanceIsRecordedWithNoAttemptAndDueAtOnce()
+    {
+        $this->rateGuardAtItsCap();
+
+        $this->svc->deliver($this->receipt());
+
+        $row = $this->row();
+        $this->assertSame('failed', $row['delivery_status']);
+        $this->assertSame(0, $row['delivery_attempts']);
+        $this->assertSame($this->due(0), $row['delivery_retry_at']);
+    }
+
+    public function testAnIfirmaMailKodThatAnotherTryCanFixIsTemporary()
+    {
+        Configuration::updateValue('IFIRMA_SEND_CHANNEL', 'ifirma_mail');
+        $this->t->queue('POST', '#send/77\.json#', $this->kod(201, 'Chwilowy blad'));
+
+        $this->svc->deliver($this->receipt('fakturakraj'));
+
+        $row = $this->row();
+        $this->assertSame(1, $row['delivery_attempts']);
+        $this->assertSame($this->due(900), $row['delivery_retry_at']);
+    }
+
+    public function testAnIfirmaMailKodOfTheFixedListIsPermanent()
+    {
+        Configuration::updateValue('IFIRMA_SEND_CHANNEL', 'ifirma_mail');
+        $this->t->queue('POST', '#send/77\.json#', $this->kod(400, 'Niepoprawne zadanie'));
+
+        $this->svc->deliver($this->receipt('fakturakraj'));
+
+        $row = $this->row();
+        $this->assertSame(1, $row['delivery_attempts']);
+        $this->assertNull($row['delivery_retry_at']);
+    }
+
+    public function testAnIfirmaMailRequestThatTimedOutAfterItWasSentHasAnUnknownOutcomeAndIsNeverRetried()
+    {
+        Configuration::updateValue('IFIRMA_SEND_CHANNEL', 'ifirma_mail');
+        $this->t->queue('POST', '#send/77\.json#', array('status' => 0, 'error' => 'Operation timed out'));
+
+        $this->svc->deliver($this->receipt('fakturakraj'));
+
+        $row = $this->row();
+        $this->assertSame('failed', $row['delivery_status']);
+        $this->assertSame(1, $row['delivery_attempts']);
+        $this->assertNull($row['delivery_retry_at']);
+    }
+
+    public function testAnIfirmaMailRefusalByTheRateGuardCountsNoAttempt()
+    {
+        $this->rateGuardAtItsCap();
+        Configuration::updateValue('IFIRMA_SEND_CHANNEL', 'ifirma_mail');
+
+        $this->svc->deliver($this->receipt('fakturakraj'));
+
+        $row = $this->row();
+        $this->assertSame(array(), $this->t->calls);
+        $this->assertSame(0, $row['delivery_attempts']);
+        $this->assertSame($this->due(0), $row['delivery_retry_at']);
+    }
+
+    public function testASuccessfulAutomaticAttemptClearsTheDueTimeAndKeepsTheAttemptsUsed()
+    {
+        $this->pdfOk();
+        $r = $this->failedAfter(1, $this->due(-60));
+
+        $this->svc->deliver($r);
+
+        $row = $this->row();
+        $this->assertSame('sent', $row['delivery_status']);
+        $this->assertSame(1, $row['delivery_attempts']);
+        $this->assertNull($row['delivery_retry_at']);
+        $this->assertCount(1, Mail::$sent);
+    }
+
+    public function testAFailedManualResendLeavesTheAttemptsAndTheDueTimeAsTheyWere()
+    {
+        Mail::$result = false;
+        $this->pdfOk();
+        $r = $this->failedAfter(1, $this->due(7200));
+
+        $this->svc->resend($r);
+
+        $row = $this->row();
+        $this->assertSame('failed', $row['delivery_status']);
+        $this->assertSame(1, $row['delivery_attempts']);
+        $this->assertSame($this->due(7200), $row['delivery_retry_at']);
+    }
+
+    public function testASuccessfulManualResendEndsTheAutomaticRetries()
+    {
+        $this->pdfOk();
+        $r = $this->failedAfter(2, $this->due(7200));
+
+        $this->svc->resend($r);
+
+        $row = $this->row();
+        $this->assertSame('sent', $row['delivery_status']);
+        $this->assertNull($row['delivery_retry_at']);
+    }
+
+    public function testAFailedManualResendOfADeliveredDocumentSchedulesNoRetry()
+    {
+        Mail::$result = false;
+        $this->pdfOk();
+        $r = $this->seeded(array('delivery_status' => 'sent', 'delivered_at' => '2026-10-30 08:00:00'));
+
+        $this->svc->resend($r);
+
+        $row = $this->row();
+        $this->assertSame('failed', $row['delivery_status']);
+        $this->assertSame(0, $row['delivery_attempts']);
+        $this->assertNull($row['delivery_retry_at']);
+    }
+
+    public function testADocumentStillWaitingForKsefSchedulesNoRetryWhenItsDeliveryFails()
+    {
+        $r = $this->seeded(array('delivery_status' => 'awaiting_ksef', 'ksef_status' => 'WYSLANA'), 'fakturakraj');
+        $this->t->queue('GET', '#\.pdf#', array('status' => 0, 'error' => 'timeout'));
+
+        $this->svc->deliver($r);
+
+        $row = $this->row();
+        $this->assertSame('awaiting_ksef', $row['delivery_status']);
+        $this->assertSame(0, $row['delivery_attempts']);
+        $this->assertNull($row['delivery_retry_at']);
+    }
+
+    public function testAChannelSwitchedOffClearsTheScheduleOfAWaitingRetry()
+    {
+        Configuration::updateValue('IFIRMA_SEND_CHANNEL', 'none');
+        $r = $this->failedAfter(1, $this->due(-60));
+
+        $res = $this->svc->deliver($r);
+
+        $row = $this->row();
+        $this->assertSame('skipped', $res->getStatus());
+        $this->assertSame('skipped', $row['delivery_status']);
+        $this->assertNull($row['delivery_retry_at']);
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testAResendTakesTheOrderLockOfTheCronAndReleasesIt()
+    {
+        $this->pdfOk();
+        $r = $this->failedAfter(1, $this->due(600));
+
+        $this->svc->resend($r);
+
+        $locks = array_values(array_filter(Db::getInstance()->queries, function ($q) {
+            return strpos($q, '_LOCK(') !== false;
+        }));
+        $this->assertSame(1, preg_match("/^SELECT GET_LOCK\('ifirma_order_15', [1-9]\d*\)$/", $locks[0]), 'it waits a little for a delivery in progress');
+        $this->assertSame("SELECT RELEASE_LOCK('ifirma_order_15')", $locks[1]);
+    }
+
+    public function testAResendWhileACronRunDeliversTheSameDocumentSendsNothingAndChangesNothing()
+    {
+        $this->pdfOk();
+        $r = $this->failedAfter(1, $this->due(600));
+        Db::getInstance()->whenGetValue('/^SELECT GET_LOCK\(/', 0);
+
+        $res = $this->svc->resend($r);
+
+        $this->assertFalse($res->isSent());
+        $this->assertSame('failed', $res->getStatus());
+        $this->assertFalse($res->refusedLocally(), 'a bulk run goes on with the next document');
+        $this->assertStringContainsString('in progress', $res->getMessage());
+        $this->assertCount(0, Mail::$sent);
+        $this->assertSame(array(), $this->t->calls);
+        $this->assertSame(array(), $this->receiptWriteOps());
+        $this->assertSame($this->due(600), $this->row()['delivery_retry_at']);
+    }
+
+    public function testAGatewayErrorAfterTheIfirmaMailRequestWentOutIsNeverRetried()
+    {
+        Configuration::updateValue('IFIRMA_SEND_CHANNEL', 'ifirma_mail');
+        $this->t->queue('POST', '#send/77\.json#', array('status' => 502, 'body' => '<html>Bad gateway</html>'));
+
+        $this->svc->deliver($this->receipt('fakturakraj'));
+
+        $row = $this->row();
+        $this->assertSame(1, $row['delivery_attempts']);
+        $this->assertNull($row['delivery_retry_at']);
+    }
+
+    public function testAResendOfAStaleObjectDoesNotDeliverADocumentThatWasSentMeanwhile()
+    {
+        $this->pdfOk();
+        $stale = $this->failedAfter(1, $this->due(-60));
+        $other = new IfirmaReceipt((int) $stale->id);
+        $other->recordDelivery(IfirmaReceipt::DELIVERY_SENT, 'shop_mail', '', 1, null);
+        $other->save();
+        Mail::$result = false;
+
+        $this->svc->resend($stale);
+
+        $row = $this->row();
+        $this->assertSame('failed', $row['delivery_status']);
+        $this->assertNull($row['delivery_retry_at'], 'the outdated schedule of the stale object is not written back');
+    }
+
+    public function testARequestThatWasNeverSentForAMissingKeyIsPermanent()
+    {
+        Configuration::updateValue('IFIRMA_SEND_CHANNEL', 'ifirma_mail');
+        $client = new IfirmaApiClient('u@example.com', array(), 'http://ifirma-mock:8001/iapi/', 30, $this->t);
+        $module = new Module();
+        $svc = new IfirmaDeliveryService($client, new IfirmaReceiptService($client, $module), $module, function () {
+            return self::CLOCK;
+        });
+
+        $svc->deliver($this->receipt('fakturakraj'));
+
+        $row = $this->row();
+        $this->assertSame(array(), $this->t->calls);
+        $this->assertSame('failed', $row['delivery_status']);
+        $this->assertSame(1, $row['delivery_attempts']);
+        $this->assertNull($row['delivery_retry_at']);
+    }
+
+    public function testAMailSystemThatThrowsIsATemporaryFailure()
+    {
+        Mail::$throw = new RuntimeException('SMTP connection lost');
+        $this->pdfOk();
+
+        $res = $this->svc->deliver($this->receipt());
+
+        $row = $this->row();
+        $this->assertSame('failed', $res->getStatus());
+        $this->assertSame('SMTP connection lost', $row['delivery_error']);
+        $this->assertSame(1, $row['delivery_attempts']);
+        $this->assertSame($this->due(900), $row['delivery_retry_at']);
+    }
+
+    public function testASaveThatThrowsIsLoggedWithTheOrderIdOnlyAndNeverReachesTheCaller()
+    {
+        $this->pdfOk();
+        $r = new class extends IfirmaReceipt {
+            public function save($nullValues = false, $autoDate = true)
+            {
+                throw new RuntimeException('db down for jan@example.test');
+            }
+        };
+        $r->id_order = 15;
+        $r->document_type = 'fakturaparagon';
+        $r->ifirma_id = '77';
+        $r->status = 'created';
+
+        $res = $this->svc->deliver($r);
+
+        $this->assertTrue($res->isSent());
+        $this->assertCount(1, PrestaShopLogger::$logs);
+        $this->assertSame(3, PrestaShopLogger::$logs[0]['severity']);
+        $this->assertStringContainsString('order #15', PrestaShopLogger::$logs[0]['message']);
+        $this->assertStringNotContainsString('jan@example.test', PrestaShopLogger::$logs[0]['message']);
+    }
+
+    public function testAResendReleasesTheOrderLockWhenTheDeliveryEnds()
+    {
+        $this->pdfOk();
+
+        $this->svc->resend($this->receipt());
+
+        $released = array_filter(Db::getInstance()->queries, function ($q) {
+            return strpos($q, 'RELEASE_LOCK') !== false;
+        });
+        $this->assertCount(1, $released);
+    }
+
+    public function testADocumentIfirmaNoLongerHasIsAPermanentFailure()
+    {
+        Mail::$result = false;
+        $this->pdfOk();
+        $r = $this->seeded(array('remote_missing' => true));
+
+        $this->svc->deliver($r);
+
+        $row = $this->row();
+        $this->assertSame(1, $row['delivery_attempts']);
+        $this->assertNull($row['delivery_retry_at']);
+    }
+
+    public function testOnlyTheSuccessfulAttemptSendsTheCopy()
+    {
+        Configuration::updateValue('IFIRMA_SEND_COPY_MODE', 'shop');
+        Configuration::updateValue('PS_SHOP_EMAIL', 'shop@example.test');
+        for ($i = 0; $i < 3; $i++) {
+            $this->t->queue('GET', '#\.pdf#', array('status' => 0, 'error' => 'timeout'));
+        }
+        $r = $this->receipt();
+        $this->svc->deliver($r);
+        $this->assertCount(0, Mail::$sent, 'the failed attempt sent no mail and no copy');
+
+        $this->pdfOk();
+        $this->svc->deliver($r);
+
+        $this->assertCount(1, Mail::$sent);
+        $this->assertSame('shop@example.test', Mail::$sent[0]['bcc']);
     }
 }

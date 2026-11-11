@@ -1720,6 +1720,19 @@ class IssuancePipelineTest extends TestCase
         $this->assertFalse($r->receipt->canIssueAnyway());
     }
 
+    public function testAnEmployeeCreateOnAQueuedOrderIssuesTheDocumentAndTheRecordLeavesTheQueue()
+    {
+        $this->seedQueuedRow();
+        $this->queueFullSuccess();
+
+        $r = $this->pipeline->run($this->order(), array('trigger' => 'manual'));
+
+        $this->assertSame('issued', $r->outcome);
+        $this->assertSame('created', $this->dbRow()['status']);
+        $this->assertSame('77', (string) $this->dbRow()['ifirma_id']);
+        $this->assertCount(1, $this->posts());
+    }
+
     public function testARefusalOnARecordThatIsAlreadyQueuedWritesNothing()
     {
         $this->seedQueuedRow();

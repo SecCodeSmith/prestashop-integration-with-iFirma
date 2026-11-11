@@ -302,7 +302,7 @@ class AdminActionsTest extends TestCase
         $this->assertFalse($r['success']);
         $this->assertSame('The shop mail system refused to send the e-mail.', $r['message']);
         $this->assertSame('failed', $r['data']['receipt']['delivery_status']);
-        $this->assertSame('Failed: The shop mail system refused to send the e-mail.', $r['data']['delivery']);
+        $this->assertSame('Failed: The shop mail system refused to send the e-mail. – No automatic attempt is scheduled', $r['data']['delivery']);
     }
 
     public function testResendWithChannelNoneReportsFailure()
@@ -391,6 +391,84 @@ class AdminActionsTest extends TestCase
     {
         $this->assertFalse($this->actions->refreshStatus(15)['success']);
         $this->assertSame(array(), $this->t->calls);
+    }
+
+    // ---- refresh refused by the request limit (spec receipt-status-sync "On-demand admin refresh") ----
+
+    private function refusedRefresh(array $stored = null)
+    {
+        $stored = $stored !== null ? $stored : array('last_sync_at' => '2026-10-01 08:00:00', 'sync_error' => '');
+        $this->makeReceipt($stored);
+
+        return $this->actions->refreshStatus(15);
+    }
+
+    private function assertStoredStateUnchanged()
+    {
+        $row = new IfirmaReceipt((int) IfirmaReceipt::getByOrder(15)->id);
+        $this->assertSame('2026-10-01 08:00:00', $row->last_sync_at);
+        $this->assertSame('', (string) $row->sync_error);
+        $this->assertSame(IfirmaReceipt::STATUS_CREATED, $row->status);
+    }
+
+    public function testRefreshAtTheMinuteCapIsAFailureThatNamesTheMinuteLimit()
+    {
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi') . ':80');
+
+        $r = $this->refusedRefresh();
+
+        $this->assertFalse($r['success']);
+        $this->assertSame('The status was not refreshed: the minute request limit is reached. Try again in a moment.', $r['message']);
+        $this->assertSame(array(), $this->t->calls, 'no list call is made');
+        $this->assertStoredStateUnchanged();
+    }
+
+    public function testRefreshAtTheDayCapNamesTheDayLimit()
+    {
+        Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', date('Ymd') . ':14000');
+
+        $r = $this->refusedRefresh();
+
+        $this->assertFalse($r['success']);
+        $this->assertSame('The status was not refreshed: the day request limit is reached. Try again later.', $r['message']);
+        $this->assertStoredStateUnchanged();
+    }
+
+    public function testRefreshDuringTheBackoffIsNotASuccessAndNamesIt()
+    {
+        Configuration::updateValue('IFIRMA_RATE_BACKOFF_UNTIL', (string) (time() + 40));
+
+        $r = $this->refusedRefresh();
+
+        $this->assertFalse($r['success']);
+        $this->assertSame('The status was not refreshed: iFirma asked the module to wait before the next request. Try again shortly.', $r['message']);
+        $this->assertSame(array(), $this->t->calls);
+        $this->assertStoredStateUnchanged();
+    }
+
+    public function testRefreshThatIfirmaRefusesWithItsOwnLimitAnswerIsNotASuccessAndKeepsTheRecord()
+    {
+        $this->t->queue('GET', '#faktury\.json#', array(
+            'status' => 429,
+            'body' => '{"response":{"Kod":100,"Informacja":"Przekroczono limit zapytan"}}',
+            'headers' => array('Retry-After' => '20'),
+        ));
+
+        $r = $this->refusedRefresh();
+
+        $this->assertFalse($r['success']);
+        $this->assertSame('The status was not refreshed: iFirma reported that its request limit was exceeded. Try again shortly.', $r['message']);
+        $this->assertStoredStateUnchanged();
+    }
+
+    public function testARefusedRefreshCarriesTheUnchangedRecordForThePanel()
+    {
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi') . ':80');
+
+        $r = $this->refusedRefresh();
+
+        $this->assertSame('2026-10-01 08:00:00', $r['data']['receipt']['last_sync_at']);
+        $this->assertSame('', $r['data']['receipt']['sync_error']);
     }
 
     // ---- data requests -----------------------------------------------------------------------

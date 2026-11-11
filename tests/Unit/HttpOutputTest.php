@@ -245,6 +245,55 @@ class HttpOutputTest extends TestCase
         $this->assertSame('header', $sink->getValue());
     }
 
+    // ---- IfirmaHttpOutput::tooManyRequests() ---------------------------------------------------
+
+    public function testTooManyRequestsSendsTheStatusTheWaitAndAPlainTextBody()
+    {
+        $this->withOwnBuffer(function () {
+            IfirmaHttpOutput::tooManyRequests(40, 'Try again shortly.');
+        });
+
+        $this->assertSame(array(
+            'HTTP/1.1 429 Too Many Requests',
+            'Retry-After: 40',
+            'Content-Type: text/plain; charset=utf-8',
+            'Cache-Control: no-store',
+            'X-Content-Type-Options: nosniff',
+        ), $this->lines);
+        $this->expectOutputString('Try again shortly.');
+    }
+
+    public function testTooManyRequestsDiscardsThePageBufferedSoFar()
+    {
+        $this->withOwnBuffer(function () {
+            IfirmaHttpOutput::tooManyRequests(5, 'Try again shortly.');
+        }, 'half-rendered page');
+
+        $this->assertSame($this->baseLevel, ob_get_level());
+        $this->expectOutputString('Try again shortly.');
+    }
+
+    public function testTheWaitIsAlwaysAWholeNumberSoNoHeaderCanBeInjectedThroughIt()
+    {
+        $this->withOwnBuffer(function () {
+            IfirmaHttpOutput::tooManyRequests("40
+Set-Cookie: x=1", 'Try again shortly.');
+        });
+
+        $this->assertSame('Retry-After: 40', $this->lines[1]);
+        $this->expectOutputString('Try again shortly.');
+    }
+
+    public function testTheWaitIsNeverBelowOneSecond()
+    {
+        $this->withOwnBuffer(function () {
+            IfirmaHttpOutput::tooManyRequests(0, 'Try again shortly.');
+        });
+
+        $this->assertSame('Retry-After: 1', $this->lines[1]);
+        $this->expectOutputString('Try again shortly.');
+    }
+
     // ---- the two download controllers ---------------------------------------------------------
 
     /** An issued receipt for order 15 and the PDF that the mocked iFirma API returns for it. */

@@ -58,6 +58,9 @@ class IfirmaKsefRetryJob implements IfirmaCronJob
         $failed = 0;
         $limited = false;
         foreach (IfirmaReceipt::findAwaitingKsefSubmission($context->getMaxItems()) as $record) {
+            if (!$context->allowsAnotherItem()) {
+                break;
+            }
             $order = new Order((int) $record->id_order);
             $answer = $this->ksef->submit($record, Validate::isLoadedObject($order) ? $order : null);
             $handled++;

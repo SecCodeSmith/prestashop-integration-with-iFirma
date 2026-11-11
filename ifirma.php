@@ -33,10 +33,23 @@ require_once __DIR__ . '/classes/IfirmaAdminOrderPanelView.php';
 require_once __DIR__ . '/classes/IfirmaCustomerContractorService.php';
 require_once __DIR__ . '/classes/IfirmaAdminActions.php';
 require_once __DIR__ . '/classes/IfirmaOrderGridIndicator.php';
+require_once __DIR__ . '/classes/IfirmaDeliveryRetryView.php';
+require_once __DIR__ . '/classes/IfirmaOrderGridStateFilter.php';
 require_once __DIR__ . '/classes/IfirmaPermission.php';
 require_once __DIR__ . '/classes/IfirmaIssueFeed.php';
 require_once __DIR__ . '/classes/IfirmaBulkRunner.php';
 require_once __DIR__ . '/classes/IfirmaHelpLinks.php';
+require_once __DIR__ . '/classes/IfirmaInput.php';
+require_once __DIR__ . '/classes/IfirmaApiUsage.php';
+require_once __DIR__ . '/classes/IfirmaApiUsagePresenter.php';
+require_once __DIR__ . '/classes/IfirmaRemoteLimit.php';
+require_once __DIR__ . '/classes/IfirmaRequestKind.php';
+require_once __DIR__ . '/classes/IfirmaRateDecision.php';
+require_once __DIR__ . '/classes/IfirmaRemoteLimitPresenter.php';
+require_once __DIR__ . '/classes/IfirmaLimitCheck.php';
+require_once __DIR__ . '/classes/IfirmaLimitCheckAction.php';
+require_once __DIR__ . '/classes/IfirmaConfigPageGuard.php';
+require_once __DIR__ . '/classes/IfirmaBackOfficeToken.php';
 
 class Ifirma extends Module
 {
@@ -203,21 +216,39 @@ class Ifirma extends Module
 
     public function getContent()
     {
+        $guard = $this->configPageGuard();
+        // PrestaShop 9.1 opens this page for an employee who may only view the Module Manager: the module asks itself
+        if (!$guard->mayConfigure()) {
+            return $this->displayError($this->l('You do not have permission to configure this module.'));
+        }
+
         $output = '';
 
         $report = null;
         $errors = array();
-        if (Tools::isSubmit('submitIfirmaRegenerateCron')) {
-            $output .= $this->regenerateCronToken();
-        } elseif (Tools::isSubmit('submitIfirma')) {
-            $output .= $this->postProcessConfiguration();
-        } elseif (Tools::isSubmit('submitIfirmaImportContractors')) {
-            list($report, $errors) = $this->processContractorImport();
-        } elseif (Tools::isSubmit('submitIfirmaResetContractorMap')) {
-            $output .= $this->resetContractorMap();
+        $limitCheck = null;
+        $verdict = $guard->verdict();
+        if ($this->requestNamesAnAction() && $verdict === IfirmaConfigPageGuard::BAD_TOKEN) {
+            $output .= $this->displayError($this->l('The request could not be verified. Reload the page and try again.'));
+        }
+        // a GET, or a POST without the token, shows the page and runs no action
+        if ($verdict === IfirmaConfigPageGuard::ALLOWED) {
+            if (Tools::isSubmit('submitIfirmaRegenerateCron')) {
+                $output .= $this->regenerateCronToken();
+            } elseif (Tools::isSubmit(IfirmaRemoteLimitPresenter::SUBMIT)) {
+                $limitCheck = $this->checkRemoteLimit($guard);
+            } elseif (Tools::isSubmit('submitIfirma')) {
+                $output .= $this->postProcessConfiguration();
+            } elseif (Tools::isSubmit('submitIfirmaImportContractors')) {
+                list($report, $errors) = $this->processContractorImport();
+            } elseif (Tools::isSubmit('submitIfirmaResetContractorMap')) {
+                $output .= $this->resetContractorMap();
+            }
         }
 
-        return $this->authBlockBanner() . $this->storedBaseUrlWarning() . $output . $this->renderConfigForm() . $this->renderContractorsPanel($report, $errors) . $this->helpLinks();
+        return $this->authBlockBanner() . $this->storedBaseUrlWarning() . $output
+            . $this->renderLimitBox($limitCheck) . $this->renderUsageBox()
+            . $this->renderConfigForm() . $this->renderContractorsPanel($report, $errors) . $this->helpLinks();
     }
 
     /**
@@ -579,35 +610,190 @@ class Ifirma extends Module
     }
 
     /**
-     * Daily API limit box; nothing (and no request) without the abonent key.
+     * The limit box: the last stored reading and the button that reads a fresh one. Opening the page sends no request.
+     *
+     * @param IfirmaLimitCheck|null $check the outcome of the click that produced this page
+     * @return string HTML
+     */
+    private function renderLimitBox($check)
+    {
+        $token = Tools::getAdminTokenLite('AdminModules');
+        $presenter = new IfirmaRemoteLimitPresenter(
+            $this->remoteLimitLabels(),
+            AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . $token,
+            $token
+        );
+
+        return $this->hasAbonentKey() ? $presenter->render(IfirmaRemoteLimit::stored(), $check) : $presenter->renderWithoutKey();
+    }
+
+    /**
+     * The click on "Check the remaining iFirma limit". PrestaShop checks the back-office token before getContent() runs
+     * (and, on 8.1, the right to configure the module); the check itself still requires a POST, the module's configure
+     * permission (9.1 does not check it for this page) and the abonent key.
+     *
+     * @return IfirmaLimitCheck|null null when the request was not allowed and nothing was asked
+     */
+    private function checkRemoteLimit(IfirmaConfigPageGuard $guard)
+    {
+        $module = $this;
+        $action = new IfirmaLimitCheckAction(
+            IfirmaRemoteLimit::forClient($this->buildApiClient()),
+            function () use ($module, $guard) {
+                return $guard->allowsStateChange() && $module->hasAbonentKey();
+            },
+            function ($message) {
+                PrestaShopLogger::addLog($message, IfirmaLimitCheckAction::LOG_ERROR);
+            }
+        );
+
+        return $action->run();
+    }
+
+    /** The submit names of the configuration page's actions: each one changes state. */
+    const CONFIG_PAGE_ACTIONS = array(
+        'submitIfirmaRegenerateCron',
+        IfirmaRemoteLimitPresenter::SUBMIT,
+        'submitIfirma',
+        'submitIfirmaImportContractors',
+        'submitIfirmaResetContractorMap',
+    );
+
+    /**
+     * @return bool whether the request names an action of the configuration page
+     */
+    private function requestNamesAnAction()
+    {
+        foreach (self::CONFIG_PAGE_ACTIONS as $submit) {
+            if (Tools::isSubmit($submit)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return IfirmaConfigPageGuard the one decision whether a request may see the page and run an action
+     */
+    private function configPageGuard()
+    {
+        $module = $this;
+        $token = new IfirmaBackOfficeToken(
+            function () {
+                // the settings form carries the token in its address, the other forms in a field too: both arrive here
+                return Tools::getValue('token');
+            },
+            function () {
+                return Tools::getAdminTokenLite('AdminModules');
+            },
+            $this->coreTokenVerdict()
+        );
+
+        return new IfirmaConfigPageGuard(
+            function () use ($module) {
+                return $module->getPermission('configure');
+            },
+            array('IfirmaInput', 'isPost'),
+            array($token, 'isValid')
+        );
+    }
+
+    /**
+     * PrestaShop 9 hands out a different Symfony CSRF token on every page view, so only its own check can tell whether
+     * a posted one is the employee's; earlier versions have none and use a fixed token.
+     *
+     * @return callable|null returns the core's verdict on the token of the request, null when the shop has no such check
+     */
+    private function coreTokenVerdict()
+    {
+        $managerClass = 'PrestaShopBundle\Security\Admin\UserTokenManager';
+        $containerClass = 'PrestaShop\PrestaShop\Adapter\SymfonyContainer';
+        $container = class_exists($managerClass) && class_exists($containerClass) ? call_user_func(array($containerClass, 'getInstance')) : null;
+        if ($container === null) {
+            return null;
+        }
+
+        return function () use ($container, $managerClass) {
+            try {
+                return $container->get($managerClass)->isTokenValid();
+            } catch (Throwable $e) {
+                // the core throws for a token value that is not a string (token[]=x): that is a refusal, not an error page
+                return false;
+            }
+        };
+    }
+
+    /**
+     * @return bool
+     */
+    private function hasAbonentKey()
+    {
+        return trim((string) Configuration::get('IFIRMA_KEY_ABONENT')) !== '';
+    }
+
+    /**
+     * The "Module requests" box: what the module counted itself, read from the database only.
      *
      * @return string HTML
      */
-    private function renderLimitBox()
+    private function renderUsageBox()
     {
-        if (trim((string) Configuration::get('IFIRMA_KEY_ABONENT')) === '') {
-            return '';
-        }
+        $usage = new IfirmaApiUsage();
 
-        $limit = null;
-        try {
-            $limit = $this->buildApiClient()->getLimit();
-        } catch (Throwable $e) {
-            $limit = null;
-        }
+        return (new IfirmaApiUsagePresenter($this->usageLabels()))->render($usage->windows(), $usage->todayByKind(), $usage->backoffUntil());
+    }
 
-        if (!is_array($limit)) {
-            return '<div class="alert alert-warning">'
-                . $this->esc($this->l('iFirma API limit is currently unavailable.')) . '</div>';
-        }
+    /**
+     * @return array the words of the limit box, as IfirmaRemoteLimitPresenter takes them
+     */
+    private function remoteLimitLabels()
+    {
+        return array(
+            'title' => $this->l('iFirma request limit'),
+            'not_checked' => $this->l('The remaining limit has not been checked yet.'),
+            'reading' => $this->l('Used %1$d of %2$d requests, %3$d remaining (read %4$s).'),
+            'earlier_day' => $this->l('Last reading, from %1$s: used %2$d of %3$d requests. It is not a figure for today.'),
+            'nothing_left' => $this->l('No request is left for today: the module sends no request to iFirma until tomorrow.'),
+            'unavailable' => $this->l('iFirma API limit is currently unavailable.'),
+            'refused' => array(
+                IfirmaRateDecision::WINDOW_MINUTE => $this->l('The limit was not checked because the module reached its limit of requests per minute. Nothing was sent to iFirma.'),
+                IfirmaRateDecision::WINDOW_DAY => $this->l('The limit was not checked because the module reached its limit of requests per day. Nothing was sent to iFirma.'),
+                IfirmaRateDecision::WINDOW_BACKOFF => $this->l('The limit was not checked because iFirma asked the module to wait. Nothing was sent to iFirma.'),
+                IfirmaLimitCheck::WINDOW_AUTH => $this->l('The limit was not checked because iFirma rejected the credentials a moment ago and requests are paused. Nothing was sent to iFirma.'),
+            ),
+            'button' => $this->l('Check the remaining iFirma limit'),
+            'one_request' => $this->l('One click sends one request to iFirma and counts toward the limit.'),
+            'no_key' => $this->l('To read the remaining iFirma limit, enter the abonent API key and save.'),
+        );
+    }
 
-        return '<div class="alert alert-info">'
-            . $this->esc(sprintf(
-                $this->l('iFirma API limit today: %1$d/%2$d'),
-                (int) $limit['used'],
-                (int) $limit['granted']
-            ))
-            . '</div>';
+    /**
+     * @return array the words of the "Module requests" box, as IfirmaApiUsagePresenter takes them
+     */
+    private function usageLabels()
+    {
+        return array(
+            'title' => $this->l('Module requests'),
+            'intro' => $this->l('Requests this module sent to iFirma, counted by the module itself. Opening this page sends none.'),
+            'window_minute' => $this->l('Current minute'),
+            'window_day' => $this->l('Today'),
+            'of' => $this->l('%1$d of %2$d'),
+            'by_kind' => $this->l('Today by kind of request'),
+            'kinds' => array(
+                IfirmaRequestKind::KIND_DOCUMENT => $this->l('Creating documents'),
+                IfirmaRequestKind::KIND_STATUS => $this->l('Status checks (document lists and details)'),
+                IfirmaRequestKind::KIND_PDF => $this->l('PDF downloads'),
+                IfirmaRequestKind::KIND_EMAIL => $this->l('Sending documents by e-mail through iFirma'),
+                IfirmaRequestKind::KIND_KSEF => $this->l('KSeF submissions'),
+                IfirmaRequestKind::KIND_PAYMENT => $this->l('Payments'),
+                IfirmaRequestKind::KIND_CONTRACTOR => $this->l('Contractors'),
+                IfirmaRequestKind::KIND_LIMIT => $this->l('Limit checks'),
+                IfirmaRequestKind::KIND_OTHER => $this->l('Other requests'),
+            ),
+            'other_clients' => $this->l('Other clients of the account (the account count is higher than this module sent)'),
+            'backoff' => $this->l('iFirma asked the module to wait: no request is sent until %s.'),
+        );
     }
 
     /**
@@ -621,10 +807,10 @@ class Ifirma extends Module
         return '<p><strong>' . $this->esc($this->l('Token:')) . '</strong> <code>'
             . $this->esc($this->cronToken()) . '</code></p>'
             . '<p><strong>' . $this->esc($this->l('URL:')) . '</strong> <code>' . $this->esc($url) . '</code></p>'
-            . '<p>' . $this->esc($this->l('Example crontab entry (every 15 minutes):')) . '</p>'
-            . '<pre>*/15 * * * * curl -fsS "' . $this->esc($url) . '" &gt;/dev/null</pre>'
+            . '<p>' . $this->esc($this->l('Example crontab entry (every 5 minutes):')) . '</p>'
+            . '<pre>*/5 * * * * curl -fsS "' . $this->esc($url) . '" &gt;/dev/null</pre>'
             . '<p>' . $this->esc($this->l('Or send the token in a header, so it stays out of web server logs:')) . '</p>'
-            . '<pre>*/15 * * * * curl -fsS -H "X-Ifirma-Token: ' . $this->esc($this->cronToken()) . '" "'
+            . '<pre>*/5 * * * * curl -fsS -H "X-Ifirma-Token: ' . $this->esc($this->cronToken()) . '" "'
             . $this->esc($plainUrl) . '" &gt;/dev/null</pre>'
             . '<p class="help-block">' . $this->esc($this->l('Anyone who knows the URL can start a synchronisation. Regenerate the token if it leaks.')) . '</p>';
     }
@@ -696,18 +882,7 @@ class Ifirma extends Module
             );
         }
 
-        $inputs = array();
-
-        $limitBox = $this->renderLimitBox();
-        if ($limitBox !== '') {
-            $inputs[] = array(
-                'type' => 'html',
-                'name' => 'IFIRMA_API_LIMIT',
-                'html_content' => $limitBox,
-            );
-        }
-
-        $inputs = array_merge($inputs, array(
+        $inputs = array(
             array(
                 'type' => 'text',
                 'label' => $this->l('API base URL'),
@@ -722,7 +897,7 @@ class Ifirma extends Module
                 'required' => true,
             ),
             // never a stored key in the page: the password input is empty and an empty field keeps the key
-        ));
+        );
         $inputs = array_merge(
             $inputs,
             $this->secretInputs(
@@ -1141,12 +1316,16 @@ class Ifirma extends Module
         $matchLabels = $this->matchLabels();
 
         $availability = $service->registerAvailability($idCustomer);
-        $canRegister = $availability['available'];
+        // Registering creates a contractor in iFirma, so it needs the issue level (the same as on the order page)
+        $mayIssue = IfirmaPermission::canIssue($this->context->employee);
+        $canRegister = $availability['available'] && $mayIssue;
         $registerReason = '';
         if ($availability['reason'] === IfirmaCustomerContractorService::REGISTER_DISABLED) {
             $registerReason = $this->l('Contractor registration is disabled in the module settings.');
         } elseif ($availability['reason'] === IfirmaCustomerContractorService::REGISTER_NO_ORDERS) {
             $registerReason = $this->l('Registration needs at least one order of this customer.');
+        } elseif (!$mayIssue) {
+            $registerReason = $this->l('Registration needs the permission to issue iFirma documents.');
         }
 
         $token = Tools::getAdminTokenLite('AdminIfirma');
@@ -1357,6 +1536,7 @@ class Ifirma extends Module
             'clickable' => true,
         ));
         $params['definition']->getColumns()->addBefore('actions', $column);
+        $this->addStateFilter($params['definition']);
 
         $bulkClass = 'PrestaShop\\PrestaShop\\Core\\Grid\\Action\\Bulk\\Type\\ButtonBulkAction';
         if (IfirmaPermission::canIssue($this->context->employee)
@@ -1372,7 +1552,48 @@ class Ifirma extends Module
         }
     }
 
-    /** Orders list: the newest module record of each order joins the search query (never the count query). */
+    /**
+     * The choice filter of the "iFirma" column: one choice per document state. Skipped where the grid has no filter
+     * collection or the filter class (older cores, tests).
+     *
+     * @param object $definition the Orders grid definition
+     */
+    private function addStateFilter($definition)
+    {
+        $filterClass = 'PrestaShop\\PrestaShop\\Core\\Grid\\Filter\\Filter';
+        if (!class_exists($filterClass) || !method_exists($definition, 'getFilters')) {
+            return;
+        }
+        $filter = new $filterClass(IfirmaOrderGridStateFilter::FIELD, 'Symfony\\Component\\Form\\Extension\\Core\\Type\\ChoiceType');
+        $filter->setTypeOptions(array(
+            'required' => false,
+            'choices' => IfirmaOrderGridStateFilter::choices($this->stateFilterLabels()),
+            'translation_domain' => false,
+        ))->setAssociatedColumn(IfirmaOrderGridIndicator::FIELD);
+        $definition->getFilters()->add($filter);
+    }
+
+    /** @return string[] IfirmaDocumentStateRank label key => the word of that state in the filter */
+    private function stateFilterLabels()
+    {
+        return self::decodeWords(array(
+            'state_error' => $this->l('Issuance failed'),
+            'state_unknown' => $this->l('Unknown outcome'),
+            'state_duplicate_suspected' => $this->l('Suspected duplicate'),
+            'state_held' => $this->l('Held (data change request)'),
+            'state_queued' => $this->l('Queued (iFirma limit)'),
+            'state_none' => $this->l('No document yet'),
+            'state_issued' => $this->l('Issued, not sent'),
+            'state_awaiting_ksef' => $this->l('Waiting for KSeF'),
+            'state_sent' => $this->l('Sent'),
+            'state_paid' => $this->l('Paid'),
+        ));
+    }
+
+    /**
+     * Orders list: the newest module record of each order joins the search query, and the count query only while a
+     * state filter is chosen (an unfiltered list keeps its count query as it is).
+     */
     public function hookActionOrderGridQueryBuilderModifier($params)
     {
         if (!IfirmaPermission::canView($this->context->employee)) {
@@ -1383,10 +1604,51 @@ class Ifirma extends Module
         }
         $join = IfirmaOrderGridIndicator::joinSql('o');
         $params['search_query_builder']->leftJoin('o', $join['table'], $join['alias'], $join['condition']);
-        foreach (IfirmaOrderGridIndicator::selectSql() as $select) {
+        foreach ($this->gridSelects() as $select) {
             $params['search_query_builder']->addSelect($select);
         }
-        $this->sortByTheColumn($params['search_query_builder'], isset($params['search_criteria']) ? $params['search_criteria'] : null);
+        $criteria = isset($params['search_criteria']) ? $params['search_criteria'] : null;
+        $this->filterByTheColumn($params['search_query_builder'], isset($params['count_query_builder']) ? $params['count_query_builder'] : null, $criteria);
+        $this->sortByTheColumn($params['search_query_builder'], $criteria);
+    }
+
+    /**
+     * The retry fields come from an upgrade (the two columns of the receipt table): they are selected only once the
+     * columns are there, so a failed ALTER leaves the Orders page working and the tooltip without its retry line.
+     *
+     * @return string[] the select expressions of the Orders list
+     */
+    private function gridSelects()
+    {
+        $selects = IfirmaOrderGridIndicator::selectSql();
+        if (IfirmaSchema::ensureReceiptRetryColumns()) {
+            $selects = array_merge($selects, IfirmaOrderGridIndicator::retrySelectSql());
+        }
+
+        return $selects;
+    }
+
+    /**
+     * Only an integer from 1 to 10 filters the list; any other value changes neither query. The same condition goes to
+     * the count query, so the total and the paging cover the filtered orders only.
+     *
+     * @param object      $searchQuery the search query, which already holds the newest-record join
+     * @param object|null $countQuery
+     * @param object|null $criteria    the grid's search criteria
+     */
+    private function filterByTheColumn($searchQuery, $countQuery, $criteria)
+    {
+        $rank = IfirmaOrderGridStateFilter::rankFrom($criteria);
+        if ($rank === null) {
+            return;
+        }
+        IfirmaOrderGridStateFilter::apply($searchQuery, $rank);
+        if (!is_object($countQuery)) {
+            return;
+        }
+        $join = IfirmaOrderGridIndicator::joinSql('o');
+        $countQuery->leftJoin('o', $join['table'], $join['alias'], $join['condition']);
+        IfirmaOrderGridStateFilter::apply($countQuery, $rank);
     }
 
     /**
@@ -1474,7 +1736,7 @@ class Ifirma extends Module
             'state_held' => $this->l('Held (data change request)'),
             'state_queued' => $this->l('Queued (iFirma limit)'),
             'click_to_issue' => $this->l('click to issue'),
-        ));
+        ) + IfirmaDeliveryRetryView::translatedWords($this));
     }
 
     /**

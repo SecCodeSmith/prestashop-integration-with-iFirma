@@ -30,6 +30,9 @@ class AdminController
     public $bulk_actions = array();
     public $toolbar_btn = array();
     public $page_header_toolbar_btn = array();
+    public $_orderBy;
+    public $_orderWay;
+    public $_tmpTableFilter = '';
     public $redirect_after;
     public $action;
     public $display;
@@ -38,8 +41,83 @@ class AdminController
     {
     }
 
+    /**
+     * The ORDER BY of the core list (the direction check follows the real class):
+     * the column goes through order_key and bqSQL, the direction through pSQL.
+     */
+    protected function getOrderByClause($orderBy, $orderDirection)
+    {
+        $this->_orderBy = $this->checkOrderBy($orderBy);
+        $this->_orderWay = $this->checkOrderDirection($orderDirection);
+
+        return ' ORDER BY '
+            . ((str_replace('`', '', $this->_orderBy) == $this->identifier) ? 'a.' : '')
+            . $this->_orderBy
+            . ' '
+            . $this->_orderWay
+            . ($this->_tmpTableFilter ? ') tmpTable WHERE 1' . $this->_tmpTableFilter : '');
+    }
+
+    protected function checkOrderBy($orderBy)
+    {
+        if (empty($orderBy)) {
+            $orderBy = $this->_orderBy ? $this->_orderBy : $this->_defaultOrderBy;
+        }
+        if (!isset($this->fields_list[$orderBy]['order_key']) && isset($this->fields_list[$orderBy]['filter_key'])) {
+            $this->fields_list[$orderBy]['order_key'] = $this->fields_list[$orderBy]['filter_key'];
+        }
+        if (isset($this->fields_list[$orderBy]['order_key'])) {
+            $orderBy = $this->fields_list[$orderBy]['order_key'];
+        }
+        if (preg_match('/[.!]/', $orderBy)) {
+            $orderBySplit = preg_split('/[.!]/', $orderBy);
+            $orderBy = bqSQL($orderBySplit[0]) . '.`' . bqSQL($orderBySplit[1]) . '`';
+        } elseif ($orderBy) {
+            $orderBy = bqSQL($orderBy);
+        }
+
+        return $orderBy;
+    }
+
+    /** As the core: an empty direction falls back to the list cookie, then the list state, then the default, and an
+     *  invalid one is an exception. */
+    protected function checkOrderDirection($orderDirection)
+    {
+        $prefix = $this->getCookieOrderByPrefix();
+        if (empty($orderDirection)) {
+            // the real Cookie answers false for a key it does not hold
+            $stored = isset($this->context->cookie->{$prefix . $this->list_id . 'Orderway'}) ? $this->context->cookie->{$prefix . $this->list_id . 'Orderway'} : false;
+            if ($stored) {
+                $orderDirection = $stored;
+            } elseif ($this->_orderWay) {
+                $orderDirection = $this->_orderWay;
+            } else {
+                $orderDirection = $this->_defaultOrderWay;
+            }
+        }
+
+        if (!Validate::isOrderWay($orderDirection)) {
+            throw new PrestaShopException('Invalid order direction.');
+        }
+
+        return pSQL(Tools::strtoupper($orderDirection));
+    }
+
+    protected function getCookieOrderByPrefix()
+    {
+        return str_replace(['admin', 'controller'], '', Tools::strtolower(get_class($this)));
+    }
+
     public function init()
     {
+    }
+
+    /** The core builds the list in renderList() (getList() runs the list query); only the query is modelled here. */
+    public function renderList()
+    {
+        Db::getInstance()->executeS('SELECT a.* FROM `' . _DB_PREFIX_ . $this->table . '` a');
+
+        return '';
     }
 
     /** The core decides the action from the request; the tests set $action before the module override runs. */

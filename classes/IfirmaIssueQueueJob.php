@@ -59,7 +59,7 @@ class IfirmaIssueQueueJob implements IfirmaCronJob
         $window = null;
 
         foreach (IfirmaReceipt::findQueued($context->getMaxItems()) as $record) {
-            if ($this->credentialsPaused()) {
+            if (!$context->allowsAnotherItem() || $this->credentialsPaused()) {
                 break;
             }
             $order = new Order((int) $record->id_order);

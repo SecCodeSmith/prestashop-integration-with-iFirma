@@ -127,6 +127,82 @@ class AdminOrderPanelTest extends TestCase
         $this->assertSame($canIssueAnyway, $v['ifirma_can_issue_anyway']);
     }
 
+    /** The condition of the template block that holds the element, the closest {if ...} before it. */
+    private function guardOf($tpl, $needle)
+    {
+        $before = substr($tpl, 0, strpos($tpl, $needle));
+        $start = strrpos($before, '{if ');
+
+        return substr($before, $start, strpos($before, '}', $start) - $start + 1);
+    }
+
+    private function panelTemplate()
+    {
+        return file_get_contents(dirname(__DIR__, 2) . '/views/templates/hook/admin_order_panel.tpl');
+    }
+
+    public function testTheQueuedOrderIsShownAsQueuedWithItsRefusalMessageAndTheCronNote()
+    {
+        $this->makeReceipt(array('status' => 'queued', 'ifirma_id' => '', 'last_error' => 'iFirma rate limit guard: 80 requests in the current minute (cap 80). Retry shortly.'));
+        $tpl = $this->panelTemplate();
+        preg_match("/\{if \\\$ifirma_state == 'queued'\}(.*?)\{\/if\}\s*\{\/if\}/s", $tpl, $block);
+
+        $v = $this->panel();
+
+        $this->assertSame('queued', $v['ifirma_state']);
+        $this->assertStringContainsString('(cap 80)', $v['ifirma_receipt']->last_error);
+        $this->assertNotEmpty($block, 'the template has a notice for the queued state');
+        $this->assertStringContainsString('id="ifirma-queued-notice"', $block[1]);
+        $this->assertStringContainsString("{l s='This order is queued for issuance. The cron endpoint issues it, or use Create below.' mod='ifirma'}", $block[1]);
+        $this->assertStringContainsString("{\$ifirma_receipt->last_error|escape:'html':'UTF-8'}", $block[1], 'the refusal message is shown escaped');
+    }
+
+    public function testTheQueuedOrderCanBeCreatedByAnEmployeeAndTheTemplateOffersTheCreateAction()
+    {
+        $this->makeReceipt(array('status' => 'queued', 'ifirma_id' => ''));
+        $tpl = $this->panelTemplate();
+
+        $v = $this->panel();
+
+        $this->assertTrue($v['ifirma_can_create']);
+        $this->assertFalse($v['ifirma_can_issue_anyway']);
+        $this->assertSame('{if $ifirma_can_create && $ifirma_can_issue}', $this->guardOf($tpl, 'id="ifirma-create-receipt"'));
+    }
+
+    public function testTheSendToKsefActionIsNotOfferedForAnAcceptedDocument()
+    {
+        $this->makeReceipt(array('ksef_status' => 'PRZYJETA', 'ksef_number' => '5260001122-20261101-ABC-01'));
+        $tpl = $this->panelTemplate();
+
+        $v = $this->panel();
+
+        $this->assertSame('5260001122-20261101-ABC-01', $v['ifirma_receipt']->ksef_number);
+        $this->assertSame('PRZYJETA', $v['ifirma_receipt']->ksef_status);
+        $this->assertSame("{if \$ifirma_can_manage && !\$ifirma_receipt->ksef_number && \$ifirma_receipt->ksef_status != 'PRZYJETA'}", $this->guardOf($tpl, 'id="ifirma-ksef-send"'));
+    }
+
+    public function testADocumentAwaitingKsefRaisesTheWaitingFlagAndTheTemplateWarnsNextToSendAgain()
+    {
+        $this->makeReceipt(array('delivery_status' => 'awaiting_ksef', 'ksef_status' => 'WYSLANA'));
+        $tpl = $this->panelTemplate();
+        $warningAt = strpos($tpl, "{l s='Not yet accepted in KSeF.' mod='ifirma'}");
+
+        $v = $this->panel();
+
+        $this->assertTrue($v['ifirma_ksef_waiting']);
+        $this->assertGreaterThan(0, $warningAt);
+        $this->assertSame('{if $ifirma_can_manage && $ifirma_ksef_waiting}', $this->guardOf($tpl, 'id="ifirma-resend-warning"'));
+        $this->assertLessThan(strpos($tpl, 'id="ifirma-resend"'), $warningAt, 'the warning comes before Send again');
+        $this->assertLessThan(500, strpos($tpl, 'id="ifirma-resend"') - $warningAt, 'and right next to it');
+    }
+
+    public function testAnAcceptedDocumentRaisesNoWaitingFlag()
+    {
+        $this->makeReceipt(array('delivery_status' => 'sent', 'ksef_status' => 'PRZYJETA', 'ksef_number' => '5260001122-20261101-ABC-01'));
+
+        $this->assertFalse($this->panel()['ifirma_ksef_waiting']);
+    }
+
     public function testWithoutARecordThePanelOffersToIssueAndOnlyThat()
     {
         $v = $this->panel();
@@ -152,7 +228,52 @@ class AdminOrderPanelTest extends TestCase
         $v = $this->panel();
 
         $this->assertTrue($v['ifirma_is_external']);
-        $this->assertSame('Failed: no mailbox', $v['ifirma_delivery_text']);
+        $this->assertSame('Failed: no mailbox – No automatic attempt is scheduled', $v['ifirma_delivery_text']);
+    }
+
+    public function testTheFailedDeliveryTellsTheAttemptUsedAndTheNextDueTime()
+    {
+        $this->makeReceipt(array('delivery_status' => 'failed', 'delivery_error' => 'no mailbox', 'delivery_attempts' => 1, 'delivery_retry_at' => '2026-11-10 10:15:00'));
+
+        $v = $this->panel();
+
+        $this->assertSame('Failed: no mailbox – Attempt 1 of 3, next attempt at 2026-11-10 10:15', $v['ifirma_delivery_text']);
+    }
+
+    public function testTheFailedDeliveryWithUsedUpAttemptsSaysNoneRemains()
+    {
+        $this->makeReceipt(array('delivery_status' => 'failed', 'delivery_error' => 'no mailbox', 'delivery_attempts' => 3));
+
+        $v = $this->panel();
+
+        $this->assertSame('Failed: no mailbox – No automatic attempt remains', $v['ifirma_delivery_text']);
+    }
+
+    public function testTheSendAgainActionStaysOfferedAfterTheAttemptsAreUsedUp()
+    {
+        $this->makeReceipt(array('delivery_status' => 'failed', 'delivery_error' => 'no mailbox', 'delivery_attempts' => 3));
+        $tpl = file_get_contents(dirname(__DIR__, 2) . '/views/templates/hook/admin_order_panel.tpl');
+        $buttonAt = strpos($tpl, 'id="ifirma-resend"');
+        $guards = substr($tpl, $buttonAt - 120, 120);
+
+        $v = $this->panel();
+
+        $this->assertTrue($v['ifirma_is_issued']);
+        $this->assertTrue($v['ifirma_can_manage']);
+        $this->assertStringContainsString('{if $ifirma_can_manage}', $guards);
+        $this->assertStringNotContainsString('delivery', $guards, 'the button does not depend on the delivery state');
+    }
+
+    public function testMarkupInTheDeliveryErrorReachesTheTemplateOnlyThroughItsEscapedLine()
+    {
+        $this->makeReceipt(array('delivery_status' => 'failed', 'delivery_error' => '<script>alert(1)</script>'));
+        $tpl = file_get_contents(dirname(__DIR__, 2) . '/views/templates/hook/admin_order_panel.tpl');
+
+        $v = $this->panel();
+
+        $this->assertStringContainsString('<script>alert(1)</script>', $v['ifirma_delivery_text']);
+        $this->assertStringContainsString('{$ifirma_delivery_text|escape:\'html\':\'UTF-8\'}', $tpl);
+        $this->assertSame(1, substr_count($tpl, 'ifirma_delivery_text'), 'the line is printed in one place, escaped');
     }
 
     public function testAnUnconfiguredModuleStillRendersAndSaysSo()

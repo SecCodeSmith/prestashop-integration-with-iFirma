@@ -49,6 +49,7 @@ class SettingsSaveTest extends TestCase
     {
         $request = array(
             'submitIfirma' => '1',
+            'token' => 'admin-token-AdminModules',
             'IFIRMA_USER' => 'firma@example.test',
             'IFIRMA_PAYMENT_METHOD' => 'PRZ',
             'IFIRMA_PAYMENT_METHOD_MODE' => 'order',
@@ -754,7 +755,7 @@ class SettingsSaveTest extends TestCase
             throw new Exception('no entropy');
         };
         try {
-            Tools::$values = array('submitIfirmaRegenerateCron' => '1');
+            Tools::$values = array('submitIfirmaRegenerateCron' => '1', 'token' => 'admin-token-AdminModules');
             Configuration::$writes = array();
             $page = $this->module->getContent();
         } finally {

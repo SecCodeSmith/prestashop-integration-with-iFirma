@@ -76,7 +76,7 @@
     </form>
 
     <form method="post" action="{$ifirma_cm_action|escape:'html':'UTF-8'}" style="margin-top:15px;"
-          onsubmit="return confirm('{l s='Forget all customer to contractor links?' mod='ifirma' js=1}');">
+          onsubmit="return window.confirm('{l s='Forget all customer to contractor links?' mod='ifirma' js=1}');">
         <input type="hidden" name="token" value="{$ifirma_cm_token|escape:'html':'UTF-8'}">
         <input type="hidden" name="confirm" value="1">
         <button type="submit" name="submitIfirmaResetContractorMap" value="1" class="btn btn-default">

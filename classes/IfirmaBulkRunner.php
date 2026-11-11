@@ -390,6 +390,12 @@ class IfirmaBulkRunner
 
             return '';
         }
+        if ($res->isJustSent()) {
+            // delivered a moment ago: nothing was sent, the run goes on with the next document
+            $state['results'][$id] = $this->result($id, $idOrder, self::OUTCOME_SKIPPED, $message, $receipt);
+
+            return '';
+        }
         if ($res->refusedLocally()) {
             // the client refused the call itself and the record was left untouched: stop the run
             $reason = $res->getRefusal() === 'auth_blocked' ? self::STOP_AUTH_BLOCKED : self::STOP_RATE_LIMITED;
@@ -514,7 +520,8 @@ class IfirmaBulkRunner
     }
 
     /**
-     * @return string the hint that names the window that refused: tomorrow for the day cap, else in a minute
+     * @return string the hint that names the window that refused: tomorrow for the day cap, the time the back-off
+     *                ends when iFirma asked the module to wait, else in a minute
      */
     private function whenToRunAgain()
     {
@@ -522,10 +529,30 @@ class IfirmaBulkRunner
         $guard = new IfirmaRateGuard(function () use ($runner) {
             return $runner->now();
         });
+        $window = $guard->blockedBy();
 
-        return $guard->blockedBy() === IfirmaRateDecision::WINDOW_DAY
-            ? $this->module->l('Run it again tomorrow.', 'ifirmabulkrunner')
-            : $this->module->l('Run it again in a minute.', 'ifirmabulkrunner');
+        if ($window === IfirmaRateDecision::WINDOW_DAY) {
+            return $this->module->l('Run it again tomorrow.', 'ifirmabulkrunner');
+        }
+        if ($window === IfirmaRateDecision::WINDOW_BACKOFF) {
+            return sprintf(
+                $this->module->l('Run it again after %s.', 'ifirmabulkrunner'),
+                $this->clockTime($guard->backoffUntil())
+            );
+        }
+
+        return $this->module->l('Run it again in a minute.', 'ifirmabulkrunner');
+    }
+
+    /**
+     * @param int $timestamp
+     * @return string the time of day, with the date when it is not today
+     */
+    private function clockTime($timestamp)
+    {
+        $sameDay = date('Y-m-d', $timestamp) === date('Y-m-d', $this->now());
+
+        return date($sameDay ? 'H:i' : 'Y-m-d H:i', $timestamp);
     }
 
     /**

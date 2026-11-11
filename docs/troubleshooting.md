@@ -82,13 +82,18 @@ rejects the credentials.
 
 ### "Not attempted (rate limited)" in a bulk summary
 
-**Meaning:** during a bulk run the module's per-minute rate guard refused a request (the default cap is 80 requests a
-minute, see [Rate limits](configuration.md#rate-limits)). The run stopped there. The records it did not reach keep their
-previous state and are not errors. The records already handled keep their outcome.
+**Meaning:** during a bulk run the module's rate guard refused a request: the per-minute cap (default 80 requests a
+minute), the per-day cap (default 14,000 requests a day) or a running back-off after iFirma's own limit answer (see
+[Rate limits](configuration.md#rate-limits)). The run stopped there. In an issue or retry run, the order whose request was
+refused is queued and the cron issues it later; the records the run did not reach keep their previous state and are not
+errors. The records already handled keep their outcome.
 
-**What to do:** wait a minute, select the records that were not attempted in the [documents list](usage.md#ifirma-documents-list)
-and run the action again. The cap is shared with every other client of the same iFirma account, so a busy account may need
-the bulk runs at quiet times.
+**What to do:** read the hint at the end of the message. `Run it again in a minute.` is shown for the minute cap,
+`Run it again tomorrow.` when the day cap was reached, and `Run it again after 13:15.` (the time, with the date when it
+is not today) when iFirma asked the module to wait. Then select the records that were not attempted in
+the [documents list](usage.md#ifirma-documents-list) and run the action again; queued orders need no new click, because the
+cron issues them. The cap is shared with every other client of the same iFirma account, so a busy account may need the
+bulk runs at quiet times.
 
 ### Rate limited by iFirma
 
@@ -109,6 +114,18 @@ programs use the same account: lower `API calls per minute` and `API calls per d
 ([Rate limits](configuration.md#rate-limits)). The exact answer of iFirma's limit is not documented; if a limit answer is not
 recognised (it shows up as a technical problem, `Kod` 100), please report its HTTP status and text.
 
+### What uses my request limit
+
+**Meaning:** iFirma's limit (100 requests a minute, 15,000 a day) is shared by every program that uses the account's API,
+and the module counts every request it sends, status checks and PDF downloads included.
+
+**What to do:** open the **Module requests** box on the settings page. It shows the requests of the current minute and of today
+next to the caps and today's count per kind ([Module requests](configuration.md#module-requests)). A high `status` count
+means the status sync or the documents list ran a lot; a high `pdf` count means many downloads or deliveries. If the day count
+is higher than the kinds add up to, the row **Other clients of the account** shows what other programs used. Click **Check the
+remaining iFirma limit** (needs the `abonent` key) to see what iFirma itself counts; one click costs one request. Then lower
+the caps or the cron frequency ([Rate limits](configuration.md#rate-limits)).
+
 ### A KSeF invoice was not e-mailed to the customer
 
 **Meaning:** an invoice that goes to KSeF (mode `b2b` for a buyer with a NIP, or `all`) is delivered only after KSeF has accepted it. Its delivery state is `awaiting_ksef` and the order panel says "waiting for KSeF acceptance"; the customer's page shows "not yet sent" and no download link.
@@ -127,6 +144,14 @@ them. After an upgrade from an earlier version, profiles other than these have n
 
 **What to do:** open **Advanced Parameters > Team > Permissions**, choose the profile and grant *View*, *Add* and *Edit* for
 **Orders > iFirma documents**, as needed (see the table in [Permissions](configuration.md#permissions)). Then reload the page.
+
+### "This action must be sent with POST." (HTTP 405)
+
+**Message:** "This action must be sent with POST."
+
+**Meaning:** since 1.10.0 every back-office action that changes something or sends a request to iFirma (issuing, linking, sending again, status updates, KSeF, approving or rejecting a request, the customer link, unlink and register, marking the bell as seen, and all bulk runs) runs only for a POST request. The module's own buttons send POST. A GET, for example a bookmarked or scripted `...&ajax=1&action=CreateReceipt` URL, is answered with HTTP 405 and this text, and nothing is changed. Only the PDF download and the read-only checks (the notification feed, the customer check, search and count) still accept GET.
+
+**What to do:** change the script to send a POST with the back-office token. If a button of the module shows this message, a proxy or a browser extension is rewriting the request method; report it.
 
 ### Internal error on the iFirma panel or in a download
 
@@ -147,11 +172,51 @@ class and message of the failure.
 **Message:** "Please wait a moment before downloading the document again."
 
 **Meaning:** the customer's download was refused by the download limit: the same document was fetched less than 30 seconds
-ago, or the customer has already downloaded 10 documents in the last 60 seconds (see [Download limits](usage.md#download-limits)).
-The document itself is fine.
+ago, or the customer has already downloaded 10 documents in the last 60 seconds (see [Download limits](usage.md#download-limits),
+which lists every download limit). The document itself is fine. This answer has no `Retry-After` header.
 
 **What to do:** wait a few seconds and reload. If customers hit the limit routinely, look for something that downloads the
-PDF repeatedly, such as a link preview or a script.
+PDF repeatedly, such as a link preview or a script. A download can also be refused with "Too many requests at the moment.
+Please try again shortly." when the customer has already downloaded 30 documents today, or when all customers together have
+used the customer download budget (20 per minute, 2,000 per day); it works again in the next minute or the next day.
+
+### HTTP 429 on a PDF download because of the module's request limit
+
+**Message for the customer:** "Too many requests at the moment. Please try again shortly." The answer is HTTP 429 with a
+`Retry-After` header. For a customer the value is always 60, whichever limit refused, so the answer does not reveal the window.
+For an employee it is exact: the seconds to the next minute for the minute limit (1 to 60), the seconds to the end of a back-off,
+and for the day limit at most 3600.
+
+**Message for an employee (back office download):** one of "The PDF was not downloaded: the minute request limit is
+reached. Try again in a moment.", "... the day request limit is reached. Try again later." or "... iFirma asked the module to
+wait before the next request. Try again shortly."
+
+**Meaning:** the module's own request limit ([Rate limits](configuration.md#rate-limits)) or a running back-off refused the
+request before it was sent: no request reached iFirma and no document was changed. It is not an error of the document and
+not the download limit of the customer ([HTTP 429 on the customer's PDF download](#http-429-on-the-customers-pdf-download)).
+The customer is only asked to try again; the exact window and the counters are shown to employees, never to customers. A
+request that was sent and failed at iFirma is still answered with HTTP 502 ("The document is temporarily unavailable. Please try again later.").
+A pause after a rejected key is not a rate limit and keeps its own message ([Calls paused after a rejected key](#calls-paused-after-a-rejected-key)).
+
+**What to do:** wait for the seconds in `Retry-After` and download again. The module does not wait or retry by itself.
+A customer request that the limit refused has already taken the 30-second slot of that document, so a retry of the same
+document within 30 seconds gets the answer of the previous section (no `Retry-After`); the unit of the shared budget and the
+customer's day count are given back, so they are not used up by the refusal (see
+[Download limits](usage.md#download-limits)).
+If it happens often, other programs use the same iFirma account or the caps are too low for your traffic: see
+[Rate limited by iFirma](#rate-limited-by-ifirma).
+
+### "The status was not refreshed" on the order panel
+
+**Message:** "The status was not refreshed: the minute request limit is reached. Try again in a moment." (or the day
+limit, or "iFirma asked the module to wait before the next request", or "iFirma reported that its request limit was
+exceeded").
+
+**Meaning:** **Refresh from iFirma** was refused by the request limit, so no list call was made. The stored state, the last
+sync time and the sync error of the document are unchanged and nothing was recorded as an error. The same refusal on the
+customer's order page is silent: the page shows the last known state.
+
+**What to do:** wait a moment and click **Refresh from iFirma** again.
 
 ### Delivery shows "sent" but no e-mail arrived
 
@@ -160,6 +225,18 @@ PDF repeatedly, such as a link preview or a script.
 **What to do on a production shop:** check the mail method and server under Advanced Parameters > E-mail. Then open Advanced Parameters > Logs and look for lines containing "Swift Error" or "Mailer Error"; they say why the mailer refused the message.
 
 **On the test stack:** the shop sends to the mock's SMTP sink, not to a real mail server. Open `http://localhost:8001/__mock/status` and read the Mail section, or call `GET /__mock/mail`. `tests/smoke/run.php` leaves the shop pointed at the sink, so mail from the shop keeps going there after a smoke run until its mail settings are changed back.
+
+### A delivery stays "failed"
+
+**Meaning:** the e-mail of an issued document could not be sent. The order panel, the Orders-list tooltip and the delivery column of the iFirma documents list show the error and one line that tells where the automatic retry stands (see [Automatic retry of a failed delivery](usage.md#automatic-retry-of-a-failed-delivery)):
+
+- **Attempt 1 of 3, next attempt at 10:15** (or attempt 2 of 3, or **Attempt 0 of 3** for a just issued document whose first delivery the request limit refused before anything was sent): nothing to do. The [cron endpoint](configuration.md#cron-jobs) sends the document again when the time has come. If the time has passed and the delivery is still failed, the cron is not called (call it every 1 to 5 minutes), the request limit is reached (a refusal by the limit uses no attempt, the delivery stays due) or the channel is set to `none`.
+- **No automatic attempt remains**: three attempts failed. Read the error, fix the cause (shop mail settings under Advanced Parameters > E-mail, the customer's address) and use **Send again**.
+- **No automatic attempt will be made**, with the error "A delivery attempt started and its outcome was not recorded. Check whether the customer received the document before sending it again.": the cron saved the attempt and the process stopped, or the result could not be saved, before the outcome was recorded. The e-mail may or may not have left, also when the run stopped before anything was sent, so the cron never tries it again. Check with the customer or the mail log, then use **Send again** if the document did not arrive.
+- **No automatic attempt will be made** with any other error: the failure is permanent (no valid e-mail address of the customer, the document is missing in iFirma, the API key is missing or was rejected) or its outcome is unknown (with the channel `ifirma_mail`, the request to iFirma's mail service got no answer, so the e-mail may have been sent). Check with the customer or in iFirma, then use **Send again** if needed.
+- **No automatic attempt is scheduled**: the delivery failed before the module version 1.10.0, which introduced the retry. Old failures are not retried; use **Send again** (or the bulk **Send again** of the documents list, filtered by delivery Failed).
+
+**Why not retry everything:** a retry that could e-mail the same document twice is never made; that is why a failure with an unknown outcome waits for an employee. The one case the module cannot rule out: when the shop's mail system reports a failure although the mail server had already accepted the message (a lost SMTP answer), the retry sends the document again.
 
 ### Guest did not receive the code
 

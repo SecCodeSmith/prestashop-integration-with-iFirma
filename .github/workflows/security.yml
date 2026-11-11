@@ -3,9 +3,10 @@ name: Security
 # Vulnerability hunting: dependency advisories (PHP, Node, Python), dependency review on pull
 # requests, committed secrets, insecure PHP patterns, container image tags and configuration.
 # Runs on every pull request, on pushes to the default branch and weekly, so a new advisory
-# against unchanged code is found too. A high or critical finding fails the run. There is no
-# ignore file: an accepted risk is written down with its reason and an expiry date in
-# docs/development.md ("Security scanning"), never silenced here.
+# against unchanged code is found too. A high or critical finding fails the run. Nothing is
+# silenced without a note: every accepted risk and every reviewed false positive of the secret
+# scan (.gitleaks.toml, .gitleaksignore) is written down with its reason and a review date in
+# docs/development.md ("Security scanning").
 on:
   push:
     branches: [main, master]

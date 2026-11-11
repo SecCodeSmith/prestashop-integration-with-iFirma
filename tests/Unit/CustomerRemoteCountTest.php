@@ -272,9 +272,14 @@ class CustomerRemoteCountTest extends TestCase
 
         $this->svc->remoteCount(7);
 
-        // the guard stamps the minute window and the day window; nothing else is written
+        // the guard stamps the minute window and the day window and the usage counter of kind status (two list
+        // requests, api-usage-accounting "Status check counted"); nothing else is written
         $this->assertSame(
-            array('IFIRMA_RATE_WINDOW' => date('YmdHi', $this->now) . ':2', 'IFIRMA_RATE_DAY_WINDOW' => date('Ymd', $this->now) . ':2'),
+            array(
+                'IFIRMA_RATE_WINDOW' => date('YmdHi', $this->now) . ':2',
+                'IFIRMA_RATE_DAY_WINDOW' => date('Ymd', $this->now) . ':2',
+                'IFIRMA_USAGE_STATUS' => date('Y-m-d', $this->now) . ':2',
+            ),
             array_diff_assoc(Configuration::$values, $configurationBefore)
         );
         $this->assertSame(array(), array_diff_assoc($configurationBefore, Configuration::$values));

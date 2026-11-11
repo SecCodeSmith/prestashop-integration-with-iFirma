@@ -6,7 +6,7 @@ The "iFirma" tab of the back-office notification centre, which tells employees a
 ## Requirements
 
 ### Requirement: Issue events
-A module record SHALL count as an issue while its current state is one of: issuance failed (`error`), unknown outcome, suspected duplicate, held by a pending data-change request, delivery failed, KSeF submission failed, or document missing in iFirma. A record SHALL leave the list as soon as none of these applies.
+A module record SHALL count as an issue while its current state is one of: issuance failed (`error`), unknown outcome, suspected duplicate, held by a pending data-change request, queued for issuance for more than 30 minutes, delivery failed, KSeF submission failed or rejected (`BLAD` or `ODRZUCONA`), awaiting KSeF acceptance for more than 48 hours after issuance, or document missing in iFirma. A record SHALL leave the list as soon as none of these applies.
 
 #### Scenario: Failed issuance listed
 - **WHEN** the pipeline records state `error` for order 42
@@ -19,6 +19,22 @@ A module record SHALL count as an issue while its current state is one of: issua
 #### Scenario: Repaired record disappears
 - **WHEN** the failed record of order 42 is later issued successfully
 - **THEN** the issue for order 42 is no longer listed
+
+#### Scenario: Stale queue listed
+- **WHEN** order 42 has been queued for 31 minutes
+- **THEN** the tab lists an issue for order 42 naming the queued issuance
+
+#### Scenario: Rejected by KSeF listed
+- **WHEN** status sync stores `ODRZUCONA` for the invoice of order 42
+- **THEN** the tab lists an issue for order 42 naming the KSeF rejection
+
+#### Scenario: Overdue KSeF wait listed
+- **WHEN** the invoice of order 42 was issued 49 hours ago and still awaits KSeF acceptance
+- **THEN** the tab lists an issue for order 42 naming the overdue KSeF confirmation
+
+#### Scenario: Normal KSeF wait not listed
+- **WHEN** the invoice of order 42 was issued 2 hours ago and awaits KSeF acceptance
+- **THEN** the tab lists nothing for it
 
 ### Requirement: Tab in the notification centre
 The back-office header notification centre SHALL get a fourth tab, **iFirma**, on every back-office page that shows the centre, for employees with the view level; employees without it SHALL see no tab and the page SHALL make no issue request.

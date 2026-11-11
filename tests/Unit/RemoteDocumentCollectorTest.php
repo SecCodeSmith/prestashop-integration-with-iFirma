@@ -314,6 +314,39 @@ class RemoteDocumentCollectorTest extends TestCase
         $this->assertSame($this->nothing(1, array('period_from' => $window[0], 'period_to' => $window[1])), $found);
     }
 
+    /** @return array label => array(time zone of the shop, today as a timestamp, registration date, the one window asked for) */
+    public static function shopDays()
+    {
+        return array(
+            'the first hour of the shop day, still yesterday in UTC' => array('Europe/Warsaw', gmmktime(23, 30, 0, 11, 10, 2026), '2026-03-10 09:30:00', array('2026-03-10', '2026-11-11')),
+            'a customer registered in that first hour' => array('Europe/Warsaw', gmmktime(23, 30, 0, 11, 10, 2026), '2026-11-11 00:10:00', array('2026-11-11', '2026-11-11')),
+            'summer time, two hours ahead of UTC' => array('Europe/Warsaw', gmmktime(22, 30, 0, 7, 1, 2026), '2026-03-10 09:30:00', array('2026-03-10', '2026-07-02')),
+            'the last hours of the shop day, already tomorrow in UTC' => array('America/New_York', gmmktime(3, 0, 0, 11, 11, 2026), '2026-03-10 09:30:00', array('2026-03-10', '2026-11-10')),
+        );
+    }
+
+    /**
+     * Documents carry the day of the shop's time zone (IfirmaPayloadBuilder stamps DataWystawienia with
+     * date()), so a window that ended on the UTC day missed the documents of the shop's first hours.
+     *
+     * @dataProvider shopDays
+     */
+    public function testTodayAndTheRegistrationDayAreDaysOfTheShopsTimeZone($zone, $now, $registeredAt, array $window)
+    {
+        $before = date_default_timezone_get();
+        date_default_timezone_set($zone);
+        try {
+            $this->queueEmptyLists();
+
+            $found = $this->collect('KOWALSKI-01', '', $registeredAt, $now);
+
+            $this->assertSame(array($this->url($window[0], $window[1], 'kontrahent=KOWALSKI-01')), $this->requests());
+            $this->assertSame($this->nothing(1, array('period_from' => $window[0], 'period_to' => $window[1])), $found);
+        } finally {
+            date_default_timezone_set($before);
+        }
+    }
+
     // ---- pages ----------------------------------------------------------------------------------------
 
     public function testPagesAreAskedForByNumberAfterTheFilterAndUntilAShortPage()
@@ -633,9 +666,14 @@ class RemoteDocumentCollectorTest extends TestCase
 
         $this->collect('KOWALSKI-01', '1234563218');
 
-        // the guard stamps the minute window and the day window; nothing else is written
+        // the guard stamps the minute window and the day window and the usage counter of kind status (two list
+        // requests, api-usage-accounting "Status check counted"); nothing else is written
         $this->assertSame(
-            array('IFIRMA_RATE_WINDOW' => date('YmdHi', $this->now) . ':2', 'IFIRMA_RATE_DAY_WINDOW' => date('Ymd', $this->now) . ':2'),
+            array(
+                'IFIRMA_RATE_WINDOW' => date('YmdHi', $this->now) . ':2',
+                'IFIRMA_RATE_DAY_WINDOW' => date('Ymd', $this->now) . ':2',
+                'IFIRMA_USAGE_STATUS' => date('Y-m-d', $this->now) . ':2',
+            ),
             array_diff_assoc(Configuration::$values, $configurationBefore)
         );
         $this->assertSame(array(), array_diff_assoc($configurationBefore, Configuration::$values));

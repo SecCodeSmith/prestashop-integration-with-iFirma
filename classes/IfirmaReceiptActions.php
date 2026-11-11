@@ -14,6 +14,7 @@ if (!defined('_PS_VERSION_')) {
 }
 
 require_once dirname(__FILE__) . '/IfirmaActionSupport.php';
+require_once dirname(__FILE__) . '/IfirmaRateDecision.php';
 require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaReceiptService.php';
 require_once dirname(__FILE__) . '/IfirmaIssuancePipeline.php';
@@ -214,9 +215,16 @@ class IfirmaReceiptActions extends IfirmaActionSupport
                 return $this->result(false, $this->module->l('No issued iFirma document for this order.', 'ifirmaadminactions'));
             }
             $sync = IfirmaStatusSyncService::build($this->module);
-            $sync->syncReceipt($receipt);
+            $summary = $sync->syncReceipt($receipt);
             $receipt = new IfirmaReceipt((int) $receipt->id);
             $data = array('receipt' => $this->receiptToArray($receipt));
+            if (!empty($summary['rate_limited'])) {
+                return $this->result(
+                    false,
+                    $this->refreshRefusedMessage(isset($summary['rate_limit_window']) ? $summary['rate_limit_window'] : ''),
+                    $data
+                );
+            }
             if ((string) $receipt->sync_error !== '') {
                 return $this->result(
                     false,
@@ -227,6 +235,25 @@ class IfirmaReceiptActions extends IfirmaActionSupport
 
             return $this->result(true, $this->module->l('Status refreshed from iFirma.', 'ifirmaadminactions'), $data);
         });
+    }
+
+    /**
+     * @param string $window one of the IfirmaRateDecision::WINDOW_* constants
+     * @return string what the employee is told when the request limit refused the refresh
+     */
+    private function refreshRefusedMessage($window)
+    {
+        if ($window === IfirmaRateDecision::WINDOW_MINUTE) {
+            return $this->module->l('The status was not refreshed: the minute request limit is reached. Try again in a moment.', 'ifirmaadminactions');
+        }
+        if ($window === IfirmaRateDecision::WINDOW_DAY) {
+            return $this->module->l('The status was not refreshed: the day request limit is reached. Try again later.', 'ifirmaadminactions');
+        }
+        if ($window === IfirmaRateDecision::WINDOW_BACKOFF) {
+            return $this->module->l('The status was not refreshed: iFirma asked the module to wait before the next request. Try again shortly.', 'ifirmaadminactions');
+        }
+
+        return $this->module->l('The status was not refreshed: iFirma reported that its request limit was exceeded. Try again shortly.', 'ifirmaadminactions');
     }
 
     /**

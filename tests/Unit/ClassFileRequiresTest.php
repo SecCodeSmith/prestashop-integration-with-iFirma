@@ -80,9 +80,22 @@ class ClassFileRequiresTest extends TestCase
             'the issue feed' => array('IfirmaIssueFeed'),
             'the request input reader' => array('IfirmaInput'),
             'the order grid indicator' => array('IfirmaOrderGridIndicator'),
+            'the document state rank' => array('IfirmaDocumentStateRank'),
+            'the order grid state filter' => array('IfirmaOrderGridStateFilter'),
+            'the documents list sort' => array('IfirmaDocumentListSort'),
+            'the delivery retry view' => array('IfirmaDeliveryRetryView'),
             'the shop link' => array('IfirmaShopLink'),
             'the data request auto-accept criteria' => array('IfirmaDataRequestAutoAccept'),
             'the guest code service' => array('IfirmaGuestCodeService'),
+            'the request kind' => array('IfirmaRequestKind'),
+            'the limit reading' => array('IfirmaLimitReading'),
+            'the limit check outcome' => array('IfirmaLimitCheck'),
+            'the remote limit presenter' => array('IfirmaRemoteLimitPresenter'),
+            'the API usage presenter' => array('IfirmaApiUsagePresenter'),
+            'the limit check action' => array('IfirmaLimitCheckAction'),
+            'the download budget' => array('IfirmaDownloadBudget'),
+            'the download day cap' => array('IfirmaDownloadDayCap'),
+            'the window counter' => array('IfirmaWindowCounter'),
         );
     }
 

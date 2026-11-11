@@ -10,16 +10,22 @@ if (!defined('_PS_VERSION_')) {
 
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaActionSupport.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaApiClient.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDownloadBudget.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaHttpOutput.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaHttpStatus.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaPermission.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaReceipt.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaRateDecision.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaRateLimitedException.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaReceiptService.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaAdminActions.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaBulkRunner.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaInput.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaIssueFeed.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDocumentListSort.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaOrderGridIndicator.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaDeliveryRetryView.php';
+require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaSchema.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaReceiptActions.php';
 
 class AdminIfirmaController extends ModuleAdminController
@@ -56,7 +62,23 @@ class AdminIfirmaController extends ModuleAdminController
         'CustomerCountRemote' => self::LEVEL_VIEW,
         'CustomerLink' => self::LEVEL_VIEW,
         'CustomerUnlink' => self::LEVEL_VIEW,
-        'CustomerRegister' => self::LEVEL_VIEW,
+        'CustomerRegister' => self::LEVEL_ISSUE,
+    );
+
+    /**
+     * The actions that only read and so may be sent with GET (the PDF link of the panels is a plain link). Every
+     * other action, and any action added later, changes state or sends a request to iFirma and runs only for a
+     * POST: the core's token check is skipped when the shop runs without PS_SECURITY_TOKEN, so the method is the
+     * second guard against a link or an image tag that triggers an action.
+     *
+     * @var string[]
+     */
+    private static $readOnlyActions = array(
+        'DownloadPdf',
+        'IssueFeed',
+        'CustomerCheck',
+        'CustomerSearch',
+        'CustomerCountRemote',
     );
 
     /** @var array bulk kind => level */
@@ -81,7 +103,8 @@ class AdminIfirmaController extends ModuleAdminController
         $this->list_no_link = true;
         $this->_defaultOrderBy = 'id_ifirma_receipt';
         $this->_defaultOrderWay = 'DESC';
-        $this->_select = 'o.reference AS order_reference, CONCAT(c.firstname, \' \', c.lastname) AS customer_name, \'\' AS actions';
+        $this->_select = 'o.reference AS order_reference, CONCAT(c.firstname, \' \', c.lastname) AS customer_name, \'\' AS actions, '
+            . IfirmaDocumentListSort::rankSelect('a');
         $this->_join = 'LEFT JOIN `' . _DB_PREFIX_ . 'orders` o ON o.id_order = a.id_order '
             . 'LEFT JOIN `' . _DB_PREFIX_ . 'customer` c ON c.id_customer = a.id_customer';
         if ($this->attentionPresetActive()) {
@@ -109,6 +132,28 @@ class AdminIfirmaController extends ModuleAdminController
         if ($this->attentionPresetActive()) {
             self::$currentIndex .= '&ifirma_preset=attention';
         }
+    }
+
+    /**
+     * The core renders the list only for an employee who may view the tab, so the schema is not touched before the
+     * access decision (init() runs for everyone).
+     *
+     * @return string
+     */
+    public function renderList()
+    {
+        $this->ensureReceiptRetryColumns();
+
+        return parent::renderList();
+    }
+
+    /**
+     * The list and the actions read the retry columns of the receipt table; an upgrade that did not add them yet must
+     * not hide them.
+     */
+    private function ensureReceiptRetryColumns()
+    {
+        IfirmaSchema::ensureReceiptRetryColumns();
     }
 
     /**
@@ -238,14 +283,6 @@ class AdminIfirmaController extends ModuleAdminController
             IfirmaReceipt::SOURCE_MODULE => $this->module->l('Module', 'adminifirmacontroller'),
             IfirmaReceipt::SOURCE_EXTERNAL => $this->module->l('External', 'adminifirmacontroller'),
         );
-        $deliveries = array(
-            IfirmaReceipt::DELIVERY_NONE => $this->module->l('Not sent', 'adminifirmacontroller'),
-            IfirmaReceipt::DELIVERY_SENT => $this->module->l('Sent', 'adminifirmacontroller'),
-            IfirmaReceipt::DELIVERY_FAILED => $this->module->l('Failed', 'adminifirmacontroller'),
-            IfirmaReceipt::DELIVERY_SKIPPED => $this->module->l('Skipped', 'adminifirmacontroller'),
-            IfirmaReceipt::DELIVERY_AWAITING_KSEF => $this->module->l('Awaiting KSeF', 'adminifirmacontroller'),
-        );
-
         $this->fields_list = array(
             'id_ifirma_receipt' => array(
                 'title' => $this->module->l('ID', 'adminifirmacontroller'),
@@ -270,6 +307,7 @@ class AdminIfirmaController extends ModuleAdminController
                 'type' => 'select',
                 'list' => $statuses,
                 'filter_key' => 'a!status',
+                'order_key' => IfirmaDocumentListSort::RANK_ALIAS,
                 'filter_type' => 'string',
             ),
             'source' => array(
@@ -282,7 +320,8 @@ class AdminIfirmaController extends ModuleAdminController
             'delivery_status' => array(
                 'title' => $this->module->l('Delivery', 'adminifirmacontroller'),
                 'type' => 'select',
-                'list' => $deliveries,
+                'list' => $this->deliveryLabels(),
+                'callback' => 'renderDelivery',
                 'filter_key' => 'a!delivery_status',
                 'filter_type' => 'string',
             ),
@@ -322,6 +361,100 @@ class AdminIfirmaController extends ModuleAdminController
             'resend' => array('text' => $this->module->l('Send again', 'adminifirmacontroller'), 'icon' => 'icon-envelope'),
             'refresh' => array('text' => $this->module->l('Refresh from iFirma', 'adminifirmacontroller'), 'icon' => 'icon-download'),
         );
+    }
+
+    /**
+     * The core throws on a direction that is not asc or desc, and it takes the direction from the request, then from the
+     * list's cookie, then from the list's state and its default. The cookie is stored by the employee's browser: here the
+     * direction is resolved the same way and anything that is not asc or desc, from whichever source, sorts ascending and
+     * never reaches the core or the SQL.
+     *
+     * @param string|null $orderDirection
+     * @return string ASC or DESC
+     */
+    protected function checkOrderDirection($orderDirection)
+    {
+        $requested = IfirmaInput::scalar(Tools::getValue($this->list_id . 'Orderway'));
+        if ($requested !== '' && !IfirmaDocumentListSort::isDirection($requested)) {
+            return IfirmaDocumentListSort::ASCENDING;
+        }
+
+        $effective = $this->effectiveOrderDirection($orderDirection);
+        if (!IfirmaDocumentListSort::isDirection($effective)) {
+            return IfirmaDocumentListSort::ASCENDING;
+        }
+
+        return parent::checkOrderDirection($effective);
+    }
+
+    /**
+     * @param mixed $orderDirection the direction the core was asked for
+     * @return mixed the first of: that direction, the list's cookie, the list's state, its default
+     */
+    private function effectiveOrderDirection($orderDirection)
+    {
+        $cookie = $this->context->cookie;
+        $prefix = str_replace(array('admin', 'controller'), '', Tools::strtolower(get_class($this)));
+        $stored = isset($cookie->{$prefix . $this->list_id . 'Orderway'}) ? $cookie->{$prefix . $this->list_id . 'Orderway'} : false;
+        foreach (array($orderDirection, $stored, $this->_orderWay, $this->_defaultOrderWay) as $candidate) {
+            if (!empty($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Records of the same state are listed newest first in both directions of the state sort.
+     *
+     * @param string|null $orderBy
+     * @param string|null $orderDirection
+     * @return string
+     */
+    protected function getOrderByClause($orderBy, $orderDirection)
+    {
+        $clause = parent::getOrderByClause($orderBy, $orderDirection);
+
+        return IfirmaDocumentListSort::withTieBreak($clause, $this->_orderBy, $this->_orderWay);
+    }
+
+    /**
+     * @return string[] delivery status => the word for it
+     */
+    private function deliveryLabels()
+    {
+        return array(
+            IfirmaReceipt::DELIVERY_NONE => $this->module->l('Not sent', 'adminifirmacontroller'),
+            IfirmaReceipt::DELIVERY_SENT => $this->module->l('Sent', 'adminifirmacontroller'),
+            IfirmaReceipt::DELIVERY_FAILED => $this->module->l('Failed', 'adminifirmacontroller'),
+            IfirmaReceipt::DELIVERY_SKIPPED => $this->module->l('Skipped', 'adminifirmacontroller'),
+            IfirmaReceipt::DELIVERY_AWAITING_KSEF => $this->module->l('Awaiting KSeF', 'adminifirmacontroller'),
+        );
+    }
+
+    /**
+     * List callback: the delivery state in words and, for a failed delivery, where the automatic retry stands. The
+     * state of another version of the module is shown as it is. Both texts are escaped here (the list prints the result as HTML).
+     *
+     * @param mixed $value the delivery status
+     * @param array $row   the record (delivery_attempts and delivery_retry_at are missing until the columns exist)
+     * @return string
+     */
+    public function renderDelivery($value, $row = array())
+    {
+        $status = IfirmaInput::scalar($value);
+        $labels = $this->deliveryLabels();
+        $cell = htmlspecialchars(isset($labels[$status]) ? $labels[$status] : $status, ENT_QUOTES, 'UTF-8');
+        $row = is_array($row) ? $row : array();
+        $retryView = new IfirmaDeliveryRetryView(IfirmaDeliveryRetryView::translatedWords($this->module));
+        $retry = $retryView->text(
+            $status,
+            isset($row['delivery_attempts']) ? (int) $row['delivery_attempts'] : 0,
+            isset($row['delivery_retry_at']) ? IfirmaInput::scalar($row['delivery_retry_at']) : ''
+        );
+
+        return $retry === '' ? $cell : $cell . '<br><small class="text-muted">' . htmlspecialchars($retry, ENT_QUOTES, 'UTF-8') . '</small>';
     }
 
     /**
@@ -497,6 +630,23 @@ class AdminIfirmaController extends ModuleAdminController
     }
 
     /**
+     * @param string $action the action name without the ajaxProcess prefix
+     * @return bool true when the action may run only for a POST (BulkRun and every action not listed as read-only)
+     */
+    public static function requiresPost($action)
+    {
+        return !in_array($action, self::$readOnlyActions, true);
+    }
+
+    /**
+     * @return bool true when the request is a POST (the raw request method, so a `_method` parameter does not count)
+     */
+    protected function requestIsPost()
+    {
+        return IfirmaInput::isPost();
+    }
+
+    /**
      * Runs an action body when the employee of the context holds the level the action needs; otherwise
      * answers 403 with the failure envelope. The token has been checked by the core before this point.
      *
@@ -520,6 +670,18 @@ class AdminIfirmaController extends ModuleAdminController
             return;
         }
 
+        if (self::requiresPost($action) && !$this->requestIsPost()) {
+            $this->statusHeader(405);
+            $this->output(array(
+                'success' => false,
+                'message' => $this->module->l('This action must be sent with POST.', 'adminifirmacontroller'),
+                'data' => array(),
+            ));
+
+            return;
+        }
+
+        $this->ensureReceiptRetryColumns();
         call_user_func($body);
     }
 
@@ -1054,15 +1216,75 @@ class AdminIfirmaController extends ModuleAdminController
             return;
         }
 
+        $budget = $this->employeeBudget();
+        if (!$budget->take()) {
+            $this->refusedByRateLimit($budget->secondsToNextMinute(), $this->module->l('The PDF was not downloaded: the back-office download limit is reached. Try again in a moment.', 'adminifirmacontroller'));
+            return;
+        }
+
         try {
             $service = IfirmaReceiptService::build($this->module);
             $pdf = $service->fetchPdf($receipt, (bool) Tools::getValue('duplicate'));
+        } catch (IfirmaRateLimitedException $e) {
+            $budget->release();
+            $this->refusedByRateLimit($e->getRetryAfterSeconds(), $this->rateLimitedDownloadMessage($e->getWindow()));
+            return;
         } catch (Throwable $e) {
             $this->textResponse(502, $this->downloadFailureMessage($e));
             return;
         }
 
         $this->streamPdf($pdf, $receipt);
+    }
+
+    /**
+     * @return IfirmaDownloadBudget the budget of all back-office downloads; protected so a test can fix its clock
+     */
+    protected function employeeBudget()
+    {
+        return IfirmaDownloadBudget::forEmployees();
+    }
+
+    /**
+     * The employee is told which window refused the download; the customer front never is.
+     *
+     * @param string $window one of the IfirmaRateDecision::WINDOW_* constants
+     * @return string
+     */
+    private function rateLimitedDownloadMessage($window)
+    {
+        if ($window === IfirmaRateDecision::WINDOW_DAY) {
+            return $this->module->l('The PDF was not downloaded: the day request limit is reached. Try again later.', 'adminifirmacontroller');
+        }
+        if ($window === IfirmaRateDecision::WINDOW_BACKOFF) {
+            return $this->module->l('The PDF was not downloaded: iFirma asked the module to wait before the next request. Try again shortly.', 'adminifirmacontroller');
+        }
+
+        return $this->module->l('The PDF was not downloaded: the minute request limit is reached. Try again in a moment.', 'adminifirmacontroller');
+    }
+
+    /**
+     * Answers a 429 with the seconds to wait and ends the request. Overridable so tests can capture the answer;
+     * the caller returns right after the call.
+     *
+     * @codeCoverageIgnore exit ends the request; the tests override this twin, sendLimitAnswer() is tested on its own
+     *
+     * @param int    $retryAfterSeconds
+     * @param string $text
+     */
+    protected function refusedByRateLimit($retryAfterSeconds, $text)
+    {
+        $this->sendLimitAnswer($retryAfterSeconds, $text);
+        exit;
+    }
+
+    /**
+     * @param int    $retryAfterSeconds
+     * @param string $text
+     */
+    protected function sendLimitAnswer($retryAfterSeconds, $text)
+    {
+        IfirmaHttpOutput::tooManyRequests($retryAfterSeconds, $text);
     }
 
     /**
@@ -1100,7 +1322,7 @@ class AdminIfirmaController extends ModuleAdminController
         exit;
     }
 
-    private function streamPdf($pdf, IfirmaReceipt $receipt)
+    protected function streamPdf($pdf, IfirmaReceipt $receipt)
     {
         IfirmaHttpOutput::pdf($pdf, $receipt->ifirma_number ? $receipt->ifirma_number : $receipt->ifirma_id);
         exit;

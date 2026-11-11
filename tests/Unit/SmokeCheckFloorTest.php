@@ -1,0 +1,136 @@
+<?php
+/**
+ * SCM iFirma integration module for PrestaShop.
+ *
+ * @author    SCM Jakub Berechowski <admin@seccodesmith.pl>
+ * @copyright 2026 SCM Jakub Berechowski
+ * @license   SecCodeSmith Commercial License v1.3
+ * SPDX-License-Identifier: LicenseRef-SecCodeSmith-Commercial-1.2
+ * See the LICENCE file distributed with this module for the full terms.
+ */
+
+use PHPUnit\Framework\TestCase;
+
+require_once __DIR__ . '/../smoke/SmokeCheckFloor.php';
+
+class SmokeCheckFloorTest extends TestCase
+{
+    public function testScenariosAtOrAboveTheirFloorPass()
+    {
+        $problems = SmokeCheckFloor::violations(array('A' => 12, 'B' => 9), array('A' => 12, 'B' => 7), array('A', 'B'));
+
+        $this->assertSame(array(), $problems);
+    }
+
+    public function testScenarioUnderItsFloorIsReported()
+    {
+        $problems = SmokeCheckFloor::violations(array('A' => 11), array('A' => 12), array('A'));
+
+        $this->assertSame(array('check floor: scenario A executed 11 checks, the committed floor is 12'), $problems);
+    }
+
+    public function testSelectedScenarioMissingFromTheFloorIsReported()
+    {
+        $problems = SmokeCheckFloor::violations(array('T' => 5), array('A' => 12), array('T'));
+
+        $this->assertSame(array('check floor: scenario T has no entry in check-floor.json; add it on purpose'), $problems);
+    }
+
+    public function testSelectedScenarioThatExecutedNothingIsUnderItsFloor()
+    {
+        $problems = SmokeCheckFloor::violations(array(), array('A' => 12, 'R' => 50), array('A'));
+
+        $this->assertSame(array('check floor: scenario A executed 0 checks, the committed floor is 12'), $problems);
+    }
+
+    public function testANewScenarioWithAFloorEntryAndEnoughChecksPasses()
+    {
+        $problems = SmokeCheckFloor::problems(array('T' => 6), '{"T": 5}', array('T'));
+
+        $this->assertSame(array(), $problems);
+    }
+
+    public function testANewScenarioWithoutAFloorEntryFailsTheRunNamingIt()
+    {
+        $problems = SmokeCheckFloor::problems(array('A' => 12, 'T' => 6), '{"A": 12}', array('A', 'T'));
+
+        $this->assertSame(array('check floor: scenario T has no entry in check-floor.json; add it on purpose'), $problems);
+    }
+
+    public function testAFloorFileThatIsNotJsonIsReportedAsAProblem()
+    {
+        $problems = SmokeCheckFloor::problems(array('A' => 12), 'not json at all', array('A'));
+
+        $this->assertSame(array('check floor: check-floor.json is not a JSON object'), $problems);
+    }
+
+    public function testANegativeFloorIsReportedAsAProblem()
+    {
+        $problems = SmokeCheckFloor::problems(array('A' => 12), '{"A": -1}', array('A'));
+
+        $this->assertSame(array('check floor: check-floor.json: the floor of scenario A is not a non-negative integer'), $problems);
+    }
+
+    public function testAFloorThatIsAFractionIsReportedAsAProblem()
+    {
+        $problems = SmokeCheckFloor::problems(array('A' => 12), '{"A": 1.5}', array('A'));
+
+        $this->assertSame(array('check floor: check-floor.json: the floor of scenario A is not a non-negative integer'), $problems);
+    }
+
+    public function testFloorFileIsWrittenFromAGreenRun()
+    {
+        $json = SmokeCheckFloor::render(array('B' => 4, 'A' => 12), 0, array());
+
+        $this->assertSame(array('A' => 12, 'B' => 4), json_decode($json, true));
+        $this->assertSame("\n", substr($json, -1));
+    }
+
+    public function testRegenerationKeepsEntriesOfScenariosThatDidNotRun()
+    {
+        $json = SmokeCheckFloor::render(array('A' => 13), 0, array('A' => 12, 'R' => 50));
+
+        $this->assertSame(array('A' => 13, 'R' => 50), json_decode($json, true));
+    }
+
+    public function testWritingIsRefusedWhenAnyCheckFailed()
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('refusing to write');
+
+        SmokeCheckFloor::render(array('A' => 12), 1, array());
+    }
+
+    public function testReadingAMalformedFloorFileFailsLoudly()
+    {
+        $this->expectException(RuntimeException::class);
+
+        SmokeCheckFloor::parse('{"A": "many"}');
+    }
+
+    public function testAMissingFloorFileFailsTheRunLikeAScenarioUnderItsFloor()
+    {
+        $problems = SmokeCheckFloor::problems(array('A' => 12), null, array('A'));
+
+        $this->assertSame(array('check floor: tests/smoke/check-floor.json is missing; write it from a green run (SMOKE_WRITE_FLOOR=1) and commit it'), $problems);
+    }
+
+    public function testAMalformedFloorFileIsReportedAsAProblem()
+    {
+        $problems = SmokeCheckFloor::problems(array('A' => 12), '{"A": "many"}', array('A'));
+
+        $this->assertSame(array('check floor: check-floor.json: the floor of scenario A is not a non-negative integer'), $problems);
+    }
+
+    public function testAFloorFileIsComparedWithTheExecutedCounts()
+    {
+        $problems = SmokeCheckFloor::problems(array('A' => 11, 'B' => 4), '{"A": 12, "B": 4}', array('A', 'B'));
+
+        $this->assertSame(array('check floor: scenario A executed 11 checks, the committed floor is 12'), $problems);
+    }
+
+    public function testReadingAValidFloorFileReturnsTheCounts()
+    {
+        $this->assertSame(array('A' => 12), SmokeCheckFloor::parse('{"A": 12}'));
+    }
+}

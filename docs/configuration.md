@@ -27,7 +27,7 @@ Open the module configuration and fill in:
 - **Payment registration type** – URL token for the payment endpoint
   (default `prz_faktura_kraj`; adjust to your document/payment type).
 - Optionally an **Auto‑create on order status** to issue documents automatically.
-- **API key: abonent** (optional) – shows today's API usage on this page ("used/granted").
+- **API key: abonent** (optional) – lets you read the remaining iFirma request limit of the account with the button **Check the remaining iFirma limit** on this page (see [Checking the remaining limit](#checking-the-remaining-limit)). The page never reads the limit by itself. Without the key the button is replaced by a hint to enter it.
 - **Delivery channel** – *Shop e‑mail with PDF attached* (default), *iFirma e‑mail*
   (available for every created document, since `fakturakraj` is a documented send type) or
   *Do not send*. With the default channel, documents are e‑mailed to customers
@@ -56,12 +56,18 @@ Open the module configuration and fill in:
   from iFirma; **Cron call budget (1‑90)**, **Cron items per job (1‑50)**, **API calls per minute (1‑100)** and
   **API calls per day (1‑15000)** – API usage caps and the size of one cron run.
 - **Cron endpoint** – the module shows the cron URL with its secret token and a crontab
-  example (`*/15 * * * * curl -fsS "<url>"`); *Regenerate cron token* replaces the token. Call it every 1 to 5 minutes:
-  it issues the queued orders, so a longer interval delays them (see [Cron jobs](#cron-jobs)).
+  example; *Regenerate cron token* replaces the token. Call it every 1 to 5 minutes: it issues the queued orders and
+  retries failed deliveries, so a longer interval delays them (see [Cron jobs](#cron-jobs)). The example the page prints
+  runs every 5 minutes, like the examples below:
+
+  ```
+  */5 * * * * curl -fsS "https://<shop>/module/ifirma/cron?token=<IFIRMA_CRON_TOKEN>" >/dev/null
+  ```
+
   The same page also shows the token-in-header form, which keeps the token out of the web server's access log:
 
   ```
-  */15 * * * * curl -fsS -H "X-Ifirma-Token: <IFIRMA_CRON_TOKEN>" "https://<shop>/module/ifirma/cron" >/dev/null
+  */5 * * * * curl -fsS -H "X-Ifirma-Token: <IFIRMA_CRON_TOKEN>" "https://<shop>/module/ifirma/cron" >/dev/null
   ```
 
   When both are sent, the `token` query parameter is the one checked. A wrong or missing token answers HTTP 403.
@@ -110,6 +116,8 @@ Open the module configuration and fill in:
 | `IFIRMA_RATE_MAX_PER_DAY` (new) | `14000` (1 to 15000) |
 | `IFIRMA_RATE_WINDOW` (new) | empty (internal rate-limit state of the minute: `<minute>:<count>`, incremented by one atomic database statement, so two requests at the same time cannot both pass the cap) |
 | `IFIRMA_RATE_DAY_WINDOW` (new) | empty (the same for the calendar day: `<day>:<count>`) |
+| `IFIRMA_DL_CUSTOMER_MINUTE`, `IFIRMA_DL_CUSTOMER_DAY` (new) | empty (internal counters `<minute>:<count>` and `<day>:<count>` of the customers' PDF download budget, 20 per minute and 2,000 per day for all customers together; not settings, see [Download limits](usage.md#download-limits)) |
+| `IFIRMA_DL_EMPLOYEE_MINUTE`, `IFIRMA_DL_EMPLOYEE_DAY` (new) | empty (internal counters of the back-office PDF download budget: 30 per minute and 2,000 per day for all employees together) |
 | `IFIRMA_RATE_BACKOFF_UNTIL` (new) | empty (internal: the unix time until which iFirma asked the module to wait after it refused a request for exceeding its limit; no request is sent before it, see [Rate limits](#rate-limits)) |
 | `IFIRMA_REMOTE_LIMIT` (new) | empty (internal: the last reading of the day limit from iFirma, `<day>:<used>:<granted>:<unix time>`; needs the `abonent` key, see [Rate limits](#rate-limits)) |
 | `IFIRMA_AUTH_FAILURE` (new) | empty (internal mark of the pause after a rejected key: `<unix time>|<message>`; set by a failed call, cleared by a successful save of the settings; after 15 minutes the mark no longer pauses calls) |
@@ -161,45 +169,78 @@ tab's View is granted (the AJAX actions still follow the tab levels). Grant both
 The **Configure** permission of the module page (Modules > Module Manager) is separate: it controls who
 may open and save the settings and does not give any of the three levels.
 
-Link, Unlink and Register on the customer page need, on top of View, the Edit permission on **Customers**.
+The module checks this permission itself on every PrestaShop version, because PrestaShop 9.1 opens the settings page for an employee who may only view the Module Manager. An employee without it sees a notice instead of the page (no setting, key hint, cron address or token). Every action of the page (save, regenerate the cron token, check the limit, import or reset the contractors) also needs a POST with the employee's back-office token; the page's own buttons send it.
+
+Link, Unlink and Register on the customer page need, on top of View, the Edit permission on **Customers**. Register also needs the Issue level (it creates a contractor in iFirma, like Register contractor on the order page); an employee without it sees the reason instead of the button.
 
 ## Cron jobs
 
-One request to the cron endpoint (`/module/ifirma/cron`, token in the query or in the `X-Ifirma-Token` header) runs four jobs in
-a fixed order, under a run lock, after reading the day limit from iFirma (see [Rate limits](#rate-limits)), and answers
-with one JSON summary. The order is chosen so that work reaches the customer
-as early as possible: customer-facing issuance first, a KSeF submission before the sync that reads its state, delivery last so
-that an acceptance read by the sync is delivered in the same run.
+One request to the cron endpoint (`/module/ifirma/cron`, token in the query or in the `X-Ifirma-Token` header) runs six jobs in
+a fixed order under a run lock and answers with one JSON summary. The first job only reads the day limit from iFirma
+(see [Rate limits](#rate-limits)); the other five do the work. The order is chosen so that work reaches the customer
+as early as possible: customer-facing issuance first, a KSeF submission before the sync that reads its state, the delivery of
+accepted documents after the sync so that an acceptance read by the sync is delivered in the same run, and the retry of failed
+deliveries last, so a delivery that fails in this run waits for its schedule.
 
-| # | Job | What it does |
+| # | Job (key in the answer) | What it does |
 |---|-----|--------------|
+| 0 | `limit` | Reads the day limit from iFirma when the `abonent` key is set and the last reading is older than ten minutes (see [Rate limits](#rate-limits)). It never stops the later jobs. |
 | 1 | `queue` | Issues queued orders, oldest first, through the whole issuance pipeline (duplicate guard included), under each order's lock, at most `IFIRMA_CRON_MAX_ITEMS` per run. Stops at the first rate limit refusal. See [Queued issuance](usage.md#queued-issuance). |
 | 2 | `ksef` | Submits invoices to KSeF whose submission was deferred (submitter `module`, no KSeF state yet). See [KSeF](usage.md#ksef-e-invoicing). |
-| 3 | `sync` | The status sync of issued documents (documents that wait for KSeF are always due), within `IFIRMA_CRON_MAX_CALLS` list calls. |
+| 3 | status sync (no block of its own) | The status sync of issued documents (documents that wait for KSeF are always due), within `IFIRMA_CRON_MAX_CALLS` list calls. Its keys are at the top level of the answer. |
 | 4 | `delivery` | Delivers documents that wait for KSeF acceptance and were accepted, at most `IFIRMA_CRON_MAX_ITEMS`. |
+| 5 | `delivery_retry` | Sends again the failed deliveries that are due, oldest due time first, at most `IFIRMA_CRON_MAX_ITEMS`; see [Automatic retry of a failed delivery](usage.md#automatic-retry-of-a-failed-delivery). |
 
-All four share the rate guard (the minute and the day cap and the back-off). After a job reports that the rate limit stopped
+All of them share the rate guard (the minute and the day cap and the back-off). After a job reports that the rate limit stopped
 it, the later jobs do not start and only report what is left. **Only one cron run works at a time**: a request that arrives
 while another run holds the run lock makes no iFirma request and answers `{"skipped": "another cron run is busy"}`. An order
 whose own lock is held (an employee clicking Create, a status change) is skipped by the queue job and stays queued.
 
 The answer keeps the keys of the status sync at its top level, unchanged (`receipts_checked`, `updated`, `marked_paid`,
 `marked_missing`, `errors`, `rate_limited`, `calls`, `dates_total`, `dates_processed`, `held_orders`, `started_at`,
-`finished_at`, `auth_blocked`, `message`), and adds:
+`finished_at`, `auth_blocked`, `message`), and adds one block per other job, `rate_limited_window`, `time_budget_exhausted` and `usage`:
 
 ```json
 {
-  "queue":    {"handled": 4, "succeeded": 4, "failed": 0, "left": 12},
-  "ksef":     {"handled": 0, "succeeded": 0, "failed": 0, "left": 0},
-  "delivery": {"handled": 1, "succeeded": 1, "failed": 0, "left": 0},
+  "receipts_checked": 12,
+  "updated": 3,
   "rate_limited": 0,
-  "rate_limited_window": ""
+  "limit":          {"used": 1200, "granted": 15000, "remaining": 13800},
+  "queue":          {"handled": 4, "succeeded": 4, "failed": 0, "left": 12},
+  "ksef":           {"handled": 0, "succeeded": 0, "failed": 0, "left": 0},
+  "delivery":       {"handled": 1, "succeeded": 1, "failed": 0, "left": 0},
+  "delivery_retry": {"handled": 2, "succeeded": 1, "failed": 1, "left": 0},
+  "rate_limited_window": "",
+  "time_budget_exhausted": 0,
+  "usage": {"minute": 6, "day": 250, "by_kind": {"document": 2, "status": 200, "pdf": 40, "email": 0, "ksef": 0,
+            "payment": 0, "contractor": 8, "limit": 0, "other": 0}}
 }
 ```
 
-`handled` counts the items the job tried, `left` what still waits. `rate_limited` is 1 when the rate limit stopped the run
-(the sync's own count, when it was the one, is kept), and `rate_limited_window` then says which window: `minute`, `day` or
-`backoff`. A job that did not run because an earlier one was rate limited reports zeros and its `left`.
+(The status sync's other keys are left out of the example.) What the keys mean:
+
+- `handled` counts the items the job tried, `succeeded` and `failed` how they ended, and `left` what still waits.
+- `limit` holds `used`, `granted` and `remaining`; all three are `null` without the `abonent` key or when iFirma does not answer.
+- `rate_limited` is 1 when the rate limit stopped the run (the sync's own count, when it was the one, is kept), and
+  `rate_limited_window` then says which window: `minute`, `day` or `backoff`; it is empty otherwise. A job that did not run
+  because an earlier one was rate limited reports zeros and its `left`.
+- `time_budget_exhausted` is 1 when the run stopped starting records because its time budget (below) was used up.
+- `usage` is the module's own request count, read after the jobs: the requests of the current minute and of today, and today's
+  count per kind (all nine kinds, zeros included). It is also there when the run was refused by the limit. See
+  [Module requests](#module-requests).
+
+**Time budget.** A run has a fixed budget of 45 seconds (no setting). It is checked before each job and, inside the queue, KSeF,
+delivery and delivery-retry jobs, before each record; a record that has started is always finished, so a slow mail server or
+iFirma can delay a run by one record, not by the whole item cap. The status sync does not check it per call: it is bounded by
+`IFIRMA_CRON_MAX_CALLS` list calls instead (each call may take up to 30 seconds), and it is skipped as a whole when the budget is
+already used up when its turn comes. The records not started are reported as `left`, the later jobs only report what is left, and
+`time_budget_exhausted` is 1. The next run goes on. The delivery retry downloads the PDF once per attempt and does not wait between
+attempts (a PDF that is not ready is a temporary failure and comes back on the retry schedule); the delivery at issuance keeps its
+three downloads with the waits.
+
+### The cron endpoint and the delivery retry
+
+The `delivery_retry` job is the last job of a run. It sends again the deliveries that failed for a temporary reason and are due (the second attempt 15 minutes after the first failure, the third 2 hours after the second), oldest due time first, at most `IFIRMA_CRON_MAX_ITEMS` per run, and stops at the first refusal by the rate guard or the credentials cool-down (a refusal uses no attempt). Its summary is the `delivery_retry` block of the cron answer, with the same keys as the other jobs (`handled`, `succeeded`, `failed`, `left`), and like the queue job it checks the 45-second time budget before each record. **Without the cron endpoint no failed delivery is retried automatically**: call it every 1 to 5 minutes (see [Cron jobs](#cron-jobs)). There is no new setting: the retry uses the channel and the limits already configured, and the schedule (three attempts, 15 minutes and 2 hours) is fixed. See [Automatic retry of a failed delivery](usage.md#automatic-retry-of-a-failed-delivery) for the rules.
 
 ## Rate limits
 
@@ -209,11 +250,11 @@ start a request once either local cap is reached. The caps are `IFIRMA_RATE_MAX_
 and `IFIRMA_RATE_MAX_PER_DAY` (default 14,000, 1 to 15,000), both on the settings page; they stay below
 iFirma's own limits on purpose. The minute is checked first. The day is the calendar day of the shop's time
 zone; iFirma's own day is presumably Polish time, and the 1,000-request margin below 15,000 absorbs a mismatch
-around midnight. A refusal names the window that refused ("... requests in the current minute (cap 80)" or
+around midnight. PDF downloads have caps of their own on top of these ([Download limits](usage.md#download-limits) lists all of them in one table). A refusal names the window that refused ("... requests in the current minute (cap 80)" or
 "... requests today (cap 14000)") and is a transient "rate limited" error, never stored as a document error.
 A request refused by the day window has already used a minute slot; that only makes the guard more conservative.
 Timeouts: 30 s by default, 5 s for
-the customer-page sync. A shop-mail delivery may add up to 10 s of waiting when the PDF is not ready yet. With the optional `abonent` key the used/granted daily limit can be read.
+the customer-page sync. A shop-mail delivery may add up to 10 s of waiting when the PDF is not ready yet. With the optional `abonent` key the remaining daily limit can be read on request (see [Checking the remaining limit](#checking-the-remaining-limit)).
 
 A bulk run of the documents list stops at the first refusal and reports the rest as "not attempted" (see
 [iFirma documents list](usage.md#ifirma-documents-list)). The cURL transport accepts only the HTTP and HTTPS protocols,
@@ -237,3 +278,60 @@ exceed the limit iFirma granted (a smaller grant lowers the cap for that day). A
 extra request is made at most about six times an hour. The cron answer reports it in a `limit` block
 (`used`, `granted`, `remaining`; all `null` without the key or when iFirma does not answer). A failed read changes nothing:
 the module goes on with its local counters.
+
+### Module requests
+
+The settings page has a **Module requests** box above the settings form. It shows what the module itself counted, with or
+without the `abonent` key, and it sends no request to iFirma to do so:
+
+- **Current minute** and **Today**: the requests the module sent in this calendar minute and today, next to the caps
+  (for example "6 of 80" and "250 of 14000").
+- **Today by kind of request**: the same requests split by what they were for. Every kind is listed, with a zero when
+  nothing of that kind was sent today.
+- A notice with the time when a back-off after an iFirma limit answer ends, while one runs: until then the module sends nothing.
+- **Other clients of the account**, when the day count is higher than the kinds add up to. After a reading of the limit
+  the module raises its day counter to what iFirma counts (other programs of the account use the same limit); the
+  difference is shown here.
+
+Every request the module sends is counted once, under exactly one kind, and a request that was refused locally before it
+was sent is not counted. A request that iFirma answered with an error is counted, because it used the limit.
+
+| Kind | What it covers |
+| --- | --- |
+| `document` (Creating documents) | Creating a receipt or an invoice. |
+| `status` (Status checks) | Reading the document list (the status sync, the documents list, the customer page sync) and the detail of one document. Status checks count toward the limit like any request. |
+| `pdf` (PDF downloads) | Downloading a document PDF: the customer download, the back-office download and the PDF a shop-mail delivery attaches (each attempt counts, also when the first answer was "not ready"). |
+| `email` (Sending documents by e-mail through iFirma) | The iFirma e-mail send of a document (delivery channel iFirma e-mail). |
+| `ksef` (KSeF submissions) | Submitting an invoice to KSeF. |
+| `payment` (Payments) | Registering a payment. |
+| `contractor` (Contractors) | Looking up, creating or updating a contractor, and the contractor import. |
+| `limit` (Limit checks) | Reading the day limit: the cron's first step and every click on **Check the remaining iFirma limit**. |
+| `other` (Other requests) | Any request that matches none of the kinds above. |
+
+The counts of one day are kept in `IFIRMA_USAGE_<KIND>` (`<day>:<count>`); they are statistics only and never refuse a request.
+The cron answer carries the same numbers in its `usage` block (see [Cron jobs](#cron-jobs)).
+
+### Checking the remaining limit
+
+With the `abonent` key set, the **iFirma request limit** box shows the last reading of the account's day limit: requests
+used, granted and remaining, and the time of the reading. Opening the page does not read the limit. Before the first reading
+the box says that the limit was not checked yet; a reading from an earlier day is shown with its date and is not presented
+as today's figure; when nothing is left the box says that the module sends no request to iFirma until tomorrow.
+
+The button **Check the remaining iFirma limit** reads a fresh figure. One click sends exactly one request (`GET abonent/limit.json`),
+always a new one even when the cron read the limit a minute ago, and that request counts toward the minute and day limit as kind
+`limit` (five clicks in a minute are five requests, and the minute cap applies to the sixth). The reading is stored and the module's
+day counter is raised to iFirma's figure, never lowered, as the cron does.
+
+When the check cannot be done the box says why and keeps the earlier reading and the counters:
+
+- **Refused by the module's own limit** (the minute or day cap, a running back-off, or the pause after a rejected key): nothing
+  was sent; the box names the limit.
+- **iFirma error, a refused `abonent` key or an unusable answer**: the box says the limit is currently unavailable. The detail is
+  in the PrestaShop log (Advanced Parameters, Logs), never on the page, and no key is shown or logged.
+
+**The module's own count is not the account's count.** The module counts only its own requests. The account's limit is shared
+with every other program that uses the iFirma API, so the figure iFirma reports can be higher than the module's day count until
+a reading raises the counter. The button is a POST of the settings page itself (back-office token) and is accepted only from an
+employee who may configure the module; a request that is not a POST, has no key to use or comes from an employee without
+that right sends nothing.

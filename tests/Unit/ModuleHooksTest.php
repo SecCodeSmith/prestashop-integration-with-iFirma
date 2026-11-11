@@ -246,6 +246,23 @@ class ModuleHooksTest extends TestCase
         $this->assertSame('paid', (new IfirmaReceipt(1))->status);
     }
 
+    public function testAStaleOrderPageRefusedByTheDayCapMakesNoCallAndShowsTheLastKnownStateWithoutAnError()
+    {
+        $lastSync = date('Y-m-d H:i:s', time() - 20 * 60);
+        $this->makeReceipt(array('last_sync_at' => $lastSync, 'sync_error' => ''));
+        Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', date('Ymd') . ':14000');
+
+        $out = $this->module->hookDisplayOrderDetail(array('order' => Order::$instances[15]));
+
+        $this->assertSame('<rendered:views/templates/hook/order_detail.tpl>', $out);
+        $this->assertSame('issued', $this->vars()['ifirma_view']['state']);
+        $this->assertSame(array(), $this->t->calls);
+        $stored = new IfirmaReceipt(1);
+        $this->assertSame($lastSync, $stored->last_sync_at);
+        $this->assertSame('', (string) $stored->sync_error);
+        $this->assertStringNotContainsString('rror', json_encode($this->vars()['ifirma_view']));
+    }
+
     public function testRecentlySyncedReceiptMakesNoCall()
     {
         $this->makeReceipt(array('last_sync_at' => date('Y-m-d H:i:s', time() - 60)));
@@ -489,6 +506,56 @@ class ModuleHooksTest extends TestCase
         $this->assertSame(array('field' => 'ifirma_document', 'sortable' => true, 'clickable' => true), $column->options);
     }
 
+    private function queryBuilderSpy()
+    {
+        return new class {
+            public $selects = array();
+            public $joins = array();
+
+            public function addSelect($s)
+            {
+                $this->selects[] = $s;
+
+                return $this;
+            }
+
+            public function leftJoin($fromAlias, $join, $alias, $condition = null)
+            {
+                $this->joins[] = array($fromAlias, $join, $alias, $condition);
+
+                return $this;
+            }
+        };
+    }
+
+    public function testQueryBuilderHookSelectsTheRetryFieldsOnlyAfterTheColumnsAreEnsured()
+    {
+        IfirmaSchema::resetEnsureCache();
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'delivery_/", '0');
+        $search = $this->queryBuilderSpy();
+
+        $this->module->hookActionOrderGridQueryBuilderModifier(array('search_query_builder' => $search));
+
+        $this->assertSame(array_merge(IfirmaOrderGridIndicator::selectSql(), IfirmaOrderGridIndicator::retrySelectSql()), $search->selects);
+        $this->assertContains(
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `delivery_attempts` INT(11) UNSIGNED NOT NULL DEFAULT 0',
+            Db::getInstance()->executed
+        );
+    }
+
+    public function testQueryBuilderHookSkipsTheRetryFieldsWhenTheColumnsCannotBeAdded()
+    {
+        IfirmaSchema::resetEnsureCache();
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'delivery_/", '0');
+        Db::getInstance()->whenExecute('/ADD COLUMN `delivery_retry_at`/', false);
+        $search = $this->queryBuilderSpy();
+
+        $this->module->hookActionOrderGridQueryBuilderModifier(array('search_query_builder' => $search));
+
+        $this->assertSame(IfirmaOrderGridIndicator::selectSql(), $search->selects, 'the Orders page keeps working without the columns');
+        IfirmaSchema::resetEnsureCache();
+    }
+
     public function testQueryBuilderHookAddsTheTwoSelectsToTheSearchQueryOnly()
     {
         $search = new class {
@@ -519,7 +586,7 @@ class ModuleHooksTest extends TestCase
 
         $join = IfirmaOrderGridIndicator::joinSql('o');
         $this->assertSame(array(array('o', $join['table'], $join['alias'], $join['condition'])), $search->joins);
-        $this->assertSame(IfirmaOrderGridIndicator::selectSql(), $search->selects);
+        $this->assertSame(array_merge(IfirmaOrderGridIndicator::selectSql(), IfirmaOrderGridIndicator::retrySelectSql()), $search->selects);
         $this->assertSame(array(), $count->selects);
         $this->assertSame(array(), $count->joins, 'the count query keeps its shape and its total');
     }
@@ -838,6 +905,7 @@ class ModuleHooksTest extends TestCase
     {
         return array_merge(array(
             'submitIfirma' => '1',
+            'token' => 'admin-token-AdminModules',
             'IFIRMA_BASE_URL' => 'http://ifirma-mock:8001/iapi/',
             'IFIRMA_USER' => 'u@example.com',
             'IFIRMA_KEY_FAKTURA' => str_repeat('1', 64),
@@ -945,6 +1013,20 @@ class ModuleHooksTest extends TestCase
         $this->assertSame('submitIfirmaRegenerateCron', $buttons[0]['name']);
     }
 
+    /**
+     * A queued order, a document accepted by KSeF and a delivery due for its retry all wait for the cron, and a retry
+     * is due 15 minutes after a failure: the example the page prints must not run less often than that.
+     */
+    public function testTheCronExampleRunsEveryFiveMinutes()
+    {
+        $this->module->getContent();
+        $html = $this->formInputNames()['IFIRMA_CRON_INFO']['html_content'];
+
+        $this->assertSame(2, substr_count($html, '<pre>*/5 * * * * curl'));
+        $this->assertStringNotContainsString('*/15', $html);
+        $this->assertStringContainsString('every 5 minutes', $html);
+    }
+
     public function testTheSettingsPageWarnsAboutAStoredBaseUrlThatIsRefusedAtRunTime()
     {
         IfirmaSettings::$devMode = false;
@@ -971,7 +1053,7 @@ class ModuleHooksTest extends TestCase
 
     public function testRegenerateCronTokenReplacesTheToken()
     {
-        Tools::$values = array('submitIfirmaRegenerateCron' => '1');
+        Tools::$values = array('submitIfirmaRegenerateCron' => '1', 'token' => 'admin-token-AdminModules');
         $out = $this->module->getContent();
 
         $new = Configuration::get('IFIRMA_CRON_TOKEN');
@@ -1303,27 +1385,26 @@ class ModuleHooksTest extends TestCase
 
     // ---- API limit box -------------------------------------------------------------------
 
-    public function testLimitBoxShownWhenAbonentKeyIsSet()
+    public function testLimitBoxShowsTheStoredReadingWithItsTimeAndSendsNoRequest()
     {
         Configuration::updateValue('IFIRMA_KEY_ABONENT', str_repeat('2', 64));
-        $this->t->queue('GET', '#abonent/limit\.json#', array('body' => '{"response":{"Kod":0,"LimitWykorzystany":12,"LimitPrzyznany":15000}}'));
+        Configuration::updateValue('IFIRMA_REMOTE_LIMIT', date('Ymd') . ':12:15000:' . mktime(10, 2, 0, 11, 1, 2026));
 
-        $this->module->getContent();
-        $html = $this->formInputNames()['IFIRMA_API_LIMIT']['html_content'];
+        $page = $this->module->getContent();
 
-        $this->assertStringContainsString('iFirma API limit today: 12/15000', $html);
-        $this->assertCount(1, $this->t->calls);
+        $this->assertStringContainsString('Used 12 of 15000 requests, 14988 remaining (read 2026-11-01 10:02).', $page);
+        $this->assertCount(0, $this->t->calls);
     }
 
-    public function testLimitUnavailableNotice()
+    public function testLimitBoxSaysNothingWasCheckedYetWhenNoReadingIsStored()
     {
         Configuration::updateValue('IFIRMA_KEY_ABONENT', str_repeat('2', 64));
 
-        $this->module->getContent();
-        $html = $this->formInputNames()['IFIRMA_API_LIMIT']['html_content'];
+        $page = $this->module->getContent();
 
-        $this->assertStringContainsString('currently unavailable', $html);
-        $this->assertStringNotContainsString('15000', $html);
+        $this->assertStringContainsString('The remaining limit has not been checked yet.', $page);
+        $this->assertStringNotContainsString('15000', $page);
+        $this->assertCount(0, $this->t->calls);
     }
 
     public function testNoLimitBoxAndNoRequestWithoutTheAbonentKey()
@@ -1384,6 +1465,18 @@ class ModuleHooksTest extends TestCase
         $this->assertStringContainsString('name="token"', $tpl);
     }
 
+    /**
+     * Inside an inline handler of a form, the bare name "confirm" is the form's own field named "confirm", not the
+     * browser dialog: the handler threw, and one click removed every link without asking.
+     */
+    public function testForgetAllLinksAsksThroughTheWindowBecauseItsOwnFieldIsNamedConfirm()
+    {
+        $tpl = file_get_contents(dirname(__DIR__, 2) . '/views/templates/admin/contractors.tpl');
+
+        $this->assertStringContainsString('onsubmit="return window.confirm(', $tpl);
+        $this->assertStringNotContainsString('onsubmit="return confirm(', $tpl);
+    }
+
     public function testPostedUploadLinksCustomersAndShowsTheReport()
     {
         $db = Db::getInstance();
@@ -1394,7 +1487,7 @@ class ModuleHooksTest extends TestCase
             array('id_customer' => 9, 'vat_number' => 'PL5252248481', 'dni' => '', 'postcode' => '00-950', 'company' => 'ACME', 'firstname' => 'A', 'lastname' => 'B'),
         ));
         $tmp = $this->uploadFixture(file_get_contents(dirname(__DIR__) . '/fixtures/contractors-export.csv'));
-        Tools::$values = array('submitIfirmaImportContractors' => '1');
+        Tools::$values = array('submitIfirmaImportContractors' => '1', 'token' => 'admin-token-AdminModules');
 
         $this->module->getContent();
         @unlink($tmp);
@@ -1415,7 +1508,7 @@ class ModuleHooksTest extends TestCase
     public function testUploadWithoutIdentifierColumnShowsTheMissingColumn()
     {
         $tmp = $this->uploadFixture("Nazwa;NIP\nJan;5252248481\n");
-        Tools::$values = array('submitIfirmaImportContractors' => '1');
+        Tools::$values = array('submitIfirmaImportContractors' => '1', 'token' => 'admin-token-AdminModules');
 
         $this->module->getContent();
         @unlink($tmp);
@@ -1429,7 +1522,7 @@ class ModuleHooksTest extends TestCase
 
     public function testUploadRejectsMissingOversizedAndForeignFiles()
     {
-        Tools::$values = array('submitIfirmaImportContractors' => '1');
+        Tools::$values = array('submitIfirmaImportContractors' => '1', 'token' => 'admin-token-AdminModules');
 
         unset($_FILES['IFIRMA_CONTRACTOR_CSV']);
         $this->module->getContent();
@@ -1453,12 +1546,12 @@ class ModuleHooksTest extends TestCase
     public function testForgetAllLinksNeedsTheConfirmationField()
     {
         IfirmaContractorMap::link(1, 'A-1', 'nip');
-        Tools::$values = array('submitIfirmaResetContractorMap' => '1');
+        Tools::$values = array('submitIfirmaResetContractorMap' => '1', 'token' => 'admin-token-AdminModules');
         $out = $this->module->getContent();
         $this->assertStringContainsString('<error>', $out);
         $this->assertNotContains('TRUNCATE TABLE `ps_ifirma_contractor_map`', Db::getInstance()->executed);
 
-        Tools::$values = array('submitIfirmaResetContractorMap' => '1', 'confirm' => '1');
+        Tools::$values = array('submitIfirmaResetContractorMap' => '1', 'confirm' => '1', 'token' => 'admin-token-AdminModules');
         $out = $this->module->getContent();
         $this->assertStringContainsString('<confirmation>', $out);
         $this->assertContains('TRUNCATE TABLE `ps_ifirma_contractor_map`', Db::getInstance()->executed);
@@ -2231,6 +2324,323 @@ class ModuleHooksTest extends TestCase
 
         $this->assertSame(array(), $count->orderBys);
         $this->assertSame(array(), $count->selects);
+    }
+
+    // ---- filtering the Orders list by the iFirma column (spec "Filtering by document state") -------------------
+
+    private function gridDefinition(&$columns, &$filters)
+    {
+        $columns = new class {
+            public $calls = array();
+
+            public function addBefore($id, $column)
+            {
+                $this->calls[] = array($id, $column);
+
+                return $this;
+            }
+        };
+        $filters = new class {
+            public $added = array();
+
+            public function add($filter)
+            {
+                $this->added[] = $filter;
+
+                return $this;
+            }
+        };
+
+        return new class($columns, $filters) {
+            private $columns;
+            private $filters;
+
+            public function __construct($columns, $filters)
+            {
+                $this->columns = $columns;
+                $this->filters = $filters;
+            }
+
+            public function getColumns()
+            {
+                return $this->columns;
+            }
+
+            public function getFilters()
+            {
+                return $this->filters;
+            }
+        };
+    }
+
+    public function testDefinitionHookAddsAChoiceFilterWithTheTenStatesToTheColumn()
+    {
+        $definition = $this->gridDefinition($columns, $filters);
+
+        $this->module->hookActionOrderGridDefinitionModifier(array('definition' => $definition));
+
+        $this->assertCount(1, $filters->added);
+        $filter = $filters->added[0];
+        $this->assertInstanceOf('PrestaShop\\PrestaShop\\Core\\Grid\\Filter\\Filter', $filter);
+        $this->assertSame('ifirma_document', $filter->getName());
+        $this->assertSame('Symfony\\Component\\Form\\Extension\\Core\\Type\\ChoiceType', $filter->getType());
+        $this->assertSame('ifirma_document', $filter->getAssociatedColumn());
+        $options = $filter->getTypeOptions();
+        $this->assertFalse($options['required']);
+        $this->assertFalse($options['translation_domain']);
+        $this->assertSame(
+            array(
+                'Issuance failed' => 1, 'Unknown outcome' => 2, 'Suspected duplicate' => 3, 'Held (data change request)' => 4,
+                'Queued (iFirma limit)' => 5, 'No document yet' => 6, 'Issued, not sent' => 7, 'Waiting for KSeF' => 8,
+                'Sent' => 9, 'Paid' => 10,
+            ),
+            $options['choices']
+        );
+    }
+
+    public function testTheFilterChoicesHaveAPolishTranslation()
+    {
+        $map = require dirname(__DIR__, 2) . '/tools/pl_translations_map.php';
+
+        foreach (array('Issuance failed', 'Unknown outcome', 'Suspected duplicate', 'Held (data change request)', 'Queued (iFirma limit)',
+            'No document yet', 'Issued, not sent', 'Waiting for KSeF', 'Sent', 'Paid') as $label) {
+            $this->assertArrayHasKey($label, $map, $label);
+        }
+    }
+
+    public function testDefinitionHookWithoutFiltersStillAddsTheColumn()
+    {
+        $columns = new class {
+            public $calls = array();
+
+            public function addBefore($id, $column)
+            {
+                $this->calls[] = array($id, $column);
+
+                return $this;
+            }
+        };
+        $definition = new class($columns) {
+            private $columns;
+
+            public function __construct($columns)
+            {
+                $this->columns = $columns;
+            }
+
+            public function getColumns()
+            {
+                return $this->columns;
+            }
+        };
+
+        $this->module->hookActionOrderGridDefinitionModifier(array('definition' => $definition));
+
+        $this->assertCount(1, $columns->calls);
+    }
+
+    private function filteringBuilder()
+    {
+        return new class {
+            public $joins = array();
+            public $selects = array();
+            public $wheres = array();
+            public $parameters = array();
+            public $orderBys = array();
+            public $addOrderBys = array();
+
+            public function leftJoin($a, $b, $c, $d = null)
+            {
+                $this->joins[] = array($a, $b, $c, $d);
+
+                return $this;
+            }
+
+            public function addSelect($s)
+            {
+                $this->selects[] = $s;
+
+                return $this;
+            }
+
+            public function andWhere($w)
+            {
+                $this->wheres[] = $w;
+
+                return $this;
+            }
+
+            public function setParameter($key, $value, $type = null)
+            {
+                $this->parameters[] = array($key, $value, $type);
+
+                return $this;
+            }
+
+            public function orderBy($sort, $order = null)
+            {
+                $this->orderBys[] = array($sort, $order);
+
+                return $this;
+            }
+
+            public function addOrderBy($sort, $order = null)
+            {
+                $this->addOrderBys[] = array($sort, $order);
+
+                return $this;
+            }
+        };
+    }
+
+    private function filterCriteria($filters, $orderBy = null, $orderWay = null)
+    {
+        return new class($filters, $orderBy, $orderWay) {
+            private $filters;
+            private $by;
+            private $way;
+
+            public function __construct($filters, $by, $way)
+            {
+                $this->filters = $filters;
+                $this->by = $by;
+                $this->way = $way;
+            }
+
+            public function getFilters()
+            {
+                return $this->filters;
+            }
+
+            public function getOrderBy()
+            {
+                return $this->by;
+            }
+
+            public function getOrderWay()
+            {
+                return $this->way;
+            }
+        };
+    }
+
+    public function testAChosenStateFiltersTheSearchAndTheCountQueryWithABoundRank()
+    {
+        $search = $this->filteringBuilder();
+        $count = $this->filteringBuilder();
+
+        $this->module->hookActionOrderGridQueryBuilderModifier(array(
+            'search_query_builder' => $search, 'count_query_builder' => $count,
+            'search_criteria' => $this->filterCriteria(array('ifirma_document' => '1')),
+        ));
+
+        $condition = '(' . IfirmaDocumentStateRank::sql('ifr') . ') = :ifirma_rank';
+        $this->assertSame(array($condition), $search->wheres);
+        $this->assertSame(array($condition), $count->wheres);
+        $this->assertSame(array(array('ifirma_rank', 1, PDO::PARAM_INT)), $search->parameters);
+        $this->assertSame(array(array('ifirma_rank', 1, PDO::PARAM_INT)), $count->parameters);
+    }
+
+    public function testTheCountQueryGetsTheNewestRecordJoinOnlyWhenTheFilterIsActive()
+    {
+        $join = IfirmaOrderGridIndicator::joinSql('o');
+        $expected = array(array('o', $join['table'], $join['alias'], $join['condition']));
+
+        $filtered = $this->filteringBuilder();
+        $this->module->hookActionOrderGridQueryBuilderModifier(array(
+            'search_query_builder' => $this->filteringBuilder(), 'count_query_builder' => $filtered,
+            'search_criteria' => $this->filterCriteria(array('ifirma_document' => '10')),
+        ));
+        $unfiltered = $this->filteringBuilder();
+        $this->module->hookActionOrderGridQueryBuilderModifier(array(
+            'search_query_builder' => $this->filteringBuilder(), 'count_query_builder' => $unfiltered,
+            'search_criteria' => $this->filterCriteria(array('ifirma_document' => '')),
+        ));
+
+        $this->assertSame($expected, $filtered->joins);
+        $this->assertSame(array(), $filtered->selects, 'the count query selects nothing extra');
+        $this->assertSame(array(), $unfiltered->joins);
+        $this->assertSame(array(), $unfiltered->wheres);
+        $this->assertSame(array(), $unfiltered->parameters);
+    }
+
+    /**
+     * @return array[]
+     */
+    public function valuesThatAreNoState()
+    {
+        return array(
+            'unknown state' => array('refunded'),
+            'or one equals one' => array('1 OR 1=1'),
+            'drop table' => array("'; DROP TABLE ps_orders; --"),
+            'array' => array(array('1', '2')),
+            'empty string' => array(''),
+            'zero' => array('0'),
+            'eleven' => array('11'),
+            'null' => array(null),
+        );
+    }
+
+    /**
+     * @dataProvider valuesThatAreNoState
+     */
+    public function testAValueThatIsNoStateLeavesBothQueriesUntouchedAndOutOfTheSql($value)
+    {
+        $search = $this->filteringBuilder();
+        $count = $this->filteringBuilder();
+
+        $this->module->hookActionOrderGridQueryBuilderModifier(array(
+            'search_query_builder' => $search, 'count_query_builder' => $count,
+            'search_criteria' => $this->filterCriteria(array('ifirma_document' => $value)),
+        ));
+
+        $this->assertSame(array(), $search->wheres);
+        $this->assertSame(array(), $search->parameters);
+        $this->assertSame(array(), $count->wheres);
+        $this->assertSame(array(), $count->parameters);
+        $this->assertSame(array(), $count->joins);
+        $this->assertSame(array(), $count->selects);
+        $recorded = json_encode(array($search->joins, $search->selects, $search->wheres, $search->parameters, $count));
+        $this->assertStringNotContainsString('DROP', $recorded);
+        $this->assertStringNotContainsString('1=1', $recorded);
+    }
+
+    public function testTheFilterCombinesWithSortingByTheColumn()
+    {
+        $search = $this->filteringBuilder();
+        $count = $this->filteringBuilder();
+
+        $this->module->hookActionOrderGridQueryBuilderModifier(array(
+            'search_query_builder' => $search, 'count_query_builder' => $count,
+            'search_criteria' => $this->filterCriteria(array('ifirma_document' => '9'), 'ifirma_document', 'desc'),
+        ));
+
+        $this->assertCount(1, $search->wheres);
+        $this->assertSame(array(array('ifirma_document_rank', 'DESC')), $search->orderBys);
+        $this->assertSame(array(array('o.id_order', 'DESC')), $search->addOrderBys);
+        $this->assertSame(array(), $count->orderBys, 'the count query is never sorted');
+    }
+
+    public function testFilteringAndSortingTheOrdersListByTheColumnSendNoRequestToIfirma()
+    {
+        $this->module->hookActionOrderGridQueryBuilderModifier(array(
+            'search_query_builder' => $this->filteringBuilder(), 'count_query_builder' => $this->filteringBuilder(),
+            'search_criteria' => $this->filterCriteria(array('ifirma_document' => '1'), 'ifirma_document', 'asc'),
+        ));
+
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testAChosenStateWithoutACountBuilderStillFiltersTheSearch()
+    {
+        $search = $this->filteringBuilder();
+
+        $this->module->hookActionOrderGridQueryBuilderModifier(array(
+            'search_query_builder' => $search,
+            'search_criteria' => $this->filterCriteria(array('ifirma_document' => '4')),
+        ));
+
+        $this->assertCount(1, $search->wheres);
     }
 
     public function testTheCellTooltipUsesTheModulesWords()

@@ -66,7 +66,7 @@ The customer pages do not start the pipeline: the front controllers read and wri
 **Admin controller** [`controllers/admin/AdminIfirmaController.php`](../controllers/admin/AdminIfirmaController.php) is the tab `AdminIfirma` (menu *Orders > iFirma documents*). It has two parts:
 
 - **The documents list**: a legacy list of the `ifirma_receipt` table (`fields_list`, filters, the preset `ifirma_preset=attention`, the three native bulk entries). Row buttons are rendered by list callbacks. Without JavaScript the bulk entries only explain that they need it (`processBulk*()`).
-- **AJAX actions** (`ajaxProcess<Name>()`, called with `ajax=1&action=<Name>`), each answering the JSON envelope (`success`, `message`, `data`). Every action looks up its level in a static table and answers HTTP 403 with the same envelope when the employee lacks it (see Security notes):
+- **AJAX actions** (`ajaxProcess<Name>()`, called with `ajax=1&action=<Name>`), each answering the JSON envelope (`success`, `message`, `data`). Every action looks up its level in a static table and answers HTTP 403 with the same envelope when the employee lacks it; every action except the five read-only ones (`DownloadPdf`, `IssueFeed`, `CustomerCheck`, `CustomerSearch`, `CustomerCountRemote`) also needs the request method POST and otherwise answers HTTP 405 (see Security notes):
 
 | Level | Actions |
 |-------|---------|
@@ -95,7 +95,7 @@ Two plain JavaScript files in [`views/js/admin/`](../views/js/admin/) hold no te
 
 ## Class layers
 
-50 files under [`classes/`](../classes/), one class per file (`IfirmaDataRequest.php` also declares `IfirmaDataRequestException`, so 51 classes). The centre is [`IfirmaIssuancePipeline`](../classes/IfirmaIssuancePipeline.php) with [`IfirmaReceiptService`](../classes/IfirmaReceiptService.php); the admin side reaches them through [`IfirmaAdminActions`](../classes/IfirmaAdminActions.php).
+95 class files under [`classes/`](../classes/) (and an `index.php` guard), one class or interface per file (`IfirmaDataRequest.php` also declares `IfirmaDataRequestException`, so 96 in all). The centre is [`IfirmaIssuancePipeline`](../classes/IfirmaIssuancePipeline.php) with [`IfirmaReceiptService`](../classes/IfirmaReceiptService.php); the admin side reaches them through [`IfirmaAdminActions`](../classes/IfirmaAdminActions.php).
 
 **API transport**
 
@@ -105,6 +105,14 @@ Two plain JavaScript files in [`views/js/admin/`](../views/js/admin/) hold no te
 | [`IfirmaHttpTransport`](../classes/IfirmaHttpTransport.php) | Default cURL transport; returns status, body and error. |
 | [`IfirmaHttpStatus`](../classes/IfirmaHttpStatus.php) | Builds the HTTP status line for a code. |
 | [`IfirmaHttpOutput`](../classes/IfirmaHttpOutput.php) | Sends a PDF as the response (headers in one place). |
+| [`IfirmaRequestKind`](../classes/IfirmaRequestKind.php) | Derives the kind of a request (`document`, `status`, `pdf`, `email`, `ksef`, `payment`, `contractor`, `limit`, `other`) from the verb and the path, so a caller cannot mislabel it. Used by `IfirmaApiClient` and `IfirmaApiUsage`. |
+| [`IfirmaApiUsage`](../classes/IfirmaApiUsage.php) | Statistics only: counts the requests sent per kind and day in `IFIRMA_USAGE_<KIND>` rows and reads the minute and day totals from the guard. Used by `IfirmaApiClient` (writes), `IfirmaCronRunner` (the `usage` block) and the configuration page (reads). |
+| [`IfirmaRetryAfter`](../classes/IfirmaRetryAfter.php) | Computes the `Retry-After` seconds of a refusal by the local request limit (to the next minute, to the end of a back-off, at most 3600 for the day window). Used by `IfirmaApiClient`. |
+| [`IfirmaRateLimitedException`](../classes/IfirmaRateLimitedException.php) | Typed exception for a request refused by the rate limit before it was sent, carrying the window that refused and the seconds to wait. Thrown by `IfirmaReceiptService`; caught by `IfirmaIssuancePipeline`, the admin controller and the receipt front controller. |
+| [`IfirmaWindowCounter`](../classes/IfirmaWindowCounter.php) | Takes and gives back slots of one counting window in an atomic UPDATE of a `Configuration` row. Used by `IfirmaRateGuard` and `IfirmaDownloadBudget`. |
+| [`IfirmaRemoteLimit`](../classes/IfirmaRemoteLimit.php) | Keeps the last reading of the day limit from iFirma (the `abonent` key) next to the local counters and reuses it for ten minutes. Used by `IfirmaRateGuard`, `IfirmaRemoteLimitJob` and `IfirmaLimitCheckAction`. |
+| [`IfirmaLimitReading`](../classes/IfirmaLimitReading.php) | Immutable value: one reading of the day limit (day, used, granted, time). Used by `IfirmaRemoteLimit`, `IfirmaLimitCheck` and `IfirmaRemoteLimitPresenter`. |
+| [`IfirmaLimitCheck`](../classes/IfirmaLimitCheck.php) | Immutable outcome of an employee's limit check: a reading, a refusal by the module's own limits (nothing sent) or no usable answer. Used by `IfirmaRemoteLimit`, `IfirmaLimitCheckAction` and the presenter. |
 
 **Payload**
 
@@ -147,6 +155,8 @@ Two plain JavaScript files in [`views/js/admin/`](../views/js/admin/) hold no te
 |-------|------|
 | [`IfirmaDeliveryService`](../classes/IfirmaDeliveryService.php) | Sends the document to the customer (shop mail or iFirma mail), with PDF retries and an optional copy. |
 | [`IfirmaDeliveryResult`](../classes/IfirmaDeliveryResult.php) | Immutable result of `deliver()` and `resend()`. |
+| [`IfirmaDeliveryRetryPolicy`](../classes/IfirmaDeliveryRetryPolicy.php) | Pure policy of the automatic delivery retry: three attempts in all, the second 15 minutes and the third 2 hours after the previous failure; a refusal by the rate guard counts no attempt, a permanent failure or an unknown outcome schedules none. |
+| [`IfirmaDeliveryRetryView`](../classes/IfirmaDeliveryRetryView.php) | Pure presenter: the one sentence that says where the retry of a failed delivery stands (attempt n of 3 and the next time, none remains, none will be made, none is scheduled). The order panel (through `describeDelivery()`), the Orders-list tooltip and the documents list use it, so the wording lives in one place. |
 | [`IfirmaDataRequestNotifier`](../classes/IfirmaDataRequestNotifier.php) | Sends the data-request e-mails. |
 
 **KSeF**
@@ -187,6 +197,14 @@ Two plain JavaScript files in [`views/js/admin/`](../views/js/admin/) hold no te
 | [`IfirmaOrderGridIndicator`](../classes/IfirmaOrderGridIndicator.php) | SQL and cell of the Orders-list column. |
 | [`IfirmaSettings`](../classes/IfirmaSettings.php) | Pure validation table for the settings form, including the base URL rule and the hexadecimal key check. |
 | [`IfirmaBulkRunner`](../classes/IfirmaBulkRunner.php) | One batch of a bulk action (`retry`, `issue`, `resend`, `refresh`): batch sizes 3, 3, 5 and 25, a 20-second budget, one outcome per id (`issued`, `adopted`, `suspected`, `held`, `failed`, `sent`, `refreshed`, `skipped`, `not_attempted`), and one log entry per run. Stops on a rate-guard refusal or a rejected key. |
+| [`IfirmaConfigPageGuard`](../classes/IfirmaConfigPageGuard.php) | Decides whether a request to the configuration page may do what it asks: the Configure permission on every version, and a state-changing action only for a POST with a valid back-office token. Used by `ifirma.php`. |
+| [`IfirmaBackOfficeToken`](../classes/IfirmaBackOfficeToken.php) | Whether a request carries the employee's back-office token (the fixed hash before PrestaShop 9, the core's CSRF check from 9.0). Used by `ifirma.php`. |
+| [`IfirmaLimitCheckAction`](../classes/IfirmaLimitCheckAction.php) | The employee's request to read the remaining limit: runs the forced check only for an allowed request and writes the detail of a failed check to the shop log. Used by `ifirma.php`. |
+| [`IfirmaApiUsagePresenter`](../classes/IfirmaApiUsagePresenter.php) | Formats the **Module requests** box (minute, day, kinds, other clients, back-off end); sends no request. Used by `ifirma.php`. |
+| [`IfirmaRemoteLimitPresenter`](../classes/IfirmaRemoteLimitPresenter.php) | Formats the limit box (stored reading, outcome of the last click, the button); sends no request. Used by `ifirma.php`. |
+| [`IfirmaDocumentStateRank`](../classes/IfirmaDocumentStateRank.php) | The ten states of a record as a number, as SQL text for a record alias, so the Orders list and the documents list sort and filter by one order. Used by `IfirmaOrderGridIndicator`, `IfirmaOrderGridStateFilter`, `IfirmaDocumentListSort` and `ifirma.php`. |
+| [`IfirmaOrderGridStateFilter`](../classes/IfirmaOrderGridStateFilter.php) | The state filter of the Orders-list column: the choices, the one value accepted from the request and the condition added to the query builder. Used by the grid hooks in `ifirma.php`. |
+| [`IfirmaDocumentListSort`](../classes/IfirmaDocumentListSort.php) | Sorting of the documents list by state: the rank as a selected value, the direction as ASC or DESC, the newest-first tie-break. Used by the admin controller. |
 | [`IfirmaIssueFeed`](../classes/IfirmaIssueFeed.php) | The records that need attention (the seven kinds, newest 20), the unseen count and the per-employee seen mark. Shares its condition with the Needs-attention preset. |
 
 **Input, downloads and output**
@@ -194,20 +212,26 @@ Two plain JavaScript files in [`views/js/admin/`](../views/js/admin/) hold no te
 | Class | Role |
 |-------|------|
 | [`IfirmaInput`](../classes/IfirmaInput.php) | Reads one request value safely: `scalar()` gives `''` for an array or an object, `decimal()` parses an amount (or null). |
-| [`IfirmaDownloadThrottle`](../classes/IfirmaDownloadThrottle.php) | The customer PDF limits: one fetch per document every 30 seconds, ten per customer per 60 seconds (HTTP 429). |
+| [`IfirmaDownloadThrottle`](../classes/IfirmaDownloadThrottle.php) | The customer PDF limits: one fetch per document every 30 seconds, ten documents per customer per 60 seconds (HTTP 429), and the constant of the per-customer day cap. Used by `controllers/front/receipt.php`. |
+| [`IfirmaDownloadDayCap`](../classes/IfirmaDownloadDayCap.php) | The most downloads one customer can send to iFirma per calendar day (30), counted on the customer's receipt rows (`download_day`, `download_count`); the count is taken before the request and given back when it was refused locally. Used by `controllers/front/receipt.php`. |
+| [`IfirmaDownloadBudget`](../classes/IfirmaDownloadBudget.php) | A named budget of PDF downloads per calendar minute and day: all customers together (20 and 2,000) and all employees together (30 and 2,000), apart from the request guard so downloads cannot use up the requests issuance needs. Used by `controllers/front/receipt.php` and the admin controller. |
 
 **Status sync and the cron jobs**
 
 | Class | Role |
 |-------|------|
 | [`IfirmaStatusSyncService`](../classes/IfirmaStatusSyncService.php) | Mirrors the remote state of issued documents (cron, opportunistic on the customer's order page). |
-| [`IfirmaCronRunner`](../classes/IfirmaCronRunner.php) | Runs the `IfirmaCronJob`s in order under the run lock `ifirma_cron` (no wait), builds the JSON summary (the sync keys at the top level, a block per other job, `rate_limited`, `rate_limited_window`), and has the later jobs only report after a rate-limited one. |
+| [`IfirmaCronRunner`](../classes/IfirmaCronRunner.php) | Runs the `IfirmaCronJob`s in order under the run lock `ifirma_cron` (no wait), builds the JSON summary (the sync keys at the top level, a block per other job, `rate_limited`, `rate_limited_window`, `time_budget_exhausted` and `usage`), and has the later jobs only report after a rate-limited one. |
 | [`IfirmaCronJob`](../classes/IfirmaCronJob.php), [`IfirmaCronContext`](../classes/IfirmaCronContext.php), [`IfirmaCronJobReport`](../classes/IfirmaCronJobReport.php) | The job interface (`name()`, `run()`, `skip()`), what a run shares (the item cap, the clock) and what a job reports (handled, succeeded, failed, left, rate limited). |
+| [`IfirmaRemoteLimitJob`](../classes/IfirmaRemoteLimitJob.php) | Job 0 (`limit`): reads the day limit from iFirma at the start of a run through `IfirmaRemoteLimit`; never stops the later jobs. Used by `IfirmaCronRunner`. |
 | [`IfirmaIssueQueueJob`](../classes/IfirmaIssueQueueJob.php) | Job 1: issues queued orders, oldest first, under the order lock, through `IfirmaIssuancePipeline::run()` with trigger `queue`. |
+| [`IfirmaKsefRetryJob`](../classes/IfirmaKsefRetryJob.php) | Job 2 (`ksef`): submits the invoices whose KSeF submission was deferred, oldest first, at most the item cap. Used by `IfirmaCronRunner`. |
 | [`IfirmaStatusSyncJob`](../classes/IfirmaStatusSyncJob.php) | Job 3: an adapter around `IfirmaStatusSyncService::runCron()`. |
+| [`IfirmaAwaitingDeliveryJob`](../classes/IfirmaAwaitingDeliveryJob.php) | Job 4 (`delivery`): delivers the documents that waited for KSeF and were accepted, oldest first, at most the item cap. Used by `IfirmaCronRunner`. |
+| [`IfirmaDeliveryRetryJob`](../classes/IfirmaDeliveryRetryJob.php) | The last job of a run (`delivery_retry`): delivers the failed deliveries that are due, oldest due time first, under the order lock, at most the item cap per run; stops at the first refusal by the rate guard or the credentials cool-down. |
 
 The cron request flow: `cron.php` checks the token, `IfirmaCronRunner::build()` creates the jobs, `run()` takes the run lock, calls the
-jobs in order (queue, KSeF retry, sync, delivery) and releases the lock. A job asks the shared rate guard before every iFirma request, so the minute and the
+jobs in order (the day-limit read, queue, KSeF retry, sync, delivery of accepted documents, then the delivery retry last) and releases the lock. A job asks the shared rate guard before every iFirma request, so the minute and the
 day cap and a back-off apply to the whole run.
 
 ## Issuance pipeline
@@ -278,7 +302,7 @@ The "Create" button on the order panel, from the browser to the HTTP transport:
 
 The schema is defined once in [`classes/IfirmaSchema.php`](../classes/IfirmaSchema.php) and used by [`sql/install.php`](../sql/install.php) and the upgrade scripts.
 
-`ps_ifirma_receipt` - one row per iFirma document (issued by the module or discovered in iFirma). Core columns: order/customer/shop link, `document_type`, `ifirma_id` and `ifirma_number`, `status` (`created` / `paid` / `error` / `unknown` / `duplicate_suspected` / `held` / `queued`), `paid_amount`, a download `security_token` and the full request/response payloads for auditing. Since 1.1.0 the table also holds: `source` (`module` or `external`) and `order_reference`, which tell where a document came from; `delivery_status`, `delivery_channel`, `delivered_at` and `delivery_error`, which track sending the document to the customer; `remote_paid_amount`, `remote_sent`, `remote_draft`, `remote_missing`, `ksef_status`, `ksef_number`, `linked_document`, `last_sync_at` and `sync_error`, which mirror the state last read from iFirma by the synchronisation job; `duplicate_candidates` (JSON list of possible existing documents found before issuing); and `id_data_request`, the link to the buyer-data request that produced the document. Indexes: `idx_order`, `idx_customer`, `idx_token`, and since 1.5.0 `idx_date_upd` (on `date_upd`, for the documents list, the notification feed and its unseen count). Since 1.5.0 the table also holds `last_download_at` (`DATETIME NULL`), the time of the last customer PDF download, which the download throttle reads. Fresh installs get both from the schema; on upgraded shops the 1.5.0 upgrade adds them, and the customer download also adds the column on first use (`IfirmaSchema::ensureReceiptDownloadColumn()`).
+`ps_ifirma_receipt` - one row per iFirma document (issued by the module or discovered in iFirma). Core columns: order/customer/shop link, `document_type`, `ifirma_id` and `ifirma_number`, `status` (`created` / `paid` / `error` / `unknown` / `duplicate_suspected` / `held` / `queued`), `paid_amount`, a download `security_token` and the full request/response payloads for auditing. Since 1.1.0 the table also holds: `source` (`module` or `external`) and `order_reference`, which tell where a document came from; `delivery_status`, `delivery_channel`, `delivered_at` and `delivery_error`, which track sending the document to the customer; `remote_paid_amount`, `remote_sent`, `remote_draft`, `remote_missing`, `ksef_status`, `ksef_number`, `linked_document`, `last_sync_at` and `sync_error`, which mirror the state last read from iFirma by the synchronisation job; `duplicate_candidates` (JSON list of possible existing documents found before issuing); and `id_data_request`, the link to the buyer-data request that produced the document. Indexes: `idx_order`, `idx_customer`, `idx_token`, and since 1.5.0 `idx_date_upd` (on `date_upd`, for the documents list, the notification feed and its unseen count). Since 1.5.0 the table also holds `last_download_at` (`DATETIME NULL`), the time of the last customer PDF download, which the download throttle reads. Fresh installs get both from the schema; on upgraded shops the 1.5.0 upgrade adds them, and the customer download also adds the column on first use (`IfirmaSchema::ensureReceiptDownloadColumn()`). Since 1.10.0 the table holds `delivery_attempts` (`INT(11) UNSIGNED NOT NULL DEFAULT 0`, the automatic delivery attempts used) and `delivery_retry_at` (`DATETIME NULL`, when the next attempt is due; an empty or zero value means none is due), which the delivery retry job and the retry line read. The 1.10.0 upgrade adds them; the Orders-list query hook and the documents list add them on first use (`IfirmaSchema::ensureReceiptRetryColumns()`) and select the two fields only once they exist. `download_day` and `download_count` (new in 1.10.0, written only by IfirmaDownloadDayCap) hold the number of PDF downloads of the document that reached iFirma on that day, summed per customer for the daily cap.
 
 `ps_ifirma_contractor_map` (new in 1.1.0) - one row per customer linking it to an iFirma contractor: `id_customer` (unique), `ifirma_identifier`, `matched_by` (`module`, `nip`, `name`, `email`, `import-nip`, `import-email`, `import-name`, `manual`), `ifirma_name`. Created on install, on upgrade and, when missing, on first use. See [Linking existing contractors](contractors.md).
 

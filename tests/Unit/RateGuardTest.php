@@ -126,6 +126,23 @@ class RateGuardTest extends TestCase
         $this->assertSame($this->minute() . ':6', Configuration::get('IFIRMA_RATE_WINDOW'));
     }
 
+    public function testTwoRequestsAtTheCapMinusOneAdmitExactlyOne()
+    {
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->minute() . ':79');
+        $self = $this;
+        $otherRequest = new IfirmaRateGuard(function () use ($self) {
+            return $self->now;
+        });
+
+        $first = $this->guard->admit();
+        $second = $otherRequest->admit();
+
+        $this->assertTrue($first->isAllowed());
+        $this->assertFalse($second->isAllowed());
+        $this->assertSame(IfirmaRateDecision::WINDOW_MINUTE, $second->getWindow());
+        $this->assertSame($this->minute() . ':80', Configuration::get('IFIRMA_RATE_WINDOW'));
+    }
+
     public function testEachWindowIsOneAtomicStatementCarryingItsBucketAndCap()
     {
         Configuration::updateValue('IFIRMA_RATE_MAX_PER_MIN', 7);

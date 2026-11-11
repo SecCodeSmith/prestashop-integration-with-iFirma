@@ -124,7 +124,7 @@ class IfirmaDeliveryResultTest extends TestCase
     {
         // immutable: the constructor and the readers are the whole public surface
         $this->assertSame(
-            array('__construct', 'isSent', 'getStatus', 'getChannel', 'getMessage', 'refusedLocally', 'getRefusal'),
+            array('__construct', 'isSent', 'getStatus', 'getChannel', 'getMessage', 'refusedLocally', 'isJustSent', 'getRefusal'),
             get_class_methods(IfirmaDeliveryResult::class)
         );
     }

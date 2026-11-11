@@ -9,6 +9,7 @@ if (!defined('_PS_VERSION_')) {
 }
 
 require_once dirname(__FILE__) . '/IfirmaOrderGridTooltip.php';
+require_once dirname(__FILE__) . '/IfirmaDocumentStateRank.php';
 
 /**
  * What the "iFirma" column of the back-office Orders list shows for each order: the SQL that reads the
@@ -28,22 +29,24 @@ class IfirmaOrderGridIndicator
     const FIELD_KSEF_NUMBER = 'ifirma_document_ksef_number';
     const FIELD_ERROR = 'ifirma_document_error';
     const FIELD_RANK = 'ifirma_document_rank';
+    const FIELD_DELIVERY_ATTEMPTS = 'ifirma_document_delivery_attempts';
+    const FIELD_DELIVERY_RETRY_AT = 'ifirma_document_delivery_retry_at';
     const ICON = 'receipt_long';
 
     /** The ORDER BY alias of the column's sort (the column id itself holds the HTML of the cell). */
     const SORT_ALIAS = self::FIELD_RANK;
 
-    /** Position of each state in the sort, ascending: what needs action first. */
-    const RANK_ERROR = 1;
-    const RANK_UNKNOWN = 2;
-    const RANK_SUSPECTED = 3;
-    const RANK_HELD = 4;
-    const RANK_QUEUED = 5;
-    const RANK_NO_RECORD = 6;
-    const RANK_ISSUED = 7;
-    const RANK_AWAITING_KSEF = 8;
-    const RANK_SENT = 9;
-    const RANK_PAID = 10;
+    /** Position of each state in the sort, ascending: what needs action first (the ranks live in IfirmaDocumentStateRank). */
+    const RANK_ERROR = IfirmaDocumentStateRank::ERROR;
+    const RANK_UNKNOWN = IfirmaDocumentStateRank::UNKNOWN;
+    const RANK_SUSPECTED = IfirmaDocumentStateRank::SUSPECTED;
+    const RANK_HELD = IfirmaDocumentStateRank::HELD;
+    const RANK_QUEUED = IfirmaDocumentStateRank::QUEUED;
+    const RANK_NO_RECORD = IfirmaDocumentStateRank::NO_RECORD;
+    const RANK_ISSUED = IfirmaDocumentStateRank::ISSUED;
+    const RANK_AWAITING_KSEF = IfirmaDocumentStateRank::AWAITING_KSEF;
+    const RANK_SENT = IfirmaDocumentStateRank::SENT;
+    const RANK_PAID = IfirmaDocumentStateRank::PAID;
 
     /** @var string alias of the joined receipt row; none of PrestaShop's order-grid aliases (o, cu, cur, a, c, os, osl, s) */
     const JOIN_ALIAS = 'ifr';
@@ -78,8 +81,7 @@ class IfirmaOrderGridIndicator
     public static function selectSql()
     {
         $j = self::JOIN_ALIAS;
-        // the same "issued" rule as IfirmaReceipt::isIssued(): an identifier and not the error state
-        $issued = "{$j}.ifirma_id <> '' AND {$j}.status <> '" . pSQL(IfirmaReceipt::STATUS_ERROR) . "'";
+        $issued = IfirmaDocumentStateRank::issuedSql($j);
 
         return array(
             "IF({$issued}, IF({$j}.ifirma_number <> '', {$j}.ifirma_number, {$j}.ifirma_id), '') AS " . self::FIELD_NUMBER,
@@ -91,34 +93,23 @@ class IfirmaOrderGridIndicator
             "IFNULL({$j}.ksef_status, '') AS " . self::FIELD_KSEF_STATUS,
             "IFNULL({$j}.ksef_number, '') AS " . self::FIELD_KSEF_NUMBER,
             "LEFT(IFNULL({$j}.last_error, ''), " . (IfirmaOrderGridTooltip::ERROR_LIMIT + 1) . ") AS " . self::FIELD_ERROR,
-            self::rankSql($j, $issued) . ' AS ' . self::FIELD_RANK,
+            IfirmaDocumentStateRank::sql($j) . ' AS ' . self::FIELD_RANK,
         );
     }
 
     /**
-     * The state of the newest record as a number, for the sort: the states that need action first, then no record, then
-     * the issued ones from "not sent" to "paid". A paid document wins over its delivery state.
-     *
-     * @param string $j      alias of the joined row
-     * @param string $issued the SQL condition of "issued"
-     * @return string a CASE expression
+     * @return string[] the two retry fields (attempts used, next due time) for QueryBuilder::addSelect(). Kept apart from
+     *                  selectSql() because the columns come from an upgrade: the caller adds them once the table has them,
+     *                  so a shop that did not add them yet still lists its orders.
      */
-    private static function rankSql($j, $issued)
+    public static function retrySelectSql()
     {
-        $rows = array(
-            "WHEN {$j}.id_ifirma_receipt IS NULL THEN " . self::RANK_NO_RECORD,
-            "WHEN {$issued} AND {$j}.status = 'paid' THEN " . self::RANK_PAID,
-            "WHEN {$issued} AND {$j}.delivery_status = 'awaiting_ksef' THEN " . self::RANK_AWAITING_KSEF,
-            "WHEN {$issued} AND {$j}.delivery_status = 'sent' THEN " . self::RANK_SENT,
-            "WHEN {$issued} THEN " . self::RANK_ISSUED,
-            "WHEN {$j}.status = 'error' THEN " . self::RANK_ERROR,
-            "WHEN {$j}.status = 'unknown' THEN " . self::RANK_UNKNOWN,
-            "WHEN {$j}.status = 'duplicate_suspected' THEN " . self::RANK_SUSPECTED,
-            "WHEN {$j}.status = 'held' THEN " . self::RANK_HELD,
-            "WHEN {$j}.status = 'queued' THEN " . self::RANK_QUEUED,
-        );
+        $j = self::JOIN_ALIAS;
 
-        return 'CASE ' . implode(' ', $rows) . ' ELSE ' . self::RANK_NO_RECORD . ' END';
+        return array(
+            "IFNULL({$j}.delivery_attempts, 0) AS " . self::FIELD_DELIVERY_ATTEMPTS,
+            "IFNULL({$j}.delivery_retry_at, '') AS " . self::FIELD_DELIVERY_RETRY_AT,
+        );
     }
 
     /**
