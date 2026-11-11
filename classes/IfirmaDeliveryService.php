@@ -51,6 +51,8 @@ class IfirmaDeliveryService
     const CHANNEL_IFIRMA_MAIL = 'ifirma_mail';
     const CHANNEL_NONE = 'none';
     const CHANNEL_SHOP_MAIL_FALLBACK = 'shop_mail_fallback';
+    /** Recorded by markSent() only; it is not a value of the setting IFIRMA_SEND_CHANNEL (see isChannel()). */
+    const CHANNEL_MANUAL = 'manual';
 
     const MAIL_TEMPLATE = 'receipt_issued';
     const TEXT_MAX = 1000;
@@ -391,7 +393,81 @@ class IfirmaDeliveryService
      */
     public function resend(IfirmaReceipt $receipt, ?Order $order = null)
     {
-        // the cron retry delivers under this lock: an employee and the cron never send the same document at once
+        return $this->underOrderLock($receipt, function () use ($receipt, $order) {
+            if ($this->deliveredMomentAgo($receipt)) {
+                return new IfirmaDeliveryResult(
+                    false,
+                    'failed',
+                    $this->getChannel(),
+                    $this->module->l('This document was sent a moment ago. Wait before sending it again.', 'ifirmadeliveryservice'),
+                    IfirmaDeliveryResult::REFUSAL_JUST_SENT
+                );
+            }
+
+            return $this->deliver($receipt, $order, array('manual' => true));
+        });
+    }
+
+    /**
+     * Records that an employee delivered the document outside the module. A state change only: it sends no e-mail and
+     * no request to iFirma, ends a wait for KSeF acceptance and cancels a pending automatic retry.
+     *
+     * @param IfirmaReceipt $receipt
+     * @param int           $idEmployee
+     * @return IfirmaDeliveryResult
+     */
+    public function markSent(IfirmaReceipt $receipt, $idEmployee)
+    {
+        return $this->underOrderLock($receipt, function () use ($receipt, $idEmployee) {
+            // a pure write path: judge and save the record as it is now, not as the caller loaded it before the lock
+            $receipt = empty($receipt->id) ? $receipt : IfirmaReceipt::loadFresh((int) $receipt->id);
+            $refusal = $this->markSentRefusal($receipt);
+            if ($refusal !== '') {
+                return $this->result(false, 'failed', self::CHANNEL_MANUAL, $refusal);
+            }
+            $receipt->recordDelivery(IfirmaReceipt::DELIVERY_SENT, self::CHANNEL_MANUAL, '', $receipt->getDeliveryAttempts(), null);
+            $receipt->delivered_at = date('Y-m-d H:i:s', $this->now());
+            if (!$this->persist($receipt)) {
+                return $this->result(false, 'failed', self::CHANNEL_MANUAL, $this->module->l('The delivery state could not be saved.', 'ifirmadeliveryservice'));
+            }
+            PrestaShopLogger::addLog(
+                sprintf('iFirma: document record %d marked as sent by employee %d', (int) $receipt->id, (int) $idEmployee),
+                1
+            );
+
+            return $this->result(true, 'sent', self::CHANNEL_MANUAL, '');
+        });
+    }
+
+    /**
+     * @param IfirmaReceipt $receipt
+     * @return string why the document cannot be marked as sent; '' when it can
+     */
+    private function markSentRefusal(IfirmaReceipt $receipt)
+    {
+        if (!$receipt->isIssued()) {
+            return $this->module->l('The document has not been issued yet.', 'ifirmadeliveryservice');
+        }
+        if ($receipt->remote_missing) {
+            return $this->module->l('The document is missing in iFirma.', 'ifirmadeliveryservice');
+        }
+        if ($receipt->delivery_status === IfirmaReceipt::DELIVERY_SENT) {
+            return $this->module->l('This document is already recorded as sent.', 'ifirmadeliveryservice');
+        }
+
+        return '';
+    }
+
+    /**
+     * Runs $work under the named lock of the order, with the delivery state freshly read. The cron retry delivers
+     * under the same lock: an employee and the cron never act on the same document at once.
+     *
+     * @param IfirmaReceipt $receipt
+     * @param callable      $work returns an IfirmaDeliveryResult
+     * @return IfirmaDeliveryResult
+     */
+    private function underOrderLock(IfirmaReceipt $receipt, callable $work)
+    {
         $lock = self::ORDER_LOCK_PREFIX . (int) $receipt->id_order;
         if (!IfirmaNamedLock::acquire($lock, self::RESEND_LOCK_WAIT)) {
             return $this->result(
@@ -406,17 +482,8 @@ class IfirmaDeliveryService
             if (!empty($receipt->id)) {
                 $this->adoptDeliveryState($receipt, IfirmaReceipt::loadFresh((int) $receipt->id));
             }
-            if ($this->deliveredMomentAgo($receipt)) {
-                return new IfirmaDeliveryResult(
-                    false,
-                    'failed',
-                    $this->getChannel(),
-                    $this->module->l('This document was sent a moment ago. Wait before sending it again.', 'ifirmadeliveryservice'),
-                    IfirmaDeliveryResult::REFUSAL_JUST_SENT
-                );
-            }
 
-            return $this->deliver($receipt, $order, array('manual' => true));
+            return $work();
         } finally {
             IfirmaNamedLock::release($lock);
         }
@@ -577,6 +644,10 @@ class IfirmaDeliveryService
     {
         switch ($receipt->delivery_status) {
             case IfirmaReceipt::DELIVERY_SENT:
+                if ($receipt->delivery_channel === self::CHANNEL_MANUAL) {
+                    return sprintf($this->module->l('Marked as sent on %s by an employee', 'ifirmadeliveryservice'), (string) $receipt->delivered_at);
+                }
+
                 return sprintf(
                     $this->module->l('Sent on %1$s via %2$s', 'ifirmadeliveryservice'),
                     (string) $receipt->delivered_at,

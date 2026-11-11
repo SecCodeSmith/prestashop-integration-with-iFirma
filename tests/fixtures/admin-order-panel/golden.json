@@ -93,7 +93,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": false
             }
         },
         "paid external document, delivered": {
@@ -175,7 +176,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": false
             }
         },
         "sent to KSeF": {
@@ -257,7 +259,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": true
             }
         },
         "issued document of a private buyer": {
@@ -339,7 +342,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": true
             }
         },
         "document missing in iFirma": {
@@ -421,7 +425,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": true
             }
         },
         "outcome unknown": {
@@ -503,7 +508,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": false
             }
         },
         "error": {
@@ -585,7 +591,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": false
             }
         },
         "issued document": {
@@ -667,7 +674,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": true
             }
         },
         "no receipt": {
@@ -707,7 +715,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": false
             }
         },
         "held by a pending request": {
@@ -952,7 +961,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": false
             }
         },
         "linked contractor": {
@@ -996,7 +1006,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": false
             }
         },
         "contractor note: read-back failure": {
@@ -1078,7 +1089,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": true
             }
         },
         "contractor note: ambiguous search": {
@@ -1160,7 +1172,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": true
             }
         },
         "contractor note: failed search": {
@@ -1242,7 +1255,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": true
             }
         },
         "contractor note: assigned identifier": {
@@ -1324,7 +1338,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": true
             }
         },
         "contractor note: failed lookup": {
@@ -1406,7 +1421,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": true
             }
         },
         "contractor note: failed update": {
@@ -1488,7 +1504,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": true
             }
         },
         "contractor note: rejected create": {
@@ -1570,7 +1587,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": true
             }
         },
         "contractor note: rejected reference": {
@@ -1652,7 +1670,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": true
             }
         },
         "contractor note: record of an older version": {
@@ -1734,7 +1753,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": true
             }
         },
         "contractor note: attached contractor": {
@@ -1816,7 +1836,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": true
             }
         },
         "record without a document": {
@@ -1896,7 +1917,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": false
             }
         },
         "issued document of a business buyer": {
@@ -1976,7 +1998,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": true
             }
         },
         "payloads stored with the record": {
@@ -2056,7 +2079,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": true
             }
         },
         "failed delivery with a retry due": {
@@ -2136,7 +2160,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": true
             }
         },
         "failed delivery with the attempts used up": {
@@ -2216,7 +2241,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": true
             }
         },
         "failed delivery from before the automatic retry": {
@@ -2296,7 +2322,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": true
             }
         },
         "duplicate resolved by an employee": {
@@ -2394,7 +2421,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": true
             }
         },
         "stored candidates as a plain list": {
@@ -2474,7 +2502,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": false
             }
         },
         "resolution stored without a candidate list": {
@@ -2554,7 +2583,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": true
             }
         },
         "candidates stored without a resolution": {
@@ -2648,7 +2678,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": false
             }
         },
         "request history": {
@@ -2965,7 +2996,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": false
             }
         },
         "automatically approved request": {
@@ -3152,7 +3184,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": false
             }
         },
         "request with values of every kind": {
@@ -3371,7 +3404,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": false
             }
         },
         "order that does not load": {
@@ -3562,7 +3596,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": true
             }
         },
         "order without a customer": {
@@ -3599,7 +3634,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": false
             }
         },
         "contractor link that cannot be read": {
@@ -3636,7 +3672,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": false
             }
         },
         "link with a code of an older version": {
@@ -3678,7 +3715,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": true
+                "ifirma_can_manage": true,
+                "ifirma_can_mark_sent": false
             }
         },
         "view-only employee": {
@@ -3758,7 +3796,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": false,
-                "ifirma_can_manage": false
+                "ifirma_can_manage": false,
+                "ifirma_can_mark_sent": false
             }
         },
         "issue without manage": {
@@ -3838,7 +3877,8 @@
                 "ifirma_ajax_url": "https://shop.test/admin/index.php?controller=AdminIfirma&token=admin-token-AdminIfirma",
                 "ifirma_token": "admin-token-AdminIfirma",
                 "ifirma_can_issue": true,
-                "ifirma_can_manage": false
+                "ifirma_can_manage": false,
+                "ifirma_can_mark_sent": false
             }
         }
     }

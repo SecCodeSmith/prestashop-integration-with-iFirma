@@ -129,6 +129,7 @@ class AdminOrderPanelViewTest extends TestCase
             'ifirma_token',
             'ifirma_can_issue',
             'ifirma_can_manage',
+            'ifirma_can_mark_sent',
         ), array_keys($this->build()));
     }
 
@@ -173,6 +174,35 @@ class AdminOrderPanelViewTest extends TestCase
         $this->assertSame('T9', $v['ifirma_token']);
         $this->assertTrue($v['ifirma_can_issue']);
         $this->assertTrue($v['ifirma_can_manage']);
+    }
+
+    public function markSentOfferCases()
+    {
+        return array(
+            'failed' => array(array('delivery_status' => 'failed'), true, true),
+            'skipped' => array(array('delivery_status' => 'skipped'), true, true),
+            'older document without a delivery state' => array(array('delivery_status' => 'none'), true, true),
+            'waiting for KSeF' => array(array('delivery_status' => 'awaiting_ksef', 'ksef_status' => 'WYSLANA'), true, true),
+            'sent' => array(array('delivery_status' => 'sent'), true, false),
+            'sent by an employee' => array(array('delivery_status' => 'sent', 'delivery_channel' => 'manual'), true, false),
+            'failed, without the manage level' => array(array('delivery_status' => 'failed'), false, false),
+            'not issued' => array(array('ifirma_id' => '', 'delivery_status' => 'none'), true, false),
+        );
+    }
+
+    /** @dataProvider markSentOfferCases */
+    public function testMarkAsSentIsOfferedToTheManageLevelForAnIssuedDocumentThatIsNotSent(array $receipt, $canManage, $offered)
+    {
+        $this->makeReceipt($receipt);
+
+        $v = $this->build(15, $this->facts(array('can_manage' => $canManage)));
+
+        $this->assertSame($offered, $v['ifirma_can_mark_sent']);
+    }
+
+    public function testNoDocumentMeansNoMarkAsSentOffer()
+    {
+        $this->assertFalse($this->build()['ifirma_can_mark_sent']);
     }
 
     public function testThePermissionFlagsFollowTheOptionsAndDefaultToFalse()

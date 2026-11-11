@@ -148,6 +148,7 @@ class AdminControllerPermissionTest extends TestCase
             'RegisterContractor' => array('RegisterContractor', 'issue'),
             'UpdateStatus' => array('UpdateStatus', 'manage'),
             'ResendDocument' => array('ResendDocument', 'manage'),
+            'MarkSent' => array('MarkSent', 'manage'),
             'SendToKsef' => array('SendToKsef', 'manage'),
             'RefreshStatus' => array('RefreshStatus', 'manage'),
             'ApproveRequest' => array('ApproveRequest', 'manage'),
@@ -343,6 +344,54 @@ class AdminControllerPermissionTest extends TestCase
         $this->assertFalse($controller->dispatchAjax('CreateReceipt'));
         $this->assertSame(array(), $controller->statuses, 'the permission check never ran');
         $this->assertSame(array('Invalid token'), $controller->errors);
+    }
+
+    /** Scenario: Mark as sent needs the manage level */
+    public function testAnIssueLevelEmployeeCannotMarkADocumentAsSent()
+    {
+        $this->makeReceipt(array('delivery_status' => 'failed', 'delivery_channel' => 'shop_mail'));
+        $this->employeeHolding(array(IfirmaPermission::ROLE_READ, IfirmaPermission::ROLE_CREATE));
+        IfirmaTestState::clearWrites();
+
+        list($payload, $statuses) = $this->callAction('MarkSent');
+
+        $this->assertSame(array(403), $statuses);
+        $this->assertFalse($payload['success']);
+        $this->assertSame('You do not have permission to manage iFirma documents.', $payload['message']);
+        $this->assertSame('failed', (new IfirmaReceipt(1))->delivery_status);
+        $this->assertSame(array(), ObjectModel::$writeLog);
+        $this->assertSame(array(), $this->t->calls);
+        $this->assertSame(array(), Mail::$sent);
+    }
+
+    public function testAManageLevelEmployeeMarksTheDocumentOfThePostedOrderAsSent()
+    {
+        $this->makeReceipt(array('delivery_status' => 'failed', 'delivery_channel' => 'shop_mail'));
+        $this->employeeHolding(array(IfirmaPermission::ROLE_UPDATE));
+
+        list($payload, $statuses) = $this->callAction('MarkSent');
+
+        $this->assertSame(array(), $statuses);
+        $this->assertTrue($payload['success'], $payload['message']);
+        $this->assertSame('manual', (new IfirmaReceipt(1))->delivery_channel);
+        $this->assertSame(array(), $this->t->calls);
+        $this->assertSame(array(), Mail::$sent);
+    }
+
+    public function testAMarkSentWithoutTheModuleTokenIsRefusedBeforeTheDocumentIsTouched()
+    {
+        $this->makeReceipt(array('delivery_status' => 'failed', 'delivery_channel' => 'shop_mail'));
+        $this->employeeHolding(array(IfirmaPermission::ROLE_UPDATE));
+        Tools::$values = array('id_order' => 15);
+        $controller = new IfirmaTestStatusRecordingAdminController();
+        IfirmaTestState::clearWrites();
+
+        $this->assertFalse($controller->dispatchAjax('MarkSent'));
+
+        $this->assertSame(array('Invalid token'), $controller->errors);
+        $this->assertSame(array(), $controller->statuses, 'the permission check never ran');
+        $this->assertSame('failed', (new IfirmaReceipt(1))->delivery_status);
+        $this->assertSame(array(), ObjectModel::$writeLog);
     }
 
     public function testAValidTokenReachesThePermissionCheck()

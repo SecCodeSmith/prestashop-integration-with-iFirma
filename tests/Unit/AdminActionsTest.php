@@ -320,6 +320,58 @@ class AdminActionsTest extends TestCase
         $this->assertFalse($this->actions->resend(15)['success']);
     }
 
+    // ---- mark as sent ------------------------------------------------------------------------
+
+    public function testMarkSentAnswersWithTheManualDeliveryTextAndSendsNothing()
+    {
+        $this->makeReceipt(array('delivery_status' => 'failed', 'delivery_channel' => 'shop_mail', 'delivery_error' => 'smtp down'));
+
+        $r = $this->actions->markSent(15, 3);
+
+        $this->assertTrue($r['success'], $r['message']);
+        $this->assertSame('Document marked as sent.', $r['message']);
+        $this->assertSame(array('receipt', 'delivery'), array_keys($r['data']));
+        $this->assertSame('sent', $r['data']['receipt']['delivery_status']);
+        $this->assertMatchesRegularExpression(
+            '/^Marked as sent on \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} by an employee$/',
+            $r['data']['delivery']
+        );
+        $this->assertSame('manual', (new IfirmaReceipt(1))->delivery_channel);
+        $this->assertSame(array(), Mail::$sent);
+        $this->assertSame(array(), $this->t->calls);
+    }
+
+    public function testMarkSentOfAnAlreadySentDocumentSaysSoAndKeepsTheRecord()
+    {
+        $this->makeReceipt(array('delivery_status' => 'sent', 'delivery_channel' => 'shop_mail', 'delivered_at' => '2026-11-02 10:00:00'));
+
+        $r = $this->actions->markSent(15, 3);
+
+        $this->assertFalse($r['success']);
+        $this->assertSame('This document is already recorded as sent.', $r['message']);
+        $this->assertSame('2026-11-02 10:00:00', (new IfirmaReceipt(1))->delivered_at);
+        $this->assertSame('shop_mail', (new IfirmaReceipt(1))->delivery_channel);
+    }
+
+    public function testMarkSentWithoutADocumentIsRefused()
+    {
+        $r = $this->actions->markSent(15, 3);
+
+        $this->assertFalse($r['success']);
+        $this->assertSame('No issued iFirma document for this order.', $r['message']);
+    }
+
+    public function testMarkSentOfADocumentMissingInIfirmaIsRefused()
+    {
+        $this->makeReceipt(array('remote_missing' => 1, 'delivery_status' => 'failed'));
+
+        $r = $this->actions->markSent(15, 3);
+
+        $this->assertFalse($r['success']);
+        $this->assertSame('The document is missing in iFirma.', $r['message']);
+        $this->assertSame('failed', (new IfirmaReceipt(1))->delivery_status);
+    }
+
     // ---- KSeF --------------------------------------------------------------------------------
 
     public function testSendToKsefForcesSubmissionEvenWhenModeIsOff()

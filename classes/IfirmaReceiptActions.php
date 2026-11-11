@@ -173,6 +173,32 @@ class IfirmaReceiptActions extends IfirmaActionSupport
     }
 
     /**
+     * Records a delivery that happened outside the module (the "Mark as sent" button). Sends nothing.
+     *
+     * @param int $idOrder
+     * @param int $idEmployee
+     * @return array
+     */
+    public function markSent($idOrder, $idEmployee)
+    {
+        return $this->guard(function () use ($idOrder, $idEmployee) {
+            $receipt = IfirmaReceipt::getByOrder((int) $idOrder);
+            if (!$receipt || !$receipt->isIssued()) {
+                return $this->result(false, $this->module->l('No issued iFirma document for this order.', 'ifirmaadminactions'));
+            }
+            $delivery = IfirmaDeliveryService::build($this->module);
+            $outcome = $delivery->markSent($receipt, (int) $idEmployee);
+            $receipt = new IfirmaReceipt((int) $receipt->id);
+            $message = $outcome->isSent() ? $this->module->l('Document marked as sent.', 'ifirmaadminactions') : $outcome->getMessage();
+
+            return $this->result($outcome->isSent(), $message, array(
+                'receipt' => $this->receiptToArray($receipt),
+                'delivery' => $delivery->describeDelivery($receipt),
+            ));
+        });
+    }
+
+    /**
      * Submits the issued document to KSeF regardless of the configured mode (manual button).
      *
      * @param int $idOrder
