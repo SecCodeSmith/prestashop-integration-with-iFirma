@@ -13,9 +13,7 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
-require_once dirname(__FILE__) . '/IfirmaRateWindow.php';
-require_once dirname(__FILE__) . '/IfirmaRateDecision.php';
-require_once dirname(__FILE__) . '/IfirmaWindowCounter.php';
+require_once dirname(__FILE__) . '/IfirmaRequestBudget.php';
 
 /**
  * A named budget of PDF downloads per calendar minute and, optionally, per calendar day. It is independent of the
@@ -25,7 +23,7 @@ require_once dirname(__FILE__) . '/IfirmaWindowCounter.php';
  * Counters are Configuration rows (see IfirmaWindowCounter). A unit is taken before the request is sent and given
  * back when the request was refused locally, so the count equals the downloads that reached iFirma.
  */
-class IfirmaDownloadBudget
+class IfirmaDownloadBudget extends IfirmaRequestBudget
 {
     const CUSTOMER_MINUTE_KEY = 'IFIRMA_DL_CUSTOMER_MINUTE';
     const CUSTOMER_DAY_KEY = 'IFIRMA_DL_CUSTOMER_DAY';
@@ -36,34 +34,6 @@ class IfirmaDownloadBudget
     const CUSTOMER_DAY_CAP = 2000;
     const EMPLOYEE_MINUTE_CAP = 30;
     const EMPLOYEE_DAY_CAP = 2000;
-
-    const MINUTE_BUCKET_FORMAT = 'YmdHi';
-    const DAY_BUCKET_FORMAT = 'Ymd';
-    const SECONDS_PER_MINUTE = 60;
-
-    /** @var IfirmaRateWindow[] */
-    private $windows;
-
-    /** @var callable|null returns the unix time; time() when null */
-    private $clock;
-
-    /** @var IfirmaWindowCounter */
-    private $counter;
-
-    /** @var array window name => bucket of the unit taken last, for give-back */
-    private $taken = array();
-
-    /**
-     * @param IfirmaRateWindow[]       $windows checked in the given order
-     * @param callable|null            $clock
-     * @param IfirmaWindowCounter|null $counter
-     */
-    public function __construct(array $windows, $clock = null, IfirmaWindowCounter $counter = null)
-    {
-        $this->windows = $windows;
-        $this->clock = $clock;
-        $this->counter = $counter !== null ? $counter : new IfirmaWindowCounter();
-    }
 
     /**
      * @param callable|null $clock
@@ -87,55 +57,5 @@ class IfirmaDownloadBudget
             new IfirmaRateWindow(IfirmaRateDecision::WINDOW_MINUTE, self::EMPLOYEE_MINUTE_KEY, self::MINUTE_BUCKET_FORMAT, self::EMPLOYEE_MINUTE_CAP),
             new IfirmaRateWindow(IfirmaRateDecision::WINDOW_DAY, self::EMPLOYEE_DAY_KEY, self::DAY_BUCKET_FORMAT, self::EMPLOYEE_DAY_CAP),
         ), $clock);
-    }
-
-    /**
-     * Takes one unit in every window. A refusal by a later window gives back what the earlier ones took.
-     *
-     * @return bool false when a window is full (nothing is spent then)
-     */
-    public function take()
-    {
-        $now = $this->now();
-        $this->taken = array();
-        foreach ($this->windows as $window) {
-            if ($this->counter->take($window, $now) !== null) {
-                $this->release();
-
-                return false;
-            }
-            $this->taken[$window->getName()] = $window->bucketAt($now);
-        }
-
-        return true;
-    }
-
-    /**
-     * Gives back the unit the last take() spent; a no-op when it took none or the window has moved on.
-     */
-    public function release()
-    {
-        foreach ($this->windows as $window) {
-            if (isset($this->taken[$window->getName()])) {
-                $this->counter->giveBack($window, $this->taken[$window->getName()]);
-            }
-        }
-        $this->taken = array();
-    }
-
-    /**
-     * @return int seconds until the next calendar minute, 1 to 60
-     */
-    public function secondsToNextMinute()
-    {
-        return self::SECONDS_PER_MINUTE - ($this->now() % self::SECONDS_PER_MINUTE);
-    }
-
-    /**
-     * @return int
-     */
-    private function now()
-    {
-        return $this->clock !== null ? (int) call_user_func($this->clock) : time();
     }
 }

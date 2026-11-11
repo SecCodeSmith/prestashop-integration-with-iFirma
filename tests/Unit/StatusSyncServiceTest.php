@@ -47,6 +47,7 @@ class StatusSyncServiceTest extends TestCase
     {
         $r = new IfirmaReceipt();
         $r->id_order = (int) $ifirmaId;
+        $r->id_customer = 5;
         $r->ifirma_id = (string) $ifirmaId;
         $r->ifirma_number = $ifirmaId . '/2026';
         $r->status = IfirmaReceipt::STATUS_CREATED;
