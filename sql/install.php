@@ -15,6 +15,7 @@ $sql = array(
     IfirmaSchema::dataRequestCreateSql(),
     IfirmaSchema::contractorMapCreateSql(),
     IfirmaSchema::guestCodeCreateSql(),
+    IfirmaSchema::pdfCopyCreateSql(),
 );
 
 foreach ($sql as $query) {

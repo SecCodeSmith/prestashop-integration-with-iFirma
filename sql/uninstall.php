@@ -14,6 +14,7 @@ $sql[] = 'DROP TABLE IF EXISTS `' . _DB_PREFIX_ . 'ifirma_receipt`;';
 $sql[] = 'DROP TABLE IF EXISTS `' . _DB_PREFIX_ . 'ifirma_data_request`;';
 $sql[] = 'DROP TABLE IF EXISTS `' . _DB_PREFIX_ . 'ifirma_contractor_map`;';
 $sql[] = 'DROP TABLE IF EXISTS `' . _DB_PREFIX_ . 'ifirma_guest_code`;';
+$sql[] = 'DROP TABLE IF EXISTS `' . _DB_PREFIX_ . 'ifirma_pdf_copy`;';
 
 foreach ($sql as $query) {
     if (!Db::getInstance()->execute($query)) {

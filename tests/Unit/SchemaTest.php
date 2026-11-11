@@ -21,7 +21,7 @@ class SchemaTest extends TestCase
         require_once dirname(__DIR__, 2) . '/classes/IfirmaContractorMap.php';
     }
 
-    public function testInstallCreatesFourTables()
+    public function testInstallCreatesFiveTables()
     {
         $result = include dirname(__DIR__, 2) . '/sql/install.php';
         $this->assertTrue($result);
@@ -29,8 +29,8 @@ class SchemaTest extends TestCase
         $creates = array_values(array_filter(Db::getInstance()->executed, function ($q) {
             return strpos($q, 'CREATE TABLE') === 0;
         }));
-        $this->assertCount(4, $creates);
-        $this->assertCount(4, Db::getInstance()->executed);
+        $this->assertCount(5, $creates);
+        $this->assertCount(5, Db::getInstance()->executed);
 
         foreach (array_keys(IfirmaSchema::receiptColumns()) as $col) {
             $this->assertStringContainsString('`' . $col . '`', $creates[0]);
@@ -46,6 +46,7 @@ class SchemaTest extends TestCase
         $this->assertStringContainsString('ps_ifirma_receipt', $creates[0]);
         $this->assertStringContainsString('ps_ifirma_data_request', $creates[1]);
         $this->assertStringContainsString('ps_ifirma_guest_code', $creates[3]);
+        $this->assertStringContainsString('ps_ifirma_pdf_copy', $creates[4]);
     }
 
     public function testDefinitionsMatchColumns()
@@ -65,14 +66,15 @@ class SchemaTest extends TestCase
         $this->assertCount(20, IfirmaSchema::newReceiptColumnsFor110());
     }
 
-    public function testUninstallDropsFourTables()
+    public function testUninstallDropsFiveTables()
     {
         $this->assertTrue(include dirname(__DIR__, 2) . '/sql/uninstall.php');
 
         $drops = array_filter(Db::getInstance()->executed, function ($q) {
             return strpos($q, 'DROP TABLE') === 0;
         });
-        $this->assertCount(4, $drops);
+        $this->assertCount(5, $drops);
+        $this->assertContains('DROP TABLE IF EXISTS `ps_ifirma_pdf_copy`;', $drops);
         $this->assertContains('DROP TABLE IF EXISTS `ps_ifirma_guest_code`;', $drops);
     }
 
@@ -113,6 +115,54 @@ class SchemaTest extends TestCase
 
         $this->assertFalse(IfirmaSchema::ensureGuestCodeTable());
         $this->assertFalse(IfirmaSchema::ensureGuestCodeTable());
+
+        $this->assertCount(2, Db::getInstance()->executed);
+    }
+
+    public function testPdfCopyCreateSqlDeclaresEveryColumnTheKeyAndTheIndex()
+    {
+        $sql = IfirmaSchema::pdfCopyCreateSql();
+
+        $this->assertStringStartsWith('CREATE TABLE IF NOT EXISTS `ps_ifirma_pdf_copy` (', $sql);
+        $this->assertSame(array(
+            'id_ifirma_receipt' => 'INT(11) UNSIGNED NOT NULL',
+            'fingerprint' => 'CHAR(64) NOT NULL',
+            'byte_length' => 'INT(11) UNSIGNED NOT NULL',
+            'content' => 'MEDIUMBLOB NOT NULL',
+            'stored_at' => 'DATETIME NOT NULL',
+        ), IfirmaSchema::pdfCopyColumns());
+        $this->assertStringContainsString('PRIMARY KEY (`id_ifirma_receipt`)', $sql);
+        $this->assertStringContainsString('KEY `idx_stored_at` (`stored_at`)', $sql);
+        $this->assertStringContainsString(') ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8;', $sql);
+    }
+
+    public function testEnsurePdfCopyTableCreatesOnceAndIsIdempotent()
+    {
+        IfirmaSchema::resetEnsureCache();
+
+        $this->assertTrue(IfirmaSchema::ensurePdfCopyTable());
+        $this->assertTrue(IfirmaSchema::ensurePdfCopyTable());
+
+        $this->assertSame(array(IfirmaSchema::pdfCopyCreateSql()), Db::getInstance()->executed);
+    }
+
+    public function testEnsurePdfCopyTableReportsAFailureAndTriesAgain()
+    {
+        IfirmaSchema::resetEnsureCache();
+        Db::getInstance()->whenExecute('/CREATE TABLE IF NOT EXISTS `ps_ifirma_pdf_copy`/', false);
+
+        $this->assertFalse(IfirmaSchema::ensurePdfCopyTable());
+        $this->assertFalse(IfirmaSchema::ensurePdfCopyTable());
+
+        $this->assertCount(2, Db::getInstance()->executed);
+    }
+
+    public function testResetEnsureCacheMakesThePdfCopyTableBeEnsuredAgain()
+    {
+        IfirmaSchema::resetEnsureCache();
+        IfirmaSchema::ensurePdfCopyTable();
+        IfirmaSchema::resetEnsureCache();
+        IfirmaSchema::ensurePdfCopyTable();
 
         $this->assertCount(2, Db::getInstance()->executed);
     }

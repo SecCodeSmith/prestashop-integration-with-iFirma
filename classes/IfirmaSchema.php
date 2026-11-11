@@ -186,6 +186,20 @@ class IfirmaSchema
     }
 
     /**
+     * @return array column name => DDL fragment, in table order
+     */
+    public static function pdfCopyColumns()
+    {
+        return array(
+            'id_ifirma_receipt' => 'INT(11) UNSIGNED NOT NULL',
+            'fingerprint' => 'CHAR(64) NOT NULL',
+            'byte_length' => 'INT(11) UNSIGNED NOT NULL',
+            'content' => 'MEDIUMBLOB NOT NULL',
+            'stored_at' => 'DATETIME NOT NULL',
+        );
+    }
+
+    /**
      * @param array $columns
      * @return string
      */
@@ -260,6 +274,18 @@ class IfirmaSchema
     }
 
     /**
+     * @return string
+     */
+    public static function pdfCopyCreateSql()
+    {
+        return 'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . 'ifirma_pdf_copy` (' . "\n"
+            . self::columnLines(self::pdfCopyColumns()) . ",\n"
+            . "    PRIMARY KEY (`id_ifirma_receipt`),\n"
+            . "    KEY `idx_stored_at` (`stored_at`)\n"
+            . ') ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8;';
+    }
+
+    /**
      * Whether a table of the current database has the named column.
      *
      * @param string $table  full table name, prefix included
@@ -291,6 +317,25 @@ class IfirmaSchema
 
     /** @var bool the guest code table was already ensured in this request */
     private static $guestCodeEnsured = false;
+
+    /** @var bool the PDF copy table was already ensured in this request */
+    private static $pdfCopyEnsured = false;
+
+    /**
+     * Creates the PDF copy table when missing (shops upgraded before it existed).
+     * Executes at most once per request.
+     *
+     * @return bool
+     */
+    public static function ensurePdfCopyTable()
+    {
+        if (self::$pdfCopyEnsured) {
+            return true;
+        }
+        self::$pdfCopyEnsured = (bool) Db::getInstance()->execute(self::pdfCopyCreateSql());
+
+        return self::$pdfCopyEnsured;
+    }
 
     /**
      * Creates the guest code table when missing (shops upgraded to 1.6.0 before it existed).
@@ -524,6 +569,7 @@ class IfirmaSchema
     {
         self::$contractorMapEnsured = false;
         self::$guestCodeEnsured = false;
+        self::$pdfCopyEnsured = false;
         self::$receiptKsefEnsured = false;
         self::$receiptDownloadEnsured = false;
         self::$receiptRetryEnsured = false;

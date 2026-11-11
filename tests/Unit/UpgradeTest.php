@@ -33,6 +33,7 @@ class UpgradeTest extends TestCase
     const DATA_REQUEST = 'ps_ifirma_data_request';
     const CONTRACTOR_MAP = 'ps_ifirma_contractor_map';
     const GUEST_CODE = 'ps_ifirma_guest_code';
+    const PDF_COPY = 'ps_ifirma_pdf_copy';
 
     /** @var array table => (column => DDL fragment): the database the install and upgrade paths run on */
     private $schema = array();
@@ -279,9 +280,10 @@ class UpgradeTest extends TestCase
 
         $this->assertEndsWithTheContractorMapAndTheKsefColumns();
         $this->assertSame($this->expectedSchema(), $this->schema);
-        // install() sends the four CREATE statements and nothing else: no ALTER, no probe
+        // install() sends the five CREATE statements and nothing else: no ALTER, no probe
         $sent = $this->sentQueries();
-        $this->assertCount(4, $sent);
+        $this->assertCount(5, $sent);
+        $this->assertStringStartsWith('CREATE TABLE IF NOT EXISTS `ps_ifirma_pdf_copy` (', $sent[4]);
         $this->assertStringStartsWith('CREATE TABLE IF NOT EXISTS `ps_ifirma_receipt` (', $sent[0]);
         $this->assertStringStartsWith('CREATE TABLE IF NOT EXISTS `ps_ifirma_data_request` (', $sent[1]);
         $this->assertStringStartsWith('CREATE TABLE IF NOT EXISTS `ps_ifirma_contractor_map` (', $sent[2]);
@@ -755,6 +757,27 @@ class UpgradeTest extends TestCase
         $this->assertFalse(upgrade_module_1_10_0(new Module()));
     }
 
+    public function testUpgrade1100CreatesThePdfCopyTable()
+    {
+        $schema = $this->expectedSchema();
+        unset($schema[self::PDF_COPY]);
+        $this->startFrom($schema);
+
+        $this->assertTrue(upgrade_module_1_10_0(new Module()));
+
+        $this->assertSame(IfirmaSchema::pdfCopyColumns(), $this->schema[self::PDF_COPY]);
+    }
+
+    public function testUpgrade1100ReportsAFailedPdfCopyTableCreate()
+    {
+        Db::getInstance()->whenExecute('/ifirma_pdf_copy/', false);
+        $schema = $this->expectedSchema();
+        unset($schema[self::PDF_COPY]);
+        $this->startFrom($schema);
+
+        $this->assertFalse(upgrade_module_1_10_0(new Module()));
+    }
+
     // ---- helpers: the database each path runs on ----------------------------------------------------
 
     /** What the module's own column lists say a complete install has. */
@@ -765,6 +788,7 @@ class UpgradeTest extends TestCase
             self::DATA_REQUEST => IfirmaSchema::dataRequestColumns(),
             self::CONTRACTOR_MAP => IfirmaSchema::contractorMapColumns(),
             self::GUEST_CODE => IfirmaSchema::guestCodeColumns(),
+            self::PDF_COPY => IfirmaSchema::pdfCopyColumns(),
         );
     }
 
