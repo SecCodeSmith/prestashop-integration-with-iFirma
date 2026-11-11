@@ -1537,6 +1537,48 @@ function smokeManualResendQuietTimeChecks($actions, Order $order)
     assertTrue((string) receiptOf($order)->delivered_at > $aged, 'quiet time: delivered_at is renewed by the later resend', $aged . ' -> ' . receiptOf($order)->delivered_at);
 }
 
+/**
+ * Scenario N, part 6: "Mark as sent" records a delivery that happened outside the module. It is a state change only:
+ * no e-mail, no request to iFirma, no later cron retry; a second mark is refused and changes nothing.
+ */
+function smokeMarkSentChecks($module, $actions)
+{
+    $order = smokeOrderWithFailedDelivery($module, 'mark sent');
+    if (!$order) {
+        return;
+    }
+    mailReject(false);
+    $receipt = receiptOf($order);
+    assertSame('failed', $receipt ? (string) $receipt->delivery_status : null, 'mark sent: the document starts with a failed delivery');
+    $mailsBefore = count(mailbox());
+    $callsBefore = mockCallCount();
+
+    $r = $actions->markSent((int) $order->id, 1);
+    assertTrue($r['success'], 'mark sent: the employee marks the failed delivery as sent', $r['message']);
+    $receipt = receiptOf($order);
+    assertSame('sent', (string) $receipt->delivery_status, 'mark sent: the delivery state is sent');
+    assertSame('manual', (string) $receipt->delivery_channel, 'mark sent: the channel is manual');
+    assertTrue((string) $receipt->delivered_at !== '' && strpos((string) $receipt->delivered_at, '0000') !== 0, 'mark sent: a delivery time is set', (string) $receipt->delivered_at);
+    assertSame('', (string) $receipt->delivery_error, 'mark sent: the delivery error is empty');
+    assertSame(null, $receipt->getDeliveryRetryAt(), 'mark sent: no retry time is left');
+    assertSame($mailsBefore, count(mailbox()), 'mark sent: the sink received no new message');
+    assertSame($callsBefore, mockCallCount(), 'mark sent: the mock received no new request');
+
+    smokeMakeRetryDue($order);
+    smokeCronRetryBlock($module);
+    assertSame(0, deliveryMailCountFor($order), 'mark sent: a cron run afterwards sends no e-mail for the document');
+    assertSame('sent', (string) receiptOf($order)->delivery_status, 'mark sent: the cron leaves the delivery state sent');
+
+    $deliveredAt = (string) receiptOf($order)->delivered_at;
+    $r = $actions->markSent((int) $order->id, 1);
+    assertSame(false, $r['success'], 'mark sent: a second mark is refused');
+    assertSame('This document is already recorded as sent.', (string) $r['message'], 'mark sent: the refusal says the document is already recorded as sent');
+    $receipt = receiptOf($order);
+    assertSame($deliveredAt, (string) $receipt->delivered_at, 'mark sent: the refused second mark leaves delivered_at unchanged');
+    assertSame('manual', (string) $receipt->delivery_channel, 'mark sent: the refused second mark leaves the channel manual');
+    assertSame($mailsBefore, count(mailbox()), 'mark sent: the refused second mark sent no message');
+}
+
 function scenarioN($module, $actions)
 {
     $order = freshScenario('N. E-mail delivery through the SMTP sink');
@@ -1649,6 +1691,7 @@ function scenarioN($module, $actions)
         assertSame($before + 1, count(mailbox()), 'recovery: one new message in the sink');
 
         smokeAutomaticRetryChecks($module, $actions);
+        smokeMarkSentChecks($module, $actions);
     } finally {
         mailReject(false);
         Configuration::updateValue('IFIRMA_SEND_COPY_MODE', $originalCopyMode === false ? 'none' : $originalCopyMode);
@@ -1999,7 +2042,7 @@ function smokeCustomerDayCapChecks(Order $order)
  * Scenario L, part 2: a state-changing action sent with GET is refused with 405 and changes nothing; the read-only feed
  * still answers GET.
  */
-function smokePostOnlyChecks($dispatch)
+function smokePostOnlyChecks($dispatch, IfirmaReceipt $markRecord = null)
 {
     $order = createOrder();
     if (!assertTrue($order instanceof Order && Validate::isLoadedObject($order), 'post only: an order without a document created')) {
@@ -2016,6 +2059,13 @@ function smokePostOnlyChecks($dispatch)
         assertSame($calls, mockCallCount(), 'post only: the refused GET reached the mock with no call');
         $out = $dispatch('ajaxProcessIssueFeed');
         assertTrue($out['kind'] === 'json' && $out['payload']['success'] === true && !$out['statuses'], 'the read-only IssueFeed still answers GET', json_encode($out));
+        if ($markRecord) {
+            $_POST['id_order'] = $_GET['id_order'] = (string) (int) $markRecord->id_order;
+            $out = $dispatch('ajaxProcessMarkSent');
+            assertTrue($out['kind'] === 'json' && $out['payload']['success'] === false && $out['statuses'] === array(405) && !$out['called'], 'MarkSent sent with GET answers the 405 failure envelope', json_encode($out));
+            Cache::clean('objectmodel_IfirmaReceipt_*');
+            assertSame('failed', (string) IfirmaReceipt::getByOrder((int) $markRecord->id_order)->delivery_status, 'post only: the refused MarkSent GET left the delivery state failed');
+        }
     } finally {
         $_SERVER['REQUEST_METHOD'] = 'POST';
         $_POST['id_order'] = $_GET['id_order'] = '1';
@@ -2097,6 +2147,7 @@ function scenarioL($module)
             public function __construct(array &$log) { $this->log = &$log; }
             public function createReceipt($o, $e) { $this->log[] = "createReceipt"; return array("success" => true, "message" => "recorded", "data" => array()); }
             public function resend($o) { $this->log[] = "resend"; return array("success" => true, "message" => "recorded", "data" => array()); }
+            public function markSent($o, $e) { $this->log[] = "markSent"; return array("success" => true, "message" => "recorded", "data" => array()); }
         }');
     }
 
@@ -2165,10 +2216,35 @@ function scenarioL($module)
         $out = $dispatch('ajaxProcessResendDocument');
         assertTrue($out['kind'] === 'json' && $out['payload']['success'] === false && $out['statuses'] === array(403) && !$out['called'],
             'ResendDocument with READ + CREATE is still 403', json_encode($out));
+        // a seeded record of an order id no shop order has: the recording actions never load an order
+        $markOrderId = 990001;
+        $markRecord = null;
+        {
+            $markRecord = seedReceipt($markOrderId, 99999, IfirmaReceipt::STATUS_CREATED, array(
+                'ifirma_id' => '999300', 'ifirma_number' => 'SMOKE/MS', 'delivery_status' => IfirmaReceipt::DELIVERY_FAILED,
+            ));
+            $_POST['id_order'] = $_GET['id_order'] = (string) $markOrderId;
+            $out = $dispatch('ajaxProcessMarkSent');
+            assertTrue($out['kind'] === 'json' && $out['payload']['success'] === false && $out['statuses'] === array(403) && !$out['called'],
+                'MarkSent with READ + CREATE (no manage level) answers the 403 failure envelope', json_encode($out));
+            Cache::clean('objectmodel_IfirmaReceipt_*');
+            assertSame('failed', (string) IfirmaReceipt::getByOrder($markOrderId)->delivery_status, 'MarkSent without the manage level leaves the delivery state failed');
 
-        smokePostOnlyChecks($dispatch);
+            $db->execute('INSERT IGNORE INTO `' . _DB_PREFIX_ . 'access` (id_profile, id_authorization_role) SELECT ' . $profileId . ", id_authorization_role FROM `" . _DB_PREFIX_
+                . "authorization_role` WHERE slug = 'ROLE_MOD_TAB_ADMINIFIRMA_UPDATE'");
+            assertTrue(IfirmaPermission::canManage($pair['employee']), 'MarkSent: the profile now holds the manage level');
+            $out = $dispatch('ajaxProcessMarkSent');
+            assertTrue($out['kind'] === 'json' && $out['payload']['success'] === true && $out['called'] === array('markSent') && !$out['statuses'],
+                'MarkSent with the manage level is dispatched (no 403)', json_encode($out));
+            $_POST['id_order'] = $_GET['id_order'] = '1';
+        }
+
+        smokePostOnlyChecks($dispatch, $markRecord);
         smokeEmployeeDownloadBudgetChecks($dispatch);
     } finally {
+        if (isset($markRecord) && $markRecord) {
+            $markRecord->delete();
+        }
         $context->employee = $original;
         unset($_SERVER['REQUEST_METHOD'], $_GET['token'], $_POST['token'], $_POST['id_order'], $_GET['id_order']);
         dropRolelessEmployee($pair);
