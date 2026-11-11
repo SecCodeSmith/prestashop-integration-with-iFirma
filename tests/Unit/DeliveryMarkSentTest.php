@@ -194,6 +194,40 @@ class DeliveryMarkSentTest extends TestCase
         $this->assertEquals(1, $this->row()['remote_missing']);
     }
 
+    public function testASaveTheDatabaseRefusesLeavesTheFailedDeliveryAsItWasAndLogsNothingAboutMarking()
+    {
+        $r = $this->seeded(array(
+            'delivery_status' => 'failed',
+            'delivery_channel' => 'shop_mail',
+            'delivery_error' => 'smtp down',
+            'delivered_at' => '2026-11-02 10:00:00',
+        ));
+        $table = IfirmaReceipt::$definition['table'];
+        $refusing = new class(ObjectModel::$registry[$table]) extends ArrayObject {
+            public function offsetSet($key, $value): void
+            {
+                throw new RuntimeException('the database refused the write');
+            }
+        };
+        ObjectModel::$registry[$table] = $refusing;
+
+        try {
+            $res = $this->svc->markSent($r, self::EMPLOYEE);
+        } finally {
+            ObjectModel::$registry[$table] = $refusing->getArrayCopy();
+        }
+
+        $this->assertFalse($res->isSent());
+        $this->assertSame('The delivery state could not be saved.', $res->getMessage());
+        $row = $this->row();
+        $this->assertSame('failed', $row['delivery_status']);
+        $this->assertSame('shop_mail', $row['delivery_channel']);
+        $this->assertSame('2026-11-02 10:00:00', $row['delivered_at']);
+        $this->assertCount(1, PrestaShopLogger::$logs, 'only the failed save is logged');
+        $this->assertStringNotContainsString('marked as sent', PrestaShopLogger::$logs[0]['message']);
+        $this->assertNothingWasSent();
+    }
+
     public function testOneLogEntryNamesTheRecordAndTheEmployeeAndNoCustomerData()
     {
         $r = $this->seeded(array('delivery_status' => 'failed', 'delivery_error' => 'jan@example.test refused'));
