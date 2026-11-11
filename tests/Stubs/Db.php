@@ -101,7 +101,7 @@ class Db
 
             return;
         }
-        if (strpos($sql, 'IFIRMA_DL_') !== false) {
+        if (strpos($sql, 'IFIRMA_DL_') !== false || strpos($sql, 'IFIRMA_SYNC_CUSTOMER_') !== false) {
             $this->rateQueries[] = $sql;
 
             return;
@@ -246,7 +246,7 @@ class Db
      */
     protected function emulateRateWindow($sql)
     {
-        if (!preg_match("/SET `value` = IF\(.*CONCAT\('(\d{8,12}):'.*name` = '(IFIRMA_(?:RATE_(?:DAY_)?WINDOW|DL_[A-Z_]+))'.*< (\d+)\)/s", $sql, $m)) {
+        if (!preg_match("/SET `value` = IF\(.*CONCAT\('(\d{8,12}):'.*name` = '(IFIRMA_(?:RATE_(?:DAY_)?WINDOW|DL_[A-Z_]+|SYNC_CUSTOMER_[A-Z]+))'.*< (\d+)\)/s", $sql, $m)) {
             return 1;
         }
         $bucket = $m[1];

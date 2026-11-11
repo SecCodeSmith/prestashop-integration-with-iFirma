@@ -103,6 +103,7 @@ class IfirmaReceiptTest extends TestCase
             'last_download_at' => '2026-01-06 13:00:00',
             'download_day' => '2026-01-07',
             'download_count' => 4,
+            'sync_attempt_at' => '2026-01-06 14:00:00',
             'sync_error' => 'earlier sync error',
             'duplicate_candidates' => '[{"id":1}]',
             'id_data_request' => 9,
