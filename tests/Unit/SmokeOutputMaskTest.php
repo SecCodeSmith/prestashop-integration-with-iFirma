@@ -17,7 +17,7 @@ class SmokeOutputMaskTest extends TestCase
 {
     public function testTokenInAUrlIsMaskedToItsLastFourCharacters()
     {
-        $masked = SmokeOutputMask::mask('GET /index.php?fc=module&controller=cron&token=abcdef0123456789 -> 403');
+        $masked = SmokeOutputMask::mask('GET /index.php?fc=module&controller=cron&token=xxxxxxxxxxxx6789 -> 403');
 
         $this->assertSame('GET /index.php?fc=module&controller=cron&token=****6789 -> 403', $masked);
     }
