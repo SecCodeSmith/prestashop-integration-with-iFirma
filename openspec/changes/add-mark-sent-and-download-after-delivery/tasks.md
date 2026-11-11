@@ -32,10 +32,10 @@ Group 1 (prerequisites) and group 5 (integration checks on the tip of slice 3) a
 
 ## 3. Bulk mark as sent
 
-- [ ] 3.1 Red then green: `IfirmaBulkRunner::KIND_MARK_SENT`: each selected document ends as "sent" or "skipped" with a reason (already sent, not issued, missing in iFirma); no request is sent; a reached request limit and an authentication pause do not stop the run; the audit entry carries the employee id and the counts. Verify: the bulk runner test classes pass with the new cases and their existing cases are unchanged.
-- [ ] 3.2 Red then green: the Documents list offers the bulk action "Mark as sent" for the manage level only, and the controller refuses a posted run without it. Verify: the documents-list and permission test classes pass; a negative test posts the run as an issue-level employee and finds no document changed.
+- [x] 3.1 Red then green: `IfirmaBulkRunner::KIND_MARK_SENT`: each selected document ends as "sent" or "skipped" with a reason (already sent, not issued, missing in iFirma); no request is sent; a reached request limit and an authentication pause do not stop the run; the audit entry carries the employee id and the counts. Verify: the bulk runner test classes pass with the new cases and their existing cases are unchanged.
+- [x] 3.2 Red then green: the Documents list offers the bulk action "Mark as sent" for the manage level only, and the controller refuses a posted run without it. Verify: the documents-list and permission test classes pass; a negative test posts the run as an issue-level employee and finds no document changed.
 - [ ] 3.3 Smoke: scenario J (bulk actions) marks a mixed selection and checks the summary and the states. Update `tests/smoke/README.md`. Verify: J passes on the 8.1 and 9.x shops.
-- [ ] 3.4 Docs and translations: `docs/usage.md` (bulk actions) and the Polish texts. Verify: `composer test --filter TranslationCoverageTest` passes.
+- [x] 3.4 Docs and translations: `docs/usage.md` (bulk actions) and the Polish texts. Verify: `composer test --filter TranslationCoverageTest` passes.
 
 ## 4. Customers download only sent documents
 
