@@ -55,6 +55,11 @@ Open the module configuration and fill in:
 - **Status sync interval (1‑1440 minutes)** – how often an order page refreshes its document
   from iFirma; **Cron call budget (1‑90)**, **Cron items per job (1‑50)**, **API calls per minute (1‑100)** and
   **API calls per day (1‑15000)** – API usage caps and the size of one cron run.
+- **Keep PDF copies (days)** (`IFIRMA_PDF_COPY_DAYS`, 0 to 365, default 30) – how long the shop keeps a copy of each
+  document PDF, so repeated downloads send no request to iFirma. A copy holds the whole PDF: the buyer's name, address,
+  NIP and the items. Copies live in the shop database, so they are also in its backups. Plan for about 50 to 120 KB per
+  document. To turn storing off, save `0`: the module then stores nothing and deletes every stored copy at once, in the same request. A lower value
+  stops serving copies older than the new number of days.
 - **Cron endpoint** – the module shows the cron URL with its secret token and a crontab
   example; *Regenerate cron token* replaces the token. Call it every 1 to 5 minutes: it issues the queued orders and
   retries failed deliveries, so a longer interval delays them (see [Cron jobs](#cron-jobs)). The example the page prints
@@ -114,6 +119,7 @@ Open the module configuration and fill in:
 | `IFIRMA_CRON_MAX_ITEMS` (new) | `10` (1 to 50: the most queued orders, KSeF submissions or deliveries each of those jobs handles in one cron run) |
 | `IFIRMA_RATE_MAX_PER_MIN` (new) | `80` (1 to 100) |
 | `IFIRMA_RATE_MAX_PER_DAY` (new) | `14000` (1 to 15000) |
+| `IFIRMA_PDF_COPY_DAYS` (new) | `30` (0 to 365: the days a stored copy of a document PDF is kept; `0` turns storing off and deletes the stored copies) |
 | `IFIRMA_RATE_WINDOW` (new) | empty (internal rate-limit state of the minute: `<minute>:<count>`, incremented by one atomic database statement, so two requests at the same time cannot both pass the cap) |
 | `IFIRMA_RATE_DAY_WINDOW` (new) | empty (the same for the calendar day: `<day>:<count>`) |
 | `IFIRMA_DL_CUSTOMER_MINUTE`, `IFIRMA_DL_CUSTOMER_DAY` (new) | empty (internal counters `<minute>:<count>` and `<day>:<count>` of the customers' PDF download budget, 20 per minute and 2,000 per day for all customers together; not settings, see [Download limits](usage.md#download-limits)) |
