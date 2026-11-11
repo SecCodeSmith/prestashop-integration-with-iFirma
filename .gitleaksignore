@@ -1,0 +1,5 @@
+# One reviewed false positive of the secret scan, named by its fingerprint (commit:file:rule:line).
+# A made-up value in a unit test, never a credential. The line was replaced in e40798c, but the commit
+# that first added it stays in the history, which the scan reads in full.
+# Accepted on 2026-11-11, review by 2027-05-11 (also recorded in docs/development.md, "Security scanning").
+ddb72833914c8081bc5df6813502966c741a10a8:tests/Unit/SmokeOutputMaskTest.php:generic-api-key:20

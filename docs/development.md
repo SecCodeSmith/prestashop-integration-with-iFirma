@@ -141,7 +141,12 @@ workflow actions. A high or critical finding fails the run and is fixed in its o
 
 There is no silent ignore list. Accepted risks are recorded with a reason and a review date: the two gitleaks
 false-positive paths in `.gitleaks.toml` (graphify cache hashes, fake `IFIRMA_KEY_*` test values; accepted
-2026-11-09, review by 2027-05-09) and the licence exception in `docs/third-party-licenses.md`. Known report-only
+2026-11-09, review by 2027-05-09), the one gitleaks fingerprint in `.gitleaksignore` (a made-up token value in
+`tests/Unit/SmokeOutputMaskTest.php` as first committed in `ddb7283`; the value was replaced, but that commit stays
+in the history the scan reads; accepted 2026-11-11, review by 2027-05-11) and the licence exception in
+`docs/third-party-licenses.md`. A fingerprint names one line of one commit, so any other finding still fails the
+run. Test values must be placeholders no scanner reads as a key (`changeme`, `xxxxxxxxxxxx6789`), because a
+random-looking value stays reported for as long as its commit exists. Known report-only
 finding: the mock image runs as root (Trivy AVD-DS-0002, `test-stack/ifirma-mock/Dockerfile`); it is a local test
 service that never ships, to be fixed in the test-stack repository, review by 2027-05-09.
 
