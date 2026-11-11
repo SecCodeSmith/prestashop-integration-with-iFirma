@@ -48,8 +48,8 @@ Scenario S SHALL check that a rejected invoice is never delivered automatically,
 - **WHEN** the mock rejects an awaiting invoice and the cron runs
 - **THEN** the SMTP sink holds no e-mail for the order and the record is listed as needing attention
 
-#### Scenario: Receipt and private buyer delivered at once
-- **WHEN** a receipt and an invoice for a buyer without a NIP are issued in mode `b2b`
+#### Scenario: Private buyer and mode off delivered at once
+- **WHEN** an invoice for a buyer without a NIP is issued in mode `b2b`, and an invoice is issued in mode `off`
 - **THEN** both are e-mailed at issuance and the mock reports `ksef_send_calls` 0 for both
 
 #### Scenario: Customer download held
