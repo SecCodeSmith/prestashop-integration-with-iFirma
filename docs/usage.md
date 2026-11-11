@@ -202,8 +202,20 @@ Three ways to sync:
 
 1. **Admin Refresh** - the "Refresh from iFirma" button in the order panel (one list call).
 2. **Opportunistic** - when the owning customer opens the order detail and the last sync
-   is older than `IFIRMA_SYNC_INTERVAL_MIN` minutes (default 15): at most one call with a
-   5 s timeout, failures are swallowed.
+   is older than `IFIRMA_SYNC_INTERVAL_MIN` minutes (default 15): one call with a 5 s timeout,
+   failures are swallowed. The call reads the first page of the issue date of the document
+   that was opened (100 documents) and refreshes that document and all of the customer's
+   other documents of that date whose last sync is older than the interval. A customer costs
+   one call per interval, however many orders, issue dates, page views or parallel requests
+   there are: a customer who opens orders of several issue dates within the interval gets the
+   first one refreshed from the page, and the cron keeps the others current. Only the document
+   that was opened can be marked as missing from the page, and only when the page has fewer
+   than 100 documents; any other document that is not among the rows keeps its stored state
+   and is left to the cron, as is a document that is not on the first page of a day with more
+   than 100 documents. The customer's order pages together have their own budget of 10 calls
+   per calendar minute and 1,000 per calendar day. When it is used up, or the module's request limit refuses the
+   call, no call is made and the page shows the last known state without an error. A refused
+   call uses no budget, and the next page view tries again.
 3. **Cron** - bulk sync of receipts that are not paid, not remotely sent or not synced for
    24 h, grouped by issue date:
 
