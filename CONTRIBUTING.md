@@ -118,3 +118,20 @@ Open a pull request against `master` and complete the checklist in
 [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). Security
 vulnerabilities must not be reported in issues or pull requests; follow
 [SECURITY.md](SECURITY.md) instead.
+
+Keep pull requests small so that each one can be reviewed in one sitting. Every
+change reaches `master` through a pull request, and each pull request carries
+one reviewable concern: one behaviour with its tests, one refactor step, one
+upgrade script, or one CI or docs change.
+
+* Aim for about 400 changed lines of hand-written code and tests. Generated
+  files (`graphify-out/`, golden fixtures, lockfiles) do not count. If a pull
+  request has to be larger, say in its summary why it could not be split.
+* Split a larger change into slices before you start. Each slice passes the
+  suite and the coverage gate on its own, and unfinished behaviour stays
+  unreachable until the slice that completes it.
+* Keep preparatory refactors, mechanical changes (renames, moves, formatting)
+  and `fix-vuln` commits in their own pull requests, apart from behaviour
+  changes.
+* When slices depend on each other, write "Depends on #N" in the summary and
+  merge them in order, with at most three open at a time.

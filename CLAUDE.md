@@ -258,6 +258,40 @@ finding of severity high or critical.
   notes list the `fix-vuln` commits without exploit details beyond what the
   advisory already discloses.
 
+## Pull requests
+
+A review only works on a change a person can hold in their head. Prefer several
+small pull requests over one large one.
+
+- **Every change reaches `master` through a pull request,** features, refactors
+  and fixes alike; nothing is pushed to `master` directly. The Release workflow's
+  own commits are the only exception.
+- **One reviewable concern per pull request:** one behaviour with its tests, one
+  OpenSpec task group, one refactor step, one upgrade script, or one CI or docs
+  change. If the summary needs "and", split it.
+- **Size budget:** about 400 changed lines of hand-written code and tests, so the
+  review fits in one sitting. Generated or wholesale-rewritten files
+  (`graphify-out/`, golden fixtures, lockfiles) do not count. The budget is a
+  signal, not a gate: a pull request that exceeds it says in its summary why it
+  could not be split.
+- **Plan the slices before coding.** An OpenSpec change names its pull requests in
+  `tasks.md`, one task group per pull request, in an order in which every slice
+  leaves `master` green and releasable. Do not collect a whole change on one
+  long-lived branch and open it at the end.
+- **Each slice stands alone:** suite green, diff-cover gate met, its own docs and
+  specs included, the pull request template completed. Unfinished behaviour stays
+  unreachable (no hook registered, no wiring in `ifirma.php`, option off by
+  default) until the slice that completes it.
+- **Separate by kind.** A preparatory refactor lands first in its own pull request;
+  mechanical changes (renames, moves, formatting, golden regeneration) never share
+  a pull request with a behaviour change; `fix-vuln` commits get their own.
+- **Keep stacks short.** When slices depend on each other, branch each from the
+  previous one, write "Depends on #N" in the summary and merge in order, with at
+  most three open at a time.
+- **Agents:** propose the split before starting a change that will not fit the
+  budget, and when a slice is green, stop and propose its pull request before
+  starting the next one. Opening a pull request remains the owner's decision.
+
 ## Versioning
 
 - **Never bump the version by hand.** The version is changed only by the Release

@@ -8,6 +8,7 @@
 
 ## Definition of done
 
+- [ ] One reviewable concern, within about 400 changed lines of hand-written code and tests (generated files excluded); if larger, the summary says why it could not be split
 - [ ] Scenarios are written as Given / When / Then in the OpenSpec change, including the negative and edge cases
 - [ ] A failing test was shown first, for each behaviour in this change (bug fixes start with a reproducing test)
 - [ ] `composer test` is green
