@@ -1370,6 +1370,101 @@ function dropRolelessEmployee(array $pair)
     }
 }
 
+/**
+ * Seeds an issued record of the order with the given delivery state (the document is not in the mock: marking as sent
+ * never calls iFirma).
+ *
+ * @return IfirmaReceipt
+ */
+function smokeSeedDeliveryRecord(Order $order, $number, $deliveryStatus)
+{
+    return seedReceipt($order->id, $order->id_customer, IfirmaReceipt::STATUS_CREATED, array(
+        'ifirma_id' => '9993' . substr(preg_replace('/\D/', '', $number) . '00', 0, 2),
+        'ifirma_number' => $number,
+        'issue_date' => date('Y-m-d'),
+        'delivery_status' => $deliveryStatus,
+        'delivery_channel' => 'shop_mail',
+        'delivery_error' => $deliveryStatus === IfirmaReceipt::DELIVERY_FAILED ? 'smoke failure' : '',
+    ));
+}
+
+/** @return array id => array(outcome, message) of one bulk result */
+function smokeBulkOutcomes(array $run)
+{
+    $rows = array();
+    foreach ($run['results'] as $row) {
+        $rows[(int) $row['id']] = array($row['outcome'], (string) $row['message']);
+    }
+
+    return $rows;
+}
+
+/**
+ * Scenario J, part 2: the bulk kind mark_sent. Two failed deliveries are marked, an already recorded one and a record
+ * that is not issued are skipped; no mail and no request to iFirma; a full minute counter does not stop the run.
+ *
+ * @param IfirmaBulkRunner $runner
+ * @param Order            $order  an order the records are seeded on
+ * @param array            $made   records to delete at the end (appended to)
+ */
+function smokeBulkMarkSentChecks(IfirmaBulkRunner $runner, Order $order, array &$made)
+{
+    $failedA = smokeSeedDeliveryRecord($order, '7/2026', IfirmaReceipt::DELIVERY_FAILED);
+    $failedB = smokeSeedDeliveryRecord($order, '8/2026', IfirmaReceipt::DELIVERY_FAILED);
+    $alreadySent = smokeSeedDeliveryRecord($order, '9/2026', IfirmaReceipt::DELIVERY_SENT);
+    $notIssued = seedReceipt($order->id, $order->id_customer, IfirmaReceipt::STATUS_ERROR, array('last_error' => 'smoke not issued'));
+    $made = array_merge($made, array($failedA, $failedB, $alreadySent, $notIssued));
+    $alreadySentAt = (string) $alreadySent->delivered_at;
+
+    $mailsBefore = count(mailbox());
+    $callsBefore = mockCallCount();
+    $run = $runner->run(IfirmaBulkRunner::KIND_MARK_SENT, array((int) $failedA->id, (int) $failedB->id, (int) $alreadySent->id, (int) $notIssued->id), 1, array('final' => true));
+    $rows = smokeBulkOutcomes($run);
+    foreach (array($failedA, $failedB) as $rec) {
+        assertSame(array('sent', 'Marked as sent.'), isset($rows[(int) $rec->id]) ? $rows[(int) $rec->id] : null, 'bulk mark sent: failed record ' . $rec->id . ' ends sent');
+        $fresh = new IfirmaReceipt((int) $rec->id);
+        assertSame(array('sent', 'manual', ''), array((string) $fresh->delivery_status, (string) $fresh->delivery_channel, (string) $fresh->delivery_error), 'bulk mark sent: record ' . $rec->id . ' is sent through the manual channel');
+    }
+    $skipped = isset($rows[(int) $alreadySent->id]) ? $rows[(int) $alreadySent->id] : null;
+    assertSame(array('skipped', 'This document is already recorded as sent.'), $skipped, 'bulk mark sent: the already recorded record is skipped with its reason');
+    $skipped = isset($rows[(int) $notIssued->id]) ? $rows[(int) $notIssued->id] : null;
+    assertSame(array('skipped', 'The document has not been issued yet.'), $skipped, 'bulk mark sent: the record that is not issued is skipped with its reason');
+    $counts = array_count_values(array_map(function ($row) {
+        return $row[0];
+    }, $rows));
+    assertSame(array(2, 2), array(isset($counts['sent']) ? $counts['sent'] : 0, isset($counts['skipped']) ? $counts['skipped'] : 0), 'bulk mark sent: the summary counts are 2 marked and 2 skipped');
+    assertSame('', $run['stopped'], 'bulk mark sent: the run was not stopped');
+    $untouched = new IfirmaReceipt((int) $alreadySent->id);
+    assertSame(array('shop_mail', $alreadySentAt), array((string) $untouched->delivery_channel, (string) $untouched->delivered_at), 'bulk mark sent: the skipped sent record is unchanged');
+    assertSame('error', (string) (new IfirmaReceipt((int) $notIssued->id))->status, 'bulk mark sent: the record that is not issued is unchanged');
+    assertSame($mailsBefore, count(mailbox()), 'bulk mark sent: the sink received no new message');
+    assertSame($callsBefore, mockCallCount(), 'bulk mark sent: the mock received no new request');
+
+    // the module's per-minute counter is full: a send-kind run would be stopped, marking as sent is not
+    $failedC = smokeSeedDeliveryRecord($order, '10/2026', IfirmaReceipt::DELIVERY_FAILED);
+    $failedD = smokeSeedDeliveryRecord($order, '11/2026', IfirmaReceipt::DELIVERY_FAILED);
+    $made = array_merge($made, array($failedC, $failedD));
+    if (time() % 60 >= 55) {
+        sleepToNextMinute();
+    }
+    $cap = (int) IfirmaRateGuard::DEFAULT_MINUTE_CAP;
+    smokeWriteSetting(IfirmaRateGuard::MINUTE_COUNTER_KEY, date('YmdHi') . ':' . $cap);
+    try {
+        $run = $runner->run(IfirmaBulkRunner::KIND_MARK_SENT, array((int) $failedC->id, (int) $failedD->id), 1, array('final' => true));
+        $rows = smokeBulkOutcomes($run);
+        assertSame(array('sent', 'sent'), array(
+            isset($rows[(int) $failedC->id]) ? $rows[(int) $failedC->id][0] : null,
+            isset($rows[(int) $failedD->id]) ? $rows[(int) $failedD->id][0] : null,
+        ), 'bulk mark sent: both failed records are marked although the minute limit is reached');
+        assertSame('', $run['stopped'], 'bulk mark sent: the full minute counter does not stop the run');
+        assertSame(0, count($run['remaining']), 'bulk mark sent: nothing is left over with the minute limit reached');
+        assertSame(array('sent', 'manual'), array((string) (new IfirmaReceipt((int) $failedC->id))->delivery_status, (string) (new IfirmaReceipt((int) $failedD->id))->delivery_channel), 'bulk mark sent: the records are sent through the manual channel with the limit reached');
+        assertSame($callsBefore, mockCallCount(), 'bulk mark sent: the run with the limit reached sent no request either');
+    } finally {
+        smokeClearRateWindow();
+    }
+}
+
 function scenarioJ($module)
 {
     $order1 = freshScenario('J. Bulk runner: retry, resend, refresh');
@@ -1448,6 +1543,8 @@ function scenarioJ($module)
         foreach ($ids as $id) {
             assertSame('refreshed', isset($outcomes[$id]) ? $outcomes[$id] : null, 'refresh of record ' . $id);
         }
+
+        smokeBulkMarkSentChecks($runner, $order3, $made);
     } finally {
         foreach ($made as $rec) {
             $rec->delete();
