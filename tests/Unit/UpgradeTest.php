@@ -322,7 +322,7 @@ class UpgradeTest extends TestCase
         $alters = array_values(array_filter($sent, function ($sql) {
             return strpos($sql, 'ALTER TABLE') === 0 && strpos($sql, 'ADD COLUMN') !== false;
         }));
-        $this->assertCount(25, $alters, 'the 20 receipt columns of 1.1.0, last_download_at of 1.5.0 and the two retry and the two download count columns of 1.10.0, nothing else is added');
+        $this->assertCount(26, $alters, 'the 20 receipt columns of 1.1.0, last_download_at of 1.5.0 and the two retry, the two download count and the sync attempt column of 1.10.0, nothing else is added');
         $this->assertContains('ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `last_download_at` DATETIME NULL', $alters);
         $keys = array_values(array_filter($sent, function ($sql) {
             return strpos($sql, 'ALTER TABLE') === 0 && strpos($sql, 'ADD KEY') !== false;
@@ -693,7 +693,8 @@ class UpgradeTest extends TestCase
             $schema[self::RECEIPT]['delivery_attempts'],
             $schema[self::RECEIPT]['delivery_retry_at'],
             $schema[self::RECEIPT]['download_day'],
-            $schema[self::RECEIPT]['download_count']
+            $schema[self::RECEIPT]['download_count'],
+            $schema[self::RECEIPT]['sync_attempt_at']
         );
 
         return $schema;
@@ -710,6 +711,7 @@ class UpgradeTest extends TestCase
             'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `delivery_retry_at` DATETIME NULL',
             'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `download_day` DATE NULL',
             'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `download_count` INT(11) UNSIGNED NOT NULL DEFAULT 0',
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `sync_attempt_at` DATETIME NULL',
         ), $this->alterStatementsOf($this->sentQueries()));
         $this->assertSame($this->expectedSchema()[self::RECEIPT], $this->schema[self::RECEIPT]);
     }
@@ -738,7 +740,7 @@ class UpgradeTest extends TestCase
         $this->assertTrue(upgrade_module_1_10_0(new Module()));
 
         $this->assertSame($after, $this->schema);
-        $this->assertCount(4, $this->alterStatementsOf($this->sentQueries()), 'the second run adds nothing');
+        $this->assertCount(5, $this->alterStatementsOf($this->sentQueries()), 'the second run adds nothing');
     }
 
     public function testUpgrade1100ReportsAFailedAlter()
@@ -812,6 +814,14 @@ class UpgradeTest extends TestCase
         $this->assertSame(30, Configuration::get('IFIRMA_PDF_COPY_DAYS'));
     }
 
+    public function testUpgrade1100ReportsAFailedSyncAttemptAlter()
+    {
+        Db::getInstance()->whenExecute('/ADD COLUMN `sync_attempt_at`/', false);
+        $this->startFrom($this->schemaOf19x());
+
+        $this->assertFalse(upgrade_module_1_10_0(new Module()));
+    }
+
     // ---- helpers: the database each path runs on ----------------------------------------------------
 
     /** What the module's own column lists say a complete install has. */
@@ -834,7 +844,8 @@ class UpgradeTest extends TestCase
             IfirmaSchema::newReceiptColumnsFor110(),
             IfirmaSchema::newReceiptColumnsFor150(),
             IfirmaSchema::newReceiptColumnsFor1100(),
-            IfirmaSchema::newReceiptDownloadCountColumnsFor1100()
+            IfirmaSchema::newReceiptDownloadCountColumnsFor1100(),
+            IfirmaSchema::newReceiptSyncAttemptColumnsFor1100()
         ));
     }
 
