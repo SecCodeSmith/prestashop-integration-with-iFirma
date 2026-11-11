@@ -200,6 +200,12 @@ class Db
 
             return true;
         }
+        $replacedAffected = $this->emulateCompareAndSet($sql);
+        if ($replacedAffected !== null) {
+            $this->affected = $replacedAffected;
+
+            return true;
+        }
         $usageAffected = $this->emulateUsageCounter($sql);
         $this->affected = $usageAffected !== null ? $usageAffected : $this->emulateRateWindow($sql);
 
@@ -294,6 +300,25 @@ class Db
     }
 
     /**
+     * Runs the compare-and-set statement of IfirmaRollingWindowCounter (replaces the value of one configuration row
+     * only while it still holds the value that was read) against the Configuration stub, the way MySQL would.
+     *
+     * @return int|null affected rows, null when the statement is not a compare-and-set statement
+     */
+    protected function emulateCompareAndSet($sql)
+    {
+        if (!preg_match("/^UPDATE `\w*configuration` SET `value` = '((?:[^'\\\\]|\\\\.)*)' WHERE `name` = '(\w+)' AND `value` = '((?:[^'\\\\]|\\\\.)*)'$/s", $sql, $m)) {
+            return null;
+        }
+        if (!Configuration::hasKey($m[2]) || (string) Configuration::get($m[2]) !== stripslashes($m[3])) {
+            return 0;
+        }
+        Configuration::$values[$m[2]] = stripslashes($m[1]);
+
+        return 1;
+    }
+
+    /**
      * Runs the atomic counter statement of IfirmaApiUsage (one IFIRMA_USAGE_<KIND> row, no cap) against the
      * Configuration stub, the way MySQL would.
      *
@@ -325,6 +350,9 @@ class Db
 
     public function escape($string, $htmlOk = false, $bqSql = false)
     {
-        return addslashes((string) $string);
+        // like the real Db::escape(), which strips tags unless the caller says HTML is fine
+        $escaped = addslashes((string) $string);
+
+        return $htmlOk ? $escaped : strip_tags($escaped);
     }
 }

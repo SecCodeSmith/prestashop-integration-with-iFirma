@@ -515,7 +515,9 @@ class IfirmaApiClient
             return 0;
         }
 
-        return IfirmaRetryAfter::seconds($this->rateLimitWindow, $this->now(), $this->rateGuard->backoffUntil());
+        $minuteFreeAt = $this->rateLimitWindow === IfirmaRateDecision::WINDOW_MINUTE ? $this->rateGuard->minuteFreeAt() : 0;
+
+        return IfirmaRetryAfter::seconds($this->rateLimitWindow, $this->now(), $this->rateGuard->backoffUntil(), $minuteFreeAt);
     }
 
     /**

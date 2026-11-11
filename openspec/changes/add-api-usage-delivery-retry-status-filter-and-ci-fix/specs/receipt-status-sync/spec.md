@@ -109,7 +109,7 @@ One authenticated cron request SHALL first read the day limit from iFirma (speci
 - **THEN** the status-sync keys stay at the top level of the JSON, as before the other jobs existed
 - **AND** the blocks `queue`, `ksef`, `delivery` and `delivery_retry` each report the records handled, succeeded, failed and left for the next run
 - **AND** the block `limit` reports the requests used, granted and remaining of the day, each empty when no reading is available
-- **AND** the JSON reports `rate_limited` (0 or 1), `rate_limited_window`, `usage` (the module's requests of the current minute and day and the day's count per kind) and `time_budget_exhausted` (0 or 1)
+- **AND** the JSON reports `rate_limited` (0 or 1), `rate_limited_window`, `usage` (the module's requests of the last 60 seconds and of the day and the day's count per kind) and `time_budget_exhausted` (0 or 1)
 
 #### Scenario: Day limit read first
 - **GIVEN** the `abonent` key is not set

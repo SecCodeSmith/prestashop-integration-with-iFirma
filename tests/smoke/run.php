@@ -967,10 +967,6 @@ function smokeUsageAndRefusalChecks($module, $actions)
     if (!assertTrue($second instanceof Order && Validate::isLoadedObject($second), 'usage: second order created')) {
         return;
     }
-    if (time() % 60 >= 35) {
-        // the counts below must all fall into one minute of the guard
-        sleepToNextMinute();
-    }
     $previousCap = smokeSetting('IFIRMA_RATE_MAX_PER_MIN', 0);
     try {
         smokeClearUsageCounters();
@@ -998,9 +994,9 @@ function smokeUsageAndRefusalChecks($module, $actions)
         assertSame(2, array_sum($byKind), 'usage: the module counted nothing else', json_encode($byKind));
         assertSame(2, mockCallCount(), 'usage: the mock counted exactly 2 calls');
 
-        // The minute cap is the number of requests already sent this minute
+        // The minute cap is the number of requests already sent in the last 60 seconds
         $summary = $usage->summary();
-        assertSame(2, $summary['minute'], 'usage: the guard counted both requests in this minute');
+        assertSame(2, $summary['minute'], 'usage: the guard counted both requests in the last 60 seconds');
         smokeWriteSetting('IFIRMA_RATE_MAX_PER_MIN', (string) $summary['minute']);
 
         // Download at the cap: the owner gets 429 with Retry-After, and the mock is not called
@@ -1035,6 +1031,18 @@ function smokeUsageAndRefusalChecks($module, $actions)
         assertSame(IfirmaRequestKind::all(), $kinds, 'usage: the cron answer carries the usage block with all nine kinds');
         assertSame(9, count($kinds), 'usage: there are nine kinds');
         assertSame(2, mockCallCount(), 'usage: the cron run at the cap reached the mock with no call');
+
+        // The cap holds for every 60 seconds, not per calendar minute: requests 50 seconds old still fill it, requests
+        // 70 seconds old no longer do (margins of 10 seconds keep the check from depending on the speed of the run)
+        smokeWriteSetting('IFIRMA_RATE_WINDOW', (time() - 50) . '=' . (int) smokeReadSetting('IFIRMA_RATE_MAX_PER_MIN'));
+        $r = $actions->refreshStatus((int) $first->id);
+        assertSame(false, $r['success'], 'rolling window: a status refresh is refused while the requests are younger than 60 seconds');
+        assertSame('The status was not refreshed: the minute request limit is reached. Try again in a moment.', (string) $r['message'], 'rolling window: the refusal names the minute limit');
+        assertSame(2, mockCallCount(), 'rolling window: the refused refresh reached the mock with no call');
+        smokeWriteSetting('IFIRMA_RATE_WINDOW', (time() - 70) . '=' . (int) smokeReadSetting('IFIRMA_RATE_MAX_PER_MIN'));
+        $r = $actions->refreshStatus((int) $first->id);
+        assertTrue($r['success'], 'rolling window: a status refresh passes once the requests are older than 60 seconds', $r['message']);
+        assertSame(3, mockCallCount(), 'rolling window: the refresh reached the mock with one call');
     } finally {
         smokeRestoreSetting('IFIRMA_RATE_MAX_PER_MIN', $previousCap);
         smokeClearRateWindow();
@@ -3027,12 +3035,27 @@ function cronOverHttp()
     return array('code' => $answer['code'], 'data' => is_array($data) ? $data : null, 'raw' => $answer['body']);
 }
 
-/** Sleeps until one second into the next calendar minute, so every window of the guard starts fresh. */
+/** Sleeps until one second into the next calendar minute, so every window of the download budgets starts fresh. */
 function sleepToNextMinute()
 {
     $wait = 61 - (time() % 60);
     smokeOut('INFO', 'waiting ' . $wait . ' s for the next minute');
     sleep($wait);
+}
+
+/** Waits until the requests the module counted in the last 60 seconds are all older than that (at most 61 seconds). */
+function sleepUntilTheMinuteWindowIsEmpty()
+{
+    require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaRateGuard.php';
+    $guard = new IfirmaRateGuard();
+    $usage = $guard->windowUsage();
+    if ($usage[IfirmaRateDecision::WINDOW_MINUTE]['used'] > 0) {
+        smokeOut('INFO', 'waiting for the module\'s requests of the last 60 seconds to age out');
+    }
+    for ($second = 0; $second < 62 && $usage[IfirmaRateDecision::WINDOW_MINUTE]['used'] > 0; $second++) {
+        sleep(1);
+        $usage = $guard->windowUsage();
+    }
 }
 
 /**
@@ -3075,7 +3098,8 @@ function queuedCount()
 }
 
 /**
- * Runs the cron once a minute until nothing is queued or the deadline passes.
+ * Runs the cron, each time after the module's requests of the last 60 seconds have aged out, until nothing is queued or
+ * the deadline passes.
  *
  * @param int $deadline unix time
  * @return int cron runs it took
@@ -3084,7 +3108,7 @@ function drainQueue($module, $deadline)
 {
     $runs = 0;
     while (queuedCount() > 0 && time() < $deadline) {
-        sleepToNextMinute();
+        sleepUntilTheMinuteWindowIsEmpty();
         $summary = runCron($module);
         $runs++;
         smokeOut('INFO', 'cron run ' . $runs . ': ' . json_encode(isset($summary['queue']) ? $summary['queue'] : $summary));

@@ -235,7 +235,7 @@ Three ways to sync:
    paid, marked missing, errors, rate limited, calls, orders held by pending data requests) and one block per other job.
    The summary also carries a `usage` block with the module's own requests, read after the jobs:
    `{"minute": 6, "day": 250, "by_kind": {"document": 2, "status": 200, "pdf": 40, "email": 0, "ksef": 0,
-   "payment": 0, "contractor": 8, "limit": 0, "other": 0}}` - the requests of the current minute, of today and
+   "payment": 0, "contractor": 8, "limit": 0, "other": 0}}` - the requests of the last 60 seconds, of today and
    today's count per kind (all nine kinds, zeros included). The block is also there when the run was refused by the
    limit. See [Module requests](configuration.md#module-requests).
 
@@ -398,8 +398,8 @@ together can send 30 downloads per calendar minute and 2,000 per calendar day. A
 affected. An employee without the view level still gets the access-denied answer first. When the module's request limit refuses
 an employee's download, the answer names the window: "The PDF was not downloaded: the minute request limit is reached. Try again
 in a moment.", "... the day request limit is reached. Try again later." or "... iFirma asked the module to wait before the next
-request. Try again shortly."; `Retry-After` is the seconds to the next minute, to the end of the back-off, or, for the day limit, at
-most 3600.
+request. Try again shortly."; `Retry-After` is the seconds until the last 60 seconds have room again (1 to 61), to the end of the back-off, or, for the day
+limit, at most 3600.
 
 ## Delivery
 

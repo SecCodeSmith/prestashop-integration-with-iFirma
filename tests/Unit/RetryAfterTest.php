@@ -19,18 +19,19 @@ require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaRetryAfter.php';
  */
 class RetryAfterTest extends TestCase
 {
-    public function testTheMinuteWindowWaitsUntilTheNextCalendarMinute()
+    public function testTheMinuteWindowWaitsUntilTheTimeItHasRoomAgain()
     {
         $now = mktime(10, 15, 20, 11, 1, 2026);
 
-        $this->assertSame(40, IfirmaRetryAfter::seconds(IfirmaRateDecision::WINDOW_MINUTE, $now, 0));
+        $this->assertSame(31, IfirmaRetryAfter::seconds(IfirmaRateDecision::WINDOW_MINUTE, $now, 0, $now + 31));
     }
 
-    public function testTheFirstSecondOfAMinuteWaitsAWholeMinute()
+    public function testAMinuteWindowThatHasRoomAgainWaitsOneSecond()
     {
-        $now = mktime(10, 15, 0, 11, 1, 2026);
+        $now = mktime(10, 15, 20, 11, 1, 2026);
 
-        $this->assertSame(60, IfirmaRetryAfter::seconds(IfirmaRateDecision::WINDOW_MINUTE, $now, 0));
+        $this->assertSame(1, IfirmaRetryAfter::seconds(IfirmaRateDecision::WINDOW_MINUTE, $now, 0, $now));
+        $this->assertSame(1, IfirmaRetryAfter::seconds(IfirmaRateDecision::WINDOW_MINUTE, $now, 0, $now - 5));
     }
 
     public function testTheBackoffWaitsUntilItsStoredEnd()

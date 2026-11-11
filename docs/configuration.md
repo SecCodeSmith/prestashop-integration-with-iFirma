@@ -114,7 +114,7 @@ Open the module configuration and fill in:
 | `IFIRMA_CRON_MAX_ITEMS` (new) | `10` (1 to 50: the most queued orders, KSeF submissions or deliveries each of those jobs handles in one cron run) |
 | `IFIRMA_RATE_MAX_PER_MIN` (new) | `80` (1 to 100) |
 | `IFIRMA_RATE_MAX_PER_DAY` (new) | `14000` (1 to 15000) |
-| `IFIRMA_RATE_WINDOW` (new) | empty (internal rate-limit state of the minute: `<minute>:<count>`, incremented by one atomic database statement, so two requests at the same time cannot both pass the cap) |
+| `IFIRMA_RATE_WINDOW` (new) | empty (internal rate-limit state of the last 60 seconds: `<unix second>=<count>` pairs, written by a compare-and-set database statement, so two requests at the same time cannot both pass the cap; modules before 1.10.0 wrote `<minute>:<count>`, which is still read) |
 | `IFIRMA_RATE_DAY_WINDOW` (new) | empty (the same for the calendar day: `<day>:<count>`) |
 | `IFIRMA_DL_CUSTOMER_MINUTE`, `IFIRMA_DL_CUSTOMER_DAY` (new) | empty (internal counters `<minute>:<count>` and `<day>:<count>` of the customers' PDF download budget, 20 per minute and 2,000 per day for all customers together; not settings, see [Download limits](usage.md#download-limits)) |
 | `IFIRMA_DL_EMPLOYEE_MINUTE`, `IFIRMA_DL_EMPLOYEE_DAY` (new) | empty (internal counters of the back-office PDF download budget: 30 per minute and 2,000 per day for all employees together) |
@@ -226,7 +226,7 @@ The answer keeps the keys of the status sync at its top level, unchanged (`recei
   `rate_limited_window` then says which window: `minute`, `day` or `backoff`; it is empty otherwise. A job that did not run
   because an earlier one was rate limited reports zeros and its `left`.
 - `time_budget_exhausted` is 1 when the run stopped starting records because its time budget (below) was used up.
-- `usage` is the module's own request count, read after the jobs: the requests of the current minute and of today, and today's
+- `usage` is the module's own request count, read after the jobs: the requests of the last 60 seconds and of today, and today's
   count per kind (all nine kinds, zeros included). It is also there when the run was refused by the limit. See
   [Module requests](#module-requests).
 
@@ -246,12 +246,14 @@ The `delivery_retry` job is the last job of a run. It sends again the deliveries
 ## Rate limits
 
 iFirma allows 100 requests per minute and 15,000 per day. The module keeps its own counters for both
-windows (`IFIRMA_RATE_WINDOW` for the calendar minute, `IFIRMA_RATE_DAY_WINDOW` for the calendar day) and refuses to
+windows (`IFIRMA_RATE_WINDOW` for the last 60 seconds, `IFIRMA_RATE_DAY_WINDOW` for the calendar day) and refuses to
 start a request once either local cap is reached. The caps are `IFIRMA_RATE_MAX_PER_MIN` (default 80, 1 to 100)
 and `IFIRMA_RATE_MAX_PER_DAY` (default 14,000, 1 to 15,000), both on the settings page; they stay below
-iFirma's own limits on purpose. The minute is checked first. The day is the calendar day of the shop's time
+iFirma's own limits on purpose. The minute is checked first. The minute cap holds for every period of 60 seconds, wherever it
+starts, not per calendar minute: a burst around the turn of a minute cannot send more than the cap. After a full window the
+module waits until those requests are older than 60 seconds, which is up to 61 seconds, not until the next calendar minute. The day is the calendar day of the shop's time
 zone; iFirma's own day is presumably Polish time, and the 1,000-request margin below 15,000 absorbs a mismatch
-around midnight. PDF downloads have caps of their own on top of these ([Download limits](usage.md#download-limits) lists all of them in one table). A refusal names the window that refused ("... requests in the current minute (cap 80)" or
+around midnight. PDF downloads have caps of their own on top of these ([Download limits](usage.md#download-limits) lists all of them in one table). A refusal names the window that refused ("... requests in the last 60 seconds (cap 80)" or
 "... requests today (cap 14000)") and is a transient "rate limited" error, never stored as a document error.
 A request refused by the day window has already used a minute slot; that only makes the guard more conservative.
 Timeouts: 30 s by default, 5 s for
@@ -285,7 +287,7 @@ the module goes on with its local counters.
 The settings page has a **Module requests** box above the settings form. It shows what the module itself counted, with or
 without the `abonent` key, and it sends no request to iFirma to do so:
 
-- **Current minute** and **Today**: the requests the module sent in this calendar minute and today, next to the caps
+- **Last 60 seconds** and **Today**: the requests the module sent in the last 60 seconds and today (the calendar day), next to the caps
   (for example "6 of 80" and "250 of 14000").
 - **Today by kind of request**: the same requests split by what they were for. Every kind is listed, with a zero when
   nothing of that kind was sent today.

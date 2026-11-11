@@ -86,7 +86,7 @@ class IfirmaApiUsage
 
     /**
      * @return array array('minute' => int, 'day' => int, 'by_kind' => array kind => int): the guard's counts of the
-     *               current minute and day and today's count per kind
+     *               last 60 seconds and the current day and today's count per kind
      */
     public function summary()
     {

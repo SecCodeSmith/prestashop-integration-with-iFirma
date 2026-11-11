@@ -82,7 +82,7 @@ class ApiClientUsageTest extends TestCase
 
     private function minuteCount()
     {
-        return (int) substr((string) Configuration::get('IFIRMA_RATE_WINDOW'), 13);
+        return (new IfirmaRollingWindowCounter())->count('IFIRMA_RATE_WINDOW', $this->now);
     }
 
     private function dayCount()
@@ -138,11 +138,11 @@ class ApiClientUsageTest extends TestCase
         $this->assertSame(2, $this->dayCount());
     }
 
-    public function testAPdfDownloadRefusedAtTheMinuteCapIsServedInTheNextMinute()
+    public function testAPdfDownloadRefusedAtTheMinuteCapIsServedOnceTheRequestsAreOlderThanSixtySeconds()
     {
-        Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->minute() . ':80');
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->now . '=80');
         $this->assertFalse($this->c->getBinary('fakturakraj/7.pdf', 'faktura'));
-        $this->now += 60;
+        $this->now += 61;
 
         $pdf = $this->c->getBinary('fakturakraj/7.pdf', 'faktura');
 

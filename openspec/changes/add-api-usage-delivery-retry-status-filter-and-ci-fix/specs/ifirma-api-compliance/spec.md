@@ -30,6 +30,68 @@ When the optional `abonent` key is configured, the module configuration page SHA
 - **WHEN** the admin opens the configuration page
 - **THEN** the page shows the reading with its date and does not present it as today's
 
+### Requirement: Local rate guard
+The module SHALL count its own requests of the last 60 seconds and per calendar day (shop timezone) and SHALL refuse to start a request when either count has reached its configured cap: the minute cap `IFIRMA_RATE_MAX_PER_MIN` (default 80, allowed 1 to 100, below the iFirma limit of 100 per minute) and the day cap `IFIRMA_RATE_MAX_PER_DAY` (default 14000, allowed 1 to 15000, below the iFirma limit of 15000 per day). The minute cap SHALL hold for every period of 60 seconds, wherever it starts, so a burst around the turn of a calendar minute cannot send more than the cap. A refusal SHALL be a distinct transient "rate limited" error that names the window that refused and that callers do not persist as a document error state. Both counts SHALL be changed atomically, so concurrent requests cannot lose increments and exceed a cap. A minute counter written by an earlier module version SHALL be read as requests of its calendar minute, never as zero.
+
+#### Scenario: Under the cap
+- **WHEN** fewer requests than the minute cap were made in the last 60 seconds and fewer than the day cap today
+- **THEN** the request is sent and both counts rise by one
+
+#### Scenario: Cap reached
+- **WHEN** the minute cap is reached within the last 60 seconds
+- **THEN** the request is not sent
+- **AND** a rate limited error naming the minute window is returned
+
+#### Scenario: Day cap reached
+- **WHEN** the day cap is reached today and the count of the last 60 seconds is below its cap
+- **THEN** the request is not sent
+- **AND** a rate limited error naming the day window is returned
+
+#### Scenario: Burst across the turn of a minute
+- **GIVEN** the minute cap is 80 and 80 requests were sent at 10:00:59
+- **WHEN** 80 more requests are started at 10:01:00
+- **THEN** none of them is sent
+- **AND** each gets the rate limited error naming the minute window
+
+#### Scenario: New minute
+- **GIVEN** the minute cap is 80 and 80 requests were sent at 10:00:59
+- **WHEN** the calendar minute has changed and a request is started at 10:01:59
+- **THEN** it is not sent, because the 80 requests are not yet older than 60 seconds
+- **WHEN** a request is started at 10:02:00
+- **THEN** it is sent
+
+#### Scenario: New day
+- **WHEN** the calendar day changes
+- **THEN** the day counter restarts from zero
+
+#### Scenario: Transient error not persisted
+- **WHEN** a pipeline step hits the rate limited error
+- **THEN** the receipt record is not set to an error status
+
+#### Scenario: Concurrent requests
+- **WHEN** two requests pass the guard at the same moment
+- **THEN** the count of the last 60 seconds and the day count each end two higher than before
+
+#### Scenario: Concurrent requests at the cap
+- **GIVEN** the count of the last 60 seconds is one below the minute cap
+- **WHEN** two requests reach the guard at the same moment
+- **THEN** exactly one of them is sent
+
+#### Scenario: Counter of an earlier version
+- **GIVEN** the stored minute counter was written by module 1.9.1 as 80 requests of the calendar minute 10:00
+- **WHEN** a request is started at 10:01:00 after the upgrade
+- **THEN** it is not sent
+
+#### Scenario: Counter dated in the future
+- **GIVEN** the minute cap is 80 and the stored counter holds 80 requests dated after the current time, as after the server clock was set back
+- **WHEN** a request is started
+- **THEN** those requests are counted as requests of the current second and the request is not sent
+- **AND** a request started 61 seconds later is sent
+
+#### Scenario: Day cap setting
+- **WHEN** the module is installed, or a shop running 1.6.0 is upgraded
+- **THEN** `IFIRMA_RATE_MAX_PER_DAY` is 14000, and saving 0 or 15001 on the settings page is refused
+
 ## ADDED Requirements
 
 ### Requirement: Remaining limit checked on demand
@@ -113,7 +175,7 @@ The on-demand check SHALL run only for an employee who may configure the module,
 Every request the module sends to iFirma SHALL count toward its minute limit and its day limit, whatever it is for. Reading a document list, reading a document detail and downloading a PDF SHALL count exactly like creating a document. No kind of request SHALL pass the limit check uncounted.
 
 #### Scenario: Status list request counts
-- **GIVEN** the module counted 5 requests in the current minute
+- **GIVEN** the module counted 5 requests in the last 60 seconds
 - **WHEN** a status sync sends one list request
 - **THEN** the minute count is 6 and the day count rose by 1
 
@@ -145,7 +207,7 @@ When the limit refuses a request, the caller SHALL learn that it was refused and
 #### Scenario: Employee downloads a PDF at the cap
 - **GIVEN** the minute cap is reached
 - **WHEN** an employee with the view level downloads the PDF of a document from the back office
-- **THEN** the answer is HTTP 429 with a `Retry-After` header of the seconds left until the next minute (1 to 60) and a message that names the minute limit
+- **THEN** the answer is HTTP 429 with a `Retry-After` header of the seconds until the module can send again, which is when enough of the counted requests are older than 60 seconds (1 to 61), and a message that names the minute limit
 - **AND** no request is sent to iFirma and no PDF bytes are returned
 
 #### Scenario: Refusal during back-off

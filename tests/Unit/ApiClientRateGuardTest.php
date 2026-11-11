@@ -44,31 +44,31 @@ class ApiClientRateGuardTest extends TestCase
 
     public function testUnderCapSendsAndIncrements()
     {
-        Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->minute() . ':5');
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->now . '=5');
         $this->assertNotNull($this->c->get('x.json', 'faktura'));
         $this->assertFalse($this->c->isRateLimited());
         $this->assertCount(1, $this->t->calls);
-        $this->assertSame($this->minute() . ':6', Configuration::get('IFIRMA_RATE_WINDOW'));
+        $this->assertSame($this->now . '=6', Configuration::get('IFIRMA_RATE_WINDOW'));
         $this->assertSame(1, $this->c->getRequestCount());
     }
 
     public function testFirstCallStartsWindow()
     {
         $this->c->get('x.json', 'faktura');
-        $this->assertSame($this->minute() . ':1', Configuration::get('IFIRMA_RATE_WINDOW'));
+        $this->assertSame($this->now . '=1', Configuration::get('IFIRMA_RATE_WINDOW'));
     }
 
     public function testDefaultCapRefusesWithoutTransportCall()
     {
-        Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->minute() . ':80');
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->now . '=80');
         $this->assertNull($this->c->get('x.json', 'faktura'));
         $this->assertTrue($this->c->isRateLimited());
         $this->assertSame(array(), $this->t->calls);
         $this->assertSame(
-            'iFirma rate limit guard: 80 requests in the current minute (cap 80). Retry shortly.',
+            'iFirma rate limit guard: 80 requests in the last 60 seconds (cap 80). Retry shortly.',
             $this->c->getLastError()
         );
-        $this->assertSame($this->minute() . ':80', Configuration::get('IFIRMA_RATE_WINDOW'));
+        $this->assertSame($this->now . '=80', Configuration::get('IFIRMA_RATE_WINDOW'));
         $this->assertSame(0, $this->c->getRequestCount());
     }
 
@@ -82,14 +82,16 @@ class ApiClientRateGuardTest extends TestCase
         $this->assertSame(array(), $this->t->calls);
     }
 
-    public function testNewMinuteResetsCounter()
+    public function testTheCounterRestartsOnceTheRequestsAreOlderThanSixtySeconds()
     {
-        Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->minute() . ':80');
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->now . '=80');
         $this->assertNull($this->c->get('x.json', 'faktura'));
         $this->now += 60;
+        $this->assertNull($this->c->get('x.json', 'faktura'));
+        $this->now += 1;
         $this->assertNotNull($this->c->get('x.json', 'faktura'));
         $this->assertFalse($this->c->isRateLimited());
-        $this->assertSame($this->minute() . ':1', Configuration::get('IFIRMA_RATE_WINDOW'));
+        $this->assertSame($this->now . '=1', Configuration::get('IFIRMA_RATE_WINDOW'));
     }
 
     public function testRateLimitedFlagOnlyForRefusedCall()
@@ -99,7 +101,7 @@ class ApiClientRateGuardTest extends TestCase
         $this->assertFalse($this->c->isRateLimited());
         $this->c->get('x.json', 'faktura');
         $this->assertTrue($this->c->isRateLimited());
-        $this->now += 60;
+        $this->now += 61;
         $this->c->get('x.json', 'faktura');
         $this->assertFalse($this->c->isRateLimited());
         $this->assertCount(2, $this->t->calls);
@@ -112,23 +114,20 @@ class ApiClientRateGuardTest extends TestCase
         $this->assertFalse(Configuration::hasKey('IFIRMA_RATE_WINDOW'));
     }
 
-    public function testCounterIsOneStatementCarryingTheMinuteAndTheCap()
+    public function testCounterIsOneReadAndOneCompareAndSetStatement()
     {
         Configuration::updateValue('IFIRMA_RATE_MAX_PER_MIN', '7');
-        Configuration::updateValue('IFIRMA_RATE_WINDOW', $this->minute() . ':2');
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', ($this->now - 5) . '=2');
         $this->c->get('x.json', 'faktura');
 
         $statements = Db::getInstance()->rateQueries;
-        $this->assertCount(1, $statements);
-        $m = $this->minute();
+        $this->assertCount(2, $statements);
+        $this->assertSame("SELECT `value` FROM `ps_configuration` WHERE `name` = 'IFIRMA_RATE_WINDOW' ORDER BY `id_configuration`", $statements[0]);
         $this->assertSame(
-            "UPDATE `ps_configuration` SET `value` = IF(SUBSTRING_INDEX(`value`, ':', 1) = '" . $m . "', "
-            . "CONCAT('" . $m . ":', SUBSTRING_INDEX(`value`, ':', -1) + 1), '" . $m . ":1') "
-            . "WHERE `name` = 'IFIRMA_RATE_WINDOW' AND (SUBSTRING_INDEX(`value`, ':', 1) <> '" . $m . "' "
-            . "OR SUBSTRING_INDEX(`value`, ':', -1) < 7)",
-            $statements[0]
+            "UPDATE `ps_configuration` SET `value` = '" . ($this->now - 5) . "=2," . $this->now . "=1' "
+            . "WHERE `name` = 'IFIRMA_RATE_WINDOW' AND `value` = '" . ($this->now - 5) . "=2'",
+            $statements[1]
         );
-        $this->assertSame(array($statements[0]), Db::getInstance()->rateQueries);
     }
 
     public function testOneAffectedRowSends()
@@ -140,15 +139,15 @@ class ApiClientRateGuardTest extends TestCase
         $this->assertCount(1, Db::getInstance()->rateQueries, 'no second look at the row');
     }
 
-    public function testNoAffectedRowOnAnExistingRowRefusesWithTheStoredCount()
+    public function testNoAffectedRowOnAnExistingRowRefusesAtTheCapAfterTheRetries()
     {
         Db::getInstance()->whenExecute('/UPDATE .*IFIRMA_RATE_WINDOW/s', 0);
-        Db::getInstance()->whenGetValue('/SELECT `value` .*IFIRMA_RATE_WINDOW/s', $this->minute() . ':80');
+        Db::getInstance()->whenGetValue('/SELECT `value` .*IFIRMA_RATE_WINDOW/s', $this->now . '=79');
         $this->assertNull($this->c->get('x.json', 'faktura'));
         $this->assertTrue($this->c->isRateLimited());
         $this->assertSame(array(), $this->t->calls);
         $this->assertSame(
-            'iFirma rate limit guard: 80 requests in the current minute (cap 80). Retry shortly.',
+            'iFirma rate limit guard: 80 requests in the last 60 seconds (cap 80). Retry shortly.',
             $this->c->getLastError()
         );
         $this->assertFalse(Configuration::hasKey('IFIRMA_RATE_WINDOW'), 'a refusal writes nothing');
@@ -168,7 +167,7 @@ class ApiClientRateGuardTest extends TestCase
     {
         $this->assertFalse(Configuration::hasKey('IFIRMA_RATE_WINDOW'));
         $this->assertNotNull($this->c->get('x.json', 'faktura'));
-        $this->assertSame($this->minute() . ':1', Configuration::get('IFIRMA_RATE_WINDOW'));
+        $this->assertSame($this->now . '=1', Configuration::get('IFIRMA_RATE_WINDOW'));
         $inserts = 0;
         foreach (Configuration::$writes as $write) {
             if ($write[0] === 'IFIRMA_RATE_WINDOW') {
@@ -180,13 +179,22 @@ class ApiClientRateGuardTest extends TestCase
 
         // the next call finds the row and counts on it
         $this->assertNotNull($this->c->get('x.json', 'faktura'));
-        $this->assertSame($this->minute() . ':2', Configuration::get('IFIRMA_RATE_WINDOW'));
+        $this->assertSame($this->now . '=2', Configuration::get('IFIRMA_RATE_WINDOW'));
     }
 
     public function testStoredWindowOfAnEarlierMinuteIsResetToOne()
     {
         Configuration::updateValue('IFIRMA_RATE_WINDOW', date('YmdHi', $this->now - 120) . ':80');
         $this->assertNotNull($this->c->get('x.json', 'faktura'));
-        $this->assertSame($this->minute() . ':1', Configuration::get('IFIRMA_RATE_WINDOW'));
+        $this->assertSame($this->now . '=1', Configuration::get('IFIRMA_RATE_WINDOW'));
+    }
+
+    public function testTheRetryAfterOfAMinuteRefusalIsWhenTheOldestRequestsAreSixtyOneSecondsOld()
+    {
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', ($this->now - 30) . '=80');
+
+        $this->assertNull($this->c->get('x.json', 'faktura'));
+
+        $this->assertSame(31, $this->c->retryAfterSeconds());
     }
 }
