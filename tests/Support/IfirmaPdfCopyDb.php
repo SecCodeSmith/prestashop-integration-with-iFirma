@@ -27,10 +27,14 @@ trait IfirmaPdfCopyDb
     /** @var bool */
     private $pdfCopyWritesRefused = false;
 
+    /** @var bool */
+    private $pdfCopyDeletesRefused = false;
+
     protected function scriptPdfCopyDb()
     {
         $this->pdfCopyRows = array();
         $this->pdfCopyWritesRefused = false;
+        $this->pdfCopyDeletesRefused = false;
         $db = Db::getInstance();
         $db->whenExecute('/^REPLACE INTO `ps_ifirma_pdf_copy`/', function ($sql) {
             return $this->replacePdfCopy($sql);
@@ -77,6 +81,12 @@ trait IfirmaPdfCopyDb
     protected function refusePdfCopyWrites()
     {
         $this->pdfCopyWritesRefused = true;
+    }
+
+    /** From now on every DELETE on the copy table is answered with a failure and removes nothing. */
+    protected function refusePdfCopyDeletes()
+    {
+        $this->pdfCopyDeletesRefused = true;
     }
 
     private function replacePdfCopy($sql)
@@ -128,6 +138,10 @@ trait IfirmaPdfCopyDb
         $byCustomer = '/^DELETE FROM `ps_ifirma_pdf_copy` WHERE id_ifirma_receipt IN \(SELECT id_ifirma_receipt FROM `ps_ifirma_receipt` WHERE id_customer = (\d+)\)$/';
         $byAge = '/^DELETE FROM `ps_ifirma_pdf_copy` WHERE stored_at < \'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\' ORDER BY stored_at LIMIT (\d+)$/';
         $all = '/^DELETE FROM `ps_ifirma_pdf_copy`$/';
+
+        if ($this->pdfCopyDeletesRefused) {
+            return false;
+        }
 
         if (preg_match($byId, $sql, $m)) {
             return $this->removePdfCopies(array((int) $m[1]), PHP_INT_MAX);

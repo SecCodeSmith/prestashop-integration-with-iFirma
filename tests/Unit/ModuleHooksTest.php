@@ -933,6 +933,7 @@ class ModuleHooksTest extends TestCase
             'IFIRMA_CRON_MAX_ITEMS' => '15',
             'IFIRMA_RATE_MAX_PER_MIN' => '60',
             'IFIRMA_RATE_MAX_PER_DAY' => '12000',
+            'IFIRMA_PDF_COPY_DAYS' => '45',
         ), $over);
     }
 
@@ -946,7 +947,7 @@ class ModuleHooksTest extends TestCase
             'IFIRMA_SEND_CHANNEL', 'IFIRMA_SEND_TEXT', 'IFIRMA_SEND_COPY_MODE', 'IFIRMA_SEND_COPY_EMPLOYEE',
             'IFIRMA_DUPLICATE_CHECK', 'IFIRMA_DUPLICATE_WINDOW_DAYS',
             'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE', 'IFIRMA_ALLOW_DATA_REQUEST', 'IFIRMA_NOTIFY_EMAIL',
-            'IFIRMA_SYNC_INTERVAL_MIN', 'IFIRMA_CRON_MAX_CALLS', 'IFIRMA_CRON_MAX_ITEMS', 'IFIRMA_RATE_MAX_PER_MIN', 'IFIRMA_RATE_MAX_PER_DAY', 'IFIRMA_CRON_INFO',
+            'IFIRMA_SYNC_INTERVAL_MIN', 'IFIRMA_CRON_MAX_CALLS', 'IFIRMA_CRON_MAX_ITEMS', 'IFIRMA_RATE_MAX_PER_MIN', 'IFIRMA_RATE_MAX_PER_DAY', 'IFIRMA_PDF_COPY_DAYS', 'IFIRMA_CRON_INFO',
         ) as $name) {
             $this->assertArrayHasKey($name, $inputs, $name);
         }
@@ -1083,6 +1084,7 @@ class ModuleHooksTest extends TestCase
         $this->assertSame(15, Configuration::get('IFIRMA_CRON_MAX_ITEMS'));
         $this->assertSame(60, Configuration::get('IFIRMA_RATE_MAX_PER_MIN'));
         $this->assertSame(12000, Configuration::get('IFIRMA_RATE_MAX_PER_DAY'));
+        $this->assertSame(45, Configuration::get('IFIRMA_PDF_COPY_DAYS'));
         $this->assertSame('fakturakraj', Configuration::get('IFIRMA_DOC_TYPE'));
         $this->assertSame(5, Configuration::get('IFIRMA_AUTO_CREATE_STATE'));
     }
@@ -1171,6 +1173,7 @@ class ModuleHooksTest extends TestCase
             'IFIRMA_CRON_MAX_ITEMS' => '51',
             'IFIRMA_RATE_MAX_PER_MIN' => '101',
             'IFIRMA_RATE_MAX_PER_DAY' => '15001',
+            'IFIRMA_PDF_COPY_DAYS' => '366',
             'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE' => '-1',
         ) as $key => $bad) {
             Tools::$values = $this->validPost(array($key => $bad));

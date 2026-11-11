@@ -610,6 +610,7 @@ class IfirmaSchema
             'IFIRMA_KSEF_SUBMITTER' => 'module',
             'IFIRMA_DUPLICATE_CHECK' => 1,
             'IFIRMA_DUPLICATE_WINDOW_DAYS' => 60,
+            'IFIRMA_PDF_COPY_DAYS' => 30,
             'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE' => '0.01',
             'IFIRMA_DOC_TEMPLATE' => '',
             'IFIRMA_ORDER_STAMP_PREFIX' => 'PS-ORDER',

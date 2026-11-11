@@ -153,6 +153,7 @@ class IfirmaSettings
             'IFIRMA_CRON_MAX_ITEMS' => array('type' => self::TYPE_RANGE, 'min' => 1, 'max' => 50),
             'IFIRMA_RATE_MAX_PER_MIN' => array('type' => self::TYPE_RANGE, 'min' => 1, 'max' => 100),
             'IFIRMA_RATE_MAX_PER_DAY' => array('type' => self::TYPE_RANGE, 'min' => 1, 'max' => 15000),
+            'IFIRMA_PDF_COPY_DAYS' => array('type' => self::TYPE_RANGE, 'min' => 0, 'max' => 365),
         );
     }
 

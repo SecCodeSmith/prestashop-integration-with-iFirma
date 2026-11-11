@@ -60,6 +60,7 @@ class SettingsSaveTest extends TestCase
             'IFIRMA_CRON_MAX_ITEMS' => '10',
             'IFIRMA_RATE_MAX_PER_MIN' => '60',
             'IFIRMA_RATE_MAX_PER_DAY' => '12000',
+            'IFIRMA_PDF_COPY_DAYS' => '30',
         );
         foreach ($changes as $field => $value) {
             if ($value === null) {
@@ -300,6 +301,7 @@ class SettingsSaveTest extends TestCase
             'IFIRMA_CRON_MAX_ITEMS' => 'The cron item limit must be a whole number between 1 and 50.',
             'IFIRMA_RATE_MAX_PER_MIN' => 'The API rate limit must be a whole number between 1 and 100 calls per minute.',
             'IFIRMA_RATE_MAX_PER_DAY' => 'The API daily limit must be a whole number between 1 and 15000 calls per day.',
+            'IFIRMA_PDF_COPY_DAYS' => 'The number of days to keep PDF copies must be a whole number between 0 and 365.',
         ) as $field => $message) {
             foreach (array('-1', '+5', '1 0', '1.0', '1,0', '99999999999999999999', 'ten', '0x10', ' ') as $posted) {
                 $cases[$field . ' = "' . $posted . '"'] = array($field, $posted, $message);
@@ -325,6 +327,40 @@ class SettingsSaveTest extends TestCase
 
         $this->assertSaved($page);
         $this->assertSame(7, $this->stored('IFIRMA_DUPLICATE_WINDOW_DAYS'));
+    }
+
+    /**
+     * @return array[] name => array(posted, the number stored)
+     */
+    public function keptPdfCopyDays()
+    {
+        return array(
+            'storing off' => array('0', 0),
+            'the default' => array('30', 30),
+            'the highest' => array('365', 365),
+        );
+    }
+
+    /**
+     * @dataProvider keptPdfCopyDays
+     */
+    public function testTheDaysToKeepPdfCopiesAreSavedFromZeroToTheHighest($posted, $number)
+    {
+        $page = $this->save(array('IFIRMA_PDF_COPY_DAYS' => $posted));
+
+        $this->assertSaved($page);
+        $this->assertSame($number, $this->stored('IFIRMA_PDF_COPY_DAYS'));
+    }
+
+    public function testAPdfCopyDaysValueAboveTheRangeIsRefusedAndTheStoredOneKept()
+    {
+        Configuration::updateValue('IFIRMA_PDF_COPY_DAYS', 14);
+        Configuration::$writes = array();
+
+        $page = $this->save(array('IFIRMA_PDF_COPY_DAYS' => '400'));
+
+        $this->assertRejected($page, 'The number of days to keep PDF copies must be a whole number between 0 and 365.');
+        $this->assertSame(14, Configuration::get('IFIRMA_PDF_COPY_DAYS'));
     }
 
     // ---- text fields --------------------------------------------------------------------------

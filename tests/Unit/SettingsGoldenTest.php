@@ -184,6 +184,7 @@ class SettingsGoldenTest extends TestCase
             'The cron item limit must be a whole number between 1 and 50.',
             'The API rate limit must be a whole number between 1 and 100 calls per minute.',
             'The API daily limit must be a whole number between 1 and 15000 calls per day.',
+            'The number of days to keep PDF copies must be a whole number between 0 and 365.',
             'The payment method mode must be "order" or "fixed".',
             'The fallback payment method must be one of the listed codes.',
             'Payment method map: line 1: ps_checkpayment=XYZ',

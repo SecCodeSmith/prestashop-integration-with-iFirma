@@ -50,6 +50,8 @@ require_once __DIR__ . '/classes/IfirmaLimitCheck.php';
 require_once __DIR__ . '/classes/IfirmaLimitCheckAction.php';
 require_once __DIR__ . '/classes/IfirmaConfigPageGuard.php';
 require_once __DIR__ . '/classes/IfirmaBackOfficeToken.php';
+require_once __DIR__ . '/classes/IfirmaPdfCopyStore.php';
+require_once __DIR__ . '/classes/IfirmaPdfCopyRetention.php';
 
 class Ifirma extends Module
 {
@@ -441,8 +443,14 @@ class Ifirma extends Module
         }
         // new settings, new chance: the pause after a rejected credential ends with a successful save
         Configuration::deleteByName('IFIRMA_AUTH_FAILURE');
+        $copiesCleared = (new IfirmaPdfCopyRetention())->clearWhenOff(new IfirmaPdfCopyStore());
 
-        return $this->displayConfirmation($this->l('Settings updated.'));
+        $notice = $this->displayConfirmation($this->l('Settings updated.'));
+        if (!$copiesCleared) {
+            $notice .= $this->displayError($this->l('The settings were saved, but the stored PDF copies could not be deleted. Save the settings again.'));
+        }
+
+        return $notice;
     }
 
     /** @var string[] the settings that hold an API key: the form never shows them */
@@ -507,6 +515,7 @@ class Ifirma extends Module
             'IFIRMA_CRON_MAX_ITEMS' => $this->l('The cron item limit must be a whole number between 1 and 50.'),
             'IFIRMA_RATE_MAX_PER_MIN' => $this->l('The API rate limit must be a whole number between 1 and 100 calls per minute.'),
             'IFIRMA_RATE_MAX_PER_DAY' => $this->l('The API daily limit must be a whole number between 1 and 15000 calls per day.'),
+            'IFIRMA_PDF_COPY_DAYS' => $this->l('The number of days to keep PDF copies must be a whole number between 0 and 365.'),
             'IFIRMA_PAYMENT_METHOD_MODE' => $this->l('The payment method mode must be "order" or "fixed".'),
             'IFIRMA_PAYMENT_METHOD' => $this->l('The fallback payment method must be one of the listed codes.'),
             'IFIRMA_PAYMENT_METHOD_MAP' => $this->l('Payment method map'),
@@ -1204,6 +1213,13 @@ class Ifirma extends Module
                 'desc' => $this->l('Local safety limit for iFirma API calls per day (1-15000). The account limit is shared with every other program that uses the iFirma API.'),
             ),
             array(
+                'type' => 'text',
+                'label' => $this->l('Keep PDF copies (days)'),
+                'name' => 'IFIRMA_PDF_COPY_DAYS',
+                'class' => 'fixed-width-sm',
+                'desc' => $this->l('How long the shop keeps a copy of each document PDF, so repeated downloads send no request to iFirma (0-365). 0 turns storing off and deletes the stored copies.'),
+            ),
+            array(
                 'type' => 'html',
                 'label' => $this->l('Cron endpoint'),
                 'name' => 'IFIRMA_CRON_INFO',
@@ -1274,6 +1290,7 @@ class Ifirma extends Module
             'IFIRMA_CRON_MAX_ITEMS' => (int) Configuration::get('IFIRMA_CRON_MAX_ITEMS'),
             'IFIRMA_RATE_MAX_PER_MIN' => (int) Configuration::get('IFIRMA_RATE_MAX_PER_MIN'),
             'IFIRMA_RATE_MAX_PER_DAY' => (int) Configuration::get('IFIRMA_RATE_MAX_PER_DAY'),
+            'IFIRMA_PDF_COPY_DAYS' => (new IfirmaPdfCopyRetention())->days(),
         );
 
         return $helper->generateForm(array($fields_form));

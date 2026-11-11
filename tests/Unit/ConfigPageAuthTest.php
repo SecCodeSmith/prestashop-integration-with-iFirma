@@ -86,6 +86,7 @@ class ConfigPageAuthTest extends TestCase
             'IFIRMA_CRON_MAX_ITEMS' => '15',
             'IFIRMA_RATE_MAX_PER_MIN' => '60',
             'IFIRMA_RATE_MAX_PER_DAY' => '12000',
+            'IFIRMA_PDF_COPY_DAYS' => '30',
         );
     }
 

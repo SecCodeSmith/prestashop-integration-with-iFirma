@@ -43,7 +43,8 @@
       "IFIRMA_CRON_MAX_CALLS": "20",
       "IFIRMA_CRON_MAX_ITEMS": "15",
       "IFIRMA_RATE_MAX_PER_MIN": "60",
-      "IFIRMA_RATE_MAX_PER_DAY": "12000"
+      "IFIRMA_RATE_MAX_PER_DAY": "12000",
+      "IFIRMA_PDF_COPY_DAYS": "30"
     },
     "writes": [
       ["IFIRMA_BASE_URL", "https://sandbox.ifirma.example/iapi/"],
@@ -80,7 +81,8 @@
       ["IFIRMA_CRON_MAX_CALLS", 20],
       ["IFIRMA_CRON_MAX_ITEMS", 15],
       ["IFIRMA_RATE_MAX_PER_MIN", 60],
-      ["IFIRMA_RATE_MAX_PER_DAY", 12000]
+      ["IFIRMA_RATE_MAX_PER_DAY", 12000],
+      ["IFIRMA_PDF_COPY_DAYS", 30]
     ]
   },
   "scenarios": [
@@ -126,7 +128,8 @@
         "IFIRMA_CRON_MAX_CALLS": "10",
         "IFIRMA_CRON_MAX_ITEMS": "10",
         "IFIRMA_RATE_MAX_PER_MIN": "60",
-        "IFIRMA_RATE_MAX_PER_DAY": "12000"
+        "IFIRMA_RATE_MAX_PER_DAY": "12000",
+        "IFIRMA_PDF_COPY_DAYS": "30"
       },
       "notice": "<confirmation>Settings updated.</confirmation>",
       "writes": [
@@ -164,7 +167,8 @@
         ["IFIRMA_CRON_MAX_CALLS", 10],
         ["IFIRMA_CRON_MAX_ITEMS", 10],
         ["IFIRMA_RATE_MAX_PER_MIN", 60],
-        ["IFIRMA_RATE_MAX_PER_DAY", 12000]
+        ["IFIRMA_RATE_MAX_PER_DAY", 12000],
+        ["IFIRMA_PDF_COPY_DAYS", 30]
       ]
     },
     {
@@ -577,6 +581,30 @@
       "writes": []
     },
     {
+      "name": "pdf copy days above 365",
+      "change": {"IFIRMA_PDF_COPY_DAYS": "400"},
+      "notice": "<error>The number of days to keep PDF copies must be a whole number between 0 and 365.</error>",
+      "writes": []
+    },
+    {
+      "name": "pdf copy days not a whole number",
+      "change": {"IFIRMA_PDF_COPY_DAYS": "1.5"},
+      "notice": "<error>The number of days to keep PDF copies must be a whole number between 0 and 365.</error>",
+      "writes": []
+    },
+    {
+      "name": "pdf copy days zero turns storing off",
+      "change": {"IFIRMA_PDF_COPY_DAYS": "0"},
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {"IFIRMA_PDF_COPY_DAYS": 0}
+    },
+    {
+      "name": "pdf copy days at the highest",
+      "change": {"IFIRMA_PDF_COPY_DAYS": "365"},
+      "notice": "<confirmation>Settings updated.</confirmation>",
+      "writes_as_valid": {"IFIRMA_PDF_COPY_DAYS": 365}
+    },
+    {
       "name": "unknown submitter becomes the module",
       "change": {"IFIRMA_KSEF_SUBMITTER": "both"},
       "notice": "<confirmation>Settings updated.</confirmation>",
@@ -696,11 +724,12 @@
         "IFIRMA_CRON_MAX_ITEMS": "0",
         "IFIRMA_RATE_MAX_PER_MIN": "0",
         "IFIRMA_RATE_MAX_PER_DAY": "0",
+        "IFIRMA_PDF_COPY_DAYS": "-1",
         "IFIRMA_PAYMENT_METHOD_MODE": "never",
         "IFIRMA_PAYMENT_METHOD": "XYZ",
         "IFIRMA_PAYMENT_METHOD_MAP": "ps_checkpayment=XYZ"
       },
-      "notice": "<error>The iFirma login is required.<br>The invoice API key must be a hexadecimal string.<br>Choose an active employee for the delivery copy.<br>The duplicate-check window must be a whole number of days between 1 and 365.<br>The amount tolerance must be a number greater than or equal to 0.<br>The notification e-mail address is not valid.<br>The sync interval must be a whole number of minutes between 1 and 1440.<br>The cron call budget must be a whole number between 1 and 90.<br>The cron item limit must be a whole number between 1 and 50.<br>The API rate limit must be a whole number between 1 and 100 calls per minute.<br>The API daily limit must be a whole number between 1 and 15000 calls per day.<br>The payment method mode must be \"order\" or \"fixed\".<br>The fallback payment method must be one of the listed codes.<br>Payment method map: line 1: ps_checkpayment=XYZ</error>",
+      "notice": "<error>The iFirma login is required.<br>The invoice API key must be a hexadecimal string.<br>Choose an active employee for the delivery copy.<br>The duplicate-check window must be a whole number of days between 1 and 365.<br>The amount tolerance must be a number greater than or equal to 0.<br>The notification e-mail address is not valid.<br>The sync interval must be a whole number of minutes between 1 and 1440.<br>The cron call budget must be a whole number between 1 and 90.<br>The cron item limit must be a whole number between 1 and 50.<br>The API rate limit must be a whole number between 1 and 100 calls per minute.<br>The API daily limit must be a whole number between 1 and 15000 calls per day.<br>The number of days to keep PDF copies must be a whole number between 0 and 365.<br>The payment method mode must be \"order\" or \"fixed\".<br>The fallback payment method must be one of the listed codes.<br>Payment method map: line 1: ps_checkpayment=XYZ</error>",
       "writes": []
     }
   ]
