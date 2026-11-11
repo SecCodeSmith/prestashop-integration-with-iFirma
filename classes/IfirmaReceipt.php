@@ -124,6 +124,9 @@ class IfirmaReceipt extends ObjectModel
     /** @var int PDF downloads of this document that reached iFirma on download_day */
     public $download_count = 0;
 
+    /** @var string|null on the customer's anchor record (the issued one with the smallest id): when an order page of the customer last started a status refresh; unused on the others */
+    public $sync_attempt_at;
+
     /** @var string|null */
     public $sync_error;
 
@@ -196,6 +199,7 @@ class IfirmaReceipt extends ObjectModel
             'last_download_at' => array('type' => self::TYPE_DATE, 'validate' => 'isDateFormat', 'allow_null' => true),
             'download_day' => array('type' => self::TYPE_DATE, 'validate' => 'isDateFormat', 'allow_null' => true),
             'download_count' => array('type' => self::TYPE_INT, 'validate' => 'isUnsignedInt'),
+            'sync_attempt_at' => array('type' => self::TYPE_DATE, 'validate' => 'isDateFormat', 'allow_null' => true),
             'sync_error' => array('type' => self::TYPE_HTML),
             'duplicate_candidates' => array('type' => self::TYPE_HTML),
             'id_data_request' => array('type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'allow_null' => true),
@@ -211,15 +215,18 @@ class IfirmaReceipt extends ObjectModel
      */
     const DOWNLOAD_COLUMNS = array('last_download_at', 'download_day', 'download_count');
 
+    /** The time an order page of the customer last started a status refresh, kept on the customer's anchor record: other requests claim and release it with their own atomic statements. */
+    const SYNC_ATTEMPT_COLUMNS = array('sync_attempt_at');
+
     /** @var array|null the guarded columns (stateGuardedColumns()) as they were when this object was loaded or last saved; null when unknown */
     private $storedDeliveryState = null;
 
     /**
-     * @return string[] the columns a save writes only when its object changed them: the delivery state and the download accounting
+     * @return string[] the columns a save writes only when its object changed them: the delivery state, the download accounting and the sync attempt time
      */
     private static function stateGuardedColumns()
     {
-        return array_merge(self::DELIVERY_COLUMNS, self::DOWNLOAD_COLUMNS);
+        return array_merge(self::DELIVERY_COLUMNS, self::DOWNLOAD_COLUMNS, self::SYNC_ATTEMPT_COLUMNS);
     }
 
     /**
@@ -259,6 +266,7 @@ class IfirmaReceipt extends ObjectModel
     {
         IfirmaSchema::ensureReceiptRetryColumns();
         IfirmaSchema::ensureReceiptDownloadCountColumns();
+        IfirmaSchema::ensureReceiptSyncAttemptColumn();
         $saved = parent::add($auto_date, $null_values);
         if ($saved) {
             $this->rememberStoredDeliveryState();
@@ -281,6 +289,7 @@ class IfirmaReceipt extends ObjectModel
     {
         IfirmaSchema::ensureReceiptRetryColumns();
         IfirmaSchema::ensureReceiptDownloadCountColumns();
+        IfirmaSchema::ensureReceiptSyncAttemptColumn();
         $callerFields = $this->update_fields;
         $unchanged = $this->unchangedDeliveryColumns();
         if ($unchanged !== array()) {
@@ -462,6 +471,100 @@ class IfirmaReceipt extends ObjectModel
                   OR last_sync_at < \'' . pSQL($staleBefore) . '\' OR delivery_status = \'' . self::DELIVERY_AWAITING_KSEF . '\')
              ORDER BY last_sync_at ASC, id_ifirma_receipt ASC
              LIMIT ' . max(1, (int) $limit)
+        );
+
+        $receipts = array();
+        foreach ((array) $rows as $row) {
+            $receipt = new self((int) $row['id_ifirma_receipt']);
+            if (!empty($receipt->id)) {
+                $receipts[] = $receipt;
+            }
+        }
+
+        return $receipts;
+    }
+
+    /** Most other records one customer page sync refreshes besides the viewed one. */
+    const SYNC_SIBLING_LIMIT = 100;
+
+    /**
+     * @param int $idCustomer
+     * @return int the customer's anchor record, the issued one with the smallest id, 0 when there is none; the
+     *             customer page sync keeps its attempt time on it, so one claim covers all of the customer's orders
+     */
+    public static function findCustomerSyncAnchor($idCustomer)
+    {
+        IfirmaSchema::ensureReceiptSyncAttemptColumn();
+
+        return (int) Db::getInstance()->getValue(
+            'SELECT MIN(id_ifirma_receipt) FROM `' . _DB_PREFIX_ . 'ifirma_receipt`
+             WHERE id_customer = ' . (int) $idCustomer . '
+             AND ifirma_id != \'\' AND status != \'error\''
+        );
+    }
+
+    /**
+     * Claims the customer page sync with a single conditional UPDATE, so that two parallel requests cannot both
+     * pass: the first one stamps the attempt time, the second finds it fresh and affects no row. A time in the
+     * future (a clock that ran ahead) does not hold the claim.
+     *
+     * @param int    $id          the customer's anchor record
+     * @param string $stamp       date time of the attempt
+     * @param string $staleBefore attempts before this date time are old enough to be repeated
+     * @return bool false when another request holds a fresh attempt
+     */
+    public static function claimSyncAttempt($id, $stamp, $staleBefore)
+    {
+        IfirmaSchema::ensureReceiptSyncAttemptColumn();
+        $db = Db::getInstance();
+        $db->execute(
+            'UPDATE `' . _DB_PREFIX_ . 'ifirma_receipt`
+             SET sync_attempt_at = \'' . pSQL($stamp) . '\'
+             WHERE id_ifirma_receipt = ' . (int) $id . '
+             AND (sync_attempt_at IS NULL OR sync_attempt_at < \'' . pSQL($staleBefore) . '\' OR sync_attempt_at > \'' . pSQL($stamp) . '\')'
+        );
+
+        return (int) $db->Affected_Rows() === 1;
+    }
+
+    /**
+     * Gives back the claim of a customer page sync whose request was never sent. A claim that another request has
+     * made since keeps that request's attempt time.
+     *
+     * @param int    $id    the customer's anchor record
+     * @param string $stamp the attempt time the claim was made with
+     */
+    public static function releaseSyncAttempt($id, $stamp)
+    {
+        Db::getInstance()->execute(
+            'UPDATE `' . _DB_PREFIX_ . 'ifirma_receipt`
+             SET sync_attempt_at = NULL
+             WHERE id_ifirma_receipt = ' . (int) $id . '
+             AND sync_attempt_at = \'' . pSQL($stamp) . '\''
+        );
+    }
+
+    /**
+     * The other issued records of one customer with the same issue date, as lookupDate() reads it, that were last
+     * synced before the given time.
+     *
+     * @param int    $idCustomer
+     * @param int    $exceptId    the viewed record
+     * @param string $date        Y-m-d issue date
+     * @param string $staleBefore date time
+     * @return IfirmaReceipt[]
+     */
+    public static function findStaleIssuedOfCustomerOnDate($idCustomer, $exceptId, $date, $staleBefore)
+    {
+        $rows = Db::getInstance()->executeS(
+            'SELECT id_ifirma_receipt FROM `' . _DB_PREFIX_ . 'ifirma_receipt`
+             WHERE id_customer = ' . (int) $idCustomer . '
+             AND id_ifirma_receipt != ' . (int) $exceptId . '
+             AND ifirma_id != \'\' AND status != \'error\'
+             AND COALESCE(NULLIF(issue_date, \'0000-00-00\'), DATE(date_add)) = \'' . pSQL($date) . '\'
+             AND (last_sync_at IS NULL OR last_sync_at < \'' . pSQL($staleBefore) . '\')
+             ORDER BY id_ifirma_receipt
+             LIMIT ' . self::SYNC_SIBLING_LIMIT
         );
 
         $receipts = array();
