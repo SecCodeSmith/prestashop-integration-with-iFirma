@@ -443,9 +443,50 @@ class SchemaTest extends TestCase
         $sql = IfirmaSchema::receiptCreateSql();
 
         $this->assertStringContainsString("    `last_download_at` DATETIME NULL,\n    `delivery_attempts`", $sql);
-        $this->assertStringContainsString("    `delivery_retry_at` DATETIME NULL,\n    `download_day` DATE NULL,\n    `download_count` INT(11) UNSIGNED NOT NULL DEFAULT 0,\n    PRIMARY KEY", $sql);
+        $this->assertStringContainsString("    `delivery_retry_at` DATETIME NULL,\n    `download_day` DATE NULL,\n    `download_count` INT(11) UNSIGNED NOT NULL DEFAULT 0,\n    `sync_attempt_at` DATETIME NULL,\n    PRIMARY KEY", $sql);
         $this->assertStringContainsString("    KEY `idx_date_upd` (`date_upd`)\n) ENGINE=", $sql);
         $this->assertStringContainsString("    KEY `idx_token` (`security_token`),\n    KEY `idx_date_upd`", $sql);
+    }
+
+    public function testEnsureReceiptSyncAttemptColumnAddsTheColumnOnce()
+    {
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'sync_attempt_at'/", '0');
+
+        $this->assertTrue(IfirmaSchema::ensureReceiptSyncAttemptColumn());
+        $this->assertTrue(IfirmaSchema::ensureReceiptSyncAttemptColumn());
+
+        $this->assertSame(array(
+            'ALTER TABLE `ps_ifirma_receipt` ADD COLUMN `sync_attempt_at` DATETIME NULL',
+        ), $this->addColumnStatements());
+    }
+
+    public function testEnsureReceiptSyncAttemptColumnSkipsAnExistingColumn()
+    {
+        Db::getInstance()->whenGetValue("/COLUMN_NAME = 'sync_attempt_at'/", '1');
+
+        $this->assertTrue(IfirmaSchema::ensureReceiptSyncAttemptColumn());
+        $this->assertSame(array(), $this->addColumnStatements());
+    }
+
+    public function testEnsureReceiptSyncAttemptColumnDoesNotRememberAFailure()
+    {
+        $db = Db::getInstance();
+        $db->whenGetValue("/COLUMN_NAME = 'sync_attempt_at'/", '0');
+        $db->whenExecute('/ADD COLUMN `sync_attempt_at`/', false);
+
+        $this->assertFalse(IfirmaSchema::ensureReceiptSyncAttemptColumn());
+
+        $db->whenExecute('/ADD COLUMN `sync_attempt_at`/', true);
+        $this->assertTrue(IfirmaSchema::ensureReceiptSyncAttemptColumn());
+        $this->assertCount(2, $this->addColumnStatements());
+    }
+
+    public function testTheCustomerSyncBudgetCountersHaveEmptyDefaults()
+    {
+        $defaults = IfirmaSchema::configurationDefaults();
+
+        $this->assertSame('', $defaults['IFIRMA_SYNC_CUSTOMER_MINUTE']);
+        $this->assertSame('', $defaults['IFIRMA_SYNC_CUSTOMER_DAY']);
     }
 
     public function testReceiptDownloadColumnIsAddedToTheFreshSchemaOnly()
