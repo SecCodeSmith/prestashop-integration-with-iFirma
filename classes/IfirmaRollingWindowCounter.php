@@ -76,6 +76,41 @@ class IfirmaRollingWindowCounter
     }
 
     /**
+     * Gives back a slot that take() took at $second. Nothing changes when the row no longer holds a positive count
+     * for that second (it left the window, or was re-dated), so a unit can never be given back twice or for a
+     * request that was counted elsewhere. A slot taken at second S is to be given back at second S.
+     *
+     * @param string $key
+     * @param int    $second the second the slot was taken at
+     * @param int    $now    unix time
+     */
+    public function giveBack($key, $second, $now)
+    {
+        for ($attempt = 0; $attempt < self::MAX_ATTEMPTS; $attempt++) {
+            $stored = $this->storedValue($key);
+            if ($stored === false || $stored === null) {
+                return;
+            }
+            $dated = $this->datedSeconds((string) $stored);
+            if (!isset($dated[(int) $second]) || $dated[(int) $second] < 1) {
+                return;
+            }
+            $seconds = $this->windowOf($dated, (int) $now);
+            $counted = min((int) $second, (int) $now);
+            if (!isset($seconds[$counted])) {
+                return;
+            }
+            $seconds[$counted]--;
+            if ($seconds[$counted] < 1) {
+                unset($seconds[$counted]);
+            }
+            if ($this->replaceIfUnchanged($key, (string) $stored, $this->serialise($seconds))) {
+                return;
+            }
+        }
+    }
+
+    /**
      * @param string $key
      * @param int    $cap
      * @param int    $now

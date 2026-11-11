@@ -243,7 +243,7 @@ class DownloadDayCapFrontTest extends TestCase
     public function testADownloadRefusedByTheSharedBudgetIsNotCounted()
     {
         $receipts = $this->customerWithDocuments(self::A, 1);
-        Configuration::updateValue('IFIRMA_DL_CUSTOMER_MINUTE', date('YmdHi', IfirmaTestBudgetReceiptController::$now) . ':20');
+        Configuration::updateValue('IFIRMA_DL_CUSTOMER_MINUTE', IfirmaTestBudgetReceiptController::$now . '=20');
 
         $this->assertSame('429-limit', $this->download($this->tokenOf($receipts[0]), self::A));
         $this->assertSame(0, $this->total(self::A));

@@ -1136,10 +1136,7 @@ function smokeCustomerPageSyncChecks($module)
         assertSame($beforeOtherDate['last_sync_at'], smokeSyncRow($otherDate)['last_sync_at'], 'customer page sync: the record of the other issue date is unchanged');
 
         smokeMakeSyncStale($records);
-        if (time() % 60 >= 50) {
-            sleepToNextMinute(); // the full counter is the current minute's
-        }
-        $full = date(IfirmaCustomerSyncBudget::MINUTE_BUCKET_FORMAT) . ':' . IfirmaCustomerSyncBudget::MINUTE_CAP;
+        $full = time() . '=' . IfirmaCustomerSyncBudget::MINUTE_CAP;
         smokeWriteSetting($minuteKey, $full);
         $before = smokeSyncRow($records[0]);
         $calls = mockCallCount();
@@ -2000,7 +1997,7 @@ function smokeCustomerBudgetChecks($actions)
     }
     $record = smokeIssuedRecordFor($order);
     $windows = array(
-        'minute' => array(IfirmaDownloadBudget::CUSTOMER_MINUTE_KEY, IfirmaDownloadBudget::MINUTE_BUCKET_FORMAT, IfirmaDownloadBudget::CUSTOMER_MINUTE_CAP),
+        'minute' => array(IfirmaDownloadBudget::CUSTOMER_MINUTE_KEY, '', IfirmaDownloadBudget::CUSTOMER_MINUTE_CAP),
         'day' => array(IfirmaDownloadBudget::CUSTOMER_DAY_KEY, IfirmaDownloadBudget::DAY_BUCKET_FORMAT, IfirmaDownloadBudget::CUSTOMER_DAY_CAP),
     );
     $previous = array();
@@ -2017,10 +2014,7 @@ function smokeCustomerBudgetChecks($actions)
             skip('customer budget: the download over HTTP', 'the owner could not be logged in over HTTP with the demo password (HTTP ' . $probe['code'] . '); the budget is asserted through its class');
         }
         foreach ($windows as $name => $spec) {
-            if (time() % 60 >= 50) {
-                sleepToNextMinute(); // the full counter is the current minute's
-            }
-            $full = date($spec[1]) . ':' . $spec[2];
+            $full = $name === 'minute' ? time() . '=' . $spec[2] : date($spec[1]) . ':' . $spec[2];
             smokeWriteSetting($spec[0], $full);
             smokeClearDownloadStamp($record);
             $calls = mockCallCount();
@@ -2044,7 +2038,7 @@ function smokeCustomerBudgetChecks($actions)
             $again = smokeDownloadAs($order, $record);
             assertSame(200, $again['code'], 'customer budget: the owner download works again once the counters are cleared');
             assertSame($calls + 1, mockCallCount(), 'customer budget: that download sent exactly one request');
-            assertTrue(preg_match('/^\d{12}:1$/', (string) smokeStoredValue(IfirmaDownloadBudget::CUSTOMER_MINUTE_KEY)) === 1, 'customer budget: the download took one unit of the minute counter', (string) smokeStoredValue(IfirmaDownloadBudget::CUSTOMER_MINUTE_KEY));
+            assertTrue(preg_match('/^\d+=1$/', (string) smokeStoredValue(IfirmaDownloadBudget::CUSTOMER_MINUTE_KEY)) === 1, 'customer budget: the download took one unit of the minute counter', (string) smokeStoredValue(IfirmaDownloadBudget::CUSTOMER_MINUTE_KEY));
         }
     } finally {
         foreach ($previous as $key => $value) {
@@ -2152,8 +2146,8 @@ function smokeEmployeeDownloadBudgetChecks($dispatch)
         return;
     }
     $windows = array(
-        'minute' => array(IfirmaDownloadBudget::EMPLOYEE_MINUTE_KEY, IfirmaDownloadBudget::MINUTE_BUCKET_FORMAT, IfirmaDownloadBudget::EMPLOYEE_MINUTE_CAP),
-        'day' => array(IfirmaDownloadBudget::EMPLOYEE_DAY_KEY, IfirmaDownloadBudget::DAY_BUCKET_FORMAT, IfirmaDownloadBudget::EMPLOYEE_DAY_CAP),
+        'minute' => array(IfirmaDownloadBudget::EMPLOYEE_MINUTE_KEY, '', IfirmaDownloadBudget::EMPLOYEE_MINUTE_CAP, 61),
+        'day' => array(IfirmaDownloadBudget::EMPLOYEE_DAY_KEY, IfirmaDownloadBudget::DAY_BUCKET_FORMAT, IfirmaDownloadBudget::EMPLOYEE_DAY_CAP, IfirmaRetryAfter::DAY_WINDOW_CAP_SECONDS),
     );
     $previous = array();
     foreach ($windows as $spec) {
@@ -2165,15 +2159,12 @@ function smokeEmployeeDownloadBudgetChecks($dispatch)
         $record = smokeIssuedRecordFor($order);
         $_POST['id_order'] = $_GET['id_order'] = (string) (int) $order->id;
         foreach ($windows as $name => $spec) {
-            if (time() % 60 >= 50) {
-                sleepToNextMinute();
-            }
-            $full = date($spec[1]) . ':' . $spec[2];
+            $full = $name === 'minute' ? time() . '=' . $spec[2] : date($spec[1]) . ':' . $spec[2];
             smokeWriteSetting($spec[0], $full);
             $calls = mockCallCount();
             $label = 'employee budget (' . $name . ')';
             $out = $dispatch('ajaxProcessDownloadPdf');
-            assertTrue($out['kind'] === 'limit' && $out['seconds'] >= 1 && $out['seconds'] <= 60, $label . ': the download answers 429 with a Retry-After between 1 and 60', json_encode($out));
+            assertTrue($out['kind'] === 'limit' && $out['seconds'] >= 1 && $out['seconds'] <= $spec[3], $label . ': the download answers 429 with a Retry-After between 1 and ' . $spec[3], json_encode($out));
             assertSame('The PDF was not downloaded: the back-office download limit is reached. Try again in a moment.', isset($out['text']) ? (string) $out['text'] : null, $label . ': the answer is the back-office message');
             assertSame($calls, mockCallCount(), $label . ': the refused download reached the mock with no call');
             assertSame($full, smokeStoredValue($spec[0]), $label . ': the refused download left the counter unchanged');
@@ -3033,14 +3024,6 @@ function cronOverHttp()
     $data = json_decode((string) $answer['body'], true);
 
     return array('code' => $answer['code'], 'data' => is_array($data) ? $data : null, 'raw' => $answer['body']);
-}
-
-/** Sleeps until one second into the next calendar minute, so every window of the download budgets starts fresh. */
-function sleepToNextMinute()
-{
-    $wait = 61 - (time() % 60);
-    smokeOut('INFO', 'waiting ' . $wait . ' s for the next minute');
-    sleep($wait);
 }
 
 /** Waits until the requests the module counted in the last 60 seconds are all older than that (at most 61 seconds). */

@@ -88,6 +88,12 @@ The module SHALL count its own requests of the last 60 seconds and per calendar 
 - **THEN** those requests are counted as requests of the current second and the request is not sent
 - **AND** a request started 61 seconds later is sent
 
+#### Scenario: Downloads cannot take the whole window
+- **GIVEN** the minute cap is 80, and 20 customer downloads and 30 back-office downloads were sent at 10:00:59
+- **WHEN** the same customers and employees download again at 10:01:00 and an order reaches the trigger status at 10:01:00
+- **THEN** none of those downloads is sent
+- **AND** the order's document is issued
+
 #### Scenario: Day cap setting
 - **WHEN** the module is installed, or a shop running 1.6.0 is upgraded
 - **THEN** `IFIRMA_RATE_MAX_PER_DAY` is 14000, and saving 0 or 15001 on the settings page is refused

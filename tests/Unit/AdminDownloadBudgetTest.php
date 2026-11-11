@@ -89,7 +89,7 @@ class AdminDownloadBudgetTest extends TestCase
 
     private function minute()
     {
-        return date('YmdHi', IfirmaTestBudgetAdminController::$now);
+        return (string) IfirmaTestBudgetAdminController::$now;
     }
 
     public function testThirtyDownloadsInAMinuteReachIfirmaAndTheThirtyFirstIsRefusedWith429AndNothingIsSent()
@@ -104,7 +104,7 @@ class AdminDownloadBudgetTest extends TestCase
         $this->assertCount(30, $this->t->calls);
         $this->assertSame(0, $controller->streamed);
         $this->assertCount(1, $controller->limits);
-        $this->assertSame(55, $controller->limits[0][0], 'the seconds to the next minute');
+        $this->assertSame(61, $controller->limits[0][0], 'the seconds until the budget has room again');
         $this->assertSame(
             'The PDF was not downloaded: the back-office download limit is reached. Try again in a moment.',
             $controller->limits[0][1]
@@ -121,13 +121,15 @@ class AdminDownloadBudgetTest extends TestCase
         $this->assertTrue((new IfirmaRateGuard())->admit()->isAllowed());
     }
 
-    public function testTheNextMinuteStartsANewBudget()
+    public function testTheBudgetIsFreeAgainOnceTheDownloadsAreOlderThanSixtySeconds()
     {
         $this->makeReceipt();
-        Configuration::updateValue('IFIRMA_DL_EMPLOYEE_MINUTE', $this->minute() . ':30');
+        Configuration::updateValue('IFIRMA_DL_EMPLOYEE_MINUTE', $this->minute() . '=30');
         $this->assertCount(1, $this->download()->limits);
 
         IfirmaTestBudgetAdminController::$now += 60;
+        $this->assertCount(1, $this->download()->limits, 'exactly 60 seconds old is still counted');
+        IfirmaTestBudgetAdminController::$now += 1;
 
         $this->assertSame(1, $this->download()->streamed);
     }
@@ -135,7 +137,7 @@ class AdminDownloadBudgetTest extends TestCase
     public function testAnEmployeeWithoutTheViewLevelGetsTheAccessDeniedAnswerNotTheLimit()
     {
         $this->makeReceipt();
-        Configuration::updateValue('IFIRMA_DL_EMPLOYEE_MINUTE', $this->minute() . ':30');
+        Configuration::updateValue('IFIRMA_DL_EMPLOYEE_MINUTE', $this->minute() . '=30');
         Context::getContext()->employee->id_profile = 4;
 
         $controller = $this->download();
@@ -158,7 +160,7 @@ class AdminDownloadBudgetTest extends TestCase
 
         $this->download();
 
-        $this->assertSame($this->minute() . ':1', Configuration::get('IFIRMA_DL_EMPLOYEE_MINUTE'));
+        $this->assertSame($this->minute() . '=1', Configuration::get('IFIRMA_DL_EMPLOYEE_MINUTE'));
         $this->assertFalse(Configuration::hasKey('IFIRMA_DL_CUSTOMER_MINUTE'));
         $this->assertFalse(Configuration::hasKey('IFIRMA_DL_CUSTOMER_DAY'));
     }
@@ -166,24 +168,24 @@ class AdminDownloadBudgetTest extends TestCase
     public function testADownloadThatTheSharedGuardRefusesGivesItsUnitBack()
     {
         $this->makeReceipt();
-        Configuration::updateValue('IFIRMA_DL_EMPLOYEE_MINUTE', $this->minute() . ':3');
+        Configuration::updateValue('IFIRMA_DL_EMPLOYEE_MINUTE', $this->minute() . '=3');
         Configuration::updateValue('IFIRMA_RATE_BACKOFF_UNTIL', (string) (time() + 5000));
 
         $controller = $this->download();
 
         $this->assertCount(1, $controller->limits);
         $this->assertSame(array(), $this->t->calls);
-        $this->assertSame($this->minute() . ':3', Configuration::get('IFIRMA_DL_EMPLOYEE_MINUTE'));
+        $this->assertSame($this->minute() . '=3', Configuration::get('IFIRMA_DL_EMPLOYEE_MINUTE'));
     }
 
     public function testADownloadRefusedByTheBudgetSpendsNothingMore()
     {
         $this->makeReceipt();
-        Configuration::updateValue('IFIRMA_DL_EMPLOYEE_MINUTE', $this->minute() . ':30');
+        Configuration::updateValue('IFIRMA_DL_EMPLOYEE_MINUTE', $this->minute() . '=30');
 
         $this->download();
 
-        $this->assertSame($this->minute() . ':30', Configuration::get('IFIRMA_DL_EMPLOYEE_MINUTE'));
+        $this->assertSame($this->minute() . '=30', Configuration::get('IFIRMA_DL_EMPLOYEE_MINUTE'));
     }
 
     public function testTheDayBudgetOfTheBackOfficeIsUsedUpAfterTwoThousandDownloadsAndSendsNothing()
@@ -196,5 +198,18 @@ class AdminDownloadBudgetTest extends TestCase
         $this->assertCount(1, $controller->limits);
         $this->assertSame(array(), $this->t->calls);
         $this->assertFalse(Configuration::hasKey('IFIRMA_RATE_DAY_WINDOW'), 'the shared day counter is untouched');
+    }
+
+    public function testADayRefusalOfTheBackOfficeAnswersTheDayWaitNotOneSecond()
+    {
+        $this->makeReceipt();
+        Configuration::updateValue('IFIRMA_DL_EMPLOYEE_DAY', '20261110:2000');
+
+        $this->assertSame(3600, $this->download()->limits[0][0], 'at most an hour');
+
+        IfirmaTestBudgetAdminController::$now = strtotime('2026-11-10 23:59:30');
+        Configuration::updateValue('IFIRMA_DL_EMPLOYEE_DAY', '20261110:2000');
+
+        $this->assertSame(30, $this->download()->limits[0][0], 'the seconds to midnight');
     }
 }

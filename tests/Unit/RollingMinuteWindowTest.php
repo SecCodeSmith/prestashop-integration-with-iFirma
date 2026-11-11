@@ -443,4 +443,99 @@ class RollingMinuteWindowTest extends TestCase
         $this->clockAt(10, 1, 1);
         $this->assertTrue($this->guard->admit()->isAllowed());
     }
+
+    private function counter()
+    {
+        return new IfirmaRollingWindowCounter();
+    }
+
+    public function testAGiveBackLowersTheCountOfItsSecondByOne()
+    {
+        Configuration::updateValue(self::KEY, ($this->now - 5) . '=3,' . $this->now . '=2');
+
+        $this->counter()->giveBack(self::KEY, $this->now, $this->now);
+
+        $this->assertSame(($this->now - 5) . '=3,' . $this->now . '=1', Configuration::get(self::KEY));
+    }
+
+    public function testAGiveBackOfTheLastUnitOfASecondRemovesThePair()
+    {
+        Configuration::updateValue(self::KEY, $this->now . '=1');
+
+        $this->counter()->giveBack(self::KEY, $this->now, $this->now);
+
+        $this->assertSame('', Configuration::get(self::KEY));
+    }
+
+    public function testAGiveBackForASecondThatLeftTheWindowChangesNothing()
+    {
+        Configuration::updateValue(self::KEY, $this->now . '=4');
+
+        $this->counter()->giveBack(self::KEY, $this->now - 100, $this->now);
+
+        $this->assertSame($this->now . '=4', Configuration::get(self::KEY));
+        $this->assertSame(array(), preg_grep('/^UPDATE/', Db::getInstance()->rateQueries));
+    }
+
+    public function testAGiveBackForASecondStillInTheRowButOutsideTheWindowChangesNothing()
+    {
+        Configuration::updateValue(self::KEY, ($this->now - 100) . '=3,' . $this->now . '=2');
+
+        $this->counter()->giveBack(self::KEY, $this->now - 100, $this->now);
+
+        $this->assertSame(($this->now - 100) . '=3,' . $this->now . '=2', Configuration::get(self::KEY));
+    }
+
+    public function testAGiveBackForASecondThatHoldsNoCountChangesNothing()
+    {
+        Configuration::updateValue(self::KEY, ($this->now - 5) . '=4');
+
+        $this->counter()->giveBack(self::KEY, $this->now, $this->now);
+
+        $this->assertSame(($this->now - 5) . '=4', Configuration::get(self::KEY));
+    }
+
+    public function testAGiveBackOnAMissingRowChangesNothing()
+    {
+        $this->counter()->giveBack(self::KEY, $this->now, $this->now);
+
+        $this->assertFalse(Configuration::hasKey(self::KEY));
+    }
+
+    public function testAGiveBackOfARequestDatedInTheFutureLowersTheCurrentSecond()
+    {
+        Configuration::updateValue(self::KEY, ($this->now + 40) . '=3');
+
+        $this->counter()->giveBack(self::KEY, $this->now + 40, $this->now);
+
+        $this->assertSame($this->now . '=2', Configuration::get(self::KEY));
+    }
+
+    public function testTwoGiveBacksAtTheSameMomentLoseNothing()
+    {
+        Configuration::updateValue(self::KEY, $this->now . '=5');
+        $counter = new RollingWindowCounterWithARival();
+        $counter->rivalActs = 1;
+        $counter->rival = function () {
+            (new IfirmaRollingWindowCounter())->giveBack(RollingMinuteWindowTest::KEY, $this->now, $this->now);
+        };
+
+        $counter->giveBack(self::KEY, $this->now, $this->now);
+
+        $this->assertSame($this->now . '=3', Configuration::get(self::KEY));
+    }
+
+    public function testAGiveBackThatKeepsLosingTheRowGivesUpWithoutLoweringBelowTheTruth()
+    {
+        Configuration::updateValue(self::KEY, $this->now . '=30');
+        $counter = new RollingWindowCounterWithARival();
+        $counter->rivalActs = 99;
+        $counter->rival = function () {
+            (new IfirmaRollingWindowCounter())->take(RollingMinuteWindowTest::KEY, 80, $this->now);
+        };
+
+        $counter->giveBack(self::KEY, $this->now, $this->now);
+
+        $this->assertSame($this->now . '=' . (30 + IfirmaRollingWindowCounter::MAX_ATTEMPTS), Configuration::get(self::KEY), 'only the rivals counted');
+    }
 }

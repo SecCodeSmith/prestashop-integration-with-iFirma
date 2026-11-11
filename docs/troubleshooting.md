@@ -181,7 +181,7 @@ which lists every download limit). The document itself is fine. This answer has 
 **What to do:** wait a few seconds and reload. If customers hit the limit routinely, look for something that downloads the
 PDF repeatedly, such as a link preview or a script. A download can also be refused with "Too many requests at the moment.
 Please try again shortly." when the customer has already downloaded 30 documents today, or when all customers together have
-used the customer download budget (20 per minute, 2,000 per day); it works again in the next minute or the next day.
+used the customer download budget (20 in any 60 seconds, 2,000 per day); it works again once those downloads are older than 60 seconds, or on the next day.
 
 ### HTTP 429 on a PDF download because of the module's request limit
 
@@ -218,8 +218,8 @@ exceeded").
 **Meaning:** **Refresh from iFirma** was refused by the request limit, so no list call was made. The stored state, the last
 sync time and the sync error of the document are unchanged and nothing was recorded as an error. The same refusal on the
 customer's order page is silent: the page shows the last known state. The page is also silent when the budget of the
-customer page syncs is used up (10 calls per calendar minute and 1,000 per calendar day for all customers together):
-no call is made, nothing is recorded, and the next page view after the minute or the day has passed tries again.
+customer page syncs is used up (10 calls in any 60 seconds and 1,000 per calendar day for all customers together):
+no call is made, nothing is recorded, and the next page view after those calls are older than 60 seconds, or after the day has passed, tries again.
 A customer's order pages start one list call per interval, so the page of a second order, of another issue date, opened
 within the interval shows the last known state until the cron reads it. A document that the customer's page could not find
 on the first page of a day with more than 100 documents, and any document other than the one opened that is not among the

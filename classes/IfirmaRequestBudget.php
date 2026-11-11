@@ -16,23 +16,31 @@ if (!defined('_PS_VERSION_')) {
 require_once dirname(__FILE__) . '/IfirmaRateWindow.php';
 require_once dirname(__FILE__) . '/IfirmaRateDecision.php';
 require_once dirname(__FILE__) . '/IfirmaWindowCounter.php';
+require_once dirname(__FILE__) . '/IfirmaRollingWindowCounter.php';
+require_once dirname(__FILE__) . '/IfirmaRetryAfter.php';
 
 /**
- * A named budget of iFirma requests per calendar minute and, optionally, per calendar day. It is independent of the
+ * A named budget of iFirma requests in any 60 seconds and, optionally, per calendar day. It is independent of the
  * rate guard: the requests a budget covers count here first, so they cannot use up the request limit that
- * issuance, the status sync and the cron share.
+ * issuance, the status sync and the cron share. The 60 seconds roll, like the guard's, so a burst around the turn of
+ * a calendar minute cannot take more than the cap.
  *
- * Counters are Configuration rows (see IfirmaWindowCounter). A unit is taken before the request is sent and given
- * back when the request was refused locally, so the count equals the requests that reached iFirma.
+ * Counters are Configuration rows (see IfirmaRollingWindowCounter and IfirmaWindowCounter). A unit is taken before
+ * the request is sent and given back when the request was refused locally, so the count equals the requests that
+ * reached iFirma.
  */
 class IfirmaRequestBudget
 {
-    const MINUTE_BUCKET_FORMAT = 'YmdHi';
     const DAY_BUCKET_FORMAT = 'Ymd';
-    const SECONDS_PER_MINUTE = 60;
 
-    /** @var IfirmaRateWindow[] */
-    private $windows;
+    /** @var string */
+    private $minuteKey;
+
+    /** @var int */
+    private $minuteCap;
+
+    /** @var IfirmaRateWindow|null */
+    private $dayWindow;
 
     /** @var callable|null returns the unix time; time() when null */
     private $clock;
@@ -40,38 +48,70 @@ class IfirmaRequestBudget
     /** @var IfirmaWindowCounter */
     private $counter;
 
-    /** @var array window name => bucket of the unit taken last, for give-back */
-    private $taken = array();
+    /** @var IfirmaRollingWindowCounter */
+    private $rolling;
+
+    /** @var int|null the second the last take() spent its unit of the minute window in, for give-back */
+    private $takenAtSecond;
+
+    /** @var string|null the day bucket the last take() spent its unit in, for give-back */
+    private $takenInDay;
+
+    /** @var string the IfirmaRateDecision::WINDOW_* that refused the last take(), '' when none did */
+    private $refusedBy = '';
 
     /**
-     * @param IfirmaRateWindow[]       $windows checked in the given order
-     * @param callable|null            $clock
-     * @param IfirmaWindowCounter|null $counter
+     * @param string                          $minuteKey Configuration row of the 60-second counter
+     * @param int                             $minuteCap most units in any 60 seconds
+     * @param IfirmaRateWindow|null           $dayWindow the per-day window, null for a budget without one
+     * @param callable|null                   $clock
+     * @param IfirmaWindowCounter|null        $counter
+     * @param IfirmaRollingWindowCounter|null $rolling
      */
-    public function __construct(array $windows, $clock = null, IfirmaWindowCounter $counter = null)
-    {
-        $this->windows = $windows;
+    public function __construct(
+        $minuteKey,
+        $minuteCap,
+        IfirmaRateWindow $dayWindow = null,
+        $clock = null,
+        IfirmaWindowCounter $counter = null,
+        IfirmaRollingWindowCounter $rolling = null
+    ) {
+        $this->minuteKey = (string) $minuteKey;
+        $this->minuteCap = (int) $minuteCap;
+        $this->dayWindow = $dayWindow;
         $this->clock = $clock;
         $this->counter = $counter !== null ? $counter : new IfirmaWindowCounter();
+        $this->rolling = $rolling !== null ? $rolling : new IfirmaRollingWindowCounter();
     }
 
     /**
-     * Takes one unit in every window. A refusal by a later window gives back what the earlier ones took.
+     * Takes one unit in the 60-second window, then in the day window. A refusal by the day window gives the minute
+     * unit back.
      *
      * @return bool false when a window is full (nothing is spent then)
      */
     public function take()
     {
         $now = $this->now();
-        $this->taken = array();
-        foreach ($this->windows as $window) {
-            if ($this->counter->take($window, $now) !== null) {
-                $this->release();
+        $this->takenAtSecond = null;
+        $this->takenInDay = null;
+        $this->refusedBy = '';
+        if ($this->rolling->take($this->minuteKey, $this->minuteCap, $now) !== null) {
+            $this->refusedBy = IfirmaRateDecision::WINDOW_MINUTE;
 
-                return false;
-            }
-            $this->taken[$window->getName()] = $window->bucketAt($now);
+            return false;
         }
+        $this->takenAtSecond = $now;
+        if ($this->dayWindow === null) {
+            return true;
+        }
+        if ($this->counter->take($this->dayWindow, $now) !== null) {
+            $this->refusedBy = IfirmaRateDecision::WINDOW_DAY;
+            $this->release();
+
+            return false;
+        }
+        $this->takenInDay = $this->dayWindow->bucketAt($now);
 
         return true;
     }
@@ -81,20 +121,31 @@ class IfirmaRequestBudget
      */
     public function release()
     {
-        foreach ($this->windows as $window) {
-            if (isset($this->taken[$window->getName()])) {
-                $this->counter->giveBack($window, $this->taken[$window->getName()]);
-            }
+        $atSecond = $this->takenAtSecond;
+        $inDay = $this->takenInDay;
+        // Forgotten first: when a give-back fails, a caller that releases again must not give a unit back twice.
+        $this->takenAtSecond = null;
+        $this->takenInDay = null;
+        if ($atSecond !== null) {
+            $this->rolling->giveBack($this->minuteKey, $atSecond, $this->now());
         }
-        $this->taken = array();
+        if ($inDay !== null) {
+            $this->counter->giveBack($this->dayWindow, $inDay);
+        }
     }
 
     /**
-     * @return int seconds until the next calendar minute, 1 to 60
+     * @return int seconds to wait after the last take() was refused, by the rules of IfirmaRetryAfter: until the
+     *             60-second window has room for a unit again, or the day rule; 1 when nothing was refused
      */
-    public function secondsToNextMinute()
+    public function secondsUntilRoom()
     {
-        return self::SECONDS_PER_MINUTE - ($this->now() % self::SECONDS_PER_MINUTE);
+        $now = $this->now();
+        $minuteFreeAt = $this->refusedBy === IfirmaRateDecision::WINDOW_MINUTE
+            ? $this->rolling->freeAt($this->minuteKey, $this->minuteCap, $now)
+            : 0;
+
+        return IfirmaRetryAfter::seconds($this->refusedBy, $now, 0, $minuteFreeAt);
     }
 
     /**

@@ -209,7 +209,7 @@ Three ways to sync:
    than 100 documents; any other document that is not among the rows keeps its stored state
    and is left to the cron, as is a document that is not on the first page of a day with more
    than 100 documents. The customer's order pages together have their own budget of 10 calls
-   per calendar minute and 1,000 per calendar day. When it is used up, or the module's request limit refuses the
+   in any 60 seconds and 1,000 per calendar day. When it is used up, or the module's request limit refuses the
    call, no call is made and the page shows the last known state without an error. A refused
    call uses no budget, and the next page view tries again.
 3. **Cron** - bulk sync of receipts that are not paid, not remotely sent or not synced for
@@ -355,15 +355,15 @@ Customer texts are translatable (`translations/pl.php` ships Polish).
 ### Download limits
 
 A PDF download fetches the document from iFirma every time, so it passes several limits. None of the caps is a setting. The
-calendar minute and the calendar day are those of the shop's time zone. All limits together:
+calendar day is that of the shop's time zone; the budgets and the request limit count any 60 seconds, not a calendar minute. All limits together:
 
 | Limit | Applies to | Cap | Answer over the cap |
 |---|---|---|---|
 | Per document | a customer, one document | once every 30 seconds | HTTP 429, "Please wait a moment before downloading the document again.", no `Retry-After` |
 | Per customer, short | a customer, all documents | 10 documents in any 60 seconds | the same answer |
 | Per customer, day | a customer, all documents | 30 per calendar day | HTTP 429, `Retry-After: 60`, "Too many requests at the moment. Please try again shortly." |
-| All customers | every customer together | 20 per calendar minute and 2,000 per calendar day | the same answer as the per-customer day cap |
-| Back office | every employee together | 30 per calendar minute and 2,000 per calendar day | HTTP 429, `Retry-After` with the seconds to the next minute, "The PDF was not downloaded: the back-office download limit is reached. Try again in a moment." |
+| All customers | every customer together | 20 in any 60 seconds and 2,000 per calendar day | the same answer as the per-customer day cap |
+| Back office | every employee together | 30 in any 60 seconds and 2,000 per calendar day | HTTP 429, `Retry-After` with the seconds until the budget has room again (1 to 61; for the day budget the seconds to the next day, at most 3600), "The PDF was not downloaded: the back-office download limit is reached. Try again in a moment." |
 | The module's request limit | every request to iFirma, downloads included | 80 per minute and 14,000 per day (see [Rate limits](configuration.md#rate-limits)), and a back-off after iFirma's own limit answer | customer: HTTP 429, `Retry-After: 60`, the same generic text; employee: HTTP 429, `Retry-After` of the refusing window, a text that names it |
 
 The last row sits above the others: every download that reaches iFirma is also one request of the module. The customer budget
@@ -378,7 +378,7 @@ spends nothing of the later ones:
 2. The customer's day cap (30). A request over it is refused here and uses no slot of anything below.
 3. The throttle claim: the 10-documents-per-60-seconds count of the customer, then the 30-second slot of the document, taken in one
    statement.
-4. The budget of all customers (20 per minute, 2,000 per day): one unit of each window.
+4. The budget of all customers (20 in any 60 seconds, 2,000 per day): one unit of each window.
 5. The customer's day count: one unit.
 6. The request to iFirma, which first passes the module's request limit.
 
@@ -393,8 +393,8 @@ count. It exists so one account cannot use up the shop-wide budget for everyone 
 rows (`download_day`, `download_count`).
 
 **The back-office Download PDF** needs the view level and has a budget of its own, separate from the customers': all employees
-together can send 30 downloads per calendar minute and 2,000 per calendar day. A download over either answers HTTP 429 with a
-`Retry-After` header (the seconds to the next minute) and the text above; nothing is sent to iFirma. Issuing documents is not
+together can send 30 downloads in any 60 seconds and 2,000 per calendar day. A download over either answers HTTP 429 with a
+`Retry-After` header (the seconds until the budget has room again, 1 to 61; for the day budget the seconds to the next day, at most 3600) and the text above; nothing is sent to iFirma. Issuing documents is not
 affected. An employee without the view level still gets the access-denied answer first. When the module's request limit refuses
 an employee's download, the answer names the window: "The PDF was not downloaded: the minute request limit is reached. Try again
 in a moment.", "... the day request limit is reached. Try again later." or "... iFirma asked the module to wait before the next
