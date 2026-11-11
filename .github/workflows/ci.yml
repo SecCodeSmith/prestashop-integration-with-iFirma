@@ -129,6 +129,8 @@ jobs:
         run: python3 -m unittest discover -s tests/tools -p "test_*.py"
       - name: Node tool tests (release summary, release plan)
         run: node --test tests/tools/*.test.mjs
+      - name: Shipped back-office JavaScript tests (order cell click, bulk batch continuation)
+        run: node --test tests/js/*.test.mjs
 
   build:
     name: Test build (zip + tgz)

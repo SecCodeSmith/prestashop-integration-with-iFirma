@@ -124,6 +124,9 @@ that last step fails, start CI by hand: Actions -> *CI* -> *Run workflow* on tag
 Tool tests (no PHP needed): `python -m unittest discover -s tests/tools -p "test_*.py"` and
 `node --test tests/tools/*.test.mjs`. The zip is written by `scripts/zip-writer.mjs`, not by a dependency: every
 `archiver` release carries an unfixable `minimatch` advisory, so it was replaced on 2026-11-09.
+`node --test tests/js/*.test.mjs` runs the shipped back-office script `views/js/admin/ifirma-bulk.js` unchanged against a
+small hand-written DOM fake: it covers the Orders-grid cell click (only the Issue action is stopped) and the batch
+continuation of a bulk run. It needs no browser and no dependency.
 
 ### Security scanning
 
