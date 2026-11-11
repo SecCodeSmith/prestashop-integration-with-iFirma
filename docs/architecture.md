@@ -148,6 +148,8 @@ Two plain JavaScript files in [`views/js/admin/`](../views/js/admin/) hold no te
 | [`IfirmaDataRequest`](../classes/IfirmaDataRequest.php) | ObjectModel of `ifirma_data_request`; also declares `IfirmaDataRequestException`. |
 | [`IfirmaContractorMap`](../classes/IfirmaContractorMap.php) | ObjectModel of `ifirma_contractor_map`: one customer, one iFirma contractor. |
 | [`IfirmaSchema`](../classes/IfirmaSchema.php) | Single source of the schema and the configuration defaults. |
+| [`IfirmaPdfCopyStore`](../classes/IfirmaPdfCopyStore.php) | Keeps one copy of a document PDF per receipt in `ifirma_pdf_copy`: `save` (one `REPLACE`, the bytes sent as hex, at most 1 MiB), `find`, `findWithoutContent`, and the deletes (one document, one customer, older than a cutoff, all). It stores and reads; it does not decide whether a copy may be served. |
+| [`IfirmaPdfCopy`](../classes/IfirmaPdfCopy.php) | Immutable value: one stored copy (document id, fingerprint, recorded length, storage time, content or null). `isIntact()` is true only when the content has the recorded length and starts with `%PDF`. |
 
 **Delivery**
 
@@ -307,6 +309,8 @@ The schema is defined once in [`classes/IfirmaSchema.php`](../classes/IfirmaSche
 `ps_ifirma_contractor_map` (new in 1.1.0) - one row per customer linking it to an iFirma contractor: `id_customer` (unique), `ifirma_identifier`, `matched_by` (`module`, `nip`, `name`, `email`, `import-nip`, `import-email`, `import-name`, `manual`), `ifirma_name`. Created on install, on upgrade and, when missing, on first use. See [Linking existing contractors](contractors.md).
 
 `ps_ifirma_data_request` (new in 1.1.0) - customer requests to change the buyer data (company, NIP, address) used on a document. One row per request: order, customer and shop; `status` (`pending` / `approved` / `rejected` / `cancelled`); `requested_data` and `approved_data` (JSON); `customer_note` and `admin_note`; `resolved_by` (employee id) and the `date_add`, `date_upd` and `date_resolved` timestamps.
+
+`ps_ifirma_pdf_copy` - at most one stored copy of a document PDF per receipt: `id_ifirma_receipt` (primary key), `fingerprint` (`CHAR(64)`), `byte_length`, `content` (`MEDIUMBLOB`) and `stored_at` (indexed). It is created on install and by the upgrade script, when missing on first use, and dropped on uninstall. See [Development](development.md) for how the bytes are written.
 
 Configuration keys (defaults in `IfirmaSchema`; the settings walk-through is in [configuration.md](configuration.md)):
 
