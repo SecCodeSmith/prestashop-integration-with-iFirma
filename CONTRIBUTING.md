@@ -81,8 +81,9 @@ PrestaShop 8.0 to 9.x.
 composer coverage
 ```
 
-writes `build/coverage.xml`. Every changed line must be covered: the diff-cover
-gate requires **100%** of changed lines. Coverage is a floor, not the goal; the
+writes `build/coverage.xml`. Cover every changed line that can run under PHPUnit: the
+diff-cover gate requires **95%** of changed lines, because a few lines cannot run there
+(a response that ends in `exit()`, for example). Coverage is a floor, not the goal; the
 tests must prove behaviour.
 
 ## Documentation

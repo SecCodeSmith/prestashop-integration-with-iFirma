@@ -11,7 +11,7 @@
 - [ ] Scenarios are written as Given / When / Then in the OpenSpec change, including the negative and edge cases
 - [ ] A failing test was shown first, for each behaviour in this change (bug fixes start with a reproducing test)
 - [ ] `composer test` is green
-- [ ] Diff coverage is 100% of changed lines (`composer coverage` and the diff-cover gate)
+- [ ] Diff coverage is at least 95% of changed lines (`composer coverage` and the diff-cover gate); every line that can run under PHPUnit is covered
 - [ ] `docs/` and the OpenSpec change (tasks, specs) are updated
 - [ ] Smoke scenario run, if the change crosses the shop, API, mail or admin boundary
 - [ ] No secrets, API keys, tokens, passwords or customer data in the diff, tests, fixtures or docs
