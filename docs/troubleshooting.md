@@ -214,7 +214,13 @@ exceeded").
 
 **Meaning:** **Refresh from iFirma** was refused by the request limit, so no list call was made. The stored state, the last
 sync time and the sync error of the document are unchanged and nothing was recorded as an error. The same refusal on the
-customer's order page is silent: the page shows the last known state.
+customer's order page is silent: the page shows the last known state. The page is also silent when the budget of the
+customer page syncs is used up (10 calls per calendar minute and 1,000 per calendar day for all customers together):
+no call is made, nothing is recorded, and the next page view after the minute or the day has passed tries again.
+A customer's order pages start one list call per interval, so the page of a second order, of another issue date, opened
+within the interval shows the last known state until the cron reads it. A document that the customer's page could not find
+on the first page of a day with more than 100 documents, and any document other than the one opened that is not among the
+rows, keeps its stored state until the cron reads it; it is not shown as missing in iFirma.
 
 **What to do:** wait a moment and click **Refresh from iFirma** again.
 

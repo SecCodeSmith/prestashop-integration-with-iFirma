@@ -30,12 +30,15 @@ if (!defined('_PS_VERSION_')) {
 require_once dirname(__FILE__) . '/IfirmaApiClient.php';
 require_once dirname(__FILE__) . '/IfirmaReceipt.php';
 require_once dirname(__FILE__) . '/IfirmaDataRequest.php';
+require_once dirname(__FILE__) . '/IfirmaCustomerSyncBudget.php';
 
 class IfirmaStatusSyncService
 {
     const PAGE_SIZE = 100;
     const OPPORTUNISTIC_TIMEOUT = 5;
     const STALE_HOURS = 24;
+    const DEFAULT_INTERVAL_MIN = 15;
+    const SECONDS_PER_MINUTE = 60;
 
     /** @var IfirmaApiClient */
     private $client;
@@ -43,14 +46,19 @@ class IfirmaStatusSyncService
     /** @var callable|null returns a unix timestamp */
     private $clock;
 
+    /** @var IfirmaRequestBudget the budget of the syncs that customers' order pages start */
+    private $customerSyncBudget;
+
     /**
-     * @param IfirmaApiClient $client
-     * @param callable|null   $clock
+     * @param IfirmaApiClient          $client
+     * @param callable|null            $clock
+     * @param IfirmaRequestBudget|null $customerSyncBudget
      */
-    public function __construct(IfirmaApiClient $client, $clock = null)
+    public function __construct(IfirmaApiClient $client, $clock = null, IfirmaRequestBudget $customerSyncBudget = null)
     {
         $this->client = $client;
         $this->clock = $clock;
+        $this->customerSyncBudget = $customerSyncBudget !== null ? $customerSyncBudget : IfirmaCustomerSyncBudget::create($clock);
     }
 
     /**
@@ -108,21 +116,10 @@ class IfirmaStatusSyncService
 
         while (true) {
             $calls++;
-            $batch = $this->client->listInvoices(array(
-                'dataOd' => $date,
-                'dataDo' => $date,
-                'iloscNaStronie' => self::PAGE_SIZE,
-                'strona' => $page,
-            ), 'faktura', $timeout);
+            $batch = $this->requestPage($date, $page, $timeout);
 
             if ($batch === null) {
-                return array(
-                    'rows' => null,
-                    'error' => (string) $this->client->getLastError(),
-                    'rate_limited' => (bool) $this->client->isRateLimited(),
-                    'rate_limit_window' => (string) $this->client->rateLimitWindow(),
-                    'calls' => $calls,
-                );
+                return $this->failedFetch($calls);
             }
 
             $rows = array_merge($rows, $batch);
@@ -133,6 +130,37 @@ class IfirmaStatusSyncService
         }
 
         return array('rows' => $rows, 'error' => '', 'rate_limited' => false, 'calls' => $calls);
+    }
+
+    /**
+     * @param string   $date    Y-m-d
+     * @param int      $page    1-based
+     * @param int|null $timeout
+     * @return array|null the rows of the page, null when the call failed
+     */
+    private function requestPage($date, $page, $timeout)
+    {
+        return $this->client->listInvoices(array(
+            'dataOd' => $date,
+            'dataDo' => $date,
+            'iloscNaStronie' => self::PAGE_SIZE,
+            'strona' => $page,
+        ), 'faktura', $timeout);
+    }
+
+    /**
+     * @param int $calls
+     * @return array the fetchRowsForDate() result of a failed call
+     */
+    private function failedFetch($calls)
+    {
+        return array(
+            'rows' => null,
+            'error' => (string) $this->client->getLastError(),
+            'rate_limited' => (bool) $this->client->isRateLimited(),
+            'rate_limit_window' => (string) $this->client->rateLimitWindow(),
+            'calls' => $calls,
+        );
     }
 
     /**
@@ -217,23 +245,13 @@ class IfirmaStatusSyncService
 
                 return $summary;
             }
-            $now = date('Y-m-d H:i:s', $this->now());
-            foreach ($receipts as $receipt) {
-                $receipt->sync_error = $result['error'];
-                $receipt->last_sync_at = $now;
-                $receipt->save();
-                $summary['errors']++;
-            }
+            $this->recordSyncError($receipts, $result['error']);
+            $summary['errors'] = count($receipts);
 
             return $summary;
         }
 
-        $byId = array();
-        foreach ($result['rows'] as $row) {
-            if (is_array($row) && isset($row['FakturaId'])) {
-                $byId[(string) $row['FakturaId']] = $row;
-            }
-        }
+        $byId = $this->rowsByDocumentId($result['rows']);
 
         foreach ($receipts as $receipt) {
             $key = (string) $receipt->ifirma_id;
@@ -263,6 +281,49 @@ class IfirmaStatusSyncService
     }
 
     /**
+     * @param array $rows list rows
+     * @return array FakturaId => row
+     */
+    private function rowsByDocumentId(array $rows)
+    {
+        $byId = array();
+        foreach ($rows as $row) {
+            if (is_array($row) && isset($row['FakturaId'])) {
+                $byId[(string) $row['FakturaId']] = $row;
+            }
+        }
+
+        return $byId;
+    }
+
+    /**
+     * @param IfirmaReceipt[] $receipts
+     * @param string          $error
+     */
+    private function recordSyncError(array $receipts, $error)
+    {
+        $now = date('Y-m-d H:i:s', $this->now());
+        foreach ($receipts as $receipt) {
+            $receipt->sync_error = $error;
+            $receipt->last_sync_at = $now;
+            $receipt->save();
+        }
+    }
+
+    /**
+     * @return int seconds a record counts as freshly synced and as freshly attempted
+     */
+    private function syncIntervalSeconds()
+    {
+        $interval = (int) Configuration::get('IFIRMA_SYNC_INTERVAL_MIN');
+        if ($interval <= 0) {
+            $interval = self::DEFAULT_INTERVAL_MIN;
+        }
+
+        return $interval * self::SECONDS_PER_MINUTE;
+    }
+
+    /**
      * @param IfirmaReceipt $receipt
      * @return bool
      */
@@ -271,20 +332,31 @@ class IfirmaStatusSyncService
         if (!$receipt->isIssued()) {
             return false;
         }
-        if (empty($receipt->last_sync_at) || $receipt->last_sync_at === '0000-00-00 00:00:00') {
-            return true;
-        }
-        $interval = (int) Configuration::get('IFIRMA_SYNC_INTERVAL_MIN');
-        if ($interval <= 0) {
-            $interval = 15;
-        }
-        $last = strtotime((string) $receipt->last_sync_at);
 
-        return $last === false || $last < $this->now() - $interval * 60;
+        return !$this->isRecent($receipt->last_sync_at, $this->now() - $this->syncIntervalSeconds());
     }
 
     /**
-     * Never throws.
+     * @param string|null $time        a stored date time, empty or zero when never
+     * @param int         $staleBefore unix time
+     * @return bool
+     */
+    private function isRecent($time, $staleBefore)
+    {
+        if (empty($time) || $time === '0000-00-00 00:00:00') {
+            return false;
+        }
+        $at = strtotime((string) $time);
+
+        // A time in the future (a clock that ran ahead) would block the sync until it has passed.
+        return $at !== false && $at >= $staleBefore && $at <= $this->now();
+    }
+
+    /**
+     * The sync an order page of a customer starts: one list call, at most one per customer and interval, that reads
+     * the first page of the viewed document's issue date and refreshes the viewed document and the customer's other
+     * documents of that date. A refusal by the customer page budget, by another request's claim or by the request
+     * limit sends nothing. Never throws.
      *
      * @param IfirmaReceipt $receipt
      * @return bool true when a call was made and the limit did not refuse it; a refused sync writes nothing, so
@@ -293,15 +365,127 @@ class IfirmaStatusSyncService
     public function opportunisticSync(IfirmaReceipt $receipt)
     {
         try {
-            if (!$this->shouldSyncOpportunistically($receipt)) {
+            if (!$this->shouldSyncOpportunistically($receipt)
+                || (int) $receipt->id_customer <= 0
+                || $this->client->isAuthBlocked()
+                || !$this->customerSyncBudget->take()
+            ) {
                 return false;
             }
-            $summary = $this->syncReceipt($receipt, self::OPPORTUNISTIC_TIMEOUT);
 
-            return $summary['calls'] > 0 && !$summary['rate_limited'];
+            return $this->syncCustomerPage($receipt);
         } catch (Throwable $e) {
             return false;
         }
+    }
+
+    /**
+     * Runs after the budget unit was taken. The unit and the claim stay spent only when a request was sent.
+     *
+     * @param IfirmaReceipt $receipt
+     * @return bool
+     */
+    private function syncCustomerPage(IfirmaReceipt $receipt)
+    {
+        $stamp = date('Y-m-d H:i:s', $this->now());
+        $anchor = 0;
+        $claimed = false;
+        $callMade = false;
+        try {
+            $anchor = IfirmaReceipt::findCustomerSyncAnchor((int) $receipt->id_customer);
+            // The viewed record is issued, so an anchor exists unless the lookup failed; the viewed record then
+            // carries the claim, which still allows one call per interval for it and no more.
+            if ($anchor <= 0) {
+                $anchor = (int) $receipt->id;
+            }
+            $staleBefore = date('Y-m-d H:i:s', $this->now() - $this->syncIntervalSeconds());
+            $claimed = IfirmaReceipt::claimSyncAttempt($anchor, $stamp, $staleBefore);
+            if (!$claimed) {
+                $this->customerSyncBudget->release();
+
+                return false;
+            }
+            $callMade = true;
+            $page = $this->fetchFirstPage($this->lookupDate($receipt));
+
+            return $this->recordCustomerPage($receipt, $page, $anchor, $stamp, $staleBefore);
+        } catch (Throwable $e) {
+            if (!$callMade || !$this->client->lastRequestWasSent()) {
+                $this->giveBackCustomerSync($anchor, $stamp, $claimed);
+            }
+
+            return false;
+        }
+    }
+
+    /**
+     * @param int    $anchor
+     * @param string $stamp
+     * @param bool   $claimed whether this request holds the claim
+     */
+    private function giveBackCustomerSync($anchor, $stamp, $claimed)
+    {
+        $this->customerSyncBudget->release();
+        if ($claimed) {
+            IfirmaReceipt::releaseSyncAttempt($anchor, $stamp);
+        }
+    }
+
+    /**
+     * @param string $date Y-m-d
+     * @return array the fetchRowsForDate() result of one call: the first page only
+     */
+    private function fetchFirstPage($date)
+    {
+        $batch = $this->requestPage($date, 1, self::OPPORTUNISTIC_TIMEOUT);
+        if ($batch === null) {
+            return $this->failedFetch(1);
+        }
+
+        return array('rows' => $batch, 'error' => '', 'rate_limited' => false, 'calls' => 1);
+    }
+
+    /**
+     * @param IfirmaReceipt $receipt      the viewed record
+     * @param array         $page         fetchFirstPage() result
+     * @param int           $anchor       the record that holds the customer's claim
+     * @param string        $stamp        the attempt time the claim was made with
+     * @param string        $staleBefore  date time
+     * @return bool true when the request was sent and not refused by the limit
+     */
+    private function recordCustomerPage(IfirmaReceipt $receipt, array $page, $anchor, $stamp, $staleBefore)
+    {
+        if ($page['rows'] === null) {
+            if (!$this->client->lastRequestWasSent()) {
+                $this->giveBackCustomerSync($anchor, $stamp, true);
+
+                return false;
+            }
+            if ($page['rate_limited']) {
+                return false;
+            }
+            $this->recordSyncError(array($receipt), $page['error']);
+
+            return true;
+        }
+
+        $byId = $this->rowsByDocumentId($page['rows']);
+        $viewedKey = (string) $receipt->ifirma_id;
+        if (isset($byId[$viewedKey])) {
+            $this->applyRow($receipt, $byId[$viewedKey]);
+        } elseif (count($page['rows']) < self::PAGE_SIZE) {
+            // A full page may hide the document on a later page; only a short page proves it is gone from iFirma.
+            $this->applyRow($receipt, null);
+        }
+        $others = IfirmaReceipt::findStaleIssuedOfCustomerOnDate((int) $receipt->id_customer, (int) $receipt->id, $this->lookupDate($receipt), $staleBefore);
+        foreach ($others as $other) {
+            // The rows are one page: another document that is not among them is left to the cron.
+            if (isset($byId[(string) $other->ifirma_id])) {
+                $this->applyRow($other, $byId[(string) $other->ifirma_id]);
+            }
+        }
+
+        return true;
     }
 
     /**
