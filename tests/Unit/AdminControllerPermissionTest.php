@@ -203,6 +203,7 @@ class AdminControllerPermissionTest extends TestCase
     {
         $this->assertSame('manage', AdminIfirmaController::levelFor('BulkRun', 'resend'));
         $this->assertSame('manage', AdminIfirmaController::levelFor('BulkRun', 'refresh'));
+        $this->assertSame('manage', AdminIfirmaController::levelFor('BulkRun', 'mark_sent'));
         $this->assertSame('issue', AdminIfirmaController::levelFor('BulkRun', 'issue'));
         $this->assertSame('issue', AdminIfirmaController::levelFor('BulkRun', 'retry'));
         $this->assertSame('manage', AdminIfirmaController::levelFor('BulkRun', 'something else'));
@@ -305,7 +306,7 @@ class AdminControllerPermissionTest extends TestCase
         $handle = new ReflectionMethod($controller, 'handle');
         $handle->setAccessible(true);
         $refusals = $this->refusals();
-        $kinds = array('issue' => 'issue', 'retry' => 'issue', 'resend' => 'manage', 'refresh' => 'manage');
+        $kinds = array('issue' => 'issue', 'retry' => 'issue', 'resend' => 'manage', 'refresh' => 'manage', 'mark_sent' => 'manage');
 
         foreach ($kinds as $kind => $level) {
             // an employee holding only the OTHER write level is refused with the message of the level

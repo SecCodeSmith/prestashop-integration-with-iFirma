@@ -280,6 +280,41 @@ class AdminControllerBulkTest extends TestCase
         $this->assertSame(array(), $runner->calls);
     }
 
+    public function testABulkMarkSentRunByTheManageLevelRecordsTheDocumentAsSentWithoutARequest()
+    {
+        $failed = $this->makeReceipt(array('delivery_status' => 'failed', 'delivery_channel' => 'shop_mail'));
+        Context::getContext()->employee->id_profile = 4;
+        Access::grant(IfirmaPermission::ROLE_READ, 4);
+        Access::grant(IfirmaPermission::ROLE_UPDATE, 4);
+
+        $payload = $this->call('BulkRun', array('kind' => 'mark_sent', 'ids' => array((int) $failed->id), 'final' => 1));
+
+        $this->assertTrue($payload['success']);
+        $this->assertSame('sent', $payload['data']['results'][0]['outcome']);
+        $fresh = new IfirmaReceipt((int) $failed->id);
+        $this->assertSame('sent', $fresh->delivery_status);
+        $this->assertSame('manual', $fresh->delivery_channel);
+        $this->assertCount(0, $this->t->calls, 'no request to iFirma');
+    }
+
+    public function testABulkMarkSentRunByAnIssueLevelEmployeeIsRefusedAndNoDocumentChanges()
+    {
+        $failed = $this->makeReceipt(array('delivery_status' => 'failed', 'delivery_channel' => 'shop_mail'));
+        Context::getContext()->employee->id_profile = 4;
+        Access::grant(IfirmaPermission::ROLE_READ, 4);
+        Access::grant(IfirmaPermission::ROLE_CREATE, 4);
+        $runner = new IfirmaTestBulkRecordingRunner($this->module);
+
+        $payload = $this->call('BulkRun', array('kind' => 'mark_sent', 'ids' => array((int) $failed->id)), function ($c) use ($runner) {
+            $c->runner = $runner;
+        });
+
+        $this->assertFalse($payload['success']);
+        $this->assertSame('You do not have permission to manage iFirma documents.', $payload['message']);
+        $this->assertSame(array(), $runner->calls);
+        $this->assertSame('failed', (new IfirmaReceipt((int) $failed->id))->delivery_status);
+    }
+
     public function testAnUnknownKindIsRefusedAndNothingRuns()
     {
         $runner = new IfirmaTestBulkRecordingRunner($this->module);

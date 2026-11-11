@@ -311,6 +311,8 @@ return array(
     'Update status in iFirma (register payment)' => 'Aktualizuj status w iFirma (zarejestruj płatność)',
     'Send again' => 'Wyślij ponownie',
     'Refresh from iFirma' => 'Odśwież z iFirma',
+    'Marked as sent.' => 'Oznaczono jako wysłany.',
+    'Record the %d selected documents as sent? Nothing is sent to the customer.' => 'Zapisać %d zaznaczonych dokumentów jako wysłane? Klient nic nie otrzyma.',
     'Billing data change request' => 'Prośba o zmianę danych do dokumentu',
     'Field' => 'Pole',
     'Current' => 'Obecnie',

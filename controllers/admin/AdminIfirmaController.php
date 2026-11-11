@@ -88,6 +88,7 @@ class AdminIfirmaController extends ModuleAdminController
         'retry' => self::LEVEL_ISSUE,
         'resend' => self::LEVEL_MANAGE,
         'refresh' => self::LEVEL_MANAGE,
+        'mark_sent' => self::LEVEL_MANAGE,
     );
 
     public function __construct()
@@ -133,6 +134,22 @@ class AdminIfirmaController extends ModuleAdminController
         if ($this->attentionPresetActive()) {
             self::$currentIndex .= '&ifirma_preset=attention';
         }
+        $this->offerMarkAsSentToManagers();
+    }
+
+    /**
+     * The employee is known only after the core's init(), so the entry is added here and not in defineList().
+     */
+    private function offerMarkAsSentToManagers()
+    {
+        $employee = isset($this->context->employee) ? $this->context->employee : null;
+        if (!IfirmaPermission::canManage($employee)) {
+            return;
+        }
+        $this->bulk_actions['markSent'] = array(
+            'text' => $this->module->l('Mark as sent', 'adminifirmacontroller'),
+            'icon' => 'icon-check',
+        );
     }
 
     /**
@@ -169,7 +186,7 @@ class AdminIfirmaController extends ModuleAdminController
         if ($this->ajax) {
             return;
         }
-        $allowed = array('', 'list', 'filter', 'reset_filters', 'bulkretryissuance', 'bulkresend', 'bulkrefresh');
+        $allowed = array('', 'list', 'filter', 'reset_filters', 'bulkretryissuance', 'bulkresend', 'bulkrefresh', 'bulkmarksent');
         $action = strtolower(IfirmaInput::scalar($this->action));
         $display = IfirmaInput::scalar($this->display);
         if (in_array($action, $allowed, true) && in_array($display, array('', 'list'), true)) {
@@ -562,6 +579,13 @@ class AdminIfirmaController extends ModuleAdminController
     }
 
     public function processBulkRefresh()
+    {
+        $this->bulkNeedsJavascript();
+
+        return false;
+    }
+
+    public function processBulkMarkSent()
     {
         $this->bulkNeedsJavascript();
 

@@ -488,7 +488,7 @@
       var id = parseInt(btn.getAttribute('data-id'), 10) || 0;
       startRun(btn.getAttribute('data-kind'), id > 0 ? [id] : []);
     });
-    var map = { submitBulkretryIssuance: 'retry', submitBulkresend: 'resend', submitBulkrefresh: 'refresh' };
+    var map = { submitBulkretryIssuance: 'retry', submitBulkresend: 'resend', submitBulkrefresh: 'refresh', submitBulkmarkSent: 'mark_sent' };
     var nodes = document.querySelectorAll('[onclick]');
     var i;
     Object.keys(map).forEach(function (key) {
