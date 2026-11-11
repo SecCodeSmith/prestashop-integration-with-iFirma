@@ -149,13 +149,16 @@ header goes back to the full list.
 finds is adopted, and nothing is bypassed. A held record stops at the hold step, and the message names the
 pending data-change request.
 
-**Bulk actions.** The selected rows are handled by one of three bulk actions:
+**Bulk actions.** The selected rows are handled by one of four bulk actions:
 
 | Bulk action | Level | Applies to | Records per request |
 |---|---|---|---|
 | Retry issuance | issue | records that are not issued; issued records are skipped | 3 |
 | Send again | manage | issued records, through the configured delivery channel; other records are skipped | 5 |
 | Refresh from iFirma | manage | issued records, one list call per issue date; other records are skipped | 25 |
+| Mark as sent | manage | issued records that are not yet recorded as sent; every other record is skipped with its reason | 25 |
+
+**Mark as sent** in bulk works like the [button in the order panel](#mark-as-sent): it records the delivery state "sent" through the channel "manual" and sends nothing, neither an e-mail nor a request to iFirma. For that reason the request limit and the credentials pause do not stop it: every selected record is handled. A record that is already recorded as sent, is not issued or is missing in iFirma is skipped, and the summary names the reason. The entry is offered to employees with the manage level only. The log entry of the run holds your employee id and the counts of marked and skipped records.
 
 The server checks the level for the whole run before anything happens. An employee without it gets HTTP 403 with
 a message, and nothing is changed or sent.
