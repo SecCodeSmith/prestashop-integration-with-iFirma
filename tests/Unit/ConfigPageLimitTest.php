@@ -136,14 +136,27 @@ class ConfigPageLimitTest extends TestCase
         $this->assertStringContainsString('Monthly iFirma API limit: used 1200 of 15000', $page);
     }
 
-    public function testAClickWithNothingLeftSaysIFirmaAcceptsNoDocumentsUntilTheLimitIsRenewed()
+    public function testAClickWithNothingLeftSaysIFirmaAcceptsNoDocumentsUntilTheNextMonthOrAHigherGrant()
     {
         $this->queueLimit(15000, 15000);
 
         $page = $this->clickCheck();
 
         $this->assertStringContainsString('0 remaining', $page);
-        $this->assertStringContainsString('iFirma does not accept documents through the API until the limit is renewed.', $page);
+        $this->assertStringContainsString('iFirma accepts no documents through the API until the next month or until it grants a higher limit', $page);
+    }
+
+    public function testAGrantRaisedByIFirmaReplacesTheUsedUpReadingOnTheNextCheck()
+    {
+        $this->queueLimit(1000, 1000);
+        $usedUp = $this->clickCheck();
+        $this->assertStringContainsString('The monthly iFirma API limit is used up', $usedUp);
+        $this->queueLimit(1000, 2000);
+
+        $page = $this->clickCheck();
+
+        $this->assertStringContainsString('Monthly iFirma API limit: used 1000 of 2000, 1000 remaining', $page);
+        $this->assertStringNotContainsString('The monthly iFirma API limit is used up', $page);
     }
 
     public function testTheClickIsCountedInTheMinuteTheDayAndKindLimit()
