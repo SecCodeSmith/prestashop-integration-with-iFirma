@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Upgrade script for module version 1.8.0.
 
+### Fixed
+
+- The limit read from iFirma (`abonent/limit.json`) is the account's monthly API limit, not the daily request quota. A reading no longer raises the module's day counter, no longer lowers the day cap and no longer adds an "other clients" row to the Module requests box; the limit box presents it as the monthly API limit, and a reading from an earlier month is shown as outdated.
+
 ## [1.7.0] - 2026-11-08
 
 Compare: [v1.5.0...v1.7.0](https://github.com/SecCodeSmith/prestashop-integration-with-iFirma/compare/v1.5.0...v1.7.0)

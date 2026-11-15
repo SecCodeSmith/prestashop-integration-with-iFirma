@@ -32,11 +32,11 @@ class RemoteLimitPresenterTest extends TestCase
     private function labels()
     {
         return array(
-            'title' => 'iFirma request limit',
-            'not_checked' => 'The remaining limit was not checked yet.',
-            'reading' => 'Used %1$d of %2$d requests, %3$d remaining (read %4$s).',
-            'earlier_day' => 'Last reading, from %1$s: used %2$d of %3$d requests. It is not today\'s figure.',
-            'nothing_left' => 'No request is left: the module sends none until tomorrow.',
+            'title' => 'Monthly iFirma API limit',
+            'not_checked' => 'The monthly limit was not checked yet.',
+            'reading' => 'Monthly limit: used %1$d of %2$d, %3$d remaining (read %4$s).',
+            'earlier_month' => 'Last reading, from %1$s: used %2$d of %3$d. It is outdated.',
+            'nothing_left' => 'The monthly limit is used up: iFirma accepts no documents through the API.',
             'unavailable' => 'The limit is currently unavailable.',
             'refused' => array(
                 'minute' => 'Not checked: the minute limit of the module is reached.',
@@ -72,34 +72,45 @@ class RemoteLimitPresenterTest extends TestCase
 
         $html = $this->presenter()->render($this->reading(1200, 15000, $at));
 
-        $this->assertStringContainsString('Used 1200 of 15000 requests, 13800 remaining (read 2026-11-01 10:02).', $html);
+        $this->assertStringContainsString('Monthly limit: used 1200 of 15000, 13800 remaining (read 2026-11-01 10:02).', $html);
     }
 
     public function testNoReadingSaysTheLimitWasNotCheckedYetAndOffersTheButton()
     {
         $html = $this->presenter()->render(null);
 
-        $this->assertStringContainsString('The remaining limit was not checked yet.', $html);
+        $this->assertStringContainsString('The monthly limit was not checked yet.', $html);
         $this->assertStringContainsString('name="submitIfirmaCheckLimit"', $html);
         $this->assertStringContainsString('Check the remaining iFirma limit', $html);
     }
 
-    public function testAReadingOfAnotherDayIsShownWithItsDateAndNotAsTodays()
+    public function testAReadingOfAnEarlierMonthIsShownWithItsDateAsOutdated()
     {
         $yesterday = $this->now - 86400;
 
         $html = $this->presenter()->render($this->reading(900, 15000, $yesterday));
 
-        $this->assertStringContainsString('Last reading, from 2026-10-31: used 900 of 15000 requests. It is not today&#039;s figure.', $html);
+        $this->assertStringContainsString('Last reading, from 2026-10-31: used 900 of 15000. It is outdated.', $html);
         $this->assertStringNotContainsString('remaining (read', $html);
     }
 
-    public function testNothingLeftStatesThatNoRequestIsSentUntilTomorrow()
+    public function testAReadingOfAnEarlierDayOfThisMonthIsShownAsTheCurrentFigureWithItsTime()
+    {
+        $this->now = mktime(10, 2, 0, 11, 15, 2026);
+        $earlierThisMonth = mktime(9, 30, 0, 11, 12, 2026);
+
+        $html = $this->presenter()->render($this->reading(900, 2000, $earlierThisMonth));
+
+        $this->assertStringContainsString('Monthly limit: used 900 of 2000, 1100 remaining (read 2026-11-12 09:30).', $html);
+        $this->assertStringNotContainsString('outdated', $html);
+    }
+
+    public function testNothingLeftStatesThatIFirmaAcceptsNoDocumentsThroughTheApi()
     {
         $html = $this->presenter()->render($this->reading(15000, 15000));
 
-        $this->assertStringContainsString('Used 15000 of 15000 requests, 0 remaining', $html);
-        $this->assertStringContainsString('No request is left: the module sends none until tomorrow.', $html);
+        $this->assertStringContainsString('Monthly limit: used 15000 of 15000, 0 remaining', $html);
+        $this->assertStringContainsString('The monthly limit is used up: iFirma accepts no documents through the API.', $html);
     }
 
     public function testAnOverusedReadingNeverShowsNegativeRemaining()
@@ -116,7 +127,7 @@ class RemoteLimitPresenterTest extends TestCase
 
         $html = $this->presenter()->render($reading, IfirmaLimitCheck::checked($reading));
 
-        $this->assertStringContainsString('Used 1200 of 15000 requests, 13800 remaining', $html);
+        $this->assertStringContainsString('Monthly limit: used 1200 of 15000, 13800 remaining', $html);
         $this->assertStringContainsString('alert-success', $html);
     }
 
@@ -141,7 +152,7 @@ class RemoteLimitPresenterTest extends TestCase
         $html = $this->presenter()->render($this->reading(1200, 15000), IfirmaLimitCheck::refused($window, 'detail'));
 
         $this->assertStringContainsString($text, $html);
-        $this->assertStringContainsString('Used 1200 of 15000 requests', $html);
+        $this->assertStringContainsString('Monthly limit: used 1200 of 15000', $html);
     }
 
     public function testARefusalWithoutAnEarlierReadingSaysTheLimitIsNotCheckedYet()
@@ -149,7 +160,7 @@ class RemoteLimitPresenterTest extends TestCase
         $html = $this->presenter()->render(null, IfirmaLimitCheck::refused('minute', ''));
 
         $this->assertStringContainsString('Not checked: the minute limit of the module is reached.', $html);
-        $this->assertStringContainsString('The remaining limit was not checked yet.', $html);
+        $this->assertStringContainsString('The monthly limit was not checked yet.', $html);
     }
 
     public function testAnUnavailableOutcomeIsShortAndNeverShowsTheDetail()

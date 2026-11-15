@@ -36,7 +36,6 @@ class ApiUsagePresenterTest extends TestCase
             'of' => '%1$d of %2$d',
             'by_kind' => 'Today by kind of request',
             'kinds' => $kinds,
-            'other_clients' => 'Other clients of the account',
             'backoff' => 'No requests are sent until %s.',
         );
     }
@@ -89,12 +88,12 @@ class ApiUsagePresenterTest extends TestCase
         $this->assertStringNotContainsString('No requests are sent until', $html);
     }
 
-    public function testTheDifferenceToTheKindsIsShownAsRequestsOfOtherClients()
+    public function testADayCountAboveTheKindsShowsNoRowForOtherClients()
     {
-        // iFirma's own figure raised the day counter to 1200 while this module sent 300
         $html = $this->render($this->windows(2, 1200), $this->zeros(array('status' => 200, 'pdf' => 100)));
 
-        $this->assertMatchesRegularExpression('#Other clients of the account</td>\s*<td[^>]*>900</td>#', $html);
+        $this->assertStringNotContainsString('Other clients of the account', $html);
+        $this->assertStringContainsString('1200 of 14000', $html);
     }
 
     public function testAKindSumAboveTheDayCountShowsNoOtherClients()

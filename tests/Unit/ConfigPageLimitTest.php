@@ -65,7 +65,7 @@ class ConfigPageLimitTest extends TestCase
         $page = $this->module->getContent();
 
         $this->assertCount(0, $this->t->calls);
-        $this->assertStringContainsString('The remaining limit has not been checked yet.', $page);
+        $this->assertStringContainsString('The monthly iFirma API limit has not been checked yet.', $page);
         $this->assertStringContainsString('name="submitIfirmaCheckLimit"', $page);
         $this->assertStringContainsString('Check the remaining iFirma limit', $page);
     }
@@ -78,17 +78,17 @@ class ConfigPageLimitTest extends TestCase
         $page = $this->module->getContent();
 
         $this->assertCount(0, $this->t->calls);
-        $this->assertStringContainsString('Used 1200 of 15000 requests, 13800 remaining (read 2026-11-01 10:02).', $page);
+        $this->assertStringContainsString('Monthly iFirma API limit: used 1200 of 15000, 13800 remaining (read 2026-11-01 10:02).', $page);
     }
 
-    public function testAReadingOfAnotherDayIsShownWithItsDateOnOpeningThePage()
+    public function testAReadingOfAnEarlierMonthIsShownAsOutdatedWithItsDateOnOpeningThePage()
     {
         Configuration::updateValue('IFIRMA_REMOTE_LIMIT', '20250101:900:15000:' . mktime(8, 0, 0, 1, 1, 2025));
 
         $page = $this->module->getContent();
 
         $this->assertCount(0, $this->t->calls);
-        $this->assertStringContainsString('Last reading, from 2025-01-01: used 900 of 15000 requests.', $page);
+        $this->assertStringContainsString('Last reading, from 2025-01-01: used 900 of 15000. It is the limit of an earlier month and is outdated.', $page);
     }
 
     public function testWithoutTheAbonentKeyThePageShowsTheHintAndNoButtonAndSendsNothing()
@@ -122,7 +122,7 @@ class ConfigPageLimitTest extends TestCase
         $page = $this->clickCheck();
 
         $this->assertCount(1, $this->t->calls);
-        $this->assertMatchesRegularExpression('#Used 1200 of 15000 requests, 13800 remaining \(read \d{4}-\d{2}-\d{2} \d{2}:\d{2}\)\.#', $page);
+        $this->assertMatchesRegularExpression('#Monthly iFirma API limit: used 1200 of 15000, 13800 remaining \(read \d{4}-\d{2}-\d{2} \d{2}:\d{2}\)\.#', $page);
     }
 
     public function testAClickAsksAgainAlthoughACronReadingIsFresh()
@@ -133,17 +133,17 @@ class ConfigPageLimitTest extends TestCase
         $page = $this->clickCheck();
 
         $this->assertCount(1, $this->t->calls);
-        $this->assertStringContainsString('Used 1200 of 15000 requests', $page);
+        $this->assertStringContainsString('Monthly iFirma API limit: used 1200 of 15000', $page);
     }
 
-    public function testAClickWithNothingLeftSaysTheModuleSendsNothingUntilTomorrow()
+    public function testAClickWithNothingLeftSaysIFirmaAcceptsNoDocumentsUntilTheLimitIsRenewed()
     {
         $this->queueLimit(15000, 15000);
 
         $page = $this->clickCheck();
 
         $this->assertStringContainsString('0 remaining', $page);
-        $this->assertStringContainsString('the module sends no request to iFirma until tomorrow.', $page);
+        $this->assertStringContainsString('iFirma does not accept documents through the API until the limit is renewed.', $page);
     }
 
     public function testTheClickIsCountedInTheMinuteTheDayAndKindLimit()
@@ -155,7 +155,7 @@ class ConfigPageLimitTest extends TestCase
         $usage = new IfirmaApiUsage();
         $this->assertSame(1, $usage->todayByKind()['limit']);
         $this->assertSame(1, $usage->summary()['minute']);
-        $this->assertSame(5, $usage->summary()['day'], 'raised to the account count of iFirma');
+        $this->assertSame(1, $usage->summary()['day'], 'only the request of the click, no raise');
     }
 
     public function testFiveClicksInAMinuteSendFiveRequestsAndTheMinuteCapStopsTheSixth()
@@ -184,7 +184,7 @@ class ConfigPageLimitTest extends TestCase
 
         $this->assertCount(0, $this->t->calls);
         $this->assertNull(IfirmaRemoteLimit::stored());
-        $this->assertStringContainsString('The remaining limit has not been checked yet.', $page);
+        $this->assertStringContainsString('The monthly iFirma API limit has not been checked yet.', $page);
     }
 
     public function testAPostedCheckWithAWrongOrMissingTokenSendsNothing()
@@ -236,7 +236,7 @@ class ConfigPageLimitTest extends TestCase
 
         $this->assertCount(0, $this->t->calls);
         $this->assertStringContainsString('The limit was not checked because the module reached its limit of requests per minute.', $page);
-        $this->assertStringContainsString('Used 1200 of 15000 requests', $page);
+        $this->assertStringContainsString('Monthly iFirma API limit: used 1200 of 15000', $page);
         $this->assertSame(date('Ymd') . ':1200:15000:' . $at, Configuration::get('IFIRMA_REMOTE_LIMIT'));
     }
 
@@ -249,7 +249,7 @@ class ConfigPageLimitTest extends TestCase
 
         $this->assertCount(1, $this->t->calls);
         $this->assertStringContainsString('iFirma API limit is currently unavailable.', $page);
-        $this->assertStringContainsString('Used 1200 of 15000 requests', $page);
+        $this->assertStringContainsString('Monthly iFirma API limit: used 1200 of 15000', $page);
         $this->assertStringNotContainsString('<script>', $page);
         $this->assertStringNotContainsString('boom', $page);
         $this->assertCount(1, PrestaShopLogger::$logs);
@@ -328,14 +328,37 @@ class ConfigPageLimitTest extends TestCase
         $this->assertStringContainsString('no request is sent until ' . date('Y-m-d H:i:s', $until), $page);
     }
 
-    public function testTheDifferenceToTheKindsIsShownAsOtherClientsAfterTheLimitWasRaised()
+    public function testTheModuleRequestsBoxShowsNoRowForOtherClientsWhateverTheDayCountExceeds()
     {
         Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', date('Ymd') . ':1200');
         Configuration::updateValue('IFIRMA_USAGE_STATUS', date('Y-m-d') . ':300');
 
         $page = $this->module->getContent();
 
-        $this->assertMatchesRegularExpression('#Other clients of the account[^<]*</td><td[^>]*>900</td>#', $page);
+        $this->assertStringNotContainsString('Other clients of the account', $page);
+        $this->assertStringContainsString('1200 of 14000', $page);
+    }
+
+    public function testAClickChangesNoCountOfTheModuleRequestsBoxExceptItsOwnRequest()
+    {
+        Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', date('Ymd') . ':100');
+        $this->queueLimit(1900, 2000);
+
+        $page = $this->clickCheck();
+
+        $this->assertStringContainsString('101 of 14000', $page);
+        $this->assertStringContainsString('Monthly iFirma API limit: used 1900 of 2000, 100 remaining', $page);
+    }
+
+    public function testAReadingOfAnEarlierDayOfThisMonthIsShownAsThisMonthsFigureWithItsTime()
+    {
+        $at = mktime(8, 30, 0, (int) date('n'), 1, (int) date('Y'));
+        Configuration::updateValue('IFIRMA_REMOTE_LIMIT', date('Ym') . '01:900:2000:' . $at);
+
+        $page = $this->module->getContent();
+
+        $this->assertStringContainsString('Monthly iFirma API limit: used 900 of 2000, 1100 remaining (read ' . date('Y-m', $at) . '-01 08:30).', $page);
+        $this->assertStringNotContainsString('outdated', $page);
     }
 
     public function testEveryKindIsLabelledInTheModuleRequestsBox()

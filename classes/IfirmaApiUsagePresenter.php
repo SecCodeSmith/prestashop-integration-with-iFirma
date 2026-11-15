@@ -15,8 +15,8 @@ if (!defined('_PS_VERSION_')) {
 
 /**
  * The "Module requests" box of the configuration page: the module's own requests of the last 60 seconds and of today
- * next to their caps, today's count per kind, the requests of other clients of the account that iFirma's own figure
- * implies, and the time a running back-off ends. It only formats what it is given and sends no request.
+ * next to their caps, today's count per kind and the time a running back-off ends. It only formats what it is given and
+ * sends no request. Other clients of the account are not shown: iFirma has no endpoint that reports the daily count.
  *
  * The labels arrive already translated (the translation scanner only finds the literals in ifirma.php).
  */
@@ -30,7 +30,7 @@ class IfirmaApiUsagePresenter
 
     /**
      * @param array $labels 'title', 'intro', 'window_minute', 'window_day', 'of' (a "%1$d of %2$d" format),
-     *                      'by_kind', 'kinds' (kind => label), 'other_clients' and 'backoff' (a format with %s for the time)
+     *                      'by_kind', 'kinds' (kind => label) and 'backoff' (a format with %s for the time)
      */
     public function __construct(array $labels)
     {
@@ -50,7 +50,7 @@ class IfirmaApiUsagePresenter
             . '<p class="help-block">' . $this->esc($this->labels['intro']) . '</p>'
             . $this->windowsTable($windows)
             . $this->backoffNotice((int) $backoffUntil)
-            . $this->kindsTable($byKind, (int) $windows[self::WINDOW_DAY]['used'])
+            . $this->kindsTable($byKind)
             . '</div>';
     }
 
@@ -87,19 +87,13 @@ class IfirmaApiUsagePresenter
 
     /**
      * @param array $byKind
-     * @param int   $dayUsed what the day window counts
      * @return string HTML
      */
-    private function kindsTable(array $byKind, $dayUsed)
+    private function kindsTable(array $byKind)
     {
         $rows = '';
         foreach ($byKind as $kind => $count) {
             $rows .= $this->row($this->kindLabel((string) $kind), (string) (int) $count);
-        }
-        // iFirma's own figure raised the day counter above what the kinds add up to: the rest is other clients' use
-        $others = $dayUsed - (int) array_sum($byKind);
-        if ($others > 0) {
-            $rows .= $this->row($this->labels['other_clients'], (string) $others);
         }
 
         return '<h4>' . $this->esc($this->labels['by_kind']) . '</h4>'

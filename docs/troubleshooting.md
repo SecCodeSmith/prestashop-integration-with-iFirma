@@ -124,10 +124,11 @@ and the module counts every request it sends, status checks and PDF downloads in
 
 **What to do:** open the **Module requests** box on the settings page. It shows the requests of the last 60 seconds and of today
 next to the caps and today's count per kind ([Module requests](configuration.md#module-requests)). A high `status` count
-means the status sync or the documents list ran a lot; a high `pdf` count means many downloads or deliveries. If the day count
-is higher than the kinds add up to, the row **Other clients of the account** shows what other programs used. Click **Check the
-remaining iFirma limit** (needs the `abonent` key) to see what iFirma itself counts; one click costs one request. Then lower
-the caps or the cron frequency ([Rate limits](configuration.md#rate-limits)).
+means the status sync or the documents list ran a lot; a high `pdf` count means many downloads or deliveries. The box counts
+only the module's own requests: iFirma has no endpoint that reports the account's daily request count, so the module cannot see
+what other programs of the account sent. When other programs use the same account, lower the caps or the cron frequency
+([Rate limits](configuration.md#rate-limits)). The button **Check the remaining iFirma limit** (needs the `abonent` key) reads
+the monthly API limit of the account, which is a different limit and changes none of the counts.
 
 ### A KSeF invoice was not e-mailed to the customer
 

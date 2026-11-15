@@ -111,8 +111,8 @@ Two plain JavaScript files in [`views/js/admin/`](../views/js/admin/) hold no te
 | [`IfirmaRateLimitedException`](../classes/IfirmaRateLimitedException.php) | Typed exception for a request refused by the rate limit before it was sent, carrying the window that refused and the seconds to wait. Thrown by `IfirmaReceiptService`; caught by `IfirmaIssuancePipeline`, the admin controller and the receipt front controller. |
 | [`IfirmaWindowCounter`](../classes/IfirmaWindowCounter.php) | Takes and gives back slots of one counting window in an atomic UPDATE of a `Configuration` row. Used by `IfirmaRateGuard` and `IfirmaDownloadBudget`. |
 | [`IfirmaRollingWindowCounter`](../classes/IfirmaRollingWindowCounter.php) | Counts requests per second in one `Configuration` row and answers for the last 60 seconds, so the minute cap holds for every 60 seconds; each change is a compare-and-set UPDATE that is retried a few times and refuses at the cap when it keeps losing. Reads a counter of an earlier version as requests of the last second of its calendar minute. Used by `IfirmaRateGuard`. |
-| [`IfirmaRemoteLimit`](../classes/IfirmaRemoteLimit.php) | Keeps the last reading of the day limit from iFirma (the `abonent` key) next to the local counters and reuses it for ten minutes. Used by `IfirmaRateGuard`, `IfirmaRemoteLimitJob` and `IfirmaLimitCheckAction`. |
-| [`IfirmaLimitReading`](../classes/IfirmaLimitReading.php) | Immutable value: one reading of the day limit (day, used, granted, time). Used by `IfirmaRemoteLimit`, `IfirmaLimitCheck` and `IfirmaRemoteLimitPresenter`. |
+| [`IfirmaRemoteLimit`](../classes/IfirmaRemoteLimit.php) | Reads and keeps the last reading of the monthly API limit from iFirma (the `abonent` key) and reuses it for ten minutes. It changes no request counter and no cap. Used by `IfirmaRemoteLimitJob` and `IfirmaLimitCheckAction`. |
+| [`IfirmaLimitReading`](../classes/IfirmaLimitReading.php) | Immutable value: one reading of the monthly API limit (date of the reading, used, granted, time). Used by `IfirmaRemoteLimit`, `IfirmaLimitCheck` and `IfirmaRemoteLimitPresenter`. |
 | [`IfirmaLimitCheck`](../classes/IfirmaLimitCheck.php) | Immutable outcome of an employee's limit check: a reading, a refusal by the module's own limits (nothing sent) or no usable answer. Used by `IfirmaRemoteLimit`, `IfirmaLimitCheckAction` and the presenter. |
 
 **Payload**
@@ -201,8 +201,8 @@ Two plain JavaScript files in [`views/js/admin/`](../views/js/admin/) hold no te
 | [`IfirmaConfigPageGuard`](../classes/IfirmaConfigPageGuard.php) | Decides whether a request to the configuration page may do what it asks: the Configure permission on every version, and a state-changing action only for a POST with a valid back-office token. Used by `ifirma.php`. |
 | [`IfirmaBackOfficeToken`](../classes/IfirmaBackOfficeToken.php) | Whether a request carries the employee's back-office token (the fixed hash before PrestaShop 9, the core's CSRF check from 9.0). Used by `ifirma.php`. |
 | [`IfirmaLimitCheckAction`](../classes/IfirmaLimitCheckAction.php) | The employee's request to read the remaining limit: runs the forced check only for an allowed request and writes the detail of a failed check to the shop log. Used by `ifirma.php`. |
-| [`IfirmaApiUsagePresenter`](../classes/IfirmaApiUsagePresenter.php) | Formats the **Module requests** box (minute, day, kinds, other clients, back-off end); sends no request. Used by `ifirma.php`. |
-| [`IfirmaRemoteLimitPresenter`](../classes/IfirmaRemoteLimitPresenter.php) | Formats the limit box (stored reading, outcome of the last click, the button); sends no request. Used by `ifirma.php`. |
+| [`IfirmaApiUsagePresenter`](../classes/IfirmaApiUsagePresenter.php) | Formats the **Module requests** box (minute, day, kinds, back-off end); sends no request. Used by `ifirma.php`. |
+| [`IfirmaRemoteLimitPresenter`](../classes/IfirmaRemoteLimitPresenter.php) | Formats the monthly API limit box (stored reading, outdated after a month, outcome of the last click, the button); sends no request. Used by `ifirma.php`. |
 | [`IfirmaDocumentStateRank`](../classes/IfirmaDocumentStateRank.php) | The ten states of a record as a number, as SQL text for a record alias, so the Orders list and the documents list sort and filter by one order. Used by `IfirmaOrderGridIndicator`, `IfirmaOrderGridStateFilter`, `IfirmaDocumentListSort` and `ifirma.php`. |
 | [`IfirmaOrderGridStateFilter`](../classes/IfirmaOrderGridStateFilter.php) | The state filter of the Orders-list column: the choices, the one value accepted from the request and the condition added to the query builder. Used by the grid hooks in `ifirma.php`. |
 | [`IfirmaDocumentListSort`](../classes/IfirmaDocumentListSort.php) | Sorting of the documents list by state: the rank as a selected value, the direction as ASC or DESC, the newest-first tie-break. Used by the admin controller. |
@@ -224,7 +224,7 @@ Two plain JavaScript files in [`views/js/admin/`](../views/js/admin/) hold no te
 | [`IfirmaStatusSyncService`](../classes/IfirmaStatusSyncService.php) | Mirrors the remote state of issued documents (cron, opportunistic on the customer's order page). |
 | [`IfirmaCronRunner`](../classes/IfirmaCronRunner.php) | Runs the `IfirmaCronJob`s in order under the run lock `ifirma_cron` (no wait), builds the JSON summary (the sync keys at the top level, a block per other job, `rate_limited`, `rate_limited_window`, `time_budget_exhausted` and `usage`), and has the later jobs only report after a rate-limited one. |
 | [`IfirmaCronJob`](../classes/IfirmaCronJob.php), [`IfirmaCronContext`](../classes/IfirmaCronContext.php), [`IfirmaCronJobReport`](../classes/IfirmaCronJobReport.php) | The job interface (`name()`, `run()`, `skip()`), what a run shares (the item cap, the clock) and what a job reports (handled, succeeded, failed, left, rate limited). |
-| [`IfirmaRemoteLimitJob`](../classes/IfirmaRemoteLimitJob.php) | Job 0 (`limit`): reads the day limit from iFirma at the start of a run through `IfirmaRemoteLimit`; never stops the later jobs. Used by `IfirmaCronRunner`. |
+| [`IfirmaRemoteLimitJob`](../classes/IfirmaRemoteLimitJob.php) | Job 0 (`limit`): reads the monthly API limit from iFirma at the start of a run through `IfirmaRemoteLimit`; never stops the later jobs. Used by `IfirmaCronRunner`. |
 | [`IfirmaIssueQueueJob`](../classes/IfirmaIssueQueueJob.php) | Job 1: issues queued orders, oldest first, under the order lock, through `IfirmaIssuancePipeline::run()` with trigger `queue`. |
 | [`IfirmaKsefRetryJob`](../classes/IfirmaKsefRetryJob.php) | Job 2 (`ksef`): submits the invoices whose KSeF submission was deferred, oldest first, at most the item cap. Used by `IfirmaCronRunner`. |
 | [`IfirmaStatusSyncJob`](../classes/IfirmaStatusSyncJob.php) | Job 3: an adapter around `IfirmaStatusSyncService::runCron()`. |
@@ -343,7 +343,7 @@ header  = Authentication: IAPIS user=<user>, hmac-sha1=<hash>
 | List documents (filters) | `GET` | `iapi/faktury.json?dataOd=…&dataDo=…&iloscNaStronie=…` (all three always sent) | `faktura` |
 | Document detail (JSON) | `GET` | `iapi/{type}/{id}.json` | `faktura` |
 | Send by e-mail | `POST` | `iapi/{type}/send/{id}.json` | `faktura` |
-| Daily API limit (optional) | `GET` | `iapi/abonent/limit.json` | `abonent` |
+| Monthly API limit (optional) | `GET` | `iapi/abonent/limit.json` | `abonent` |
 
 Further calls made by the code (not in the reviewed table above): contractors with `GET iapi/kontrahenci/id/{identifier}.json`, `POST iapi/kontrahenci.json`, `PUT iapi/kontrahenci/{identifier}.json` and `GET iapi/kontrahenci/{phrase}.json` ([`IfirmaContractorService`](../classes/IfirmaContractorService.php)), and the KSeF submission `POST iapi/{type}/ksef/send/{id}.json` ([`IfirmaApiClient::sendToKsef()`](../classes/IfirmaApiClient.php)), all with the `faktura` key.
 

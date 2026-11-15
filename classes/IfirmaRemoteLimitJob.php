@@ -17,9 +17,9 @@ require_once dirname(__FILE__) . '/IfirmaCronJob.php';
 require_once dirname(__FILE__) . '/IfirmaRemoteLimit.php';
 
 /**
- * Reads the day limit from iFirma at the start of a cron run, so the jobs after it work with the real number of
- * requests left. Without the "abonent" key (or when iFirma does not answer) it reports nulls and the jobs rely on the
- * local counters alone; it never stops the later jobs.
+ * Reads the monthly API limit from iFirma at the start of a cron run and reports it in the answer. The reading is only
+ * stored and shown: it changes no request counter and no cap. Without the "abonent" key (or when iFirma does not answer)
+ * it reports nulls; it never stops the later jobs.
  */
 class IfirmaRemoteLimitJob implements IfirmaCronJob
 {

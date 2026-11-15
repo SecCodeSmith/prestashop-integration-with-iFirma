@@ -750,11 +750,11 @@ class Ifirma extends Module
     private function remoteLimitLabels()
     {
         return array(
-            'title' => $this->l('iFirma request limit'),
-            'not_checked' => $this->l('The remaining limit has not been checked yet.'),
-            'reading' => $this->l('Used %1$d of %2$d requests, %3$d remaining (read %4$s).'),
-            'earlier_day' => $this->l('Last reading, from %1$s: used %2$d of %3$d requests. It is not a figure for today.'),
-            'nothing_left' => $this->l('No request is left for today: the module sends no request to iFirma until tomorrow.'),
+            'title' => $this->l('Monthly iFirma API limit'),
+            'not_checked' => $this->l('The monthly iFirma API limit has not been checked yet.'),
+            'reading' => $this->l('Monthly iFirma API limit: used %1$d of %2$d, %3$d remaining (read %4$s).'),
+            'earlier_month' => $this->l('Last reading, from %1$s: used %2$d of %3$d. It is the limit of an earlier month and is outdated.'),
+            'nothing_left' => $this->l('The monthly iFirma API limit is used up: iFirma does not accept documents through the API until the limit is renewed.'),
             'unavailable' => $this->l('iFirma API limit is currently unavailable.'),
             'refused' => array(
                 IfirmaRateDecision::WINDOW_MINUTE => $this->l('The limit was not checked because the module reached its limit of requests per minute. Nothing was sent to iFirma.'),
@@ -763,7 +763,7 @@ class Ifirma extends Module
                 IfirmaLimitCheck::WINDOW_AUTH => $this->l('The limit was not checked because iFirma rejected the credentials a moment ago and requests are paused. Nothing was sent to iFirma.'),
             ),
             'button' => $this->l('Check the remaining iFirma limit'),
-            'one_request' => $this->l('One click sends one request to iFirma and counts toward the limit.'),
+            'one_request' => $this->l('One click sends one request to iFirma and counts toward the module request limits.'),
             'no_key' => $this->l('To read the remaining iFirma limit, enter the abonent API key and save.'),
         );
     }
@@ -791,7 +791,6 @@ class Ifirma extends Module
                 IfirmaRequestKind::KIND_LIMIT => $this->l('Limit checks'),
                 IfirmaRequestKind::KIND_OTHER => $this->l('Other requests'),
             ),
-            'other_clients' => $this->l('Other clients of the account (the account count is higher than this module sent)'),
             'backoff' => $this->l('iFirma asked the module to wait: no request is sent until %s.'),
         );
     }
