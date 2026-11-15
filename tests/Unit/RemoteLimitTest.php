@@ -17,8 +17,8 @@ require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaRateGuard.php';
 require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaCronRunner.php';
 
 /**
- * Given the limit iFirma reports for the account, when the module reads it, then the local day counter and the day cap
- * follow it (spec ifirma-api-compliance "Reading the current limit from iFirma").
+ * Given the monthly API limit iFirma reports for the account, when the module reads it, then the reading is stored and
+ * no request counter and no cap changes (spec ifirma-api-compliance "Monthly API limit read from iFirma").
  */
 class RemoteLimitTest extends TestCase
 {
@@ -75,14 +75,24 @@ class RemoteLimitTest extends TestCase
         $this->assertSame(array('used' => 1200, 'granted' => 15000, 'remaining' => 13800), $reading);
     }
 
-    public function testTheDayCounterIsRaisedToWhatIFirmaCountsWhenOtherClientsUsedTheAccount()
+    public function testAReadingLeavesTheDayCounterAloneWhateverTheMonthlyFigureIs()
     {
         Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', $this->day() . ':300');
-        $this->readings[] = array('used' => 1200, 'granted' => 15000);
+        $this->readings[] = array('used' => 1900, 'granted' => 2000);
 
         $this->remoteLimit()->refresh();
 
-        $this->assertSame($this->day() . ':1200', Configuration::get('IFIRMA_RATE_DAY_WINDOW'));
+        $this->assertSame($this->day() . ':300', Configuration::get('IFIRMA_RATE_DAY_WINDOW'));
+    }
+
+    public function testAReadingLeavesTheMinuteWindowAlone()
+    {
+        Configuration::updateValue('IFIRMA_RATE_WINDOW', '202611011015:7');
+        $this->readings[] = array('used' => 1900, 'granted' => 2000);
+
+        $this->remoteLimit()->refresh();
+
+        $this->assertSame('202611011015:7', Configuration::get('IFIRMA_RATE_WINDOW'));
     }
 
     public function testTheDayCounterIsNotLoweredWhenTheModuleCountedMore()
@@ -95,14 +105,15 @@ class RemoteLimitTest extends TestCase
         $this->assertSame($this->day() . ':1500', Configuration::get('IFIRMA_RATE_DAY_WINDOW'));
     }
 
-    public function testAnOldDaysCounterIsReplacedByTodaysReading()
+    public function testAReadingDoesNotTouchAnOldDaysCounterEither()
     {
-        Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', date('Ymd', $this->now - 86400) . ':9000');
+        $yesterdays = date('Ymd', $this->now - 86400) . ':9000';
+        Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', $yesterdays);
         $this->readings[] = array('used' => 40, 'granted' => 15000);
 
         $this->remoteLimit()->refresh();
 
-        $this->assertSame($this->day() . ':40', Configuration::get('IFIRMA_RATE_DAY_WINDOW'));
+        $this->assertSame($yesterdays, Configuration::get('IFIRMA_RATE_DAY_WINDOW'));
     }
 
     public function testAFreshReadingIsReusedWithoutAskingIFirmaAgain()
@@ -132,7 +143,22 @@ class RemoteLimitTest extends TestCase
         $this->assertSame(1300, $reading['used']);
     }
 
-    public function testAReadingOfAnotherDayIsReadAgainAtOnce()
+    public function testAFreshReadingIsReusedAcrossMidnightBecauseTheMonthlyFigureHasNoDay()
+    {
+        $this->now = mktime(23, 59, 30, 11, 1, 2026);
+        $this->readings[] = array('used' => 1200, 'granted' => 15000);
+        $this->readings[] = array('used' => 5, 'granted' => 15000);
+        $remote = $this->remoteLimit();
+        $remote->refresh();
+        $this->now = mktime(0, 0, 10, 11, 2, 2026);
+
+        $reading = $remote->refresh();
+
+        $this->assertSame(1, $this->asked);
+        $this->assertSame(1200, $reading['used']);
+    }
+
+    public function testAReadingOfAnEarlierDayIsReadAgainOnceItIsOlderThanTheRefreshTime()
     {
         $this->readings[] = array('used' => 1200, 'granted' => 15000);
         $this->readings[] = array('used' => 5, 'granted' => 15000);
@@ -158,14 +184,14 @@ class RemoteLimitTest extends TestCase
         $this->assertNull($remote->refresh());
 
         $this->assertSame($this->day() . ':1250', Configuration::get('IFIRMA_RATE_DAY_WINDOW'));
-        $this->assertSame(15000, IfirmaRemoteLimit::grantedOn($this->day()));
+        $this->assertSame(15000, IfirmaRemoteLimit::stored()->granted());
     }
 
     public function testWithoutAnAnswerNothingIsStored()
     {
         $this->assertNull($this->remoteLimit()->refresh());
 
-        $this->assertSame(0, IfirmaRemoteLimit::grantedOn($this->day()));
+        $this->assertNull(IfirmaRemoteLimit::stored());
         $this->assertFalse(Configuration::hasKey('IFIRMA_RATE_DAY_WINDOW'));
     }
 
@@ -190,30 +216,38 @@ class RemoteLimitTest extends TestCase
         $this->readings[] = $reading;
 
         $this->assertNull($this->remoteLimit()->refresh());
-        $this->assertSame(0, IfirmaRemoteLimit::grantedOn($this->day()));
+        $this->assertNull(IfirmaRemoteLimit::stored());
     }
 
-    public function testAGrantedLimitBelowTheConfiguredDayCapLowersTheCap()
+    public function testAGrantedLimitBelowTheConfiguredDayCapLowersNothing()
     {
-        $this->readings[] = array('used' => 5000, 'granted' => 5000);
+        Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', $this->day() . ':2500');
+        $this->readings[] = array('used' => 1900, 'granted' => 2000);
+        $this->remoteLimit()->refresh();
+
+        $this->assertTrue($this->guard()->admit()->isAllowed());
+    }
+
+    public function testAReadingAboveTheConfiguredDayCapDoesNotRefuseTheNextRequest()
+    {
+        Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', $this->day() . ':100');
+        $this->readings[] = array('used' => 20000, 'granted' => 20000);
+        $this->remoteLimit()->refresh();
+
+        $this->assertTrue($this->guard()->admit()->isAllowed());
+    }
+
+    public function testTheConfiguredDayCapStillRefusesWhateverTheReadingSays()
+    {
+        Configuration::updateValue('IFIRMA_RATE_MAX_PER_DAY', 500);
+        Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', $this->day() . ':500');
+        $this->readings[] = array('used' => 10, 'granted' => 15000);
         $this->remoteLimit()->refresh();
 
         $decision = $this->guard()->admit();
 
         $this->assertFalse($decision->isAllowed());
         $this->assertSame(IfirmaRateDecision::WINDOW_DAY, $decision->getWindow());
-        $this->assertSame('iFirma rate limit guard: 5000 requests today (cap 5000). Retry tomorrow.', $decision->getMessage());
-    }
-
-    public function testAGrantedLimitAboveTheConfiguredDayCapChangesNothing()
-    {
-        Configuration::updateValue('IFIRMA_RATE_MAX_PER_DAY', 500);
-        $this->readings[] = array('used' => 500, 'granted' => 15000);
-        $this->remoteLimit()->refresh();
-
-        $decision = $this->guard()->admit();
-
-        $this->assertFalse($decision->isAllowed());
         $this->assertSame('iFirma rate limit guard: 500 requests today (cap 500). Retry tomorrow.', $decision->getMessage());
     }
 
@@ -238,7 +272,7 @@ class RemoteLimitTest extends TestCase
         foreach (array('', 'garbage', $this->day() . ':a:b:c', $this->day() . ':1:2', $this->day() . ':1:0:5') as $stored) {
             Configuration::updateValue('IFIRMA_REMOTE_LIMIT', $stored);
 
-            $this->assertSame(0, IfirmaRemoteLimit::grantedOn($this->day()), var_export($stored, true));
+            $this->assertNull(IfirmaRemoteLimit::stored(), var_export($stored, true));
         }
     }
 

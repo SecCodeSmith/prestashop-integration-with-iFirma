@@ -1392,7 +1392,7 @@ class ModuleHooksTest extends TestCase
 
         $page = $this->module->getContent();
 
-        $this->assertStringContainsString('Used 12 of 15000 requests, 14988 remaining (read 2026-11-01 10:02).', $page);
+        $this->assertStringContainsString('Monthly iFirma API limit: used 12 of 15000, 14988 remaining (read 2026-11-01 10:02).', $page);
         $this->assertCount(0, $this->t->calls);
     }
 
@@ -1402,7 +1402,7 @@ class ModuleHooksTest extends TestCase
 
         $page = $this->module->getContent();
 
-        $this->assertStringContainsString('The remaining limit has not been checked yet.', $page);
+        $this->assertStringContainsString('The monthly iFirma API limit has not been checked yet.', $page);
         $this->assertStringNotContainsString('15000', $page);
         $this->assertCount(0, $this->t->calls);
     }

@@ -93,17 +93,17 @@ class RemoteLimitCheckTest extends TestCase
         $this->assertSame($this->now, IfirmaRemoteLimit::stored()->at());
     }
 
-    public function testACheckRaisesTheDayCounterToWhatIFirmaCounts()
+    public function testACheckLeavesTheDayCounterAloneWhatIFirmaReports()
     {
         Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', $this->day() . ':300');
-        $this->answers[] = array('used' => 1200, 'granted' => 15000);
+        $this->answers[] = array('used' => 1900, 'granted' => 2000);
 
         $this->remoteLimit()->check();
 
-        $this->assertSame($this->day() . ':1200', Configuration::get('IFIRMA_RATE_DAY_WINDOW'));
+        $this->assertSame($this->day() . ':300', Configuration::get('IFIRMA_RATE_DAY_WINDOW'));
     }
 
-    public function testACheckNeverLowersTheDayCounter()
+    public function testACheckLeavesTheDayCounterAloneWhenTheModuleCountedMore()
     {
         Configuration::updateValue('IFIRMA_RATE_DAY_WINDOW', $this->day() . ':1500');
         $this->answers[] = array('used' => 1200, 'granted' => 15000);
@@ -288,7 +288,7 @@ class RemoteLimitCheckTest extends TestCase
         $this->assertSame(13800, $check->reading()->remaining());
         $this->assertSame(1, $usage->todayByKind()[IfirmaRequestKind::KIND_LIMIT]);
         $this->assertSame(1, $usage->summary()['minute']);
-        $this->assertSame(1200, $usage->summary()['day'], 'raised to iFirma\'s own count');
+        $this->assertSame(1, $usage->summary()['day'], 'only the request of the check itself, no raise');
     }
 
     public function testARefusalByTheMinuteCapSendsNothingAndIsReportedWithTheWindow()

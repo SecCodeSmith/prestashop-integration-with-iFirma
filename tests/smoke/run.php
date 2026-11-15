@@ -1051,6 +1051,62 @@ function smokeUsageAndRefusalChecks($module, $actions)
 }
 
 /**
+ * Scenario D, part 3: the monthly API limit that iFirma reports is stored and nothing else. A reading of 1,900 of 2,000
+ * (the mock's test-only override) leaves the module's day counter, minute window and day cap alone, and a day count
+ * above the granted figure does not stop the next request.
+ */
+function smokeMonthlyLimitReadingChecks()
+{
+    require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaRemoteLimit.php';
+    require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaRateGuard.php';
+    require_once _PS_MODULE_DIR_ . 'ifirma/classes/IfirmaRateDecision.php';
+    $label = 'monthly limit';
+    $status = mockStatus();
+    if (!isset($status['monthly_limit'])) {
+        skip($label . ': a reading leaves the request counters alone', 'the mock reports no monthly_limit in status.json (rebuild the ifirma-mock image)');
+
+        return;
+    }
+
+    $keys = array('IFIRMA_KEY_ABONENT', 'IFIRMA_REMOTE_LIMIT', 'IFIRMA_RATE_WINDOW', 'IFIRMA_RATE_DAY_WINDOW', 'IFIRMA_RATE_MAX_PER_DAY');
+    $saved = array();
+    foreach ($keys as $key) {
+        $saved[$key] = smokeReadSetting($key);
+    }
+    try {
+        smokeSetting('IFIRMA_KEY_ABONENT', str_repeat('2', 64));
+        smokeSetting('IFIRMA_RATE_MAX_PER_DAY', 14000);
+        smokeClearRateWindow();
+        smokeWriteSetting('IFIRMA_RATE_DAY_WINDOW', date('Ymd') . ':2500');
+        $set = mockRequest('POST', '/__mock/monthly-limit', array('granted' => 2000, 'used' => 1900));
+        assertSame(200, $set['code'], $label . ': the mock accepts the override of 1900 of 2000');
+
+        $check = IfirmaRemoteLimit::forClient(IfirmaApiClient::fromConfiguration())->check();
+        if ($check->status() !== IfirmaLimitCheck::CHECKED) {
+            skip($label . ': a reading leaves the request counters alone', 'the mock did not answer abonent/limit.json (is IFIRMA_MOCK_KEY_ABONENT set to the module key?): ' . $check->status());
+
+            return;
+        }
+
+        $stored = IfirmaRemoteLimit::stored();
+        assertTrue($stored !== null && $stored->used() === 1900 && $stored->granted() === 2000, $label . ': the stored reading is 1900 of 2000', json_encode($stored === null ? null : array($stored->used(), $stored->granted())));
+        assertSame(2501, moduleDayCount(), $label . ': the day counter rose only by the one request of the reading (2500 + 1)');
+
+        $guard = new IfirmaRateGuard();
+        $usage = $guard->windowUsage();
+        assertSame(14000, (int) $usage['day']['cap'], $label . ': the day cap is still the configured 14000, not the granted 2000');
+        assertSame(IfirmaRateDecision::WINDOW_NONE, $guard->blockedBy(), $label . ': a day count above the granted figure blocks no request');
+    } finally {
+        mockRequest('POST', '/__mock/monthly-limit', array('granted' => null, 'used' => null));
+        foreach ($saved as $key => $previous) {
+            smokeRestoreSetting($key, $previous);
+        }
+        smokeClearRateWindow();
+        mockReset();
+    }
+}
+
+/**
  * Makes the records look last synced 20 minutes ago, and the customer look as if no order page had started a
  * refresh (the attempt time sits on one record of the customer, so it is cleared on all of them).
  */
@@ -1194,6 +1250,7 @@ function scenarioD($module, $actions)
     assertSame(true, $receipt ? (bool) $receipt->remote_missing : null, 'receipt remote_missing = 1');
 
     smokeUsageAndRefusalChecks($module, $actions);
+    smokeMonthlyLimitReadingChecks();
     smokeCustomerBudgetChecks($actions);
     smokeCustomerPageSyncChecks($module);
 

@@ -17,8 +17,8 @@ require_once dirname(__FILE__) . '/IfirmaLimitCheck.php';
 require_once dirname(__FILE__) . '/IfirmaLimitReading.php';
 
 /**
- * The limit box of the configuration page: the stored reading of the account's day limit (or that none was taken, or
- * that it is from an earlier day), the outcome of the employee's last click and the button that asks iFirma. It only
+ * The limit box of the configuration page: the stored reading of the account's monthly API limit (or that none was taken, or
+ * that it is from an earlier month), the outcome of the employee's last click and the button that asks iFirma. It only
  * formats what it is given and sends no request. The detail of a failed check is for the log: it never reaches the page.
  *
  * The labels arrive already translated (the translation scanner only finds the literals in ifirma.php).
@@ -42,7 +42,7 @@ class IfirmaRemoteLimitPresenter
 
     /**
      * @param array         $labels 'title', 'not_checked', 'reading' (%1$d used, %2$d granted, %3$d remaining, %4$s time),
-     *                              'earlier_day' (%1$s date, %2$d used, %3$d granted), 'nothing_left', 'unavailable',
+     *                              'earlier_month' (%1$s date, %2$d used, %3$d granted), 'nothing_left', 'unavailable',
      *                              'refused' (window => sentence for minute, day, backoff and auth), 'button',
      *                              'one_request' and 'no_key'
      * @param string        $action the URL the button posts to, with the back-office token
@@ -116,9 +116,9 @@ class IfirmaRemoteLimitPresenter
         if ($stored === null) {
             return '<p class="text-muted">' . $this->esc($this->labels['not_checked']) . '</p>';
         }
-        if ($stored->day() !== date('Ymd', $this->now())) {
+        if ($this->monthOf($stored->day()) !== date('Ym', $this->now())) {
             return '<p>' . $this->esc(sprintf(
-                $this->labels['earlier_day'],
+                $this->labels['earlier_month'],
                 $this->dayText($stored->day()),
                 $stored->used(),
                 $stored->granted()
@@ -152,6 +152,15 @@ class IfirmaRemoteLimitPresenter
             . $this->esc($this->labels['button']) . '</button>'
             . '<p class="help-block">' . $this->esc($this->labels['one_request']) . '</p>'
             . '</form>';
+    }
+
+    /**
+     * @param string $day Ymd
+     * @return string Ym
+     */
+    private function monthOf($day)
+    {
+        return substr($day, 0, 6);
     }
 
     /**

@@ -13,17 +13,16 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
-require_once dirname(__FILE__) . '/IfirmaRateGuard.php';
 require_once dirname(__FILE__) . '/IfirmaRateDecision.php';
 require_once dirname(__FILE__) . '/IfirmaLimitCheck.php';
 require_once dirname(__FILE__) . '/IfirmaLimitReading.php';
 
 /**
- * The day limit as iFirma itself reports it (the optional "abonent" key), kept next to the local counters.
+ * The monthly API limit as iFirma itself reports it (the optional "abonent" key).
  *
- * The local day counter only sees this module's requests; other clients of the same account use the same limit. A
- * reading raises the counter to what iFirma counts and stores the granted limit, which the guard then uses as a ceiling
- * for the day cap. The reading is stored as "<day>:<used>:<granted>:<unix time>" and reused for REFRESH_SECONDS, so the
+ * It is the account's limit of documents issued through the API in a calendar month, not the daily request quota, so a
+ * reading is only stored: it never changes the module's request counters or caps. The reading is stored as
+ * "<day>:<used>:<granted>:<unix time>" (the day is the date of the reading) and reused for REFRESH_SECONDS, so the
  * extra request is made a few times an hour, not on every cron run.
  */
 class IfirmaRemoteLimit
@@ -33,7 +32,7 @@ class IfirmaRemoteLimit
     /** How long a reading is reused before iFirma is asked again. */
     const REFRESH_SECONDS = 600;
 
-    /** The largest figure of iFirma's limit answer that is believed; a day cap is a few thousand requests. */
+    /** The largest figure of iFirma's limit answer that is believed; a monthly limit is a few thousand. */
     const MAX_FIGURE = 10000000;
     const MAX_FIGURE_DIGITS = 8;
 
@@ -76,21 +75,20 @@ class IfirmaRemoteLimit
     }
 
     /**
-     * Reads the limit (or reuses today's fresh reading) and brings the local day counter up to it.
+     * Reads the limit, or reuses the stored reading while it is younger than REFRESH_SECONDS.
      *
-     * @return array|null used, granted and remaining requests of the day; null when iFirma gave no usable answer, in
+     * @return array|null used, granted and remaining of the monthly limit; null when iFirma gave no usable answer, in
      *                    which case nothing is changed
      */
     public function refresh()
     {
         $now = $this->now();
-        $today = date('Ymd', $now);
-        $kept = self::snapshot($today);
+        $kept = self::stored();
         if ($kept !== null && $kept->at() <= $now && $now - $kept->at() < self::REFRESH_SECONDS) {
             return self::summary($kept);
         }
 
-        $reading = $this->readAndStore($today, $now);
+        $reading = $this->readAndStore(date('Ymd', $now), $now);
 
         return $reading !== null ? self::summary($reading) : null;
     }
@@ -173,7 +171,7 @@ class IfirmaRemoteLimit
     }
 
     /**
-     * Asks iFirma, and on a usable answer stores it and raises the day counter.
+     * Asks iFirma, and on a usable answer stores it.
      *
      * @param string $today Ymd
      * @param int    $now
@@ -189,7 +187,6 @@ class IfirmaRemoteLimit
         }
 
         Configuration::updateValue(self::SNAPSHOT_KEY, $today . ':' . $used . ':' . $granted . ':' . $now);
-        $this->raiseDayCounterTo($today, $used);
 
         return new IfirmaLimitReading($today, $used, $granted, $now);
     }
@@ -209,49 +206,12 @@ class IfirmaRemoteLimit
     }
 
     /**
-     * @param string $day the day as Ymd
-     * @return int the limit iFirma granted according to the stored reading of that day, 0 when there is none
-     */
-    public static function grantedOn($day)
-    {
-        $kept = self::snapshot($day);
-
-        return $kept !== null ? $kept->granted() : 0;
-    }
-
-    /**
-     * @param string $day
-     * @return IfirmaLimitReading|null the stored reading when it belongs to the day
-     */
-    private static function snapshot($day)
-    {
-        $stored = self::stored();
-
-        return ($stored !== null && $stored->day() === (string) $day) ? $stored : null;
-    }
-
-    /**
      * @param IfirmaLimitReading $reading
      * @return array
      */
     private static function summary(IfirmaLimitReading $reading)
     {
         return array('used' => $reading->used(), 'granted' => $reading->granted(), 'remaining' => $reading->remaining());
-    }
-
-    /**
-     * The counter only moves up: what iFirma counts includes this module's requests, never fewer.
-     *
-     * @param string $today
-     * @param int    $used
-     */
-    private function raiseDayCounterTo($today, $used)
-    {
-        $parts = explode(':', (string) Configuration::get(IfirmaRateGuard::DAY_COUNTER_KEY), 2);
-        $local = (count($parts) === 2 && $parts[0] === $today) ? (int) $parts[1] : 0;
-        if ($used > $local) {
-            Configuration::updateValue(IfirmaRateGuard::DAY_COUNTER_KEY, $today . ':' . $used);
-        }
     }
 
     /**

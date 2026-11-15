@@ -14,8 +14,8 @@ if (!defined('_PS_VERSION_')) {
 }
 
 /**
- * One reading of the account's day limit as iFirma reported it: the day it belongs to, the requests used and granted
- * and the unix time it was taken.
+ * One reading of the account's monthly API limit as iFirma reported it: the date of the reading, the figures used and
+ * granted and the unix time it was taken.
  */
 final class IfirmaLimitReading
 {
@@ -70,7 +70,7 @@ final class IfirmaLimitReading
     }
 
     /**
-     * @return int requests left of the granted limit, never below zero
+     * @return int what is left of the granted limit, never below zero
      */
     public function remaining()
     {
