@@ -183,11 +183,12 @@ if ($issuedOrder > 0) {
     check(isset($records[$issuedOrder]), 'issued order is among the presented records', (string) count($records) . ' records');
     check($cell !== null, 'issued order record carries the ifirma_document key', $cell === null ? 'key absent: the presenter hook did not fill it' : '');
     check(isset($records[$issuedOrder]['ifirma_document_number']) && $records[$issuedOrder]['ifirma_document_number'] === $issuedNumber, 'query builder hook selected the number and status of the issued order', json_encode(array_intersect_key($records[$issuedOrder], array('ifirma_document_number' => 1, 'ifirma_document_status' => 1))));
-    // the tooltip's first line names the kind and the state in words and ends with the number
-    $headline = ': ' . htmlspecialchars($issuedNumber, ENT_QUOTES, 'UTF-8');
+    // the tooltip is the back-office tooltip, one fact per line: the status, then "Number: <number>" (Numer: in Polish)
+    $numberLine = htmlspecialchars($issuedNumber, ENT_QUOTES, 'UTF-8');
     check($cell !== null && strpos($cell, 'receipt_long') !== false && strpos($cell, 'material-icons') !== false
-        && strpos($cell, $headline) !== false && preg_match('/title="[^"]*(Invoice|Receipt|Faktura|Paragon)/u', $cell) === 1,
-        'issued order cell has the icon and a tooltip headline ending with the number', (string) $cell);
+        && strpos($cell, 'data-toggle="pstooltip"') !== false && strpos($cell, 'ifirma-grid-tooltip') !== false
+        && preg_match('/title="[^"]*(Invoice|Receipt|Faktura|Paragon)[^"]*\n(Number|Numer): ' . preg_quote($numberLine, '/') . '/u', $cell) === 1,
+        'issued order cell has the icon, the back-office tooltip attributes and a number line in the title', (string) $cell);
 }
 if ($emptyOrder > 0) {
     check(isset($records[$emptyOrder]['ifirma_document']) && strpos($records[$emptyOrder]['ifirma_document'], 'receipt_long') === false, 'order without a record has no issued icon in its cell', $emptyOrder . ': ' . var_export(isset($records[$emptyOrder]['ifirma_document']) ? $records[$emptyOrder]['ifirma_document'] : 'key absent', true));

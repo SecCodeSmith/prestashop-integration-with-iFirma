@@ -30,7 +30,7 @@ class OrderGridIndicatorTest extends TestCase
         $this->assertStringContainsString('material-icons', $cell);
         $this->assertStringContainsString('receipt_long', $cell);
         // deliberate change (task 7.8): the tooltip names the document kind and state in words
-        $this->assertStringContainsString("title=\"Invoice issued: FP 7/2026\nNot sent yet\nUnpaid\"", $cell);
+        $this->assertStringContainsString("title=\"Invoice issued\nNumber: FP 7/2026\nNot sent yet\nUnpaid\"", $cell);
         $this->assertStringContainsString('text-info', $cell);
         $this->assertStringNotContainsString('text-success', $cell);
     }
@@ -42,7 +42,7 @@ class OrderGridIndicatorTest extends TestCase
             IfirmaOrderGridIndicator::FIELD_STATUS => 'paid',
         ), $this->labels);
 
-        $this->assertStringContainsString('title="Invoice paid: FP 7/2026', $cell);
+        $this->assertStringContainsString("title=\"Invoice paid\nNumber: FP 7/2026", $cell);
         $this->assertStringContainsString('text-success', $cell);
     }
 
@@ -136,7 +136,7 @@ class OrderGridIndicatorTest extends TestCase
         $this->assertSame(array(
             'ifirma_document_number', 'ifirma_document_status', 'ifirma_document_state', 'ifirma_document_type',
             'ifirma_document_delivery', 'ifirma_document_sent_date', 'ifirma_document_ksef_status',
-            'ifirma_document_ksef_number', 'ifirma_document_error', 'ifirma_document_rank',
+            'ifirma_document_ksef_number', 'ifirma_document_error', 'ifirma_document_rank', 'ifirma_document_issue_date',
         ), $aliases);
         $this->assertSame($aliases, array_unique($aliases));
     }
@@ -206,7 +206,8 @@ class OrderGridIndicatorTest extends TestCase
         ), $this->issueLabels(), true);
 
         $this->assertSame(
-            '<a href="#" class="js-ifirma-issue" data-id-order="42" title="No document yet – click to issue"><i class="material-icons">add_circle_outline</i></a>',
+            '<a href="#" class="js-ifirma-issue" data-id-order="42" ' . $this->tooltipAttributes('No document yet – click to issue')
+                . '><i class="material-icons">add_circle_outline</i></a>',
             $cell
         );
     }
@@ -274,5 +275,77 @@ class OrderGridIndicatorTest extends TestCase
 
         $this->assertStringContainsString('receipt_long', $cell);
         $this->assertStringNotContainsString('js-ifirma-issue', $cell);
+    }
+
+    /**
+     * @param string $title the unescaped tooltip text
+     * @return string the attributes PrestaShop's tooltip reads, in the order the cell writes them
+     */
+    private function tooltipAttributes($title)
+    {
+        return 'data-toggle="pstooltip" data-placement="top" data-template="'
+            . htmlspecialchars(IfirmaOrderGridIndicator::TOOLTIP_TEMPLATE, ENT_QUOTES, 'UTF-8')
+            . '" title="' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '"';
+    }
+
+    public function testTheTooltipTemplateIsBootstrapsDefaultWithOneExtraClass()
+    {
+        $this->assertSame(
+            '<div class="tooltip ifirma-grid-tooltip" role="tooltip"><div class="arrow"></div><div class="tooltip-inner"></div></div>',
+            IfirmaOrderGridIndicator::TOOLTIP_TEMPLATE
+        );
+    }
+
+    public function testTheIssuedIconUsesPrestashopsTooltipWithANativeFallback()
+    {
+        $cell = IfirmaOrderGridIndicator::cell(array(
+            IfirmaOrderGridIndicator::FIELD_NUMBER => 'FP 7/2026',
+            IfirmaOrderGridIndicator::FIELD_STATUS => 'created',
+            IfirmaOrderGridIndicator::FIELD_ISSUE_DATE => '2026-11-02',
+        ), $this->labels);
+
+        $this->assertStringContainsString(
+            $this->tooltipAttributes("Invoice issued\nNumber: FP 7/2026\nIssue date: 2026-11-02\nNot sent yet\nUnpaid"),
+            $cell
+        );
+        $this->assertStringContainsString('class="material-icons ifirma-grid-icon text-info"', $cell);
+    }
+
+    public function testTheIssueDateIsReadFromTheRecordDateWhenNoIssueDateIsStored()
+    {
+        $sql = IfirmaOrderGridIndicator::selectSql();
+        $expression = $sql[count($sql) - 1];
+
+        $this->assertSame(
+            "IF(ifr.ifirma_id <> '' AND ifr.status <> 'error', COALESCE(NULLIF(ifr.issue_date, '0000-00-00'), DATE(ifr.date_add)), '')"
+            . ' AS ifirma_document_issue_date',
+            $expression
+        );
+        $this->assertSame('ifirma_document_issue_date', IfirmaOrderGridIndicator::FIELD_ISSUE_DATE);
+    }
+
+    public function testMarkupInTheNumberAndTheErrorStaysInertInEveryAttributeOfTheIssuedIcon()
+    {
+        $cell = IfirmaOrderGridIndicator::cell(array(
+            IfirmaOrderGridIndicator::FIELD_NUMBER => '"><script>alert(1)</script>\'',
+            IfirmaOrderGridIndicator::FIELD_STATUS => 'created',
+            IfirmaOrderGridIndicator::FIELD_ERROR => '"><script>alert(2)</script>',
+        ), $this->labels);
+
+        $this->assertStringNotContainsString('<script>', $cell);
+        $this->assertSame(1, preg_match_all('/<[a-z]/i', $cell), 'only the icon element is markup');
+        $this->assertStringContainsString('&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;&#039;', $cell);
+    }
+
+    public function testMarkupInTheErrorStaysInertInEveryAttributeOfTheIssueAnchor()
+    {
+        $cell = IfirmaOrderGridIndicator::cell(array(
+            'id_order' => 5, IfirmaOrderGridIndicator::FIELD_STATE => 'error',
+            IfirmaOrderGridIndicator::FIELD_ERROR => '"><script>alert(1)</script>\'',
+        ), array(), true);
+
+        $this->assertStringNotContainsString('<script>', $cell);
+        $this->assertSame(2, preg_match_all('/<[a-z]/i', $cell), 'only the anchor and its icon are markup');
+        $this->assertStringContainsString('data-toggle="pstooltip"', $cell);
     }
 }
