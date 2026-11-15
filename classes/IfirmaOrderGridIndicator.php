@@ -31,7 +31,11 @@ class IfirmaOrderGridIndicator
     const FIELD_RANK = 'ifirma_document_rank';
     const FIELD_DELIVERY_ATTEMPTS = 'ifirma_document_delivery_attempts';
     const FIELD_DELIVERY_RETRY_AT = 'ifirma_document_delivery_retry_at';
+    const FIELD_ISSUE_DATE = IfirmaOrderGridTooltip::FIELD_ISSUE_DATE;
     const ICON = 'receipt_long';
+
+    /** PrestaShop's tooltip (Bootstrap 4) with its default template plus a class the stylesheet uses to keep the line breaks */
+    const TOOLTIP_TEMPLATE = '<div class="tooltip ifirma-grid-tooltip" role="tooltip"><div class="arrow"></div><div class="tooltip-inner"></div></div>';
 
     /** The ORDER BY alias of the column's sort (the column id itself holds the HTML of the cell). */
     const SORT_ALIAS = self::FIELD_RANK;
@@ -94,6 +98,7 @@ class IfirmaOrderGridIndicator
             "IFNULL({$j}.ksef_number, '') AS " . self::FIELD_KSEF_NUMBER,
             "LEFT(IFNULL({$j}.last_error, ''), " . (IfirmaOrderGridTooltip::ERROR_LIMIT + 1) . ") AS " . self::FIELD_ERROR,
             IfirmaDocumentStateRank::sql($j) . ' AS ' . self::FIELD_RANK,
+            "IF({$issued}, COALESCE(NULLIF({$j}.issue_date, '0000-00-00'), DATE({$j}.date_add)), '') AS " . self::FIELD_ISSUE_DATE,
         );
     }
 
@@ -141,9 +146,27 @@ class IfirmaOrderGridIndicator
         }
         $status = isset($record[self::FIELD_STATUS]) ? (string) $record[self::FIELD_STATUS] : '';
         $paid = ($status === IfirmaReceipt::STATUS_PAID);
+
+        return '<i class="material-icons ifirma-grid-icon ' . ($paid ? 'text-success' : 'text-info') . '" '
+            . self::tooltipAttributes($record, $labels) . '>' . self::ICON . '</i>';
+    }
+
+    /**
+     * PrestaShop's back-office script turns every data-toggle="pstooltip" into a Bootstrap tooltip, which moves the title
+     * to its own text and, where the script does not run, leaves the native title tooltip. The text stays text (html is
+     * off); the template's stylesheet class keeps the line breaks.
+     *
+     * @param array $record
+     * @param array $labels
+     * @return string the escaped attributes, without a leading space
+     */
+    private static function tooltipAttributes(array $record, array $labels)
+    {
         $title = implode("\n", IfirmaOrderGridTooltip::lines($record, $labels));
 
-        return '<i class="material-icons ifirma-grid-icon ' . ($paid ? 'text-success' : 'text-info') . '" title="' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '">' . self::ICON . '</i>';
+        return 'data-toggle="pstooltip" data-placement="top" data-template="'
+            . htmlspecialchars(self::TOOLTIP_TEMPLATE, ENT_QUOTES, 'UTF-8')
+            . '" title="' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '"';
     }
 
     /**
@@ -154,9 +177,8 @@ class IfirmaOrderGridIndicator
     private static function issueAnchor(array $record, array $labels)
     {
         $idOrder = isset($record['id_order']) ? (int) $record['id_order'] : 0;
-        $title = implode("\n", IfirmaOrderGridTooltip::lines($record, $labels));
 
-        return '<a href="#" class="js-ifirma-issue" data-id-order="' . $idOrder . '" title="'
-            . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '"><i class="material-icons">add_circle_outline</i></a>';
+        return '<a href="#" class="js-ifirma-issue" data-id-order="' . $idOrder . '" '
+            . self::tooltipAttributes($record, $labels) . '><i class="material-icons">add_circle_outline</i></a>';
     }
 }

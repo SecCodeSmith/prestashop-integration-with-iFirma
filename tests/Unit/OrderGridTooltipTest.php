@@ -25,7 +25,7 @@ class OrderGridTooltipTest extends TestCase
         'delivery_sent_invoice' => 'Wysłana do klienta: %s', 'delivery_sent_receipt' => 'Wysłany do klienta: %s',
         'delivery_none_invoice' => 'Jeszcze nie wysłana', 'delivery_none_receipt' => 'Jeszcze nie wysłany',
         'delivery_failed' => 'Wysyłka nieudana', 'unpaid_invoice' => 'Nieopłacona', 'unpaid_receipt' => 'Nieopłacony',
-        'ksef_accepted' => 'KSeF: przyjęta (%s)', 'ksef_progress' => 'KSeF: wysłana, czeka na potwierdzenie',
+        'document_number' => 'Numer: %s', 'document_issue_date' => 'Data wystawienia: %s', 'ksef_accepted' => 'KSeF: przyjęta (%s)', 'ksef_progress' => 'KSeF: wysłana, czeka na potwierdzenie',
         'state_none' => 'Brak dokumentu', 'state_queued' => 'W kolejce (limit iFirma)', 'click_to_issue' => 'kliknij, aby wystawić',
     );
 
@@ -42,7 +42,7 @@ class OrderGridTooltipTest extends TestCase
     {
         $lines = IfirmaOrderGridTooltip::lines($this->record(array('ifirma_document_delivery' => 'sent', 'ifirma_document_sent_date' => '2026-11-09')), array());
 
-        $this->assertSame(array('Invoice sent: FV 12/2026', 'Sent to the customer: 2026-11-09', 'Unpaid'), $lines);
+        $this->assertSame(array('Invoice sent', 'Number: FV 12/2026', 'Sent to the customer: 2026-11-09', 'Unpaid'), $lines);
     }
 
     public function testAnIssuedReceiptInPolish()
@@ -51,14 +51,14 @@ class OrderGridTooltipTest extends TestCase
             'ifirma_document_number' => '7/2026', 'ifirma_document_type' => 'paragon',
         )), self::POLISH);
 
-        $this->assertSame(array('Paragon wystawiony: 7/2026', 'Jeszcze nie wysłany', 'Nieopłacony'), $lines);
+        $this->assertSame(array('Paragon wystawiony', 'Numer: 7/2026', 'Jeszcze nie wysłany', 'Nieopłacony'), $lines);
     }
 
     public function testASentInvoiceInPolish()
     {
         $lines = IfirmaOrderGridTooltip::lines($this->record(array('ifirma_document_delivery' => 'sent', 'ifirma_document_sent_date' => '2026-11-09')), self::POLISH);
 
-        $this->assertSame(array('Faktura wysłana: FV 12/2026', 'Wysłana do klienta: 2026-11-09', 'Nieopłacona'), $lines);
+        $this->assertSame(array('Faktura wysłana', 'Numer: FV 12/2026', 'Wysłana do klienta: 2026-11-09', 'Nieopłacona'), $lines);
     }
 
     public function testAPaidDocumentHasNoUnpaidLine()
@@ -67,7 +67,7 @@ class OrderGridTooltipTest extends TestCase
             'ifirma_document_status' => 'paid', 'ifirma_document_delivery' => 'sent', 'ifirma_document_sent_date' => '2026-11-09',
         )), self::POLISH);
 
-        $this->assertSame(array('Faktura opłacona: FV 12/2026', 'Wysłana do klienta: 2026-11-09'), $lines);
+        $this->assertSame(array('Faktura opłacona', 'Numer: FV 12/2026', 'Wysłana do klienta: 2026-11-09'), $lines);
     }
 
     public function testAnInvoiceWaitingForKsef()
@@ -76,7 +76,7 @@ class OrderGridTooltipTest extends TestCase
             'ifirma_document_delivery' => 'awaiting_ksef', 'ifirma_document_ksef_status' => 'WYSLANA',
         )), self::POLISH);
 
-        $this->assertSame('Faktura czeka na KSeF: FV 12/2026', $lines[0]);
+        $this->assertSame('Faktura czeka na KSeF', $lines[0]);
         $this->assertContains('KSeF: wysłana, czeka na potwierdzenie', $lines);
     }
 
@@ -93,7 +93,7 @@ class OrderGridTooltipTest extends TestCase
     {
         $lines = IfirmaOrderGridTooltip::lines($this->record(array('ifirma_document_delivery' => 'failed')), array());
 
-        $this->assertSame('Invoice issued: FV 12/2026', $lines[0]);
+        $this->assertSame('Invoice issued', $lines[0]);
         $this->assertContains('Delivery failed', $lines);
     }
 
@@ -106,18 +106,18 @@ class OrderGridTooltipTest extends TestCase
         $this->assertContains('KSeF: rejected by KSeF', $rejected);
     }
 
-    public function testTheHeadlineCarriesTheIdentifierWhenNoNumberIsStored()
+    public function testTheNumberLineCarriesTheIdentifierWhenNoNumberIsStored()
     {
         $lines = IfirmaOrderGridTooltip::lines($this->record(array('ifirma_document_number' => '123456')), array());
 
-        $this->assertSame('Invoice issued: 123456', $lines[0]);
+        $this->assertSame('Number: 123456', $lines[1]);
     }
 
     public function testAFakturaparagonIsAnInvoice()
     {
         $lines = IfirmaOrderGridTooltip::lines($this->record(array('ifirma_document_type' => 'fakturaparagon')), array());
 
-        $this->assertSame('Invoice issued: FV 12/2026', $lines[0]);
+        $this->assertSame('Invoice issued', $lines[0]);
     }
 
     public function testAnOrderWithoutARecord()
@@ -204,7 +204,7 @@ class OrderGridTooltipTest extends TestCase
         )), array());
 
         $this->assertSame(array(
-            'Invoice issued: FV 12/2026', 'Delivery failed', 'Attempt 1 of 3, next attempt at 2026-11-10 10:15', 'Unpaid',
+            'Invoice issued', 'Number: FV 12/2026', 'Delivery failed', 'Attempt 1 of 3, next attempt at 2026-11-10 10:15', 'Unpaid',
         ), $lines);
     }
 
@@ -245,7 +245,7 @@ class OrderGridTooltipTest extends TestCase
     {
         $lines = IfirmaOrderGridTooltip::lines($this->record(array('ifirma_document_delivery' => 'failed')), array());
 
-        $this->assertSame(array('Invoice issued: FV 12/2026', 'Delivery failed', 'Unpaid'), $lines);
+        $this->assertSame(array('Invoice issued', 'Number: FV 12/2026', 'Delivery failed', 'Unpaid'), $lines);
     }
 
     public function testADeliveryThatDidNotFailHasNoRetryLineWhateverTheFieldsHold()
@@ -255,7 +255,7 @@ class OrderGridTooltipTest extends TestCase
             'ifirma_document_delivery_attempts' => '2', 'ifirma_document_delivery_retry_at' => '2026-11-10 10:15:00',
         )), array());
 
-        $this->assertSame(array('Invoice sent: FV 12/2026', 'Sent to the customer: 2026-11-09', 'Unpaid'), $lines);
+        $this->assertSame(array('Invoice sent', 'Number: FV 12/2026', 'Sent to the customer: 2026-11-09', 'Unpaid'), $lines);
     }
 
     public function testTheTooltipCellShowsMarkupInTheRetryStateAsEscapedText()
@@ -281,5 +281,48 @@ class OrderGridTooltipTest extends TestCase
 
         $this->assertStringNotContainsString('<script>', $anchor);
         $this->assertStringContainsString('&lt;script&gt;alert(1)&lt;/script&gt;', $anchor);
+    }
+
+    public function testAnIssuedInvoiceListsStatusNumberIssueDateKsefAndDeliveryInThatOrder()
+    {
+        $lines = IfirmaOrderGridTooltip::lines($this->record(array(
+            'ifirma_document_issue_date' => '2026-11-02', 'ifirma_document_ksef_number' => '1234567890-20261109-ABCDEF123456-01',
+            'ifirma_document_delivery' => 'sent', 'ifirma_document_sent_date' => '2026-11-09',
+        )), array());
+
+        $this->assertSame(array(
+            'Invoice sent', 'Number: FV 12/2026', 'Issue date: 2026-11-02', 'KSeF: accepted (1234567890-20261109-ABCDEF123456-01)',
+            'Sent to the customer: 2026-11-09', 'Unpaid',
+        ), $lines);
+    }
+
+    public function testTheIssueDateLineIsInPolish()
+    {
+        $lines = IfirmaOrderGridTooltip::lines($this->record(array('ifirma_document_issue_date' => '2026-11-02')), self::POLISH);
+
+        $this->assertSame(array('Faktura wystawiona', 'Numer: FV 12/2026', 'Data wystawienia: 2026-11-02', 'Jeszcze nie wysłana', 'Nieopłacona'), $lines);
+    }
+
+    public function testAReceiptListsItsIssueDate()
+    {
+        $lines = IfirmaOrderGridTooltip::lines($this->record(array(
+            'ifirma_document_number' => '7/2026', 'ifirma_document_type' => 'paragon', 'ifirma_document_issue_date' => '2026-11-03',
+        )), self::POLISH);
+
+        $this->assertSame(array('Paragon wystawiony', 'Numer: 7/2026', 'Data wystawienia: 2026-11-03', 'Jeszcze nie wysłany', 'Nieopłacony'), $lines);
+    }
+
+    public function testWithoutAnIssueDateThereIsNoIssueDateLine()
+    {
+        $lines = IfirmaOrderGridTooltip::lines($this->record(array('ifirma_document_issue_date' => '')), array());
+
+        $this->assertSame(array('Invoice issued', 'Number: FV 12/2026', 'Not sent yet', 'Unpaid'), $lines);
+    }
+
+    public function testADocumentWithoutAKsefStateShowsNoKsefLine()
+    {
+        $lines = IfirmaOrderGridTooltip::lines($this->record(array('ifirma_document_issue_date' => '2026-11-02')), array());
+
+        $this->assertSame(array(), preg_grep('/^KSeF/', $lines));
     }
 }

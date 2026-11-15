@@ -1728,6 +1728,8 @@ class Ifirma extends Module
             'ksef_waiting' => $this->l('KSeF: waiting to be sent'),
             'ksef_error' => $this->l('KSeF: error'),
             'ksef_rejected' => $this->l('KSeF: rejected by KSeF'),
+            'document_number' => $this->l('Number: %s'),
+            'document_issue_date' => $this->l('Issue date: %s'),
             'state_none' => $this->l('No document yet'),
             'state_error' => $this->l('Issuance failed'),
             'state_unknown' => $this->l('Unknown outcome'),

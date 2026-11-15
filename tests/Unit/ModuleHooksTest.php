@@ -605,10 +605,10 @@ class ModuleHooksTest extends TestCase
 
         $records = $grid['data']['records'];
         $this->assertStringContainsString('receipt_long', $records[0]['ifirma_document']);
-        $this->assertStringContainsString('title="Invoice issued: FP 7/2026', $records[0]['ifirma_document']);
+        $this->assertStringContainsString('Number: FP 7/2026', $records[0]['ifirma_document']);
         $this->assertStringContainsString('text-info', $records[0]['ifirma_document']);
         $this->assertSame('', $records[1]['ifirma_document']);
-        $this->assertStringContainsString('Invoice paid: FP 8/2026', $records[2]['ifirma_document']);
+        $this->assertStringContainsString('Number: FP 8/2026', $records[2]['ifirma_document']);
         $this->assertStringContainsString('text-success', $records[2]['ifirma_document']);
     }
 
@@ -659,7 +659,7 @@ class ModuleHooksTest extends TestCase
         $this->assertInstanceOf(get_class($collection), $grid['data']['records']);
         $this->assertNotSame($collection, $grid['data']['records'], 'a new collection carries the filled rows');
         $rows = $grid['data']['records']->all();
-        $this->assertStringContainsString('title="Invoice issued: FP 7/2026', $rows[0]['ifirma_document']);
+        $this->assertStringContainsString('Number: FP 7/2026', $rows[0]['ifirma_document']);
         $this->assertSame('', $rows[1]['ifirma_document']);
         $this->assertSame(42, $rows[0]['id_order'], 'the other keys of a row are untouched');
     }
@@ -1917,7 +1917,7 @@ class ModuleHooksTest extends TestCase
         $this->module->hookActionOrderGridPresenterModifier($params);
         $rows = $grid['data']['records'];
         $this->assertStringContainsString('receipt_long', $rows[0]['ifirma_document']);
-        $this->assertStringContainsString('class="js-ifirma-issue" data-id-order="43" title="No document yet – click to issue"', $rows[1]['ifirma_document']);
+        $this->assertStringContainsString('class="js-ifirma-issue" data-id-order="43" data-toggle="pstooltip"', $rows[1]['ifirma_document']);
         $this->assertStringContainsString('title="Unknown outcome – click to issue"', $rows[2]['ifirma_document']);
 
         $this->employeeHolding(array(IfirmaPermission::ROLE_READ));
@@ -2653,7 +2653,7 @@ class ModuleHooksTest extends TestCase
 
         $this->module->hookActionOrderGridPresenterModifier($params);
 
-        $this->assertStringContainsString('Invoice issued: FV 12/2026', $grid['data']['records'][0]['ifirma_document']);
+        $this->assertStringContainsString('Number: FV 12/2026', $grid['data']['records'][0]['ifirma_document']);
     }
 
     public function testMarkupInTheErrorOfAFailedRecordIsEscapedInTheTooltip()

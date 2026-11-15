@@ -228,6 +228,8 @@ return array(
     'Receipt sent' => 'Paragon wysłany',
     'Receipt paid' => 'Paragon opłacony',
     'Receipt waiting for KSeF' => 'Paragon czeka na KSeF',
+    'Number: %s' => 'Numer: %s',
+    'Issue date: %s' => 'Data wystawienia: %s',
     'Sent to the customer: %s' => 'Wysłana do klienta: %s',
     'Receipt sent to the customer: %s' => 'Wysłany do klienta: %s',
     'Not sent yet' => 'Jeszcze nie wysłana',

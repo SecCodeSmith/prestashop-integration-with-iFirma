@@ -20,8 +20,8 @@ require_once dirname(__FILE__) . '/IfirmaDeliveryRetryView.php';
  * The lines of the tooltip of the iFirma cell in the Orders list. Pure: a grid record and a table of words in, lines
  * out. The words are the module's (they are translated there); English defaults stand in for a missing one.
  *
- * An issued document: a headline "<kind and state>: <number>", then the delivery, "unpaid" when it is not paid, and the
- * KSeF line. A record that is not issued: the state in words, the short error of a failed issuance, and the hint that a
+ * An issued document, one fact per line: the kind and state in words, the number, the issue date, the KSeF line, then
+ * the delivery and "unpaid" when it is not paid. A record that is not issued: the state in words, the short error of a failed issuance, and the hint that a
  * click issues the document.
  */
 class IfirmaOrderGridTooltip
@@ -31,6 +31,8 @@ class IfirmaOrderGridTooltip
     /** the grid record keys of the retry state; the same aliases as IfirmaOrderGridIndicator::FIELD_DELIVERY_ATTEMPTS / _RETRY_AT */
     const FIELD_ATTEMPTS = 'ifirma_document_delivery_attempts';
     const FIELD_RETRY_AT = 'ifirma_document_delivery_retry_at';
+    /** the grid record key of the issue date; the same alias as IfirmaOrderGridIndicator::FIELD_ISSUE_DATE */
+    const FIELD_ISSUE_DATE = 'ifirma_document_issue_date';
 
     /**
      * @return string[] key => English word; a key ending in _invoice or _receipt has one word for each kind so that
@@ -49,6 +51,7 @@ class IfirmaOrderGridTooltip
             'unpaid_invoice' => 'Unpaid', 'unpaid_receipt' => 'Unpaid',
             'ksef_accepted' => 'KSeF: accepted (%s)', 'ksef_progress' => 'KSeF: sent, awaiting confirmation',
             'ksef_waiting' => 'KSeF: waiting to be sent', 'ksef_error' => 'KSeF: error', 'ksef_rejected' => 'KSeF: rejected by KSeF',
+            'document_number' => 'Number: %s', 'document_issue_date' => 'Issue date: %s',
             'state_none' => 'No document yet', 'state_error' => 'Issuance failed', 'state_unknown' => 'Unknown outcome',
             'state_duplicate_suspected' => 'Suspected duplicate', 'state_held' => 'Held (data change request)',
             'state_queued' => 'Queued (iFirma limit)', 'click_to_issue' => 'click to issue',
@@ -92,7 +95,15 @@ class IfirmaOrderGridTooltip
         } else {
             $state = 'issued';
         }
-        $lines = array($words[$kind . '_' . $state] . ': ' . $number);
+        $lines = array($words[$kind . '_' . $state], sprintf($words['document_number'], $number));
+        $issueDate = self::value($record, self::FIELD_ISSUE_DATE);
+        if ($issueDate !== '') {
+            $lines[] = sprintf($words['document_issue_date'], $issueDate);
+        }
+        $ksefLine = self::ksefLine($ksefStatus, $ksefNumber, $delivery, $words);
+        if ($ksefLine !== '') {
+            $lines[] = $ksefLine;
+        }
 
         if ($sent && self::value($record, 'ifirma_document_sent_date') !== '') {
             $lines[] = sprintf($words['delivery_sent_' . $kind], self::value($record, 'ifirma_document_sent_date'));
@@ -107,10 +118,6 @@ class IfirmaOrderGridTooltip
         }
         if (!$paid) {
             $lines[] = $words['unpaid_' . $kind];
-        }
-        $ksefLine = self::ksefLine($ksefStatus, $ksefNumber, $delivery, $words);
-        if ($ksefLine !== '') {
-            $lines[] = $ksefLine;
         }
 
         return $lines;
