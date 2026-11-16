@@ -198,6 +198,16 @@ class DocumentsFrontTest extends TestCase
         $this->assertStringContainsString('{$receipt.status_label|escape:\'html\':\'UTF-8\'}', $tpl);
     }
 
+    public function testTheTemplateGroupsTheStatusAndExternalBadgesInOneSpan()
+    {
+        $tpl = $this->template('front/documents.tpl');
+
+        $this->assertMatchesRegularExpression(
+            '/<span class="ifirma-document-badges">\s*<span class="ifirma-badge ifirma-badge-\{\$receipt\.status.*?ifirma-badge-external.*?<\/span>\s*\{\/if\}\s*<\/span>/s',
+            $tpl
+        );
+    }
+
     public function testTheTemplateOffersALinkOnlyWhenTheRowHasOne()
     {
         $tpl = $this->template('front/documents.tpl');
