@@ -143,6 +143,19 @@ class RemoteLimitTest extends TestCase
         $this->assertSame(1300, $reading['used']);
     }
 
+    public function testTheStoredReadingFollowsTheGrantIFirmaReportsNow()
+    {
+        $this->readings[] = array('used' => 1000, 'granted' => 1000);
+        $this->readings[] = array('used' => 1000, 'granted' => 1500);
+        $remote = $this->remoteLimit();
+        $remote->refresh();
+        $this->now += IfirmaRemoteLimit::REFRESH_SECONDS;
+
+        $remote->refresh();
+
+        $this->assertSame(1500, IfirmaRemoteLimit::stored()->granted());
+    }
+
     public function testAFreshReadingIsReusedAcrossMidnightBecauseTheMonthlyFigureHasNoDay()
     {
         $this->now = mktime(23, 59, 30, 11, 1, 2026);

@@ -754,7 +754,7 @@ class Ifirma extends Module
             'not_checked' => $this->l('The monthly iFirma API limit has not been checked yet.'),
             'reading' => $this->l('Monthly iFirma API limit: used %1$d of %2$d, %3$d remaining (read %4$s).'),
             'earlier_month' => $this->l('Last reading, from %1$s: used %2$d of %3$d. It is the limit of an earlier month and is outdated.'),
-            'nothing_left' => $this->l('The monthly iFirma API limit is used up: iFirma does not accept documents through the API until the limit is renewed.'),
+            'nothing_left' => $this->l('The monthly iFirma API limit is used up: iFirma accepts no documents through the API until the next month or until it grants a higher limit (request one in iFirma under Limity API).'),
             'unavailable' => $this->l('iFirma API limit is currently unavailable.'),
             'refused' => array(
                 IfirmaRateDecision::WINDOW_MINUTE => $this->l('The limit was not checked because the module reached its limit of requests per minute. Nothing was sent to iFirma.'),

@@ -19,3 +19,4 @@ Rules (CLAUDE.md): test first and show the red run before the code; one concern 
 - [x] 3.1 Smoke step in `tests/smoke/run.php` and `tests/smoke/README.md` against `POST /__mock/monthly-limit`.
 - [x] 3.2 Docs: `docs/configuration.md`, `docs/architecture.md`, `docs/troubleshooting.md`, `docs/upgrading.md`.
 - [x] 3.3 Full suite, changed-line coverage gate, PHP 7.2 lint, `openspec validate fix-monthly-api-limit`.
+- [x] 3.4 The granted figure is the account's own: reworded used-up warning, a grant raised by iFirma replaces the used-up reading on the next check and the stored reading follows the latest grant (tests `testAGrantRaisedByIFirmaReplacesTheUsedUpReadingOnTheNextCheck`, `testTheStoredReadingFollowsTheGrantIFirmaReportsNow`); docs, spec and translations updated.

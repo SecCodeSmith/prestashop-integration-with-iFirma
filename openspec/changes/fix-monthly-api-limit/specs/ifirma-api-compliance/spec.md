@@ -37,7 +37,12 @@ When the optional `abonent` key is configured, the module configuration page SHA
 #### Scenario: Monthly limit used up
 - **GIVEN** the last reading of this month says 2,000 used of 2,000
 - **WHEN** the admin opens the configuration page
-- **THEN** the page shows 0 remaining and warns that iFirma does not accept documents through the API until the limit is renewed
+- **THEN** the page shows 0 remaining and warns that iFirma accepts no documents through the API until the next month or until it grants a higher limit
+
+#### Scenario: Grant raised by iFirma during the month
+- **GIVEN** the last reading says 1,000 used of 1,000 granted
+- **WHEN** iFirma has granted 2,000 and the employee checks the limit
+- **THEN** the box shows 1,000 used of 2,000 with 1,000 remaining and no used-up warning
 
 ## REMOVED Requirements
 
