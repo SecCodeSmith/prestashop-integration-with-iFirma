@@ -28,7 +28,8 @@
 
 .ifirma-receipts-list li {
     display: grid;
-    grid-template-columns: minmax(7rem, 1fr) 8rem auto;
+    /* fixed date and badge tracks: every row is its own grid, so an auto track would move the date per row */
+    grid-template-columns: minmax(6rem, 1fr) 7rem minmax(0, 18rem);
     align-items: center;
     gap: .5rem 1rem;
     padding: .35rem 0;
@@ -46,7 +47,7 @@
     gap: .25rem;
 }
 
-@media (max-width: 575.98px) {
+@media (max-width: 767.98px) {
     .ifirma-receipts-list li {
         grid-template-columns: 1fr;
     }

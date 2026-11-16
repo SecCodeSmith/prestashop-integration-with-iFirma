@@ -111,6 +111,8 @@ New settings (all editable on the settings page except the two internal counters
 
 **How to switch it off.** Untick **Serve the iFirma document from the built-in invoice link** (set **No**) on the module configuration page and save. The link gives PrestaShop's own invoice again at once; no other step is needed. A downgrade leaves the hook registered, which core ignores once the method is gone.
 
+**After the upgrade: clear the cache.** The **My invoices** entry in My account (**Moje Faktury**) and its page come with new templates. A shop set to "Never recompile template files" keeps the old compiled ones until you clear the cache (**Advanced Parameters > Performance > Clear cache**). Until then customers may still see the old tile that did nothing in some themes.
+
 If another module listens on `actionPDFInvoiceRender`, see [Troubleshooting](troubleshooting.md#the-invoice-link-of-order-history-shows-prestashops-invoice-or-no-link).
 
 ## Upgrading to 1.10.0
