@@ -179,8 +179,11 @@ links stay hidden.
 **Cause:** older versions of the module kept the list in a Bootstrap 4 `collapse` block that only the Classic theme's script opens.
 Themes with Bootstrap 5 (such as Hummingbird) or without a collapse script never open it.
 
-**Fix:** update the module. The tile is now a plain link titled **My invoices** (**Moje Faktury** in Polish) to its own page,
-which lists the documents and needs no script. If the page does not render in a heavily customised theme, copy
+**Fix:** update the module, then clear the cache (**Advanced Parameters > Performance > Clear cache**). A shop set to "Never
+recompile template files" keeps serving the old compiled tile until the cache is cleared. The tile is now a plain link titled
+**My invoices** (**Moje Faktury** in Polish) to its own page, which lists the documents and needs no script. In Classic-based
+themes it is an account tile like the core ones; in Hummingbird and its child themes it is an entry of the account menu. If the
+page does not render in a heavily customised theme, copy
 `views/templates/front/documents.tpl` to `themes/<theme>/modules/ifirma/views/templates/front/documents.tpl` and adapt it there; the
 page extends the standard `customer/page.tpl` layout. Clear the Smarty cache after a template change.
 
