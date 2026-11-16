@@ -10,6 +10,7 @@ if (!defined('_PS_VERSION_')) {
 
 require_once dirname(__FILE__) . '/IfirmaOrderGridTooltip.php';
 require_once dirname(__FILE__) . '/IfirmaDocumentStateRank.php';
+require_once dirname(__FILE__) . '/IfirmaIssueDateSql.php';
 
 /**
  * What the "iFirma" column of the back-office Orders list shows for each order: the SQL that reads the
@@ -98,7 +99,7 @@ class IfirmaOrderGridIndicator
             "IFNULL({$j}.ksef_number, '') AS " . self::FIELD_KSEF_NUMBER,
             "LEFT(IFNULL({$j}.last_error, ''), " . (IfirmaOrderGridTooltip::ERROR_LIMIT + 1) . ") AS " . self::FIELD_ERROR,
             IfirmaDocumentStateRank::sql($j) . ' AS ' . self::FIELD_RANK,
-            "IF({$issued}, COALESCE(NULLIF({$j}.issue_date, '0000-00-00'), DATE({$j}.date_add)), '') AS " . self::FIELD_ISSUE_DATE,
+            "IF({$issued}, " . IfirmaIssueDateSql::expression($j) . ", '') AS " . self::FIELD_ISSUE_DATE,
         );
     }
 

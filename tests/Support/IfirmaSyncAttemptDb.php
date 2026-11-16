@@ -57,7 +57,7 @@ trait IfirmaSyncAttemptDb
 
             return 1;
         });
-        $db->whenExecuteS('/SELECT id_ifirma_receipt FROM `ps_ifirma_receipt`\s+WHERE id_customer = (\d+)\s+AND id_ifirma_receipt != (\d+)\s+AND ifirma_id != \'\' AND status != \'error\'\s+AND COALESCE\(NULLIF\(issue_date, \'0000-00-00\'\), DATE\(date_add\)\) = \'([^\']*)\'\s+AND \(last_sync_at IS NULL OR last_sync_at < \'([^\']*)\'\)\s+ORDER BY id_ifirma_receipt\s+LIMIT (\d+)/s', function ($sql, $m) {
+        $db->whenExecuteS('/SELECT id_ifirma_receipt FROM `ps_ifirma_receipt`\s+WHERE id_customer = (\d+)\s+AND id_ifirma_receipt != (\d+)\s+AND ifirma_id != \'\' AND status != \'error\'\s+AND ' . preg_quote(IfirmaIssueDateSql::expression(), '/') . ' = \'([^\']*)\'\s+AND \(last_sync_at IS NULL OR last_sync_at < \'([^\']*)\'\)\s+ORDER BY id_ifirma_receipt\s+LIMIT (\d+)/s', function ($sql, $m) {
             if ($this->beforeStaleFinder !== null) {
                 call_user_func($this->beforeStaleFinder);
             }
