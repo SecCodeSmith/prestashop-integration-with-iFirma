@@ -325,7 +325,7 @@ was sent is not counted. A request that iFirma answered with an error is counted
 | `other` (Other requests) | Any request that matches none of the kinds above. |
 
 The counts of one day are kept in `IFIRMA_USAGE_<KIND>` (`<day>:<count>`); they are statistics only and never refuse a request.
-The cron answer carries the same numbers in its `usage` block (see [Cron jobs](#cron-jobs)).
+The cron answer carries the same numbers in its `usage` block (see [Cron jobs](#cron-jobs)). The granted figure is the account's own, set by iFirma on the user's request and changeable during the month; the module never assumes a figure.
 
 ### Checking the remaining limit
 
@@ -333,10 +333,10 @@ With the `abonent` key set, the **Monthly iFirma API limit** box shows the last 
 used, granted and remaining, and the time of the reading. Opening the page does not read the limit. Before the first reading
 the box says that the limit was not checked yet. A reading from an earlier day of the current month is still this month's
 figure and is shown with the date and time it was read; a reading from an earlier month is shown with its date and marked as
-outdated. When nothing is left the box says that the monthly limit is used up and that iFirma does not accept documents
-through the API until the limit is renewed.
+outdated. When nothing is left the box says that the monthly limit is used up and that iFirma accepts no documents
+through the API until the next month or until it grants a higher limit (request one in iFirma under Limity API).
 
-The button **Check the remaining iFirma limit** reads a fresh figure. One click sends exactly one request (`GET abonent/limit.json`),
+The button **Check the remaining iFirma limit** reads a fresh figure. The granted figure is the account's own: iFirma sets it when the user requests a limit (Limity API in iFirma; the granted figure can differ from the requested one) and can change it during the month. The module never assumes a figure and shows what iFirma reported at the last reading. The cron reads the limit again after 10 minutes at most, and the button reads at once. One click sends exactly one request (`GET abonent/limit.json`),
 always a new one even when the cron read the limit a minute ago, and that request counts toward the module's minute and day
 counts as kind `limit` (five clicks in a minute are five requests, and the minute cap applies to the sixth). The reading itself
 is only stored: it changes no counter and no cap, as with the cron.

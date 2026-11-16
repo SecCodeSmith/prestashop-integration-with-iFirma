@@ -217,6 +217,7 @@ class IfirmaCustomerView
         return array(
             'receipts' => $receipts,
             'pending_count' => $pendingCount,
+            'page_url' => $this->link->getModuleLink('ifirma', 'documents', array(), true),
             'visible' => count($receipts) > 0 || $pendingCount > 0,
         );
     }

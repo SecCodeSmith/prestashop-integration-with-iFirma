@@ -20,6 +20,7 @@ Constraints: PHP 7.2 syntax, PrestaShop 1.7 to 9.x, no runtime dependency, the v
 - **Limit box.** The stored reading's month is `substr(day, 0, 6)`. Same month as now: the normal reading line (with date and time of the reading), whatever the day. Earlier month: the label `earlier_month` ("outdated"), with the date of the reading. The presenter label key `earlier_day` is replaced by `earlier_month`; the labels are wired only in `ifirma.php`, so no external caller breaks. The wording never says "requests".
 - **Contracts unchanged.** The stored format keeps the reading date as its first part, which is what the month comparison reads. The cron `limit` block keeps `used`, `granted`, `remaining`.
 - **No upgrade script.** Shops that already have an inflated day counter or a lowered cap lose both the next calendar day: the counter restarts from zero at midnight and the cap is no longer derived from the reading. The stored reading stays valid as it is.
+- **The granted figure is the account's own.** iFirma assigns each account its own monthly grant when the user requests a limit (Limity API) and can change it during the month, so the module never assumes a fixed figure: the box and the cron show the grant of the last reading.
 
 ## Interaction with the unarchived change `add-api-usage-delivery-retry-status-filter-and-ci-fix`
 

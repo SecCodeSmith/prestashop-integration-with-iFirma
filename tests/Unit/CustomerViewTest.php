@@ -708,6 +708,14 @@ class CustomerViewTest extends TestCase
         $this->assertNotNull($account['receipts'][1]['download_url']);
     }
 
+    /** Scenario "Account entry works without theme scripts": the tile is a plain link to the page. */
+    public function testTheAccountViewCarriesTheLinkToTheMyInvoicesPage()
+    {
+        $account = $this->view->forAccount(array(), 0);
+
+        $this->assertSame('https://shop.test/module/ifirma/documents?', $account['page_url']);
+    }
+
     public function linkDecisionProvider()
     {
         return array(
