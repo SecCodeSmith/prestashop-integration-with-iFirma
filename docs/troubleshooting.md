@@ -248,6 +248,15 @@ rows, keeps its stored state until the cron reads it; it is not shown as missing
 
 **Why not retry everything:** a retry that could e-mail the same document twice is never made; that is why a failure with an unknown outcome waits for an employee. The one case the module cannot rule out: when the shop's mail system reports a failure although the mail server had already accepted the message (a lost SMTP answer), the retry sends the document again.
 
+### The invoice link of Order history shows PrestaShop's invoice, or no link
+
+**Meaning:** the module answers PrestaShop's built-in invoice link on the hook `actionPDFInvoiceRender`, which PrestaShop runs after its own access checks and before it renders its own invoice. See [The built-in invoice link](usage.md#the-built-in-invoice-link).
+
+- **No invoice link at all in Order history or order details:** PrestaShop shows the link only when Orders > Invoices > *Enable invoices* is on, the order state allows invoices and the order has a PrestaShop invoice. With *Enable invoices* off the module's settings page warns that customers see no built-in link. Customers still find the document in the block on the order page and in **My invoices**.
+- **The link gives PrestaShop's own invoice for an order that has an iFirma document:** check that the setting **Serve the iFirma document from the built-in invoice link** is on and that the module is registered on the hook (Design > Positions, hook `actionPDFInvoiceRender`; re-saving the module or the 1.11.0 upgrade registers it). The order must also be one the module handles; orders from before the module was installed keep PrestaShop's invoice.
+- **A guest sees "The invoice is not available yet" although the document is issued:** this is intended. The module hands out the iFirma PDF only to the logged-in owner, and for a handled order it does not fall back to PrestaShop's invoice.
+- **Another module also listens on `actionPDFInvoiceRender`:** for a handled order the module ends the request after it redirects or sends its answer, so a listener that runs after it does not run for that order. Move the other module before iFirma on the hook in Design > Positions, or switch the setting off to let PrestaShop and the other module handle the link as before.
+
 ### Guest did not receive the code
 
 **Meaning:** the guest request page answers "If the data matches an order, we have sent a code" whether or not a code was sent, so a missing e-mail has one of these causes: the reference or the e-mail did not match the order exactly (the e-mail is compared ignoring case, the reference as typed), the order already has an issued or adopted document, the data-change switch is off, or a limit refused the request (one code per order per 60 seconds, 5 codes per order per 24 hours, 20 codes per client address per hour). A code is valid for 15 minutes and is invalidated after 5 wrong attempts; the page then offers a new one.

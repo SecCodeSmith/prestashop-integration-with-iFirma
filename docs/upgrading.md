@@ -101,6 +101,18 @@ New settings (all editable on the settings page except the two internal counters
 
 **Downgrading.** The extra configuration keys are harmless in 1.7.0. A record in the state `queued` or with the delivery state `awaiting_ksef` is unknown to the older version: before a downgrade, issue the queued orders (bulk **Retry issuance**) and deliver the waiting documents (**Send again**).
 
+## Upgrading to 1.11.0
+
+**What the upgrade does.** `upgrade/upgrade-1.11.0.php` registers the module on the hook `actionPDFInvoiceRender` and sets the new setting `IFIRMA_NATIVE_INVOICE_LINK` to `1` (on) when it is missing. No row and no table is touched. Running it again changes nothing, and a value you set stays.
+
+**Behaviour change: the built-in invoice link serves the iFirma document.** With the setting **Serve the iFirma document from the built-in invoice link** on, a customer who opens PrestaShop's invoice link (Order history, order details) for an order the module handles gets the iFirma document through the protected download, or a short "The invoice is not available yet" answer (HTTP 404) while the document cannot be handed out. PrestaShop's own invoice is no longer generated for those orders. An order is handled when the module holds a document record for it in any state or it has a pending data-change request. Orders from before the module was installed keep PrestaShop's invoice. See [The built-in invoice link](usage.md#the-built-in-invoice-link).
+
+**BREAKING for guests: no invoice for handled orders.** A guest who opens the invoice link with the order's secure key used to get PrestaShop's invoice PDF. For a handled order the guest now gets the "not available yet" answer, because the module never hands an iFirma PDF to a guest and does not fall back to PrestaShop's invoice. A logged-in customer who opens the link with the secure key of someone else's order is treated the same way. Shops whose guests rely on the PrestaShop invoice should switch the setting off.
+
+**How to switch it off.** Untick **Serve the iFirma document from the built-in invoice link** (set **No**) on the module configuration page and save. The link gives PrestaShop's own invoice again at once; no other step is needed. A downgrade leaves the hook registered, which core ignores once the method is gone.
+
+If another module listens on `actionPDFInvoiceRender`, see [Troubleshooting](troubleshooting.md#the-invoice-link-of-order-history-shows-prestashops-invoice-or-no-link).
+
 ## Upgrading to 1.10.0
 
 **When the upgrade script runs.** The module version in the files stays at 1.9.1 until the Release workflow raises it. `upgrade/upgrade-1.10.0.php` (the four receipt columns below) runs when the 1.10.0 release is installed over an older version. Until then, files deployed from the repository work with the old version number: the columns are added on first use (when a receipt is written, or when the Orders list or the documents list is opened).
