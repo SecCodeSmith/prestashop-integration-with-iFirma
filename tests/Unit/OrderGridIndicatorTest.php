@@ -317,7 +317,7 @@ class OrderGridIndicatorTest extends TestCase
         $expression = $sql[count($sql) - 1];
 
         $this->assertSame(
-            "IF(ifr.ifirma_id <> '' AND ifr.status <> 'error', COALESCE(NULLIF(ifr.issue_date, '0000-00-00'), DATE(ifr.date_add)), '')"
+            "IF(ifr.ifirma_id <> '' AND ifr.status <> 'error', COALESCE(IF(ifr.issue_date < '1000-01-01', NULL, ifr.issue_date), DATE(ifr.date_add)), '')"
             . ' AS ifirma_document_issue_date',
             $expression
         );

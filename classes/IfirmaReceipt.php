@@ -10,6 +10,7 @@ if (!defined('_PS_VERSION_')) {
 
 require_once dirname(__FILE__) . '/IfirmaDeliveryRetryPolicy.php';
 require_once dirname(__FILE__) . '/IfirmaSchema.php';
+require_once dirname(__FILE__) . '/IfirmaIssueDateSql.php';
 
 class IfirmaReceipt extends ObjectModel
 {
@@ -561,7 +562,7 @@ class IfirmaReceipt extends ObjectModel
              WHERE id_customer = ' . (int) $idCustomer . '
              AND id_ifirma_receipt != ' . (int) $exceptId . '
              AND ifirma_id != \'\' AND status != \'error\'
-             AND COALESCE(NULLIF(issue_date, \'0000-00-00\'), DATE(date_add)) = \'' . pSQL($date) . '\'
+             AND ' . IfirmaIssueDateSql::expression() . ' = \'' . pSQL($date) . '\'
              AND (last_sync_at IS NULL OR last_sync_at < \'' . pSQL($staleBefore) . '\')
              ORDER BY id_ifirma_receipt
              LIMIT ' . self::SYNC_SIBLING_LIMIT
