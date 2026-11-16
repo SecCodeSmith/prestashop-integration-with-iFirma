@@ -27,7 +27,7 @@ require_once __DIR__ . '/SmokeCheckFloor.php';
 require_once __DIR__ . '/SmokeOutputMask.php';
 
 // Every scenario name, in run order. The map of scenario bodies further down must hold exactly these keys.
-$smokeScenarioNames = array('J', 'K', 'L', 'M', 'A', 'A2', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'N', 'O', 'P', 'Q', 'R', 'S');
+$smokeScenarioNames = array('J', 'K', 'L', 'M', 'A', 'A2', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'N', 'O', 'P', 'Q', 'R', 'S', 'T');
 
 // Decided before the shop is touched: a typo in the selection must not change any shop setting.
 try {
@@ -2655,38 +2655,12 @@ class SmokeWeb
      */
     public function request($method, $url, array $post = null)
     {
-        $parts = parse_url($url);
-        $path = (isset($parts['path']) ? $parts['path'] : '/') . (isset($parts['query']) ? '?' . $parts['query'] : '');
+        $path = $this->pathOf($url);
         $out = array('code' => 0, 'body' => '', 'headers' => '', 'url' => $path);
         for ($hop = 0; $hop < 4; $hop++) {
-            $ch = curl_init('http://127.0.0.1' . $path);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_HEADER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 60);
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
-            curl_setopt($ch, CURLOPT_COOKIEJAR, $this->jar);
-            curl_setopt($ch, CURLOPT_COOKIEFILE, $this->jar);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, array('Host: ' . $this->host));
-            curl_setopt($ch, CURLOPT_USERAGENT, 'ifirma-smoke');
-            if ($method === 'POST' && $hop === 0) {
-                curl_setopt($ch, CURLOPT_POST, true);
-                curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($post === null ? array() : $post));
-            }
-            $raw = curl_exec($ch);
-            $out['code'] = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $size = (int) curl_getinfo($ch, CURLINFO_HEADER_SIZE);
-            curl_close($ch);
-            if ($raw === false) {
-                $out['code'] = 0;
-
-                return $out;
-            }
-            $out['headers'] = substr($raw, 0, $size);
-            $out['body'] = (string) substr($raw, $size);
-            $out['url'] = $path;
+            $out = $this->singleRequest($hop === 0 ? $method : 'GET', $path, $hop === 0 ? $post : null);
             if ($out['code'] >= 300 && $out['code'] < 400 && preg_match('/^Location:\s*(\S+)/mi', $out['headers'], $m)) {
-                $next = parse_url($m[1]);
-                $path = (isset($next['path']) ? $next['path'] : '/') . (isset($next['query']) ? '?' . $next['query'] : '');
+                $path = $this->pathOf($m[1]);
                 continue;
             }
 
@@ -2694,6 +2668,49 @@ class SmokeWeb
         }
 
         return $out;
+    }
+
+    /**
+     * One request that is not followed to its redirect target: the answer is the first hop, with its Location header.
+     *
+     * @return array code, body, headers, url
+     */
+    public function requestWithoutRedirect($url)
+    {
+        return $this->singleRequest('GET', $this->pathOf($url), null);
+    }
+
+    private function pathOf($url)
+    {
+        $parts = parse_url($url);
+
+        return (isset($parts['path']) ? $parts['path'] : '/') . (isset($parts['query']) ? '?' . $parts['query'] : '');
+    }
+
+    private function singleRequest($method, $path, array $post = null)
+    {
+        $ch = curl_init('http://127.0.0.1' . $path);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HEADER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+        curl_setopt($ch, CURLOPT_COOKIEJAR, $this->jar);
+        curl_setopt($ch, CURLOPT_COOKIEFILE, $this->jar);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array('Host: ' . $this->host));
+        curl_setopt($ch, CURLOPT_USERAGENT, 'ifirma-smoke');
+        if ($method === 'POST') {
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($post === null ? array() : $post));
+        }
+        $raw = curl_exec($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $size = (int) curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+        curl_close($ch);
+        if ($raw === false) {
+            return array('code' => 0, 'body' => '', 'headers' => '', 'url' => $path);
+        }
+
+        return array('code' => $code, 'body' => (string) substr($raw, $size), 'headers' => substr($raw, 0, $size), 'url' => $path);
     }
 }
 
@@ -3847,6 +3864,334 @@ function scenarioS($module)
     }
 }
 
+// ---------------------------------------------------------------- scenario T: My invoices page and the built-in invoice link
+
+const SMOKE_T_PASSWORD = 'SmokeT-Passw0rd!x';
+const SMOKE_T_OWNER_EMAIL = 'smoke-t-owner@example.test';
+const SMOKE_T_NOT_AVAILABLE = 'The invoice is not available yet. Please try again later or contact the shop.';
+
+/**
+ * A customer of its own, with an address and a known password: the documents page lists every document of a customer,
+ * so a customer the earlier scenarios never used lists exactly the documents of this scenario.
+ *
+ * @return array|null array(Customer, Address), null when one of them could not be saved
+ */
+function smokeThrowawayOwner($idSourceAddress)
+{
+    $leftover = Customer::customerExists(SMOKE_T_OWNER_EMAIL, true);
+    if ($leftover) {
+        smokeDeleteThrowawayOwner(new Customer((int) $leftover));
+    }
+    $crypto = \PrestaShop\PrestaShop\Adapter\ServiceLocator::get('\\PrestaShop\\PrestaShop\\Core\\Crypto\\Hashing');
+    $customer = new Customer();
+    $customer->firstname = 'Smoke';
+    $customer->lastname = 'Owner';
+    $customer->email = SMOKE_T_OWNER_EMAIL;
+    $customer->passwd = $crypto->hash(SMOKE_T_PASSWORD, _COOKIE_KEY_);
+    $customer->active = 1;
+    $customer->id_lang = (int) Configuration::get('PS_LANG_DEFAULT');
+    $customer->id_default_group = (int) Configuration::get('PS_CUSTOMER_GROUP');
+    $customer->secure_key = md5(uniqid((string) mt_rand(), true));
+    if (!$customer->add()) {
+        return null;
+    }
+    $source = new Address((int) $idSourceAddress);
+    $address = new Address();
+    $address->id_customer = (int) $customer->id;
+    $address->id_country = (int) $source->id_country;
+    $address->id_state = (int) $source->id_state;
+    $address->alias = 'smoke-t';
+    $address->company = $source->company;
+    $address->firstname = 'Smoke';
+    $address->lastname = 'Owner';
+    $address->address1 = $source->address1;
+    $address->postcode = $source->postcode;
+    $address->city = $source->city;
+    $address->phone = $source->phone;
+    if (!$address->add()) {
+        smokeDeleteThrowawayOwner($customer);
+
+        return null;
+    }
+
+    return array($customer, $address);
+}
+
+/** Removes the throw-away customer with its address and the module records it made; its orders stay, as in every scenario. */
+function smokeDeleteThrowawayOwner(Customer $customer)
+{
+    $db = Db::getInstance();
+    $id = (int) $customer->id;
+    $db->execute('DELETE FROM `' . _DB_PREFIX_ . 'ifirma_receipt` WHERE id_customer = ' . $id);
+    $db->execute('DELETE FROM `' . _DB_PREFIX_ . 'ifirma_contractor_map` WHERE id_customer = ' . $id);
+    Cache::clean('objectmodel_IfirmaReceipt_*');
+    $customer->delete();
+}
+
+/** Sets the language the shop's customer record carries; the next login over HTTP picks it up. */
+function smokeSetCustomerLanguage(Customer $customer, $idLang)
+{
+    Db::getInstance()->execute('UPDATE `' . _DB_PREFIX_ . 'customer` SET id_lang = ' . (int) $idLang . ' WHERE id_customer = ' . (int) $customer->id);
+    Cache::clean('objectmodel_Customer_*');
+}
+
+/** @return SmokeWeb|null a client logged in as the customer over HTTP; null when the login did not take */
+function smokeLoggedInWeb(Customer $customer, $password)
+{
+    $link = Context::getContext()->link;
+    $web = new SmokeWeb();
+    $web->request('GET', $link->getPageLink('authentication'));
+    $web->request('POST', $link->getPageLink('authentication'), array(
+        'email' => $customer->email, 'password' => $password, 'submitLogin' => '1', 'back' => 'my-account',
+    ));
+    $account = $web->request('GET', $link->getPageLink('my-account'));
+
+    return ($account['code'] === 200 && strpos($account['body'], 'name="submitLogin"') === false) ? $web : null;
+}
+
+function smokeHeaderValue($headers, $name)
+{
+    return preg_match('/^' . preg_quote($name, '/') . ':\s*(.+?)\s*$/mi', $headers, $m) ? $m[1] : '';
+}
+
+/** @return bool whether the answer is a PDF made by the iFirma mock (its page text names "iFirma MOCK") */
+function smokeIsMockPdf(array $answer)
+{
+    return $answer['code'] === 200 && stripos(smokeHeaderValue($answer['headers'], 'Content-Type'), 'application/pdf') === 0
+        && substr($answer['body'], 0, 5) === '%PDF-' && strpos($answer['body'], 'iFirma MOCK') !== false;
+}
+
+/** @return bool whether the answer is a PDF that is not the mock's, that is the PDF invoice PrestaShop renders itself */
+function smokeIsShopPdf(array $answer)
+{
+    return $answer['code'] === 200 && stripos(smokeHeaderValue($answer['headers'], 'Content-Type'), 'application/pdf') === 0
+        && substr($answer['body'], 0, 5) === '%PDF-' && strpos($answer['body'], 'iFirma MOCK') === false;
+}
+
+/** @return string the iFirma tile of the My account page ('' when the page has none) */
+function smokeAccountTile($html)
+{
+    return preg_match('~id="ifirma-account-block".*?</div>~s', $html, $m) ? $m[0] : '';
+}
+
+/** @return array one entry per listed document of the page: text (visible text) and href (its link, '' when it has none) */
+function smokeDocumentRows($html)
+{
+    $rows = array();
+    if (!preg_match('~<section id="ifirma-documents">.*?</section>~s', $html, $section)) {
+        return $rows;
+    }
+    preg_match_all('~<li>(.*?)</li>~s', $section[0], $items);
+    foreach ($items[1] as $item) {
+        $rows[] = array(
+            'text' => trim(preg_replace('/\s+/', ' ', html_entity_decode(strip_tags($item), ENT_QUOTES, 'UTF-8'))),
+            'href' => preg_match('~<a href="([^"]+)"~', $item, $m) ? html_entity_decode($m[1], ENT_QUOTES, 'UTF-8') : '',
+        );
+    }
+
+    return $rows;
+}
+
+/** @return array|null the first listed document whose text holds $needle */
+function smokeDocumentRowWith(array $rows, $needle)
+{
+    foreach ($rows as $row) {
+        if ($needle !== '' && strpos($row['text'], $needle) !== false) {
+            return $row;
+        }
+    }
+
+    return null;
+}
+
+/** @return string the customer's invoice link of core (Order history, order details), with the secure key of a guest request when given */
+function smokeInvoiceUrl(Order $order, $secureKey = null)
+{
+    $parameters = array('id_order' => (int) $order->id);
+    if ($secureKey !== null) {
+        $parameters['secure_key'] = $secureKey;
+    }
+
+    return Context::getContext()->link->getPageLink('pdf-invoice', true, null, $parameters);
+}
+
+function smokeIsReceiptLocation($location)
+{
+    return preg_match('~controller=receipt|/module/ifirma/receipt~', $location) === 1 && strpos($location, 'token=') !== false;
+}
+
+/**
+ * Scenario T: what the customer sees of the documents. The My account tile is a plain link to the My invoices page, the
+ * page lists the customer's documents (a document that waits for KSeF without a link, a visitor who is not logged in is
+ * sent to the login), and PrestaShop's own invoice link (pdf-invoice) hands the owner the iFirma document, tells a guest
+ * that it is not available yet, leaves a foreign order to the core's refusal and an order the module does not handle, or
+ * any order while the setting is off, to the core's own PDF. Last, moving an order to the trigger state while invoices are
+ * enabled is not stopped by the hook that core also runs when it attaches an invoice to a mail.
+ */
+function scenarioT($module, $triggerState)
+{
+    $fixture = $GLOBALS['fixture'];
+    $keys = array('PS_INVOICE', 'IFIRMA_NATIVE_INVOICE_LINK', 'IFIRMA_KSEF_MODE', 'IFIRMA_KSEF_SUBMITTER', 'IFIRMA_SEND_COPY_MODE',
+        'IFIRMA_DUPLICATE_CHECK', 'IFIRMA_AUTO_CREATE_STATE', 'IFIRMA_RATE_WINDOW');
+    $saved = array();
+    foreach ($keys as $key) {
+        $saved[$key] = smokeReadSetting($key);
+    }
+    $owner = null;
+    try {
+        $made = smokeThrowawayOwner($fixture['id_address']);
+        if (!assertTrue($made !== null, 'T: a throw-away customer with an address is created')) {
+            return;
+        }
+        list($owner, $address) = $made;
+        $GLOBALS['fixture']['id_customer'] = (int) $owner->id;
+        $GLOBALS['fixture']['id_address'] = (int) $address->id;
+        $order = freshScenario('T. My invoices page and the built-in invoice link');
+        if (!$order) {
+            return;
+        }
+        smokeSetting('PS_INVOICE', 1);
+        smokeSetting('IFIRMA_NATIVE_INVOICE_LINK', 1);
+        smokeSetting('IFIRMA_KSEF_MODE', 'off');
+        smokeSetting('IFIRMA_SEND_COPY_MODE', 'none');
+        smokeSetting('IFIRMA_DUPLICATE_CHECK', 0);
+
+        // an issued document, and the invoice row PrestaShop's own link needs
+        $result = IfirmaIssuancePipeline::build($module)->run($order, array('trigger' => 'manual'));
+        $receipt = receiptOf($order);
+        if (!assertTrue($result->ok && $receipt && $receipt->isIssued() && (string) $receipt->ifirma_number !== '', 'T: the document of the owner\'s order is issued', $result->message)) {
+            return;
+        }
+        smokeReachTriggerQuietly($order, $triggerState);
+        Cache::clean('objectmodel_Order_*');
+        $order = new Order((int) $order->id);
+        assertTrue((int) $order->invoice_number > 0 && count($order->getInvoicesCollection()) > 0, 'T: the order has an invoice number and an invoice row', 'invoice_number=' . (int) $order->invoice_number);
+
+        // a second document that waits for KSeF acceptance
+        smokeSetting('IFIRMA_KSEF_MODE', 'b2b');
+        smokeSetting('IFIRMA_KSEF_SUBMITTER', 'module');
+        list($waitingOrder) = smokeBusinessOrder('5260001122');
+        IfirmaIssuancePipeline::build($module)->run($waitingOrder, array('trigger' => 'manual'));
+        $waiting = receiptOf($waitingOrder);
+        smokeSetting('IFIRMA_KSEF_MODE', 'off');
+        if (!assertSame('awaiting_ksef', $waiting ? (string) $waiting->delivery_status : null, 'T: the second document waits for KSeF')) {
+            return;
+        }
+
+        $link = Context::getContext()->link;
+        $web = smokeLoggedInWeb($owner, SMOKE_T_PASSWORD);
+        if ($web === null) {
+            skip('T: the customer pages', 'the throw-away customer could not be logged in over HTTP');
+
+            return;
+        }
+
+        // a) the My account tile is a plain link
+        $tile = smokeAccountTile($web->request('GET', $link->getPageLink('my-account'))['body']);
+        assertTrue($tile !== '' && preg_match('~controller=documents|/module/ifirma/documents~', $tile) === 1, 'T a: My account has a tile that links to the documents page', $tile === '' ? 'no tile' : $tile);
+        assertTrue($tile !== '' && strpos($tile, 'data-toggle="collapse"') === false, 'T a: the tile opens no collapse list');
+        assertTrue(strpos($tile, 'My invoices') !== false, 'T a: the tile reads "My invoices" for an English customer');
+        $idPolish = (int) Language::getIdByIso('pl');
+        if ($idPolish > 0) {
+            smokeSetCustomerLanguage($owner, $idPolish);
+            $polishWeb = smokeLoggedInWeb($owner, SMOKE_T_PASSWORD);
+            $polishTile = $polishWeb === null ? '' : smokeAccountTile($polishWeb->request('GET', $link->getPageLink('my-account', true, $idPolish))['body']);
+            assertTrue(strpos($polishTile, 'Moje Faktury') !== false, 'T a: the tile reads "Moje Faktury" for a customer whose language is Polish', $polishTile === '' ? 'no tile' : strip_tags($polishTile));
+            smokeSetCustomerLanguage($owner, (int) Configuration::get('PS_LANG_DEFAULT'));
+        } else {
+            skip('T a: the tile reads "Moje Faktury" for a Polish customer', 'Polish is not installed in this shop');
+        }
+
+        // b) the documents page and the protected download
+        $page = $web->request('GET', $link->getModuleLink('ifirma', 'documents'));
+        $rows = smokeDocumentRows($page['body']);
+        assertSame(200, $page['code'], 'T b: the documents page answers 200');
+        $row = smokeDocumentRowWith($rows, (string) $receipt->ifirma_number);
+        assertTrue($row !== null && $row['href'] !== '' && strpos($row['href'], (string) $receipt->security_token) !== false, 'T b: the documents page lists the document number with its download link', json_encode($rows));
+        if ($row !== null && $row['href'] !== '') {
+            $pdf = $web->request('GET', $row['href']);
+            assertTrue(smokeIsMockPdf($pdf), 'T b: the download link answers 200 with the iFirma PDF', 'HTTP ' . $pdf['code'] . ' ' . smokeHeaderValue($pdf['headers'], 'Content-Type'));
+        }
+
+        // c) the document that waits for KSeF is listed without a link
+        $waitingText = (string) $waiting->ifirma_number !== '' ? (string) $waiting->ifirma_number : 'Document #' . (string) $waiting->ifirma_id;
+        $waitingRow = smokeDocumentRowWith($rows, $waitingText);
+        assertTrue($waitingRow !== null && $waitingRow['href'] === '', 'T c: the document waiting for KSeF is listed without a link', json_encode($rows));
+        assertTrue(strpos($page['body'], (string) $waiting->security_token) === false, 'T c: the page never shows the token of the waiting document');
+
+        // d) a visitor who is not logged in is sent to the login
+        $visitor = (new SmokeWeb())->requestWithoutRedirect($link->getModuleLink('ifirma', 'documents'));
+        assertTrue(in_array($visitor['code'], array(301, 302, 303), true) && preg_match('~controller=authentication|/login~', smokeHeaderValue($visitor['headers'], 'Location')) === 1, 'T d: a visitor who is not logged in is redirected to the login page', 'HTTP ' . $visitor['code'] . ' ' . smokeHeaderValue($visitor['headers'], 'Location'));
+
+        // e) PrestaShop's own invoice link hands the owner the iFirma document, one hop at a time
+        $invoiceUrl = smokeInvoiceUrl($order);
+        smokeClearDownloadStamp($receipt);
+        $hop = $web->requestWithoutRedirect($invoiceUrl);
+        $location = smokeHeaderValue($hop['headers'], 'Location');
+        assertSame(302, $hop['code'], 'T e: the owner\'s built-in invoice link answers 302');
+        assertTrue(smokeIsReceiptLocation($location), 'T e: the redirect goes to the protected receipt download', $location);
+        if (smokeIsReceiptLocation($location)) {
+            $pdf = $web->request('GET', $location);
+            assertTrue(smokeIsMockPdf($pdf), 'T e: the redirect ends in the iFirma PDF, not in PrestaShop\'s invoice', 'HTTP ' . $pdf['code'] . ' ' . smokeHeaderValue($pdf['headers'], 'Content-Type'));
+        }
+
+        // f) a foreign order gets the core's refusal
+        $stranger = new Customer((int) $fixture['id_customer']);
+        $strangerWeb = smokeLoggedInWeb($stranger, '123456789');
+        if ($strangerWeb === null) {
+            skip('T f: a foreign order is refused', 'the demo customer could not be logged in over HTTP with the demo password');
+        } else {
+            $refusal = $strangerWeb->requestWithoutRedirect($invoiceUrl);
+            assertTrue(substr($refusal['body'], 0, 5) !== '%PDF-' && !smokeIsReceiptLocation(smokeHeaderValue($refusal['headers'], 'Location')), 'T f: another customer gets no PDF and no redirect to the document', 'HTTP ' . $refusal['code']);
+            assertTrue(strpos($refusal['body'], SMOKE_T_NOT_AVAILABLE) === false, 'T f: the refusal is the core\'s, not the module\'s sentence', substr(strip_tags($refusal['body']), 0, 120));
+        }
+
+        // g) a guest with the order's secure key is told the invoice is not available
+        $guest = (new SmokeWeb())->requestWithoutRedirect(smokeInvoiceUrl($order, (string) $order->secure_key));
+        assertSame(404, $guest['code'], 'T g: a guest with the secure key gets 404');
+        assertTrue(stripos(smokeHeaderValue($guest['headers'], 'Content-Type'), 'text/plain') === 0, 'T g: the answer is text/plain', smokeHeaderValue($guest['headers'], 'Content-Type'));
+        assertSame(SMOKE_T_NOT_AVAILABLE, trim($guest['body']), 'T g: the guest reads the not available yet sentence');
+
+        // h) with the setting off the owner gets PrestaShop's own PDF
+        smokeSetting('IFIRMA_NATIVE_INVOICE_LINK', 0);
+        $shopPdf = $web->request('GET', $invoiceUrl);
+        smokeSetting('IFIRMA_NATIVE_INVOICE_LINK', 1);
+        assertTrue(smokeIsShopPdf($shopPdf), 'T h: with the setting at 0 the owner gets the PDF PrestaShop renders itself', 'HTTP ' . $shopPdf['code'] . ' ' . smokeHeaderValue($shopPdf['headers'], 'Content-Type'));
+
+        // i) an order the module does not handle gets PrestaShop's own PDF
+        $plain = createOrder();
+        if (assertTrue($plain instanceof Order && Validate::isLoadedObject($plain), 'T i: an order without a document record is created')) {
+            smokeReachTriggerQuietly($plain, $triggerState);
+            assertTrue(!receiptOf($plain), 'T i: the order has no document record');
+            $plainPdf = $web->request('GET', smokeInvoiceUrl($plain));
+            assertTrue(smokeIsShopPdf($plainPdf), 'T i: an order the module does not handle gets PrestaShop\'s own PDF', 'HTTP ' . $plainPdf['code'] . ' ' . smokeHeaderValue($plainPdf['headers'], 'Content-Type'));
+        }
+
+        // j) checkout safety: the hook core also runs while it attaches an invoice to a mail does not end the request
+        smokeSetting('IFIRMA_AUTO_CREATE_STATE', $triggerState);
+        $auto = createOrder();
+        if (assertTrue($auto instanceof Order && Validate::isLoadedObject($auto), 'T j: an order for automatic issuance is created')) {
+            // the checks below run only if the state change returned: an ended request would stop the whole run here
+            changeState($auto, $triggerState);
+            Cache::clean('objectmodel_Order_*');
+            $moved = new Order((int) $auto->id);
+            assertSame((int) $triggerState, (int) $moved->current_state, 'T j: the order is in the trigger state');
+            $autoReceipt = receiptOf($auto);
+            assertTrue($autoReceipt && $autoReceipt->isIssued(), 'T j: the document is issued by the status change');
+            assertTrue((int) $moved->invoice_number > 0, 'T j: the order has an invoice number, so core attached its invoice to the mail');
+        }
+    } finally {
+        $GLOBALS['fixture'] = $fixture;
+        foreach ($saved as $key => $previous) {
+            smokeRestoreSetting($key, $previous);
+        }
+        if ($owner !== null) {
+            smokeDeleteThrowawayOwner($owner);
+        }
+        mockReset();
+    }
+}
+
 $scenarios = array(
     'J' => function () use ($module) {
         scenarioJ($module);
@@ -3914,6 +4259,9 @@ $scenarios = array(
     },
     'S' => function () use ($module) {
         scenarioS($module);
+    },
+    'T' => function () use ($module, $triggerState) {
+        scenarioT($module, $triggerState);
     },
 );
 
