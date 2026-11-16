@@ -52,6 +52,17 @@ Open the module configuration and fill in:
   (every request waits for review, the default), *Safe changes only* (a request that keeps the company or private
   choice, the NIP and the company name, and changes only the name, address, postcode, city or country, is
   approved at once) or *Every valid request* (approved without review).
+- **Serve the iFirma document from the built-in invoice link** – on by default (a new install and the 1.11.0
+  upgrade switch it on). While it is on, a customer who opens PrestaShop's own invoice link (Order history, order
+  details) for an order this module handles gets the iFirma document through the protected download, or a short
+  "The invoice is not available yet" answer while the document cannot be handed out; PrestaShop's own invoice is not
+  generated for those orders. An order counts as handled when the module holds a document record for it in any state
+  or the order has a pending data-change request. Orders the module does not handle, such as orders from before the
+  module was installed, keep PrestaShop's invoice, and so does every order while the switch is off. Guests, who
+  reach the link only with the order's secure key, get the "not available yet" answer for handled orders. When
+  Orders > Invoices > *Enable invoices* is off, PrestaShop shows no built-in invoice link at all, and the page
+  warns about it next to the switch while the switch is on; customers then use the document block on the order page
+  and **My invoices**. See [What the customer sees](usage.md#the-built-in-invoice-link).
 - **Status sync interval (1‑1440 minutes)** – how often an order page refreshes its document
   from iFirma; **Cron call budget (1‑90)**, **Cron items per job (1‑50)**, **API calls per minute (1‑100)** and
   **API calls per day (1‑15000)** – API usage caps and the size of one cron run.
@@ -114,6 +125,7 @@ Open the module configuration and fill in:
 | `IFIRMA_CRON_MAX_ITEMS` (new) | `10` (1 to 50: the most queued orders, KSeF submissions or deliveries each of those jobs handles in one cron run) |
 | `IFIRMA_RATE_MAX_PER_MIN` (new) | `80` (1 to 100) |
 | `IFIRMA_RATE_MAX_PER_DAY` (new) | `14000` (1 to 15000) |
+| `IFIRMA_NATIVE_INVOICE_LINK` (new in 1.11.0) | `1` (`0` or `1`; the built-in invoice link serves the iFirma document for orders the module handles; the upgrade sets it to `1` when the key is missing) |
 | `IFIRMA_RATE_WINDOW` (new) | empty (internal rate-limit state of the last 60 seconds: `<unix second>=<count>` pairs, written by a compare-and-set database statement, so two requests at the same time cannot both pass the cap; modules before 1.10.0 wrote `<minute>:<count>`, which is still read) |
 | `IFIRMA_RATE_DAY_WINDOW` (new) | empty (the same for the calendar day: `<day>:<count>`) |
 | `IFIRMA_DL_CUSTOMER_MINUTE`, `IFIRMA_DL_CUSTOMER_DAY` (new) | empty (internal counters `<unix second>=<count>` pairs and `<day>:<count>` of the customers' PDF download budget, 20 in any 60 seconds and 2,000 per day for all customers together; not settings, see [Download limits](usage.md#download-limits)) |

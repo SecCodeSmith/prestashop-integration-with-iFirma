@@ -294,6 +294,33 @@ Set-Cookie: x=1", 'Try again shortly.');
         $this->expectOutputString('Try again shortly.');
     }
 
+    // ---- IfirmaHttpOutput::notAvailable() ------------------------------------------------------
+
+    public function testNotAvailableSendsA404AndAPlainTextBodyThatIsNeverCached()
+    {
+        $this->withOwnBuffer(function () {
+            IfirmaHttpOutput::notAvailable('The invoice is not available yet.');
+        });
+
+        $this->assertSame(array(
+            'HTTP/1.1 404 Not Found',
+            'Content-Type: text/plain; charset=utf-8',
+            'Cache-Control: no-store',
+            'X-Content-Type-Options: nosniff',
+        ), $this->lines);
+        $this->expectOutputString('The invoice is not available yet.');
+    }
+
+    public function testNotAvailableDiscardsThePageBufferedSoFar()
+    {
+        $this->withOwnBuffer(function () {
+            IfirmaHttpOutput::notAvailable('The invoice is not available yet.');
+        }, 'half-rendered page');
+
+        $this->assertSame($this->baseLevel, ob_get_level());
+        $this->expectOutputString('The invoice is not available yet.');
+    }
+
     // ---- the two download controllers ---------------------------------------------------------
 
     /** An issued receipt for order 15 and the PDF that the mocked iFirma API returns for it. */

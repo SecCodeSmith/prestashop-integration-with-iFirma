@@ -362,6 +362,34 @@ login page. The page only reads: it changes nothing and sends no request to iFir
 nothing to show.
 Customer texts are translatable (`translations/pl.php` ships Polish).
 
+### The built-in invoice link
+
+PrestaShop shows its own invoice link (Order history and order details) when *Enable invoices* is on, the order state
+allows invoices and the order has a PrestaShop invoice. With the setting **Serve the iFirma document from the
+built-in invoice link** on (the default), the module answers that link for the orders it handles, so a customer
+never gets a second, different invoice for the same order:
+
+- The logged-in owner of an order whose iFirma document is issued and can be downloaded is sent to the module's
+  protected download of that document. Every check and limit of [Download limits](#download-limits) applies as for
+  the **Download (PDF)** button, and PrestaShop's invoice is not generated.
+- Any other handled order gets a short, generic answer, "The invoice is not available yet. Please try again later or
+  contact the shop.", with HTTP 404 and no PDF: the document is not issued yet, held for a data-change request, being
+  verified, failed, waiting for KSeF, removed in iFirma or has no download token. The same sentence is used for every
+  reason, so the answer does not tell the document's state, and no request is sent to iFirma.
+- **Guests** (a visitor who opens the link with the order's secure key, not logged in) get the same answer for a
+  handled order. The module never hands an iFirma PDF to a guest, and the guest does not get PrestaShop's invoice
+  either. A logged-in customer who holds the secure key of an order that belongs to someone else is treated like a
+  guest: the owner is the customer whose own id is the order's customer.
+- An order is handled when the module holds a document record for it in any state or it has a pending data-change
+  request. Orders from before the module was installed, and every order while the setting is off, keep PrestaShop's
+  own invoice.
+
+PrestaShop checks its own conditions first (invoices enabled, the order exists, the order belongs to the logged-in
+customer or the secure key matches). A request PrestaShop refuses gets PrestaShop's refusal and never reaches the
+module, so nothing tells whether a foreign order has an iFirma document. See
+[Troubleshooting](troubleshooting.md#the-invoice-link-of-order-history-shows-prestashops-invoice-or-no-link) and
+[Upgrading to 1.11.0](upgrading.md#upgrading-to-1110).
+
 ### Download limits
 
 A PDF download fetches the document from iFirma every time, so it passes several limits. None of the caps is a setting. The

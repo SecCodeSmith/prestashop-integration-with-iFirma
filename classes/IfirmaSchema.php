@@ -614,6 +614,7 @@ class IfirmaSchema
             'IFIRMA_ORDER_STAMP_PREFIX' => 'PS-ORDER',
             'IFIRMA_SHOP_URL' => '',
             'IFIRMA_ALLOW_DATA_REQUEST' => 1,
+            'IFIRMA_NATIVE_INVOICE_LINK' => 1,
             'IFIRMA_DATA_REQUEST_AUTO_ACCEPT' => 'none',
             'IFIRMA_NOTIFY_EMAIL' => '',
             'IFIRMA_SYNC_INTERVAL_MIN' => 15,

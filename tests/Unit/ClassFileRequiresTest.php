@@ -98,6 +98,10 @@ class ClassFileRequiresTest extends TestCase
             'the download day cap' => array('IfirmaDownloadDayCap'),
             'the window counter' => array('IfirmaWindowCounter'),
             'the rolling window counter' => array('IfirmaRollingWindowCounter'),
+            'the HTTP output' => array('IfirmaHttpOutput'),
+            'the customer view' => array('IfirmaCustomerView'),
+            'the built-in invoice link policy' => array('IfirmaNativeInvoiceLink'),
+            'the built-in invoice link outcome' => array('IfirmaNativeInvoiceOutcome'),
         );
     }
 

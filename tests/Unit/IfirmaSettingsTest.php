@@ -95,7 +95,7 @@ class IfirmaSettingsTest extends TestCase
             'IFIRMA_DUPLICATE_WINDOW_DAYS', 'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE', 'IFIRMA_DOC_TEMPLATE',
             'IFIRMA_ORDER_STAMP_PREFIX', 'IFIRMA_SHOP_URL', 'IFIRMA_ALLOW_DATA_REQUEST',
             'IFIRMA_DATA_REQUEST_AUTO_ACCEPT', 'IFIRMA_NOTIFY_EMAIL', 'IFIRMA_SYNC_INTERVAL_MIN', 'IFIRMA_CRON_MAX_CALLS', 'IFIRMA_CRON_MAX_ITEMS', 'IFIRMA_RATE_MAX_PER_MIN',
-            'IFIRMA_RATE_MAX_PER_DAY',
+            'IFIRMA_RATE_MAX_PER_DAY', 'IFIRMA_NATIVE_INVOICE_LINK',
         ), array_keys(IfirmaSettings::fields()));
     }
 
@@ -166,6 +166,7 @@ class IfirmaSettingsTest extends TestCase
             'IFIRMA_CRON_MAX_ITEMS' => null,
             'IFIRMA_RATE_MAX_PER_MIN' => null,
             'IFIRMA_RATE_MAX_PER_DAY' => null,
+            'IFIRMA_NATIVE_INVOICE_LINK' => 0,
         ), $result['values']);
         $this->assertSame(array(
             'IFIRMA_USER' => '',
@@ -442,7 +443,7 @@ class IfirmaSettingsTest extends TestCase
      */
     public function testASwitchIsOneForAnythingPhpReadsAsTrue($posted, $value)
     {
-        foreach (array('IFIRMA_CONTRACTOR_SYNC', 'IFIRMA_DUPLICATE_CHECK', 'IFIRMA_ALLOW_DATA_REQUEST') as $key) {
+        foreach (array('IFIRMA_CONTRACTOR_SYNC', 'IFIRMA_DUPLICATE_CHECK', 'IFIRMA_ALLOW_DATA_REQUEST', 'IFIRMA_NATIVE_INVOICE_LINK') as $key) {
             $this->assertSame($value, $this->valueOf($key, $posted), $key);
             $this->assertNull($this->errorOf($key, $posted), $key);
         }

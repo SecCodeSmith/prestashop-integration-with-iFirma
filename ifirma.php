@@ -29,6 +29,8 @@ require_once __DIR__ . '/classes/IfirmaDataRequestService.php';
 require_once __DIR__ . '/classes/IfirmaIssuancePipeline.php';
 require_once __DIR__ . '/classes/IfirmaAccountLinkTemplate.php';
 require_once __DIR__ . '/classes/IfirmaCustomerView.php';
+require_once __DIR__ . '/classes/IfirmaHttpOutput.php';
+require_once __DIR__ . '/classes/IfirmaNativeInvoiceLink.php';
 require_once __DIR__ . '/classes/IfirmaAdminPanelPresenter.php';
 require_once __DIR__ . '/classes/IfirmaAdminOrderPanelView.php';
 require_once __DIR__ . '/classes/IfirmaCustomerContractorService.php';
@@ -92,6 +94,7 @@ class Ifirma extends Module
             && $this->registerHook('actionOrderGridQueryBuilderModifier')
             && $this->registerHook('actionOrderGridPresenterModifier')
             && $this->registerHook('actionAdminControllerSetMedia')
+            && $this->registerHook('actionPDFInvoiceRender')
             && $this->installDefaultConfiguration();
     }
 
@@ -816,6 +819,56 @@ class Ifirma extends Module
     }
 
     /**
+     * The switch for the built-in invoice link and, while the switch is on and PrestaShop invoices are off, the
+     * warning that customers then see no built-in invoice link at all.
+     *
+     * @return array[] form inputs
+     */
+    private function nativeInvoiceLinkInputs()
+    {
+        $inputs = array(
+            array(
+                'type' => 'switch',
+                'label' => $this->l('Serve the iFirma document from the built-in invoice link'),
+                'name' => 'IFIRMA_NATIVE_INVOICE_LINK',
+                'desc' => $this->l('Customers who open the invoice link of PrestaShop (Order history, order details) get the iFirma document instead of a second, PrestaShop invoice. Guests get no invoice for orders issued by this module.'),
+                'is_bool' => true,
+                'values' => $this->yesNo(),
+            ),
+        );
+        if ((int) Configuration::get('IFIRMA_NATIVE_INVOICE_LINK') && !(int) Configuration::get('PS_INVOICE')) {
+            $inputs[] = array(
+                'type' => 'html',
+                'name' => 'IFIRMA_NATIVE_INVOICE_LINK_WARNING',
+                'html_content' => '<div class="alert alert-warning">'
+                    . htmlspecialchars($this->l('PrestaShop invoices are disabled, so customers see no built-in invoice link; they find documents on the order page and in My invoices.'), ENT_QUOTES, 'UTF-8')
+                    . '</div>',
+            );
+        }
+
+        return $inputs;
+    }
+
+    /**
+     * @param array[] $inputs form inputs
+     * @param string  $name   the input after which the new ones go
+     * @param array[] $new    inputs to insert
+     * @return array[] the inputs, the new ones after the named one (at the end when it is not there)
+     */
+    private function insertInputsAfter(array $inputs, $name, array $new)
+    {
+        foreach ($inputs as $position => $input) {
+            if (isset($input['name']) && $input['name'] === $name) {
+                array_splice($inputs, $position + 1, 0, $new);
+
+                return $inputs;
+            }
+        }
+
+        return array_merge($inputs, $new);
+    }
+
+    /**
      * @return array
      */
     private function yesNo()
@@ -1211,6 +1264,8 @@ class Ifirma extends Module
             ),
         ));
 
+        $inputs = $this->insertInputsAfter($inputs, 'IFIRMA_ALLOW_DATA_REQUEST', $this->nativeInvoiceLinkInputs());
+
         $fields_form = array(
             'form' => array(
                 'legend' => array(
@@ -1267,6 +1322,7 @@ class Ifirma extends Module
             'IFIRMA_DUPLICATE_WINDOW_DAYS' => (int) Configuration::get('IFIRMA_DUPLICATE_WINDOW_DAYS'),
             'IFIRMA_DUPLICATE_AMOUNT_TOLERANCE' => Configuration::get('IFIRMA_DUPLICATE_AMOUNT_TOLERANCE'),
             'IFIRMA_ALLOW_DATA_REQUEST' => (int) Configuration::get('IFIRMA_ALLOW_DATA_REQUEST'),
+            'IFIRMA_NATIVE_INVOICE_LINK' => (int) Configuration::get('IFIRMA_NATIVE_INVOICE_LINK'),
             'IFIRMA_DATA_REQUEST_AUTO_ACCEPT' => Configuration::get('IFIRMA_DATA_REQUEST_AUTO_ACCEPT') ?: 'none',
             'IFIRMA_NOTIFY_EMAIL' => Configuration::get('IFIRMA_NOTIFY_EMAIL'),
             'IFIRMA_SYNC_INTERVAL_MIN' => (int) Configuration::get('IFIRMA_SYNC_INTERVAL_MIN'),
@@ -1920,6 +1976,92 @@ class Ifirma extends Module
     private function customerView()
     {
         return new IfirmaCustomerView($this, $this->context->link);
+    }
+
+    /**
+     * PrestaShop's built-in invoice PDF link (Order history, order details). PrestaShop has already checked that
+     * invoices are enabled, that the order exists and that it belongs to the customer or the secure key matched;
+     * this hook then runs before PrestaShop renders its own invoice and has no return value, so it can only end
+     * the request. A handled order gets the protected iFirma download or a generic "not available yet"; any other
+     * order is left to PrestaShop.
+     *
+     * @param array $params order_invoice_list (a collection of OrderInvoice)
+     */
+    public function hookActionPDFInvoiceRender($params)
+    {
+        // core also runs this hook when it attaches an invoice to a mail (checkout, status change) and in the back
+        // office; ending those requests would break orders, so only the customer invoice link request is acted on
+        if (!($this->context->controller instanceof PdfInvoiceControllerCore)) {
+            return;
+        }
+        $order = $this->orderOfFirstInvoice($params);
+        if ($order === null || (int) $order->id !== (int) Tools::getValue('id_order')) {
+            return;
+        }
+
+        $outcome = IfirmaNativeInvoiceLink::create($this, $this->context->link)->decide((int) $order->id, $this->requesterOwns($order));
+        if ($outcome->isRedirect()) {
+            $this->redirectTo($outcome->url());
+        } elseif ($outcome->isNotAvailable()) {
+            IfirmaHttpOutput::notAvailable($this->l('The invoice is not available yet. Please try again later or contact the shop.'));
+            $this->endRequest();
+        }
+    }
+
+    /**
+     * @param mixed $params what the hook was called with
+     * @return Order|null null unless the first element of order_invoice_list is an invoice of an existing order
+     */
+    private function orderOfFirstInvoice($params)
+    {
+        if (!is_array($params) || !isset($params['order_invoice_list'])) {
+            return null;
+        }
+        $invoices = $params['order_invoice_list'];
+        if (!is_array($invoices) && !($invoices instanceof Traversable)) {
+            return null;
+        }
+        foreach ($invoices as $invoice) {
+            if (!is_object($invoice) || !isset($invoice->id_order) || (int) $invoice->id_order <= 0) {
+                return null;
+            }
+            $order = new Order((int) $invoice->id_order);
+
+            return Validate::isLoadedObject($order) ? $order : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * PrestaShop also accepts a request that carries the order's secure key alone, for a guest and, since 8.1, for a
+     * logged-in customer as well. Only a logged-in customer whose own id is the order's customer is the owner.
+     *
+     * @param Order $order
+     * @return bool
+     */
+    private function requesterOwns($order)
+    {
+        $customer = $this->context->customer;
+
+        return $customer instanceof Customer && $customer->isLogged() && (int) $customer->id > 0 && (int) $customer->id === (int) $order->id_customer;
+    }
+
+    /**
+     * @param string $url the protected download of the document
+     * @codeCoverageIgnore Tools::redirect() sends a header and exits, so the harness cannot run it; the tests override this twin
+     */
+    protected function redirectTo($url)
+    {
+        Tools::redirect($url);
+    }
+
+    /**
+     * @codeCoverageIgnore exit ends the request, so the harness cannot run it; the tests override this twin
+     */
+    protected function endRequest()
+    {
+        exit;
     }
 
     public function hookDisplayOrderDetail($params)

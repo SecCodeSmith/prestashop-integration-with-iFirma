@@ -829,6 +829,16 @@ class ModuleHooksTest extends TestCase
         $this->assertSame(1, count(array_keys(Module::$hooks, 'actionAdminControllerSetMedia', true)));
     }
 
+    public function testInstallRegistersTheInvoiceRenderHookOnceAndSwitchesTheBuiltInInvoiceLinkOn()
+    {
+        Module::reset();
+
+        $this->assertTrue($this->module->install());
+
+        $this->assertSame(1, count(array_keys(Module::$hooks, 'actionPDFInvoiceRender', true)));
+        $this->assertSame(1, Configuration::get('IFIRMA_NATIVE_INVOICE_LINK'));
+    }
+
     public function testUninstallDeletesTheSeenMarks()
     {
         $this->assertTrue($this->module->uninstall());
