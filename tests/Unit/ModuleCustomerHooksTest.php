@@ -563,4 +563,20 @@ class ModuleCustomerHooksTest extends TestCase
 
         $this->assertNotSame('', $this->module->hookDisplayAdminCustomers(array('id_customer' => 5)));
     }
+
+    /**
+     * Change fix-my-invoices-page-and-native-invoice-link, scenarios "Account block" (the entry is a plain link to
+     * the page, not a list that a script opens) and "Account entry works without theme scripts".
+     */
+    public function testTheAccountTileIsAPlainLinkToTheMyInvoicesPage()
+    {
+        $tpl = file_get_contents(dirname(__DIR__, 2) . '/views/templates/hook/customer_account.tpl');
+
+        $this->assertStringContainsString('href="{$ifirma_account.page_url|escape:\'html\':\'UTF-8\'}"', $tpl);
+        $this->assertStringContainsString("{l s='My invoices' mod='ifirma'}", $tpl);
+        $this->assertStringContainsString('{$ifirma_account.receipts|count|intval}', $tpl);
+        foreach (array('data-toggle', 'data-bs-toggle', 'collapse', '<ul', '<script') as $forbidden) {
+            $this->assertStringNotContainsString($forbidden, $tpl);
+        }
+    }
 }
