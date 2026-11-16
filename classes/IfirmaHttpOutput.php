@@ -75,11 +75,37 @@ class IfirmaHttpOutput
      */
     public static function tooManyRequests($retryAfterSeconds, $message)
     {
+        self::plainTextAnswer(429, array('Retry-After: ' . max(1, (int) $retryAfterSeconds)), $message);
+    }
+
+    /**
+     * Discards the pending output buffer, sends a 404 and echoes the message. The caller ends the request right
+     * after it.
+     *
+     * The message is plain text under nosniff, never cached and never part of a header. A caller gives one fixed
+     * sentence for every reason, so the answer does not tell why nothing is available.
+     *
+     * @param string $message plain text for the person who was refused
+     */
+    public static function notAvailable($message)
+    {
+        self::plainTextAnswer(404, array(), $message);
+    }
+
+    /**
+     * @param int      $statusCode
+     * @param string[] $extraHeaders header lines that go between the status line and the content type
+     * @param string   $message
+     */
+    private static function plainTextAnswer($statusCode, array $extraHeaders, $message)
+    {
         if (ob_get_level()) {
             ob_end_clean();
         }
-        call_user_func(self::$sendHeader, IfirmaHttpStatus::statusLine(429));
-        call_user_func(self::$sendHeader, 'Retry-After: ' . max(1, (int) $retryAfterSeconds));
+        call_user_func(self::$sendHeader, IfirmaHttpStatus::statusLine($statusCode));
+        foreach ($extraHeaders as $line) {
+            call_user_func(self::$sendHeader, $line);
+        }
         call_user_func(self::$sendHeader, 'Content-Type: text/plain; charset=utf-8');
         call_user_func(self::$sendHeader, 'Cache-Control: no-store');
         call_user_func(self::$sendHeader, 'X-Content-Type-Options: nosniff');

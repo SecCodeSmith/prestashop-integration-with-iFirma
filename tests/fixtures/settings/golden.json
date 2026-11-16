@@ -43,7 +43,8 @@
       "IFIRMA_CRON_MAX_CALLS": "20",
       "IFIRMA_CRON_MAX_ITEMS": "15",
       "IFIRMA_RATE_MAX_PER_MIN": "60",
-      "IFIRMA_RATE_MAX_PER_DAY": "12000"
+      "IFIRMA_RATE_MAX_PER_DAY": "12000",
+      "IFIRMA_NATIVE_INVOICE_LINK": "1"
     },
     "writes": [
       ["IFIRMA_BASE_URL", "https://sandbox.ifirma.example/iapi/"],
@@ -80,7 +81,8 @@
       ["IFIRMA_CRON_MAX_CALLS", 20],
       ["IFIRMA_CRON_MAX_ITEMS", 15],
       ["IFIRMA_RATE_MAX_PER_MIN", 60],
-      ["IFIRMA_RATE_MAX_PER_DAY", 12000]
+      ["IFIRMA_RATE_MAX_PER_DAY", 12000],
+      ["IFIRMA_NATIVE_INVOICE_LINK", 1]
     ]
   },
   "scenarios": [
@@ -164,7 +166,8 @@
         ["IFIRMA_CRON_MAX_CALLS", 10],
         ["IFIRMA_CRON_MAX_ITEMS", 10],
         ["IFIRMA_RATE_MAX_PER_MIN", 60],
-        ["IFIRMA_RATE_MAX_PER_DAY", 12000]
+        ["IFIRMA_RATE_MAX_PER_DAY", 12000],
+        ["IFIRMA_NATIVE_INVOICE_LINK", 0]
       ]
     },
     {

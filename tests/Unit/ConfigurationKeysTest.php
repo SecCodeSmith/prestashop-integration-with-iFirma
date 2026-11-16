@@ -102,6 +102,18 @@ class ConfigurationKeysTest extends TestCase
         }
     }
 
+    public function testTheBuiltInInvoiceLinkIsOnAfterInstallAndRemovedOnUninstall()
+    {
+        $module = IfirmaTestModuleLoader::loadModule();
+        $this->assertTrue($module->install());
+
+        $this->assertSame(1, IfirmaSchema::configurationDefaults()['IFIRMA_NATIVE_INVOICE_LINK']);
+        $this->assertSame(1, Configuration::get('IFIRMA_NATIVE_INVOICE_LINK'));
+
+        $this->assertTrue($module->uninstall());
+        $this->assertFalse(Configuration::hasKey('IFIRMA_NATIVE_INVOICE_LINK'));
+    }
+
     public function testAuthFailureDefaultIsEmptyAndUninstallRemovesIt()
     {
         $module = IfirmaTestModuleLoader::loadModule();

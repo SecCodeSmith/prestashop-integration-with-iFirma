@@ -61,6 +61,7 @@ class UpgradeTest extends TestCase
         require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.6.0.php';
         require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.8.0.php';
         require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.10.0.php';
+        require_once dirname(__DIR__, 2) . '/upgrade/upgrade-1.11.0.php';
     }
 
     protected function tearDown(): void
@@ -763,6 +764,63 @@ class UpgradeTest extends TestCase
         $this->startFrom($this->schemaOf19x());
 
         $this->assertFalse(upgrade_module_1_10_0(new Module()));
+    }
+
+    // ---- upgrade-1.11.0.php: the built-in invoice link ------------------------------------------------
+
+    public function testUpgrade1110RegistersTheInvoiceRenderHookAndSwitchesTheSettingOn()
+    {
+        $module = new Module();
+        $this->assertFalse(Configuration::hasKey('IFIRMA_NATIVE_INVOICE_LINK'));
+
+        $this->assertTrue(upgrade_module_1_11_0($module));
+
+        $this->assertSame(array('actionPDFInvoiceRender'), Module::$hooks);
+        $this->assertSame(1, Configuration::get('IFIRMA_NATIVE_INVOICE_LINK'));
+    }
+
+    public function testUpgrade1110RegistersNoSecondHook()
+    {
+        $module = new Module();
+        $module->registerHook('actionPDFInvoiceRender');
+
+        $this->assertTrue(upgrade_module_1_11_0($module));
+
+        $this->assertSame(array('actionPDFInvoiceRender'), Module::$hooks);
+    }
+
+    public function testUpgrade1110KeepsTheValueAMerchantAlreadySetAndIsIdempotent()
+    {
+        Configuration::updateValue('IFIRMA_NATIVE_INVOICE_LINK', 0);
+
+        $this->assertTrue(upgrade_module_1_11_0(new Module()));
+        $this->assertTrue(upgrade_module_1_11_0(new Module()));
+
+        $this->assertSame(0, Configuration::get('IFIRMA_NATIVE_INVOICE_LINK'));
+        $this->assertSame(array('actionPDFInvoiceRender'), array_values(array_unique(Module::$hooks)));
+    }
+
+    public function testUpgrade1110TouchesNoRowAndNoTable()
+    {
+        $this->assertTrue(upgrade_module_1_11_0(new Module()));
+
+        $this->assertSame(array(), Db::getInstance()->inserts);
+        $this->assertSame(array(), Db::getInstance()->updates);
+        $this->assertSame(array(), Db::getInstance()->deletes);
+        $this->assertSame(array(), Db::getInstance()->executed);
+    }
+
+    public function testUpgrade1110ReportsAHookThatCannotBeRegisteredAndLeavesTheSettingAlone()
+    {
+        $module = new class extends Module {
+            public function registerHook($hookName, $shopList = null)
+            {
+                return false;
+            }
+        };
+
+        $this->assertFalse(upgrade_module_1_11_0($module));
+        $this->assertFalse(Configuration::hasKey('IFIRMA_NATIVE_INVOICE_LINK'));
     }
 
     // ---- helpers: the database each path runs on ----------------------------------------------------
