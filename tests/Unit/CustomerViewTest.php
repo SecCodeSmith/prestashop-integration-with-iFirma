@@ -707,4 +707,86 @@ class CustomerViewTest extends TestCase
         $this->assertNull($account['receipts'][0]['download_url']);
         $this->assertNotNull($account['receipts'][1]['download_url']);
     }
+
+    /** Scenario "Account entry works without theme scripts": the tile is a plain link to the page. */
+    public function testTheAccountViewCarriesTheLinkToTheMyInvoicesPage()
+    {
+        $account = $this->view->forAccount(array(), 0);
+
+        $this->assertSame('https://shop.test/module/ifirma/documents?', $account['page_url']);
+    }
+
+    public function linkDecisionProvider()
+    {
+        return array(
+            'issued with a token' => array(array(), true),
+            'awaiting KSeF acceptance' => array(array('delivery_status' => 'awaiting_ksef', 'ksef_status' => 'WYSLANA', 'ksef_number' => ''), false),
+            'awaiting KSeF but already numbered' => array(array('delivery_status' => 'awaiting_ksef', 'ksef_number' => 'N-1'), true),
+            'issued without a token' => array(array('security_token' => ''), false),
+        );
+    }
+
+    /**
+     * @dataProvider linkDecisionProvider
+     */
+    public function testTheAccountAndTheOrderPageAgreeOnTheLinkOfAnIssuedDocument(array $props, $linkOffered)
+    {
+        $receipt = $this->receipt($props);
+
+        $orderUrl = $this->view->forOrder($this->order(), $receipt, null)['document']['download_url'];
+        $accountUrl = $this->view->forAccount(array(get_object_vars($receipt)), 0)['receipts'][0]['download_url'];
+
+        $this->assertSame($orderUrl, $accountUrl);
+        $this->assertSame($linkOffered, $orderUrl !== null);
+    }
+
+    public function testTheAccountDoesNotListAMissingDocumentAndTheOrderPageOffersNoLinkForIt()
+    {
+        $receipt = $this->receipt(array('remote_missing' => 1));
+
+        $orderUrl = $this->view->forOrder($this->order(), $receipt, null)['document']['download_url'];
+        $listed = $this->view->forAccount(array(get_object_vars($receipt)), 0)['receipts'];
+
+        $this->assertNull($orderUrl);
+        $this->assertSame(array(), $listed);
+    }
+
+    public function testTheAccountDoesNotListAnErrorRowAndTheOrderPageShowsNoDocumentForIt()
+    {
+        $receipt = $this->receipt(array('status' => 'error', 'ifirma_id' => 0));
+
+        $order = $this->view->forOrder($this->order(), $receipt, null);
+        $listed = $this->view->forAccount(array(get_object_vars($receipt)), 0)['receipts'];
+
+        $this->assertArrayNotHasKey('document', $order);
+        $this->assertSame(array(), $listed);
+    }
+
+    public function downloadUrlProvider()
+    {
+        return array(
+            'issued with a token' => array('none', '', '', 'tok9', true),
+            'awaiting KSeF acceptance' => array('awaiting_ksef', 'WYSLANA', '', 'tok9', false),
+            'accepted by KSeF' => array('awaiting_ksef', '', 'N-1', 'tok9', true),
+            'no token' => array('none', '', '', '', false),
+            'token not stored' => array('none', '', '', null, false),
+        );
+    }
+
+    /**
+     * @dataProvider downloadUrlProvider
+     */
+    public function testTheDownloadUrlIsOfferedOnlyForAReleasedDocumentWithAToken($delivery, $ksefStatus, $ksefNumber, $token, $linkOffered)
+    {
+        $url = $this->view->downloadUrlFor($delivery, $ksefStatus, $ksefNumber, $token);
+
+        $this->assertSame($linkOffered, $url !== null);
+    }
+
+    public function testTheDownloadUrlCarriesTheToken()
+    {
+        $url = $this->view->downloadUrlFor('none', '', '', 'tok9');
+
+        $this->assertStringContainsString('token=tok9', $url);
+    }
 }

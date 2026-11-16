@@ -563,4 +563,80 @@ class ModuleCustomerHooksTest extends TestCase
 
         $this->assertNotSame('', $this->module->hookDisplayAdminCustomers(array('id_customer' => 5)));
     }
+
+    /**
+     * Change fix-my-invoices-page-and-native-invoice-link, scenarios "Account block" (the entry is a plain link to
+     * the page, not a list that a script opens) and "Account entry works without theme scripts".
+     */
+    public function accountTemplates()
+    {
+        return array(
+            'classic' => array('customer_account.tpl'),
+            'hummingbird' => array('customer_account_hummingbird.tpl'),
+        );
+    }
+
+    private function accountTemplate($file)
+    {
+        return file_get_contents(dirname(__DIR__, 2) . '/views/templates/hook/' . $file);
+    }
+
+    /**
+     * @dataProvider accountTemplates
+     */
+    public function testTheAccountEntryIsAPlainLinkToTheMyInvoicesPage($file)
+    {
+        $tpl = $this->accountTemplate($file);
+
+        $this->assertStringContainsString('href="{$ifirma_account.page_url|escape:\'html\':\'UTF-8\'}"', $tpl);
+        $this->assertStringContainsString('id="ifirma-account-block"', $tpl);
+        $this->assertStringContainsString("{l s='My invoices' mod='ifirma'}", $tpl);
+        foreach (array('data-toggle', 'data-bs-toggle', 'collapse', '<ul', '<script') as $forbidden) {
+            $this->assertStringNotContainsString($forbidden, $tpl);
+        }
+    }
+
+    /**
+     * @dataProvider accountTemplates
+     */
+    public function testTheAccountEntryShowsNoCountAndEscapesEveryValue($file)
+    {
+        $tpl = $this->accountTemplate($file);
+        preg_match_all('/\{\$([a-z_.\[\]\']+)(\|[^}]*)?\}/i', $tpl, $printed, PREG_SET_ORDER);
+
+        $unescaped = array();
+        foreach ($printed as $hit) {
+            if (!isset($hit[2]) || strpos($hit[2], "escape:'html':'UTF-8'") === false) {
+                $unescaped[] = $hit[0];
+            }
+        }
+
+        $this->assertNotEmpty($printed);
+        $this->assertSame(array(), $unescaped);
+        $this->assertStringNotContainsString('|count', $tpl);
+        $this->assertStringNotContainsString('badge', $tpl);
+    }
+
+    public function testTheClassicTileCarriesTheColumnClassesOnTheAnchorWithoutAWrapper()
+    {
+        $tpl = $this->accountTemplate('customer_account.tpl');
+
+        $this->assertMatchesRegularExpression('/<a class="col-lg-4 col-md-6 col-sm-6 col-xs-12" id="ifirma-account-block" href=/', $tpl);
+        $this->assertStringContainsString('<span class="link-item">', $tpl);
+        $this->assertStringNotContainsString('<div', $tpl);
+    }
+
+    public function testTheHummingbirdEntryUsesTheAccountMenuClasses()
+    {
+        $tpl = $this->accountTemplate('customer_account_hummingbird.tpl');
+
+        $this->assertStringContainsString('class="account-menu__link', $tpl);
+        $this->assertStringContainsString('account-menu__link--active', $tpl);
+        $this->assertStringContainsString('account-menu__icon', $tpl);
+        $this->assertStringContainsString('aria-current="page"', $tpl);
+        $this->assertStringContainsString('{if $urls.current_url === $ifirma_account.page_url}', $tpl);
+        foreach (array('col-lg-4', 'col-md-6', 'link-item', '<div') as $classicOnly) {
+            $this->assertStringNotContainsString($classicOnly, $tpl);
+        }
+    }
 }

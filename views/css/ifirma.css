@@ -27,11 +27,34 @@
 }
 
 .ifirma-receipts-list li {
-    display: flex;
+    display: grid;
+    /* fixed date and badge tracks: every row is its own grid, so an auto track would move the date per row */
+    grid-template-columns: minmax(6rem, 1fr) 7rem minmax(0, 18rem);
     align-items: center;
-    justify-content: space-between;
+    gap: .5rem 1rem;
     padding: .35rem 0;
     border-bottom: 1px solid #eee;
+}
+
+.ifirma-document-date {
+    justify-self: start;
+}
+
+.ifirma-document-badges {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: .25rem;
+}
+
+@media (max-width: 767.98px) {
+    .ifirma-receipts-list li {
+        grid-template-columns: 1fr;
+    }
+
+    .ifirma-document-badges {
+        justify-content: flex-start;
+    }
 }
 
 .ifirma-receipts-list li a {

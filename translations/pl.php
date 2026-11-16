@@ -696,9 +696,12 @@ $_MODULE['<{ifirma}prestashop>admin_order_panel_5258988a34aede26a90b081fe0b4d784
 $_MODULE['<{ifirma}prestashop>admin_order_panel_f4741de561177118d7a48da311024a01'] = 'Powód odrzucenia (zostanie wysłany klientowi):';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_50d639c12e7d5ec87715aec9cf9c44d7'] = 'Aby odrzucić prośbę, podaj powód.';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_b6907cbf4c117ef645808cc578eeedb5'] = 'Odrzucanie…';
-$_MODULE['<{ifirma}prestashop>customer_account_eb2b084ca72dc5f0a88a016eb530660c'] = 'Moje dokumenty iFirma';
-$_MODULE['<{ifirma}prestashop>customer_account_4f44165a866dc1abb0ac38e6f03c541d'] = 'Wystawiony poza sklepem (zaimportowany z iFirma)';
-$_MODULE['<{ifirma}prestashop>customer_account_2be37eab0f06ccfc6f73199354169bed'] = 'Zamówienia z oczekującą prośbą o zmianę danych do dokumentu:';
+$_MODULE['<{ifirma}prestashop>customer_account_05e9411049d2878c5f7d3b6fed2e65d8'] = 'Moje Faktury';
+$_MODULE['<{ifirma}prestashop>customer_account_hummingbird_05e9411049d2878c5f7d3b6fed2e65d8'] = 'Moje Faktury';
+$_MODULE['<{ifirma}prestashop>documents_05e9411049d2878c5f7d3b6fed2e65d8'] = 'Moje Faktury';
+$_MODULE['<{ifirma}prestashop>documents_ebcbe8bd4bd04b4c813489d371eddc65'] = 'Nie masz jeszcze faktur.';
+$_MODULE['<{ifirma}prestashop>documents_4f44165a866dc1abb0ac38e6f03c541d'] = 'Wystawiony poza sklepem (zaimportowany z iFirma)';
+$_MODULE['<{ifirma}prestashop>documents_2be37eab0f06ccfc6f73199354169bed'] = 'Zamówienia z oczekującą prośbą o zmianę danych do dokumentu:';
 $_MODULE['<{ifirma}prestashop>order_detail_61739089ac3775fb66a9cd79024fdae0'] = 'Faktura (iFirma)';
 $_MODULE['<{ifirma}prestashop>order_detail_e0010a0a1a3259ab5c06a19bad532851'] = 'Opłacony';
 $_MODULE['<{ifirma}prestashop>order_detail_c1df6f50cd5fb3ea81af7a16054a64a2'] = 'Nieopłacony';

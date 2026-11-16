@@ -11,6 +11,29 @@
 
 use PHPUnit\Framework\TestCase;
 
+/** The two readers of PrestaShop's Core\Addon\Theme\Theme that the module uses: getName() and get('parent'). */
+class IfirmaTestTheme
+{
+    private $name;
+    private $parent;
+
+    public function __construct($name, $parent)
+    {
+        $this->name = $name;
+        $this->parent = $parent;
+    }
+
+    public function getName()
+    {
+        return $this->name;
+    }
+
+    public function get($key, $default = null)
+    {
+        return $key === 'parent' ? $this->parent : $default;
+    }
+}
+
 /** A value whose first string conversion throws and whose later ones give a user name. */
 class ModuleHooksThrowsOnce
 {
@@ -303,6 +326,30 @@ class ModuleHooksTest extends TestCase
         $account = $this->vars()['ifirma_account'];
         $this->assertTrue($account['visible']);
         $this->assertCount(1, $account['receipts']);
+    }
+
+    public function testCustomerAccountUsesTheHummingbirdTemplateOnAHummingbirdChildTheme()
+    {
+        $this->makeReceipt();
+        Context::getContext()->shop->theme = new IfirmaTestTheme('my-shop-theme', 'hummingbird');
+
+        $this->assertSame('<rendered:views/templates/hook/customer_account_hummingbird.tpl>', $this->module->hookDisplayCustomerAccount(array()));
+    }
+
+    public function testCustomerAccountUsesTheThemeNameOfOlderShopsWithoutAThemeObject()
+    {
+        $this->makeReceipt();
+        Context::getContext()->shop->theme_name = 'hummingbird';
+
+        $this->assertSame('<rendered:views/templates/hook/customer_account_hummingbird.tpl>', $this->module->hookDisplayCustomerAccount(array()));
+    }
+
+    public function testCustomerAccountUsesTheClassicTemplateOnClassic()
+    {
+        $this->makeReceipt();
+        Context::getContext()->shop->theme = new IfirmaTestTheme('classic', '');
+
+        $this->assertSame('<rendered:views/templates/hook/customer_account.tpl>', $this->module->hookDisplayCustomerAccount(array()));
     }
 
     public function testCustomerAccountHiddenWithoutDocuments()

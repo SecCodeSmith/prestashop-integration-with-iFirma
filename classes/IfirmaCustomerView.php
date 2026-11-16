@@ -202,8 +202,12 @@ class IfirmaCustomerView
                 'number' => $this->numberOf($row),
                 'status' => $status,
                 'status_label' => $this->statusLabel($status),
-                'download_url' => $this->waitsForKsef($row['delivery_status'] ?? null, $row['ksef_status'] ?? null, $row['ksef_number'] ?? null)
-                    ? null : $this->downloadUrl(isset($row['security_token']) ? $row['security_token'] : ''),
+                'download_url' => $this->downloadUrlFor(
+                    $row['delivery_status'] ?? null,
+                    $row['ksef_status'] ?? null,
+                    $row['ksef_number'] ?? null,
+                    $row['security_token'] ?? ''
+                ),
                 'issue_date' => $this->issueDateOf($row),
                 'is_external' => isset($row['source']) && $row['source'] === 'external',
             );
@@ -213,6 +217,7 @@ class IfirmaCustomerView
         return array(
             'receipts' => $receipts,
             'pending_count' => $pendingCount,
+            'page_url' => $this->link->getModuleLink('ifirma', 'documents', array(), true),
             'visible' => count($receipts) > 0 || $pendingCount > 0,
         );
     }
@@ -305,8 +310,12 @@ class IfirmaCustomerView
             'paid' => (bool) $paid,
             'sent' => $sent,
             'sent_at' => $waiting ? '' : (string) $this->prop($receipt, 'delivered_at'),
-            'download_url' => ($state === self::STATE_MISSING || $waiting)
-                ? null : $this->downloadUrl($this->prop($receipt, 'security_token')),
+            'download_url' => $state === self::STATE_MISSING ? null : $this->downloadUrlFor(
+                $this->prop($receipt, 'delivery_status'),
+                $this->prop($receipt, 'ksef_status'),
+                $this->prop($receipt, 'ksef_number'),
+                $this->prop($receipt, 'security_token')
+            ),
             'is_external' => $this->prop($receipt, 'source') === 'external',
             'ksef_number' => trim((string) $this->prop($receipt, 'ksef_number')),
         );
@@ -350,11 +359,20 @@ class IfirmaCustomerView
     }
 
     /**
-     * @param string $token
-     * @return string
+     * The one place that decides whether a customer is offered a download link. Plain field values, so a
+     * database row and an IfirmaReceipt both feed it.
+     *
+     * @param mixed $deliveryStatus
+     * @param mixed $ksefStatus
+     * @param mixed $ksefNumber
+     * @param mixed $token the receipt's security_token
+     * @return string|null null while the document waits for KSeF or when the row has no token
      */
-    protected function downloadUrl($token)
+    public function downloadUrlFor($deliveryStatus, $ksefStatus, $ksefNumber, $token)
     {
+        if ($this->waitsForKsef($deliveryStatus, $ksefStatus, $ksefNumber)) {
+            return null;
+        }
         // no token (the secure random generator was unavailable when the row was written): no link to offer
         if ((string) $token === '') {
             return null;

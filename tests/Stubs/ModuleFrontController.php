@@ -31,6 +31,12 @@ class ModuleFrontController
     {
     }
 
+    /** The core's breadcrumb starts at Home; a controller appends its own steps. */
+    public function getBreadcrumbLinks()
+    {
+        return ['title' => '', 'links' => [['title' => 'Home', 'url' => 'https://shop.test/']]];
+    }
+
     public function setTemplate($template, $params = [], $locale = null)
     {
         $this->template = $template;
