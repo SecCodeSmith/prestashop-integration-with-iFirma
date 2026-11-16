@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - The iFirma icon of the Orders list uses the back-office tooltip (PrestaShop's `pstooltip`, with the plain title as a fallback) and lists one fact per line: status, number, issue date, KSeF state, delivery. The issue date is new in the tooltip.
-- The limit read from iFirma (`abonent/limit.json`) is the account's monthly API limit, not the daily request quota. A reading no longer raises the module's day counter, no longer lowers the day cap and no longer adds an "other clients" row to the Module requests box; the limit box presents it as the monthly API limit, and a reading from an earlier month is shown as outdated.
+- The limit read from iFirma (`abonent/limit.json`) is the account's monthly API limit, not the daily request quota. A reading no longer raises the module's day counter, no longer lowers the day cap and no longer adds an "other clients" row to the Module requests box; the limit box presents it as the monthly API limit, and a reading from an earlier month is shown as outdated; the limit box treats the granted figure as the account's own, which iFirma can raise on request.
 
 ## [1.7.0] - 2026-11-08
 
