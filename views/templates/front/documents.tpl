@@ -36,10 +36,12 @@
                     {/if}
                 </span>
                 <span class="ifirma-document-date">{$receipt.issue_date|escape:'html':'UTF-8'}</span>
-                <span class="ifirma-badge ifirma-badge-{$receipt.status|escape:'html':'UTF-8'}">{$receipt.status_label|escape:'html':'UTF-8'}</span>
-                {if $receipt.is_external}
-                    <span class="ifirma-badge ifirma-badge-external">{l s='Issued outside the shop (imported from iFirma)' mod='ifirma'}</span>
-                {/if}
+                <span class="ifirma-document-badges">
+                    <span class="ifirma-badge ifirma-badge-{$receipt.status|escape:'html':'UTF-8'}">{$receipt.status_label|escape:'html':'UTF-8'}</span>
+                    {if $receipt.is_external}
+                        <span class="ifirma-badge ifirma-badge-external">{l s='Issued outside the shop (imported from iFirma)' mod='ifirma'}</span>
+                    {/if}
+                </span>
             </li>
         {/foreach}
     </ul>

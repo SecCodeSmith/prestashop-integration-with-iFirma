@@ -701,6 +701,7 @@ $_MODULE['<{ifirma}prestashop>admin_order_panel_f4741de561177118d7a48da311024a01
 $_MODULE['<{ifirma}prestashop>admin_order_panel_50d639c12e7d5ec87715aec9cf9c44d7'] = 'Aby odrzucić prośbę, podaj powód.';
 $_MODULE['<{ifirma}prestashop>admin_order_panel_b6907cbf4c117ef645808cc578eeedb5'] = 'Odrzucanie…';
 $_MODULE['<{ifirma}prestashop>customer_account_05e9411049d2878c5f7d3b6fed2e65d8'] = 'Moje Faktury';
+$_MODULE['<{ifirma}prestashop>customer_account_hummingbird_05e9411049d2878c5f7d3b6fed2e65d8'] = 'Moje Faktury';
 $_MODULE['<{ifirma}prestashop>documents_05e9411049d2878c5f7d3b6fed2e65d8'] = 'Moje Faktury';
 $_MODULE['<{ifirma}prestashop>documents_ebcbe8bd4bd04b4c813489d371eddc65'] = 'Nie masz jeszcze faktur.';
 $_MODULE['<{ifirma}prestashop>documents_4f44165a866dc1abb0ac38e6f03c541d'] = 'Wystawiony poza sklepem (zaimportowany z iFirma)';

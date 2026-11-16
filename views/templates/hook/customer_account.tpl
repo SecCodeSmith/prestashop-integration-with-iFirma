@@ -9,18 +9,15 @@
  *}
 
 {*
- * iFirma module - "My invoices" tile in the customer account home.
- * A plain link to the "My invoices" page: it needs no theme script. Consumes only $ifirma_account
- * (see classes/IfirmaCustomerView.php::forAccount()).
+ * iFirma module - "My invoices" tile in the customer account home of the Classic theme (and any theme that
+ * styles the anchor as the grid column, like the core modules do). A plain link to the "My invoices" page: it needs
+ * no theme script. Consumes only $ifirma_account (see classes/IfirmaCustomerView.php::forAccount()).
  *}
 {if $ifirma_account.visible}
-<div class="col-lg-4 col-md-6 col-sm-6 col-xs-12" id="ifirma-account-block">
-    <a class="ifirma-account-link" href="{$ifirma_account.page_url|escape:'html':'UTF-8'}">
-        <span class="link-item">
-            <i class="material-icons" aria-hidden="true">&#xE8B0;</i>
-            {l s='My invoices' mod='ifirma'}
-            <span class="badge badge-primary">{$ifirma_account.receipts|count|intval}</span>
-        </span>
-    </a>
-</div>
+<a class="col-lg-4 col-md-6 col-sm-6 col-xs-12" id="ifirma-account-block" href="{$ifirma_account.page_url|escape:'html':'UTF-8'}">
+    <span class="link-item">
+        <i class="material-icons" aria-hidden="true">&#xE8B0;</i>
+        {l s='My invoices' mod='ifirma'}
+    </span>
+</a>
 {/if}

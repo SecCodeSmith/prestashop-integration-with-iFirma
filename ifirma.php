@@ -27,6 +27,7 @@ require_once __DIR__ . '/classes/IfirmaStatusSyncService.php';
 require_once __DIR__ . '/classes/IfirmaDataRequestNotifier.php';
 require_once __DIR__ . '/classes/IfirmaDataRequestService.php';
 require_once __DIR__ . '/classes/IfirmaIssuancePipeline.php';
+require_once __DIR__ . '/classes/IfirmaAccountLinkTemplate.php';
 require_once __DIR__ . '/classes/IfirmaCustomerView.php';
 require_once __DIR__ . '/classes/IfirmaHttpOutput.php';
 require_once __DIR__ . '/classes/IfirmaNativeInvoiceLink.php';
@@ -1950,7 +1951,23 @@ class Ifirma extends Module
 
         $this->context->smarty->assign('ifirma_account', $account);
 
-        return $this->display(__FILE__, 'views/templates/hook/customer_account.tpl');
+        return $this->display(__FILE__, $this->accountLinkTemplate());
+    }
+
+    /**
+     * @return string the account entry template for the active theme
+     */
+    private function accountLinkTemplate()
+    {
+        $shop = $this->context->shop;
+        $theme = isset($shop->theme) ? $shop->theme : null;
+
+        if (is_object($theme) && method_exists($theme, 'getName') && method_exists($theme, 'get')) {
+            return IfirmaAccountLinkTemplate::forTheme($theme->getName(), $theme->get('parent'));
+        }
+
+        // PrestaShop 1.7 shops without a theme object only expose the theme name.
+        return IfirmaAccountLinkTemplate::forTheme(isset($shop->theme_name) ? $shop->theme_name : '', '');
     }
 
     /**

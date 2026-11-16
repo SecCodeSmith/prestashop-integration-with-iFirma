@@ -27,11 +27,33 @@
 }
 
 .ifirma-receipts-list li {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(7rem, 1fr) 8rem auto;
     align-items: center;
-    justify-content: space-between;
+    gap: .5rem 1rem;
     padding: .35rem 0;
     border-bottom: 1px solid #eee;
+}
+
+.ifirma-document-date {
+    justify-self: start;
+}
+
+.ifirma-document-badges {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: .25rem;
+}
+
+@media (max-width: 575.98px) {
+    .ifirma-receipts-list li {
+        grid-template-columns: 1fr;
+    }
+
+    .ifirma-document-badges {
+        justify-content: flex-start;
+    }
 }
 
 .ifirma-receipts-list li a {
