@@ -60,9 +60,9 @@
     "semantic_hash": ""
   },
   "ifirma.php": {
-    "mtime": 1794861284.4886873,
-    "seen": 1794861891.0446467,
-    "ast_hash": "1236d4f2d1571c62ebfe6385c2adc328",
+    "mtime": 1794863473.722442,
+    "seen": 1794864343.9715996,
+    "ast_hash": "209a3c11c382fca0b31365ed2a6129e3",
     "semantic_hash": ""
   },
   "index.php": {
@@ -720,9 +720,9 @@
     "semantic_hash": ""
   },
   "tests/Unit/ModuleHooksTest.php": {
-    "mtime": 1794860061.6181183,
-    "seen": 1794861891.044835,
-    "ast_hash": "43107e56eee7a872914891cd4fe8fdf7",
+    "mtime": 1794863456.0287702,
+    "seen": 1794864343.9719257,
+    "ast_hash": "f38d0a14927b91edef467e5cebc160b6",
     "semantic_hash": ""
   },
   "tests/Unit/PayloadBuilderTest.php": {
@@ -792,9 +792,9 @@
     "semantic_hash": ""
   },
   "translations/pl.php": {
-    "mtime": 1794861284.4997015,
-    "seen": 1794861891.0449524,
-    "ast_hash": "f63ca35b8e548cfb3ee2713f792e8ba9",
+    "mtime": 1794863669.6892934,
+    "seen": 1794864343.9721255,
+    "ast_hash": "a634afe926190b395119008062ea2806",
     "semantic_hash": ""
   },
   "upgrade/index.php": {
@@ -1674,9 +1674,9 @@
     "semantic_hash": "788b1a8fb0dbd3c687a7786cbbfdbe0c"
   },
   "tests/Unit/ModuleCustomerHooksTest.php": {
-    "mtime": 1794860540.4127507,
-    "seen": 1794861891.0448344,
-    "ast_hash": "00fb3e23d8fbc83b609e47b39ba02cd7",
+    "mtime": 1794863670.4696522,
+    "seen": 1794864343.9719245,
+    "ast_hash": "3ee0928199b4312fd49d1939e2bf4032",
     "semantic_hash": ""
   },
   "tests/Unit/PayloadBuilderGoldenTest.php": {
@@ -2148,9 +2148,9 @@
     "semantic_hash": "a2235f20c692b631ea5e29c0e1822ebf"
   },
   "tests/Unit/ClassFileRequiresTest.php": {
-    "mtime": 1794860061.5553663,
-    "seen": 1794861891.0447595,
-    "ast_hash": "254ddb3c4a8cacf50197f6bc6df95d80",
+    "mtime": 1794863601.4090323,
+    "seen": 1794864343.9717932,
+    "ast_hash": "09e08bd5e4b85fc0f853f9fddb565f5a",
     "semantic_hash": ""
   },
   "tests/Unit/DocumentSettingsTest.php": {
@@ -2460,9 +2460,9 @@
     "semantic_hash": ""
   },
   "docs/troubleshooting.md": {
-    "mtime": 1794860681.475189,
-    "seen": 1794861891.044993,
-    "ast_hash": "7cbc3b203760e6a43496c2c7d239a233",
+    "mtime": 1794864277.7927032,
+    "seen": 1794864343.972196,
+    "ast_hash": "7a567ef68ab99ef231ab4b2fc5a91b28",
     "semantic_hash": ""
   },
   "docs/upgrading.md": {
@@ -4260,9 +4260,9 @@
     "semantic_hash": ""
   },
   "tests/Unit/DocumentsFrontTest.php": {
-    "mtime": 1794861140.7700434,
-    "seen": 1794861891.044795,
-    "ast_hash": "6b37e1e3d64dfaa72c07f9d70b219885",
+    "mtime": 1794863563.899262,
+    "seen": 1794864343.9718547,
+    "ast_hash": "358bb28194e0195acfedea1ca05c4fa8",
     "semantic_hash": ""
   },
   "tests/js/bulk-mark-sent.test.mjs": {
@@ -4404,9 +4404,9 @@
     "semantic_hash": ""
   },
   "openspec/changes/fix-my-invoices-page-and-native-invoice-link/design.md": {
-    "mtime": 1794860162.4139383,
-    "seen": 1794861891.0451515,
-    "ast_hash": "0b1fa1e1103fd0266daefc2b21d6c9c2",
+    "mtime": 1794863597.7458093,
+    "seen": 1794864343.9724724,
+    "ast_hash": "2ec61e6b6fe8f4e668bbeec9de9a8d96",
     "semantic_hash": ""
   },
   "openspec/changes/fix-my-invoices-page-and-native-invoice-link/proposal.md": {
@@ -4422,15 +4422,15 @@
     "semantic_hash": ""
   },
   "openspec/changes/fix-my-invoices-page-and-native-invoice-link/specs/customer-receipt-visibility/spec.md": {
-    "mtime": 1794860061.792924,
-    "seen": 1794861891.0451539,
-    "ast_hash": "ea81db27a73d86e78ea0d56edb0845b4",
+    "mtime": 1794863597.5260458,
+    "seen": 1794864343.972477,
+    "ast_hash": "6bbcebb9670105370ea76ab18d6474c3",
     "semantic_hash": ""
   },
   "openspec/changes/fix-my-invoices-page-and-native-invoice-link/tasks.md": {
-    "mtime": 1794861223.8894548,
-    "seen": 1794861891.0451543,
-    "ast_hash": "511472f8307b2c4edd3f7d256178c720",
+    "mtime": 1794863921.8823647,
+    "seen": 1794864343.9724782,
+    "ast_hash": "7a4f4e655fc4c390f2347cd762722db8",
     "semantic_hash": ""
   },
   "openspec/changes/fix-order-grid-tooltip/.openspec.yaml": {
@@ -4461,6 +4461,18 @@
     "mtime": 1794860061.4616516,
     "seen": 1794861891.0451584,
     "ast_hash": "c64cd600276a4c8b7d1021ab5b2cc8d1",
+    "semantic_hash": ""
+  },
+  "classes/IfirmaAccountLinkTemplate.php": {
+    "mtime": 1794863434.731285,
+    "seen": 1794864343.9713829,
+    "ast_hash": "7a6002c6c00c0688fa80c0598232c9ce",
+    "semantic_hash": ""
+  },
+  "tests/Unit/AccountLinkTemplateTest.php": {
+    "mtime": 1794863425.330534,
+    "seen": 1794864343.9717462,
+    "ast_hash": "f5a09676a6265a7632f8b74d5bc42529",
     "semantic_hash": ""
   }
 }
