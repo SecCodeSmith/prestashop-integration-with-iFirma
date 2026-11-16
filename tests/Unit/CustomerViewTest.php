@@ -707,4 +707,50 @@ class CustomerViewTest extends TestCase
         $this->assertNull($account['receipts'][0]['download_url']);
         $this->assertNotNull($account['receipts'][1]['download_url']);
     }
+
+    public function linkDecisionProvider()
+    {
+        return array(
+            'issued with a token' => array(array(), true),
+            'awaiting KSeF acceptance' => array(array('delivery_status' => 'awaiting_ksef', 'ksef_status' => 'WYSLANA', 'ksef_number' => ''), false),
+            'awaiting KSeF but already numbered' => array(array('delivery_status' => 'awaiting_ksef', 'ksef_number' => 'N-1'), true),
+            'issued without a token' => array(array('security_token' => ''), false),
+        );
+    }
+
+    /**
+     * @dataProvider linkDecisionProvider
+     */
+    public function testTheAccountAndTheOrderPageAgreeOnTheLinkOfAnIssuedDocument(array $props, $linkOffered)
+    {
+        $receipt = $this->receipt($props);
+
+        $orderUrl = $this->view->forOrder($this->order(), $receipt, null)['document']['download_url'];
+        $accountUrl = $this->view->forAccount(array(get_object_vars($receipt)), 0)['receipts'][0]['download_url'];
+
+        $this->assertSame($orderUrl, $accountUrl);
+        $this->assertSame($linkOffered, $orderUrl !== null);
+    }
+
+    public function testTheAccountDoesNotListAMissingDocumentAndTheOrderPageOffersNoLinkForIt()
+    {
+        $receipt = $this->receipt(array('remote_missing' => 1));
+
+        $orderUrl = $this->view->forOrder($this->order(), $receipt, null)['document']['download_url'];
+        $listed = $this->view->forAccount(array(get_object_vars($receipt)), 0)['receipts'];
+
+        $this->assertNull($orderUrl);
+        $this->assertSame(array(), $listed);
+    }
+
+    public function testTheAccountDoesNotListAnErrorRowAndTheOrderPageShowsNoDocumentForIt()
+    {
+        $receipt = $this->receipt(array('status' => 'error', 'ifirma_id' => 0));
+
+        $order = $this->view->forOrder($this->order(), $receipt, null);
+        $listed = $this->view->forAccount(array(get_object_vars($receipt)), 0)['receipts'];
+
+        $this->assertArrayNotHasKey('document', $order);
+        $this->assertSame(array(), $listed);
+    }
 }
