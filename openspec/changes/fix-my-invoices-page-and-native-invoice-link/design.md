@@ -67,6 +67,7 @@ The English source strings are "My invoices" (tile, page title, breadcrumb), "Yo
 
 ## Risks / Trade-offs
 
+- Checked on 2026-11-16 (task 4.1) by grepping `controllers/front/PdfInvoiceController.php` in the cached images 8.0.5, 8.1.7, 8.2.2, 9.0.3 and 9.1.4: every tag runs `Hook::exec('actionPDFInvoiceRender', ['order_invoice_list' => ...])` in `display()`, after the `PS_INVOICE`, ownership and `secure_key` checks of `postProcess()`. Since 8.1 a request that carries `secure_key` is authorised by the key alone, even for a logged-in customer, so the policy treats the requester as the owner only when the customer is logged in and their id equals the order's customer id.
 - [`actionPDFInvoiceRender` missing or moved on some PrestaShop tag] → the hook then never fires and customers get PrestaShop's invoice as before (fails open to today's behaviour, never to a foreign document). Smoke scenario T runs on all five test-stack tags and records which tags serve the iFirma PDF.
 - [Another module also listens on `actionPDFInvoiceRender` and runs after ours] → ours ends the request, so later listeners don't run for handled orders. This is documented in `docs/troubleshooting.md`.
 - [Guests lose PrestaShop's invoice for handled orders] → this follows the existing no-guest-download rule. It is listed under BREAKING and in `docs/upgrading.md`, and the owner can turn the setting off.

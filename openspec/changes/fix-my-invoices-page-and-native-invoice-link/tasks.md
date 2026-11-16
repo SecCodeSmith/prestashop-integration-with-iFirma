@@ -10,8 +10,8 @@ Every task follows the TDD loop from CLAUDE.md: write the failing test, show its
 
 ## 1. One "can be handed out" rule (refactor, no behaviour change)
 
-- [ ] 1.1 Pin today's behaviour first: add `CustomerViewTest` cases showing that `forAccount()` and `forOrder()` give the same link decision for issued, KSeF-waiting, tokenless, missing and error rows. Verify they pass on the current code.
-- [ ] 1.2 Move the duplicated rule from `forAccount()` and `buildDocument()` into one public `IfirmaCustomerView` method (status, KSeF fields, token → URL or `null`), as design D3 describes. Verify 1.1 and the whole suite stay green and no golden file changes. This is its own `refactor:` commit.
+- [x] 1.1 Pin today's behaviour first: add `CustomerViewTest` cases showing that `forAccount()` and `forOrder()` give the same link decision for issued, KSeF-waiting, tokenless, missing and error rows. Verify they pass on the current code.
+- [x] 1.2 Move the duplicated rule from `forAccount()` and `buildDocument()` into one public `IfirmaCustomerView` method (status, KSeF fields, token → URL or `null`), as design D3 describes. Verify 1.1 and the whole suite stay green and no golden file changes. This is its own `refactor:` commit.
 
 ## 2. "My invoices" page and account tile (the bug fix)
 
@@ -33,7 +33,7 @@ Every task follows the TDD loop from CLAUDE.md: write the failing test, show its
 
 ## 4. Built-in invoice link
 
-- [ ] 4.1 Check that `PdfInvoiceController::display()` runs `actionPDFInvoiceRender` with `order_invoice_list`, after the ownership and `secure_key` checks, on every PrestaShop tag the Smoke workflow covers: `grep` the core file inside each container. Record the result per tag in design.md Risks. If a tag lacks the hook, record that it falls back to PrestaShop's invoice; don't add a workaround.
+- [x] 4.1 Check that `PdfInvoiceController::display()` runs `actionPDFInvoiceRender` with `order_invoice_list`, after the ownership and `secure_key` checks, on every PrestaShop tag the Smoke workflow covers: `grep` the core file inside each container. Record the result per tag in design.md Risks. If a tag lacks the hook, record that it falls back to PrestaShop's invoice; don't add a workaround.
 - [ ] 4.2 Red, then green: `IfirmaNativeInvoiceOutcome` (immutable: `passThrough`, `redirectTo(url)`, `notAvailable`). Verify with a unit test of its three constructors and accessors.
 - [ ] 4.3 Red, then green: `IfirmaNativeInvoiceLink::decide($idOrder, $customerLoggedIn)` with injected setting, document lookup, pending-request lookup and the D3 rule. Write one test per "Orders the module handles" and "Built-in invoice link …" scenario: setting off → pass; no record and no pending request → pass; pending request with no record → not available; KSeF wait, held, verifying, failed, missing, tokenless → not available; guest → not available; downloadable → redirect to the receipt link of the stored token. Verify with a new `NativeInvoiceLinkTest`.
 - [ ] 4.4 Red, then green: `IfirmaHttpOutput::notAvailable($message)` sends a 404 status line, `text/plain; charset=utf-8`, `no-store` and `nosniff`, and echoes the message. Verify with the header sink in the existing `IfirmaHttpOutput` tests.
