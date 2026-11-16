@@ -28,6 +28,7 @@ require_once __DIR__ . '/classes/IfirmaDataRequestNotifier.php';
 require_once __DIR__ . '/classes/IfirmaDataRequestService.php';
 require_once __DIR__ . '/classes/IfirmaIssuancePipeline.php';
 require_once __DIR__ . '/classes/IfirmaCustomerView.php';
+require_once __DIR__ . '/classes/IfirmaHttpOutput.php';
 require_once __DIR__ . '/classes/IfirmaNativeInvoiceLink.php';
 require_once __DIR__ . '/classes/IfirmaAdminPanelPresenter.php';
 require_once __DIR__ . '/classes/IfirmaAdminOrderPanelView.php';
