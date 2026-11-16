@@ -352,8 +352,14 @@ five states (internal errors, iFirma messages and candidate documents are never 
 5. **Missing** - the document was removed in iFirma. The customer is asked to contact the
    shop; no download link is offered.
 
-The **My account** page lists issued documents (number, status, download link) and the count
-of orders with a pending request; the block is hidden when there is nothing to show.
+The **My account** page shows a **My invoices** tile (**Moje Faktury** in Polish) with the number of issued
+documents. The tile is a plain link, so it works in every theme and without JavaScript. It opens the
+**My invoices** page (`controllers/front/documents.php`), which lists the customer's own documents, newest first:
+number, issue date, status, the *issued outside the shop* badge and a download link. A document that waits for KSeF
+acceptance, or has no download token, is listed without a link. The page also shows the count of orders with a pending
+request, or "You have no invoices yet." when there is nothing to list. A visitor who is not logged in is sent to the
+login page. The page only reads: it changes nothing and sends no request to iFirma. The tile is hidden when there is
+nothing to show.
 Customer texts are translatable (`translations/pl.php` ships Polish).
 
 ### Download limits
