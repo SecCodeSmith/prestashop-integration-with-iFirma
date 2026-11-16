@@ -753,4 +753,32 @@ class CustomerViewTest extends TestCase
         $this->assertArrayNotHasKey('document', $order);
         $this->assertSame(array(), $listed);
     }
+
+    public function downloadUrlProvider()
+    {
+        return array(
+            'issued with a token' => array('none', '', '', 'tok9', true),
+            'awaiting KSeF acceptance' => array('awaiting_ksef', 'WYSLANA', '', 'tok9', false),
+            'accepted by KSeF' => array('awaiting_ksef', '', 'N-1', 'tok9', true),
+            'no token' => array('none', '', '', '', false),
+            'token not stored' => array('none', '', '', null, false),
+        );
+    }
+
+    /**
+     * @dataProvider downloadUrlProvider
+     */
+    public function testTheDownloadUrlIsOfferedOnlyForAReleasedDocumentWithAToken($delivery, $ksefStatus, $ksefNumber, $token, $linkOffered)
+    {
+        $url = $this->view->downloadUrlFor($delivery, $ksefStatus, $ksefNumber, $token);
+
+        $this->assertSame($linkOffered, $url !== null);
+    }
+
+    public function testTheDownloadUrlCarriesTheToken()
+    {
+        $url = $this->view->downloadUrlFor('none', '', '', 'tok9');
+
+        $this->assertStringContainsString('token=tok9', $url);
+    }
 }
